@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dark-charcoal text-white;
+  }
+}
+
+@layer utilities {
+  .glow-cyan {
+    text-shadow: 0 0 4px #00fff7, 0 0 10px #00fff7;
+  }
+  
+  .glow-magenta {
+    box-shadow: 0 0 6px #ff00ff, 0 0 15px #ff00ff;
+  }
+  
+  .glow-purple {
+    box-shadow: 0 0 6px #9B30FF, 0 0 15px #9B30FF;
+  }
+}
+

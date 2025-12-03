@@ -1,0 +1,38 @@
+/* ReactGrid Neon Theme Override */
+.reactgrid-content {
+  background-color: #1E1E1E !important;
+  color: #FFFFFF !important;
+}
+
+.reactgrid-cell {
+  background-color: #1E1E1E !important;
+  color: #FFFFFF !important;
+  border-color: #00FFF7 !important;
+}
+
+.reactgrid-cell-header {
+  background-color: #121212 !important;
+  color: #00FFF7 !important;
+  font-weight: bold;
+  border-color: #00FFF7 !important;
+}
+
+.reactgrid-cell-selected {
+  background-color: rgba(255, 0, 255, 0.2) !important;
+  box-shadow: 0 0 6px #ff00ff, 0 0 15px #ff00ff !important;
+}
+
+.reactgrid-cell-focused {
+  border-color: #FF00FF !important;
+  box-shadow: 0 0 6px #ff00ff, 0 0 15px #ff00ff !important;
+}
+
+.reactgrid-cell-editable {
+  background-color: #1E1E1E !important;
+}
+
+.reactgrid-cell-editing {
+  background-color: #121212 !important;
+  color: #FFFFFF !important;
+}
+

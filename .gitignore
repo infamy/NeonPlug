@@ -1,0 +1,41 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Debug files
+*.debug.json
+neonplug-debug-*.json
+
+DM32-Protocol-Spec
+METADATA-*
+PLAN.md
+SPECS.md
+DESIGN.md
+DEVLOG.md
+DEPLOY.md
+
+# Ignore all files in the src/debug directory
+src/debug/*
+
+colours.png
