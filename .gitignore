@@ -39,3 +39,6 @@ DEPLOY.md
 src/debug/*
 
 colours.png
+
+# env file
+.env
