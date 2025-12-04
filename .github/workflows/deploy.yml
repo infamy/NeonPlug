@@ -33,6 +33,8 @@ jobs:
 
       - name: Build single-file version
         run: npm run build:single
+        env:
+          VITE_COMMIT_HASH: ${{ github.sha }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

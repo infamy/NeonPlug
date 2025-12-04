@@ -1,12 +1,33 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
+import { execSync } from 'child_process'
+
+// Get commit hash from environment or git
+function getCommitHash(): string {
+  // In CI/CD, use environment variable (VITE_ prefix for client-side access)
+  if (process.env.VITE_COMMIT_HASH) {
+    return process.env.VITE_COMMIT_HASH.substring(0, 7);
+  }
+  // For local builds, try to get from git
+  try {
+    return execSync('git rev-parse --short HEAD').toString().trim();
+  } catch {
+    return 'dev';
+  }
+}
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const isSingleFile = mode === 'singlefile'
+  const commitHash = getCommitHash();
+  const buildTime = new Date().toISOString();
   
   return {
+    define: {
+      __COMMIT_HASH__: JSON.stringify(commitHash),
+      __BUILD_TIME__: JSON.stringify(buildTime),
+    },
     plugins: [
       react(),
       // Only use single-file plugin when building for single-file mode
