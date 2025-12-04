@@ -21,7 +21,6 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
   onTabChange,
 }) => {
   const { contactsLoaded } = useContactsStore();
-  const contactsTab = tabs.find(t => t.id === 'contacts');
   const isContactsDisabled = !contactsLoaded;
 
   return (

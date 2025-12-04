@@ -71,12 +71,12 @@ export function getContactCapacity(firmware: string): number {
  * Uses firmware string check first (L01 = 150k, otherwise 50k).
  * This is the primary method as it's more reliable than V-frame calculation.
  * 
- * @param contactsVFrame V-frame 0x0F data (currently unused, kept for future use)
+ * @param _contactsVFrame V-frame 0x0F data (currently unused, kept for future use)
  * @param firmware Firmware version string (e.g., "DM32.01.01.046" or "DM32.01.L01.048")
  * @returns Maximum number of contacts (150000 for L01, 50000 otherwise)
  */
 export function getContactCapacityWithFallback(
-  contactsVFrame: Uint8Array | undefined,
+  _contactsVFrame: Uint8Array | undefined,
   firmware: string
 ): number {
   // Primary method: Check firmware string
