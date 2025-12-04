@@ -2,6 +2,8 @@
 
 Cyberpunk-themed Radio CPS (Channel Programming Software) for Baofeng DM-32UV.
 
+🌐 **Try it live:** [https://www.meshmeld.com/NeonPlug/](https://www.meshmeld.com/NeonPlug/)
+
 ## Features
 
 - 🎨 Cyberpunk neon-themed UI
