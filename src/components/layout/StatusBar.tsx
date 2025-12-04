@@ -42,7 +42,7 @@ export const StatusBar: React.FC = () => {
         )}
       </div>
       <div className="text-sm text-cool-gray">
-        NEONPLUG v0.1.0
+        NEONPLUG
       </div>
     </div>
   );
