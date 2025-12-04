@@ -207,6 +207,48 @@ export class DM32Connection {
     return data;
   }
 
+  /**
+   * Write memory block to radio
+   * 
+   * Format: 0x57 <addr:3> <0x00> <0x10> <data:4096> <metadata:1>
+   * Total: 4103 bytes
+   * 
+   * @param address 24-bit address (must be 4KB-aligned)
+   * @param data 4096 bytes of data
+   * @param metadata Metadata byte (stored at offset 0xFFF)
+   * @throws {Error} If write is not acknowledged
+   */
+  async writeMemory(address: number, data: Uint8Array, metadata: number): Promise<void> {
+    if (data.length !== 4096) {
+      throw new Error(`Write data must be exactly 4096 bytes, got ${data.length}`);
+    }
+
+    // Write command format: 0x57 <addr:3> <0x00> <0x10> <data:4096> <metadata:1>
+    const addrBytes = new Uint8Array([
+      address & 0xFF,
+      (address >> 8) & 0xFF,
+      (address >> 16) & 0xFF,
+    ]);
+
+    // Build command: 4103 bytes total
+    const command = new Uint8Array(4103);
+    command[0] = 0x57; // Write command
+    command.set(addrBytes, 1); // Address (bytes 1-3)
+    command[4] = 0x00; // Reserved
+    command[5] = 0x10; // Size indicator (4KB)
+    command.set(data, 6); // Data (bytes 6-4101)
+    command[4102] = metadata; // Metadata byte (byte 4102)
+
+    await this.write(command);
+    await this.delay(50); // Longer delay for writes (per spec: 10-50ms)
+
+    // Response: 0x06 (ACK)
+    const response = await this.readBytes(1);
+    if (response[0] !== 0x06) {
+      throw new Error(`Write not acknowledged. Got 0x${response[0].toString(16)} instead of 0x06`);
+    }
+  }
+
   async disconnect(): Promise<void> {
     // Clear read buffer to prevent stale data from affecting next connection
     this.readBuffer = new Uint8Array(0);

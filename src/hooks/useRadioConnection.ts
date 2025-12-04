@@ -117,7 +117,7 @@ export function useRadioConnection() {
       // Restore original progress handler
       protocol.onProgress = originalScanListProgress;
 
-      // Step 7: Complete
+      // Step 7: Complete (contacts are read separately on demand)
       onProgress?.(100, 'Read complete!', steps[6]);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Read failed';
@@ -144,10 +144,67 @@ export function useRadioConnection() {
     }
   }, [setConnected, setRadioInfo, setSettings, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData]);
 
+  const readContacts = useCallback(async (
+    onProgress?: (progress: number, message: string) => void
+  ) => {
+    // Ask for confirmation since this is a slow operation
+    const confirmed = window.confirm(
+      'Reading contacts from the radio can take a long time.\n\n' +
+      'This operation will discover and read all contact blocks, which may take several minutes.\n\n' +
+      'Do you want to continue?'
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+
+    setIsConnecting(true);
+    setError(null);
+    
+    let protocol: DM32UVProtocol | null = null;
+
+    try {
+      // Create protocol instance
+      protocol = new DM32UVProtocol();
+      
+      // Set up progress callback
+      protocol.onProgress = (progress, message) => {
+        onProgress?.(progress, message);
+      };
+      
+      // Connect to radio (this will trigger port selection dialog)
+      onProgress?.(5, 'Please select a serial port in the browser dialog...');
+      onProgress?.(10, 'Connecting to radio...');
+      await protocol.connect();
+      
+      // Read contacts
+      onProgress?.(20, 'Reading contacts...');
+      const contacts = await protocol.readContacts();
+      setContacts(contacts);
+      
+      onProgress?.(100, 'Contacts read complete!');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Read failed';
+      setError(errorMessage);
+      onProgress?.(0, `Error: ${errorMessage}`);
+      console.error('Contacts read error:', err);
+    } finally {
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (e) {
+          console.warn('Error disconnecting:', e);
+        }
+      }
+      setIsConnecting(false);
+    }
+  }, [setContacts]);
+
   return {
     isConnecting,
     error,
     readFromRadio,
+    readContacts,
   };
 }
 

@@ -40,6 +40,8 @@ export const VFRAME = {
   RADIO_VERSION: 0x05,
   MEMORY_LAYOUT: 0x0A,
   CODEPLUG_VERSION: 0x0B,
+  CONTACTS: 0x0F,            // Contacts/Talkgroups memory range
+  MEMBERSHIPS: 0x0E,          // RX Groups/Memberships memory range
 } as const;
 
 // Connection settings

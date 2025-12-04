@@ -5,7 +5,7 @@
 
 import { DM32Connection } from './connection';
 import { discoverMemoryBlocks, readChannelCount, readChannelBlocks, type MemoryBlock } from './memory';
-import { parseChannel, parseZones, parseScanLists } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContacts, encodeChannel, encodeZone } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList } from '../../models';
 import type { WebSerialPort } from './types';
@@ -377,9 +377,120 @@ export class DM32UVProtocol implements RadioProtocol {
     return channels;
   }
 
-  async writeChannels(_channels: Channel[]): Promise<void> {
-    // TODO: Implement channel writing
-    throw new Error('Channel writing not yet implemented');
+  /**
+   * Write channels to the radio
+   * 
+   * Encodes channels to binary format and writes them to the appropriate memory blocks.
+   * Updates the channel count in the first block header.
+   * 
+   * @param channels Array of channels to write
+   * @throws {Error} If not connected
+   * @throws {Error} If channel count exceeds maximum (4000)
+   */
+  async writeChannels(channels: Channel[]): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    if (channels.length === 0) {
+      throw new Error('No channels to write');
+    }
+    
+    if (channels.length > 4000) {
+      throw new Error(`Too many channels: ${channels.length} (maximum 4000)`);
+    }
+
+    this.onProgress?.(0, 'Preparing to write channels...');
+
+    // Discover blocks if not already discovered
+    if (this.discoveredBlocks.length === 0) {
+      this.onProgress?.(5, 'Discovering channel blocks...');
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo!.memoryLayout.configStart,
+        this.radioInfo!.memoryLayout.configEnd,
+        (current, total) => {
+          const progress = 5 + Math.floor((current / total) * 5); // 5-10%
+          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+
+    // Get channel blocks, sorted by metadata
+    const channelBlocks = this.discoveredBlocks
+      .filter(b => b.type === 'channel')
+      .sort((a, b) => a.metadata - b.metadata);
+
+    if (channelBlocks.length === 0) {
+      throw new Error('No channel blocks found');
+    }
+
+    // Find first channel block (metadata 0x12)
+    const firstChannelBlock = channelBlocks.find(b => b.metadata === METADATA.CHANNEL_FIRST);
+    if (!firstChannelBlock) {
+      throw new Error(`First channel block (metadata 0x${METADATA.CHANNEL_FIRST.toString(16)}) not found`);
+    }
+
+    this.onProgress?.(10, `Writing ${channels.length} channels to ${channelBlocks.length} blocks...`);
+
+    // Encode all channels to binary
+    const encodedChannels = channels.map(ch => encodeChannel(ch));
+    
+    // Write channels to blocks
+    let channelIndex = 0;
+    for (let blockIdx = 0; blockIdx < channelBlocks.length && channelIndex < channels.length; blockIdx++) {
+      const block = channelBlocks[blockIdx];
+      const isFirstBlock = block.metadata === METADATA.CHANNEL_FIRST;
+      
+      // Read existing block data
+      const existingBlockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
+      const blockData = new Uint8Array(existingBlockData);
+      
+      // Update channel count in first block header (bytes 0-3)
+      if (isFirstBlock) {
+        const channelCountBytes = new Uint8Array(4);
+        channelCountBytes[0] = channels.length & 0xFF;
+        channelCountBytes[1] = (channels.length >> 8) & 0xFF;
+        channelCountBytes[2] = (channels.length >> 16) & 0xFF;
+        channelCountBytes[3] = (channels.length >> 24) & 0xFF;
+        blockData.set(channelCountBytes, 0);
+      }
+      
+      // Determine start offset and max channels for this block
+      const startOffset = isFirstBlock ? OFFSET.FIRST_CHANNEL : 0x00;
+      const maxChannelsInBlock = isFirstBlock ? 84 : 85;
+      const maxOffset = startOffset + (maxChannelsInBlock * BLOCK_SIZE.CHANNEL);
+      
+      // Write channels to this block
+      for (let offset = startOffset; offset < maxOffset && channelIndex < channels.length; offset += BLOCK_SIZE.CHANNEL) {
+        blockData.set(encodedChannels[channelIndex], offset);
+        channelIndex++;
+        
+        // Update progress
+        const progress = 10 + Math.floor((channelIndex / channels.length) * 80); // 10-90%
+        if (channelIndex % 10 === 0 || channelIndex === channels.length) {
+          this.onProgress?.(progress, `Encoded ${channelIndex} of ${channels.length} channels...`);
+        }
+      }
+      
+      // Write the block back to radio
+      const progress = 90 + Math.floor((blockIdx / channelBlocks.length) * 10); // 90-100%
+      this.onProgress?.(progress, `Writing block ${blockIdx + 1} of ${channelBlocks.length}...`);
+      
+      await this.connection!.writeMemory(block.address, blockData, block.metadata);
+      
+      // Delay between block writes (per spec: 10-50ms)
+      if (blockIdx < channelBlocks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+      }
+      
+      // Stop if we've written all channels
+      if (channelIndex >= channels.length) {
+        break;
+      }
+    }
+
+    this.onProgress?.(100, `Successfully wrote ${channels.length} channels`);
+    console.log(`Successfully wrote ${channels.length} channels to radio`);
   }
 
   async readZones(): Promise<Zone[]> {
@@ -419,9 +530,96 @@ export class DM32UVProtocol implements RadioProtocol {
     return zones;
   }
 
-  async writeZones(_zones: Zone[]): Promise<void> {
-    // TODO: Implement zone writing
-    throw new Error('Zone writing not yet implemented');
+  /**
+   * Write zones to the radio
+   * 
+   * Encodes zones to binary format and writes them to the appropriate memory blocks.
+   * 
+   * @param zones Array of zones to write
+   * @throws {Error} If not connected
+   */
+  async writeZones(zones: Zone[]): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    if (zones.length === 0) {
+      throw new Error('No zones to write');
+    }
+
+    this.onProgress?.(0, 'Preparing to write zones...');
+
+    // Discover blocks if not already discovered
+    if (this.discoveredBlocks.length === 0) {
+      this.onProgress?.(5, 'Discovering zone blocks...');
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo!.memoryLayout.configStart,
+        this.radioInfo!.memoryLayout.configEnd,
+        (current, total) => {
+          const progress = 5 + Math.floor((current / total) * 5); // 5-10%
+          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+
+    // Get zone blocks (metadata 0x5c)
+    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE);
+
+    if (zoneBlocks.length === 0) {
+      throw new Error('No zone blocks found');
+    }
+
+    this.onProgress?.(10, `Writing ${zones.length} zones to ${zoneBlocks.length} block(s)...`);
+
+    // Read all zone blocks and concatenate
+    const allZoneData = await readAndConcatenateBlocks(
+      this.connection!,
+      zoneBlocks,
+      this.onProgress
+    );
+
+    // Encode zones
+    const encodedZones = zones.map((zone, idx) => encodeZone(zone, idx + 1));
+    
+    // Write zones to the concatenated data
+    // Zones are 145 bytes each, starting at offset 16
+    for (let i = 0; i < encodedZones.length; i++) {
+      const zoneOffset = OFFSET.ZONE_START + (i * BLOCK_SIZE.ZONE);
+      
+      if (zoneOffset + BLOCK_SIZE.ZONE > allZoneData.length) {
+        throw new Error(`Zone ${i + 1} would exceed block size`);
+      }
+      
+      allZoneData.set(encodedZones[i], zoneOffset);
+      
+      const progress = 50 + Math.floor((i / zones.length) * 40); // 50-90%
+      if (i % 5 === 0 || i === zones.length - 1) {
+        this.onProgress?.(progress, `Encoded ${i + 1} of ${zones.length} zones...`);
+      }
+    }
+
+    // Write blocks back to radio
+    // We need to split the concatenated data back into blocks
+    let dataOffset = 0;
+    for (let blockIdx = 0; blockIdx < zoneBlocks.length; blockIdx++) {
+      const block = zoneBlocks[blockIdx];
+      const blockData = allZoneData.slice(dataOffset, dataOffset + BLOCK_SIZE.STANDARD);
+      
+      const progress = 90 + Math.floor((blockIdx / zoneBlocks.length) * 10); // 90-100%
+      this.onProgress?.(progress, `Writing zone block ${blockIdx + 1} of ${zoneBlocks.length}...`);
+      
+      await this.connection!.writeMemory(block.address, blockData, block.metadata);
+      
+      dataOffset += BLOCK_SIZE.STANDARD;
+      
+      // Delay between block writes
+      if (blockIdx < zoneBlocks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+      }
+    }
+
+    this.onProgress?.(100, `Successfully wrote ${zones.length} zones`);
+    console.log(`Successfully wrote ${zones.length} zones to radio`);
   }
 
   async readScanLists(): Promise<ScanList[]> {
@@ -468,15 +666,138 @@ export class DM32UVProtocol implements RadioProtocol {
     throw new Error('Scan list writing not yet implemented');
   }
 
+  /**
+   * Read contacts from the radio
+   * 
+   * Uses V-frame 0x0F to get the contacts memory range, then discovers
+   * contact blocks and parses them.
+   * 
+   * @returns Array of contacts
+   * @throws {Error} If not connected
+   */
   async readContacts(): Promise<Contact[]> {
     requireConnection(this.connection, this.radioInfo);
-
-    // TODO: Find contact block and parse
+    
     this.onProgress?.(0, 'Reading contacts...');
-    this.onProgress?.(100, 'Contact reading not yet implemented');
-    // Contact blocks are typically at higher addresses (0x278000+)
-    // Need to implement contact block discovery
-    return [];
+    
+    // Get contacts memory range from V-frame 0x0F
+    const contactsVFrame = this.radioInfo!.vframes.get(VFRAME.CONTACTS);
+    if (!contactsVFrame || contactsVFrame.length < 8) {
+      console.warn('V-frame 0x0F (contacts) not available, trying to discover contacts in config range');
+      // Fall back to discovering in config range
+      return this.readContactsFromConfigRange();
+    }
+    
+    // Parse memory range (8 bytes: start_addr (4 bytes LE) + end_addr (4 bytes LE))
+    const startAddr = this.readUint32LE(contactsVFrame, 0);
+    const endAddr = this.readUint32LE(contactsVFrame, 4);
+    
+    console.log(`Contacts memory range: 0x${startAddr.toString(16)} - 0x${endAddr.toString(16)}`);
+    
+    if (startAddr === 0 && endAddr === 0) {
+      console.warn('Contacts range is 0x00000000-0x00000000, contacts may be disabled');
+      return [];
+    }
+    
+    // Discover contact blocks in this range
+    this.onProgress?.(10, 'Discovering contact blocks...');
+    const blocks = await discoverMemoryBlocks(
+      this.connection!,
+      startAddr,
+      endAddr,
+      (current, total) => {
+        const progress = 10 + Math.floor((current / total) * 10); // 10-20%
+        this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+      }
+    );
+    
+    // Filter for contact blocks (we need to discover the metadata value)
+    // For now, look for non-empty blocks that aren't channels, zones, or scan lists
+    const contactBlocks = blocks.filter(b => 
+      b.type !== 'empty' && 
+      b.type !== 'channel' && 
+      b.type !== 'zone' && 
+      b.type !== 'scan' &&
+      b.metadata !== METADATA.EMPTY &&
+      b.metadata !== METADATA.EMPTY_ALT
+    );
+    
+    console.log(`Found ${contactBlocks.length} potential contact blocks`);
+    
+    if (contactBlocks.length === 0) {
+      console.warn('No contact blocks found');
+      return [];
+    }
+    
+    // Read all contact blocks
+    this.onProgress?.(20, `Reading ${contactBlocks.length} contact block(s)...`);
+    const allContactData = await readAndConcatenateBlocks(
+      this.connection!,
+      contactBlocks,
+      this.onProgress,
+      undefined
+    );
+    
+    // Parse contacts
+    this.onProgress?.(80, 'Parsing contacts...');
+    const contacts = parseContacts(allContactData);
+    
+    console.log(`Successfully parsed ${contacts.length} contacts`);
+    this.onProgress?.(100, `Successfully read ${contacts.length} contacts`);
+    
+    return contacts;
+  }
+  
+  /**
+   * Fallback: Try to discover contacts in the main config range
+   * This is used when V-frame 0x0F is not available
+   */
+  private async readContactsFromConfigRange(): Promise<Contact[]> {
+    this.onProgress?.(10, 'Discovering contacts in config range...');
+    
+    // Use discovered blocks if available, otherwise discover
+    if (this.discoveredBlocks.length === 0) {
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo!.memoryLayout.configStart,
+        this.radioInfo!.memoryLayout.configEnd,
+        (current, total) => {
+          const progress = 10 + Math.floor((current / total) * 5); // 10-15%
+          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+    
+    // Look for unknown blocks that might be contacts
+    const potentialContactBlocks = this.discoveredBlocks.filter(b => 
+      b.type === 'unknown' &&
+      b.metadata !== METADATA.EMPTY &&
+      b.metadata !== METADATA.EMPTY_ALT
+    );
+    
+    if (potentialContactBlocks.length === 0) {
+      console.warn('No potential contact blocks found in config range');
+      return [];
+    }
+    
+    console.log(`Found ${potentialContactBlocks.length} potential contact blocks in config range`);
+    
+    // Read and parse
+    const allContactData = await readAndConcatenateBlocks(
+      this.connection!,
+      potentialContactBlocks,
+      this.onProgress,
+      undefined
+    );
+    
+    this.onProgress?.(80, 'Parsing contacts...');
+    const contacts = parseContacts(allContactData);
+    
+    console.log(`Successfully parsed ${contacts.length} contacts from config range`);
+    this.onProgress?.(100, `Successfully read ${contacts.length} contacts`);
+    
+    return contacts;
   }
 
   async writeContacts(_contacts: Contact[]): Promise<void> {

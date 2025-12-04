@@ -25,12 +25,15 @@ export async function discoverMemoryBlocks(
   const blocks: MemoryBlock[] = [];
 
   // Calculate number of 4KB blocks
-  const blockCount = Math.floor((endAddr - startAddr + 1) / 0x1000);
-  console.log(`Reading metadata from ${blockCount} blocks from 0x${startAddr.toString(16)} to 0x${endAddr.toString(16)}`);
+  // endAddr is the last byte of the last block, so we need to align to block boundaries
+  // Example: 0x001000 to 0x0C8FFF means blocks from 0x001000 to 0x0C8000 (inclusive)
+  const alignedEndAddr = Math.floor(endAddr / 0x1000) * 0x1000; // Align end to block boundary
+  const blockCount = Math.floor((alignedEndAddr - startAddr) / 0x1000) + 1;
+  console.log(`Reading metadata from ${blockCount} blocks from 0x${startAddr.toString(16)} to 0x${alignedEndAddr.toString(16)} (endAddr was 0x${endAddr.toString(16)})`);
 
   // Scan 4KB-aligned blocks - read metadata byte at offset 0xFFF for each block
   let blockIndex = 0;
-  for (let addr = startAddr; addr <= endAddr; addr += 0x1000) {
+  for (let addr = startAddr; addr <= alignedEndAddr; addr += 0x1000) {
     // Read metadata byte at offset 0xFFF (last byte of 4KB block)
     const metadataAddr = addr + 0xFFF;
     const metadataData = await connection.readMemory(metadataAddr, 1);
@@ -43,20 +46,20 @@ export async function discoverMemoryBlocks(
       type = 'channel'; // Channel blocks (0x12 = first, 0x41 = last)
     } else if (metadata === 0x5c) {
       type = 'zone'; // Zones identified as metadata 0x5c (92) from debug export analysis
-    } else if (metadata === 0x0F) {
-      type = 'rxgroup';
-    } else if (metadata === 0x0A) {
-      type = 'message';
     } else if (metadata === 0x11) {
       type = 'scan'; // Scan lists identified as metadata 0x11 (17) from debug export analysis
-    } else if (metadata === 0x06) {
-      type = 'unknown'; // Previously thought to be scan lists, but appears unused
-    } else if (metadata === 0x07) {
-      type = 'unknown'; // Config header
-    } else if (metadata === 0x10) {
-      type = 'unknown'; // Emergency systems
     } else if (metadata === 0xFF) {
       type = 'empty'; // Invalid/unavailable
+    } else {
+      // All other metadata values are marked as 'unknown' for analysis
+      // Known but unhandled metadata values:
+      // 0x06 - Previously thought to be scan lists, but appears unused
+      // 0x07 - Config header
+      // 0x0A - Message/Text messages
+      // 0x0F - RX Groups/Memberships (V-frame 0x0E range)
+      // 0x10 - Emergency systems
+      // Others - Need investigation
+      type = 'unknown';
     }
 
     blocks.push({ address: addr, metadata, type });
@@ -72,7 +75,22 @@ export async function discoverMemoryBlocks(
     }
   }
 
-  console.log(`Discovered ${blocks.length} blocks: ${blocks.filter(b => b.type === 'channel').length} channel blocks`);
+  const channelCount = blocks.filter(b => b.type === 'channel').length;
+  const zoneCount = blocks.filter(b => b.type === 'zone').length;
+  const scanCount = blocks.filter(b => b.type === 'scan').length;
+  const unknownCount = blocks.filter(b => b.type === 'unknown').length;
+  const emptyCount = blocks.filter(b => b.type === 'empty').length;
+  
+  console.log(`Discovered ${blocks.length} blocks:`);
+  console.log(`  Channels: ${channelCount}, Zones: ${zoneCount}, Scan Lists: ${scanCount}`);
+  console.log(`  Unknown: ${unknownCount}, Empty: ${emptyCount}`);
+  
+  // Log unknown metadata values for investigation
+  if (unknownCount > 0) {
+    const unknownMetadata = new Set(blocks.filter(b => b.type === 'unknown').map(b => b.metadata));
+    console.log(`  Unknown metadata values: ${Array.from(unknownMetadata).sort((a, b) => a - b).map(m => `0x${m.toString(16).padStart(2, '0')}`).join(', ')}`);
+  }
+  
   return blocks;
 }
 

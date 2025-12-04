@@ -3,6 +3,7 @@ import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
 import { useRadioStore } from '../../store/radioStore';
 import { exportFullDebug, downloadDebug } from '../../services/debugExport';
+import { analyzeMetadata, generateMetadataReport } from '../../services/metadataAnalysis';
 
 export interface LogEntry {
   timestamp: Date;
@@ -111,6 +112,21 @@ export const DebugPanel: React.FC = () => {
     downloadDebug(debugData, `neonplug-debug-${timestamp}.json`);
   };
 
+  const handleMetadataAnalysisExport = () => {
+    if (blockMetadata.size === 0) {
+      alert('No block metadata available. Please read from radio first.');
+      return;
+    }
+
+    const analysis = analyzeMetadata(blockMetadata, blockData);
+    const report = generateMetadataReport(analysis);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    downloadDebug(report, `neonplug-metadata-analysis-${timestamp}.txt`);
+  };
+
+  // Calculate metadata summary for display
+  const metadataSummary = blockMetadata.size > 0 ? analyzeMetadata(blockMetadata, blockData) : null;
+
   const getLogColor = (level: LogEntry['level']) => {
     switch (level) {
       case 'error': return 'text-red-400';
@@ -151,6 +167,13 @@ export const DebugPanel: React.FC = () => {
             <span className="text-xs text-gray-400">Console Output</span>
             <div className="flex gap-2">
               <button
+                onClick={handleMetadataAnalysisExport}
+                className="text-xs text-neon-cyan hover:text-neon-cyan-bright px-2 py-1"
+                title="Export metadata analysis report"
+              >
+                Metadata Report
+              </button>
+              <button
                 onClick={handleDebugExport}
                 className="text-xs text-neon-cyan hover:text-neon-cyan-bright px-2 py-1"
               >
@@ -164,6 +187,20 @@ export const DebugPanel: React.FC = () => {
               </button>
             </div>
           </div>
+          
+          {metadataSummary && (
+            <div className="px-4 py-2 border-b border-neon-cyan border-opacity-20 bg-deep-gray text-xs">
+              <div className="text-neon-cyan font-semibold mb-1">Metadata Summary:</div>
+              <div className="text-gray-300 space-y-0.5">
+                <div>Total: {metadataSummary.totalBlocks} | Known: {metadataSummary.knownBlocks} | Unknown: {metadataSummary.unknownBlocks} | Empty: {metadataSummary.emptyBlocks}</div>
+                {metadataSummary.unknownMetadataValues.length > 0 && (
+                  <div className="text-yellow-400">
+                    Unknown metadata: {metadataSummary.unknownMetadataValues.map(m => `0x${m.toString(16).padStart(2, '0')}`).join(', ')}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           
           <div className="flex-1 overflow-y-auto p-2 font-mono text-xs">
             {logs.length === 0 ? (

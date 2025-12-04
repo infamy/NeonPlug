@@ -4,7 +4,7 @@
  */
 
 import type { Channel, Contact, Zone, ScanList } from '../../models';
-import { decodeBCDFrequency, decodeCTCSSDCS } from './encoding';
+import { decodeBCDFrequency, decodeCTCSSDCS, encodeBCDFrequency, encodeCTCSSDCS } from './encoding';
 
 /**
  * Parse a single channel from 48-byte data
@@ -211,6 +211,151 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
 }
 
 /**
+ * Encode a channel to 48-byte binary data
+ * This is the reverse of parseChannel()
+ */
+export function encodeChannel(channel: Channel): Uint8Array {
+  const data = new Uint8Array(48);
+  
+  // Initialize to 0xFF (empty channel marker)
+  data.fill(0xFF);
+  
+  // Name (0x00-0x0F, 16 bytes, null-terminated)
+  const nameBytes = new TextEncoder().encode(channel.name.slice(0, 16));
+  data.set(nameBytes, 0);
+  if (nameBytes.length < 16) {
+    data[nameBytes.length] = 0; // Null terminator
+  }
+
+  // RX Frequency (0x10-0x13, 4 bytes BCD)
+  const rxFreqBytes = encodeBCDFrequency(channel.rxFrequency);
+  data.set(rxFreqBytes, 0x10);
+
+  // TX Frequency (0x14-0x17, 4 bytes BCD)
+  const txFreqBytes = encodeBCDFrequency(channel.txFrequency);
+  data.set(txFreqBytes, 0x14);
+
+  // Mode flags (0x18)
+  const modeMap: Record<Channel['mode'], number> = {
+    'Analog': 0,
+    'Digital': 1,
+    'Fixed Analog': 2,
+    'Fixed Digital': 3,
+  };
+  const channelMode = modeMap[channel.mode] || 0;
+  let modeFlags = (channelMode << 4) & 0xF0;
+  if (channel.forbidTx) modeFlags |= 0x08;
+  const busyLockValue = channel.busyLock === 'Off' ? 0 : channel.busyLock === 'Carrier' ? 1 : 2;
+  modeFlags |= (busyLockValue << 1) & 0x06;
+  if (channel.loneWorker) modeFlags |= 0x01;
+  data[0x18] = modeFlags;
+
+  // Scan & Bandwidth (0x19)
+  let scanBw = 0;
+  if (channel.bandwidth === '25kHz') scanBw |= 0x80; // Bit 7: 1=25kHz, 0=12.5kHz
+  if (channel.scanAdd) scanBw |= 0x40; // Bit 6
+  scanBw |= (channel.scanListId << 2) & 0x3C; // Bits 5-2
+  data[0x19] = scanBw;
+
+  // Talkaround & APRS (0x1A)
+  let talkaroundAprs = 0;
+  if (channel.forbidTalkaround) talkaroundAprs |= 0x80; // Bit 7
+  if (channel.aprsReceive) talkaroundAprs |= 0x04; // Bit 2
+  talkaroundAprs |= channel.reverseFreq & 0x03; // Bits 1-0
+  data[0x1A] = talkaroundAprs;
+
+  // Emergency (0x1B)
+  let emergency = 0;
+  if (channel.emergencyIndicator) emergency |= 0x80; // Bit 7
+  if (channel.emergencyAck) emergency |= 0x40; // Bit 6
+  emergency |= channel.emergencySystemId & 0x1F; // Bits 4-0
+  data[0x1B] = emergency;
+
+  // Power & APRS (0x1C)
+  const powerValue = channel.power === 'Low' ? 0 : channel.power === 'Medium' ? 1 : 2;
+  const aprsReportValue = channel.aprsReportMode === 'Off' ? 0 : channel.aprsReportMode === 'Digital' ? 1 : 2;
+  data[0x1C] = ((powerValue << 4) & 0xF0) | ((aprsReportValue << 2) & 0x0C);
+
+  // Analog features (0x1D)
+  let analogFeatures = 0;
+  if (channel.voxFunction) analogFeatures |= 0x80; // Bit 7
+  if (channel.scramble) analogFeatures |= 0x40; // Bit 6
+  if (channel.compander) analogFeatures |= 0x20; // Bit 5
+  if (channel.talkback) analogFeatures |= 0x10; // Bit 4
+  data[0x1D] = analogFeatures;
+
+  // Squelch (0x1E)
+  data[0x1E] = channel.squelchLevel & 0xFF;
+
+  // PTT ID (0x1F)
+  let pttIdSettings = channel.pttId & 0x3F; // Bits 5-0
+  if (channel.pttIdDisplay) pttIdSettings |= 0x40; // Bit 6
+  data[0x1F] = pttIdSettings;
+
+  // Color Code (0x20)
+  data[0x20] = channel.colorCode & 0x0F;
+
+  // RX CTCSS/DCS (0x21-0x22)
+  const rxCtcssDcsBytes = encodeCTCSSDCS(channel.rxCtcssDcs);
+  data.set(rxCtcssDcsBytes, 0x21);
+
+  // TX CTCSS/DCS (0x23-0x24)
+  const txCtcssDcsBytes = encodeCTCSSDCS(channel.txCtcssDcs);
+  data.set(txCtcssDcsBytes, 0x23);
+
+  // Additional flags (0x25)
+  let additionalFlags = 0;
+  if (channel.companderDup) additionalFlags |= 0x20; // Bit 5
+  if (channel.voxRelated) additionalFlags |= 0x10; // Bit 4
+  data[0x25] = additionalFlags;
+
+  // RX Squelch & PTT ID (0x26)
+  const rxSquelchModeMap: Record<Channel['rxSquelchMode'], number> = {
+    'Carrier/CTC': 0,
+    'Optional': 1,
+    'CTC&Opt': 2,
+    'CTC|Opt': 3,
+  };
+  const rxSquelchValue = rxSquelchModeMap[channel.rxSquelchMode] || 0;
+  data[0x26] = (rxSquelchValue << 4) & 0x70;
+
+  // Signaling (0x27)
+  const signalingTypeMap: Record<Channel['signalingType'], number> = {
+    'None': 0,
+    'DTMF': 1,
+    'Two Tone': 2,
+    'Five Tone': 3,
+    'MDC1200': 4,
+  };
+  const signalingValue = signalingTypeMap[channel.signalingType] || 0;
+  data[0x27] = ((channel.stepFrequency << 4) & 0xF0) | (signalingValue & 0x0F);
+
+  // Reserved (0x28)
+  data[0x28] = 0x00;
+
+  // PTT ID Type (0x29)
+  const pttIdTypeMap: Record<Channel['pttIdType'], number> = {
+    'Off': 0,
+    'BOT': 1,
+    'EOT': 2,
+    'Both': 3,
+  };
+  const pttIdTypeValue = pttIdTypeMap[channel.pttIdType] || 0;
+  data[0x29] = (pttIdTypeValue << 4) & 0xF0;
+
+  // Reserved (0x2A)
+  data[0x2A] = 0x00;
+
+  // Contact ID (0x2B)
+  data[0x2B] = channel.contactId & 0xFF;
+
+  // Reserved (0x2C-0x2F)
+  // Already initialized to 0xFF, which is fine
+
+  return data;
+}
+
+/**
  * Parse zones from zone block data
  * 
  * Zone structure (from debug analysis):
@@ -357,6 +502,46 @@ export function parseZones(
   }
 
   return zones;
+}
+
+/**
+ * Encode a zone to 145-byte binary data
+ * This is the reverse of parseZones()
+ */
+export function encodeZone(zone: Zone, _zoneIndex: number): Uint8Array {
+  const data = new Uint8Array(145);
+  
+  // Initialize to 0xFF (empty zone marker)
+  data.fill(0xFF);
+  
+  // Name (bytes 0-10, 11 bytes, null-terminated)
+  const nameBytes = new TextEncoder().encode(zone.name.slice(0, 11));
+  data.set(nameBytes, 0);
+  if (nameBytes.length < 11) {
+    data[nameBytes.length] = 0; // Null terminator
+  }
+  
+  // Padding (bytes 11-15, 5 bytes of 0xFF)
+  // Already initialized to 0xFF
+  
+  // Channel count (byte 16)
+  const channelCount = Math.min(zone.channels.length, 64); // Max 64 channels per zone
+  data[16] = channelCount;
+  
+  // Channels (bytes 17-144, 16-bit little-endian)
+  // Each channel is 2 bytes (little-endian)
+  for (let i = 0; i < channelCount && i < 64; i++) {
+    const chOffset = 17 + (i * 2);
+    const chNum = zone.channels[i];
+    
+    // Write 16-bit little-endian (low byte first)
+    data[chOffset] = chNum & 0xFF;
+    data[chOffset + 1] = (chNum >> 8) & 0xFF;
+  }
+  
+  // Remaining bytes (17 + channelCount*2 to 144) are already 0xFF (padding)
+  
+  return data;
 }
 
 /**

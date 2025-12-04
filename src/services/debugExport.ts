@@ -4,6 +4,7 @@
  */
 
 import type { Channel, Zone } from '../models';
+import { analyzeMetadata, exportMetadataAnalysis } from './metadataAnalysis';
 
 export interface RawChannelData {
   channelNumber: number;
@@ -144,12 +145,19 @@ export function exportFullDebug(
     blockDataArray.sort((a, b) => parseInt(a.address, 16) - parseInt(b.address, 16));
   }
   
+  // Analyze metadata if available
+  let metadataAnalysis = null;
+  if (allBlockMetadata) {
+    metadataAnalysis = analyzeMetadata(allBlockMetadata, allBlockData);
+  }
+
   const debugData = {
     channels: channelDebug,
     zones: zoneDebug,
     consoleLogs: consoleLogs || [],
     blockMetadata: blockMetadataArray,
     blockData: blockDataArray,
+    metadataAnalysis: metadataAnalysis ? JSON.parse(exportMetadataAnalysis(metadataAnalysis)) : null,
     metadata: {
       channelCount: channels.length,
       zoneCount: zones.length,

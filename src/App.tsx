@@ -6,6 +6,7 @@ import { ScanListsTab } from './components/scanlists/ScanListsTab';
 import { ContactsTab } from './components/contacts/ContactsTab';
 import { SettingsTab } from './components/settings/SettingsTab';
 import { SmartImportTab } from './components/import/SmartImportTab';
+import { AboutTab } from './components/about/AboutTab';
 import { DebugPanel } from './components/ui/DebugPanel';
 import { StartupModal } from './components/ui/StartupModal';
 import { useChannelsStore } from './store/channelsStore';
@@ -123,6 +124,8 @@ function App() {
         return <SettingsTab />;
       case 'import':
         return <SmartImportTab />;
+      case 'about':
+        return <AboutTab />;
       default:
         return <ChannelsTab />;
     }
