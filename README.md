@@ -1,8 +1,10 @@
 # NEONPLUG
 
-Cyberpunk-themed Radio CPS (Channel Programming Software) for Baofeng DM-32UV.
+WEB Based CPS for Baofeng DM-32UV.
 
-🌐 **Try it live:** [https://www.meshmeld.com/NeonPlug/](https://www.meshmeld.com/NeonPlug/)
+** CURRENTLY READONLY SUPPORT **
+
+**Try it live:** [https://www.meshmeld.com/NeonPlug/](https://www.meshmeld.com/NeonPlug/)
 
 ## Features
 
@@ -62,9 +64,7 @@ src/
 
 ## Development Status
 
-🚧 **In Development** - Phase 1: Foundation
-
-See [PLAN.md](./PLAN.md) for full development plan.
+Coded and documented with the assistance of AI. Keyword ASSISTANCE.
 
 ## License
 
