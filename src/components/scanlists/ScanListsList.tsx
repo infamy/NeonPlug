@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useScanListsStore } from '../../store/scanListsStore';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { ScanList } from '../../models/ScanList';
 
 export const ScanListsList: React.FC = () => {
-  const { scanLists, selectedScanList, setSelectedScanList, updateScanList } = useScanListsStore();
+  const { scanLists, selectedScanList, setSelectedScanList } = useScanListsStore();
 
   const selectedScanListData = scanLists.find(sl => sl.name === selectedScanList);
 

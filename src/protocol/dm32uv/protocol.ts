@@ -8,11 +8,41 @@ import { discoverMemoryBlocks, readChannelCount, readChannelBlocks, type MemoryB
 import { parseChannel, parseZones, parseScanLists } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList } from '../../models';
+import type { WebSerialPort } from './types';
+import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION } from './constants';
+import {
+  requireConnection,
+  requireDiscoveredBlocks,
+  checkEmptyBlocks,
+  readAndConcatenateBlocks,
+  storeRawData,
+} from './helpers';
 
+/**
+ * DM-32UV Protocol Implementation
+ * 
+ * Implements the RadioProtocol interface for the Baofeng DM-32UV radio.
+ * Handles connection, V-frame queries, memory block discovery, and data parsing.
+ * 
+ * @example
+ * ```typescript
+ * const protocol = new DM32UVProtocol();
+ * protocol.onProgress = (progress, message) => console.log(`${progress}%: ${message}`);
+ * await protocol.connect();
+ * const channels = await protocol.readChannels();
+ * await protocol.disconnect();
+ * ```
+ */
 export class DM32UVProtocol implements RadioProtocol {
   private connection: DM32Connection | null = null;
-  private port: any = null; // SerialPort from Web Serial API
+  private port: WebSerialPort | null = null;
   private radioInfo: RadioInfo | null = null;
+  
+  /**
+   * Progress callback for long-running operations
+   * @param progress Progress percentage (0-100)
+   * @param message Status message
+   */
   public onProgress?: (progress: number, message: string) => void;
   public rawChannelData: Map<number, { data: Uint8Array; blockAddr: number; offset: number }> = new Map();
   public rawZoneData: Map<string, { data: Uint8Array; zoneNum: number; offset: number }> = new Map();
@@ -21,6 +51,16 @@ export class DM32UVProtocol implements RadioProtocol {
   public blockData: Map<number, Uint8Array> = new Map();
   private discoveredBlocks: MemoryBlock[] = []; // Store discovered blocks for reuse
 
+  /**
+   * Connect to the radio via Web Serial API
+   * 
+   * Opens a serial port connection, queries V-frames for radio information,
+   * and enters programming mode. The user will be prompted to select a port.
+   * 
+   * @throws {Error} If Web Serial API is not supported
+   * @throws {Error} If port is already in use
+   * @throws {Error} If connection handshake fails
+   */
   async connect(): Promise<void> {
     try {
       // Request serial port
@@ -28,7 +68,7 @@ export class DM32UVProtocol implements RadioProtocol {
         throw new Error('Web Serial API not supported. Please use Chrome/Edge.');
       }
 
-      const port = await (navigator as any).serial.requestPort();
+      const port = await (navigator as any).serial.requestPort() as WebSerialPort;
       
       // Check if port is already open
       // readable and writable being non-null indicates the port is open
@@ -43,22 +83,23 @@ export class DM32UVProtocol implements RadioProtocol {
       } else {
         // Port is not open, so open it
         try {
-          await port.open({ baudRate: 115200 });
-        } catch (e: any) {
+          await port.open({ baudRate: CONNECTION.BAUD_RATE });
+        } catch (e: unknown) {
+          const error = e as Error;
           // If it says already open (race condition), check for locked streams
-          if (e.message && e.message.includes('already open')) {
+          if (error.message && error.message.includes('already open')) {
             if (port.readable?.locked || port.writable?.locked) {
               throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
             }
             console.log('Port opened by another process, will use existing connection');
           } else {
-            throw new Error(`Failed to open port: ${e instanceof Error ? e.message : 'Unknown error'}`);
+            throw new Error(`Failed to open port: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
         }
       }
       
       // Brief delay after opening port (as per spec)
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, CONNECTION.INIT_DELAY));
 
       this.port = port;
       this.connection = new DM32Connection();
@@ -67,39 +108,22 @@ export class DM32UVProtocol implements RadioProtocol {
       // Query V-frames to get radio info
       const vframes = await this.connection.queryVFrames();
 
-      // Parse firmware version (V-frame 0x01)
-      const firmwareData = vframes.get(0x01);
-      const firmware = firmwareData ? new TextDecoder().decode(firmwareData).replace(/\0/g, '').trim() : 'Unknown';
-
-      // Parse build date (V-frame 0x03)
-      const buildDateData = vframes.get(0x03);
-      const buildDate = buildDateData ? new TextDecoder().decode(buildDateData).replace(/\0/g, '').trim() : '';
-
-      // Parse DSP version (V-frame 0x04)
-      const dspData = vframes.get(0x04);
-      const dspVersion = dspData ? new TextDecoder().decode(dspData).replace(/\0/g, '').trim() : '';
-
-      // Parse radio version (V-frame 0x05)
-      const radioVersionData = vframes.get(0x05);
-      const radioVersion = radioVersionData ? new TextDecoder().decode(radioVersionData).replace(/\0/g, '').trim() : '';
-
-      // Parse code plug version (V-frame 0x0B)
-      const codeplugData = vframes.get(0x0B);
-      const codeplugVersion = codeplugData ? new TextDecoder().decode(codeplugData).replace(/\0/g, '').trim() : '';
+      // Parse V-frame data
+      const firmware = this.parseVFrameString(vframes, VFRAME.FIRMWARE, 'Unknown');
+      const buildDate = this.parseVFrameString(vframes, VFRAME.BUILD_DATE, '');
+      const dspVersion = this.parseVFrameString(vframes, VFRAME.DSP_VERSION, '');
+      const radioVersion = this.parseVFrameString(vframes, VFRAME.RADIO_VERSION, '');
+      const codeplugVersion = this.parseVFrameString(vframes, VFRAME.CODEPLUG_VERSION, '');
 
       // Parse memory layout (V-frame 0x0A) - Main config block range
-      // Format from serial capture: 56 0a 08 00 10 00 00 ff 8f 0c 00
-      // Header: 56 0a 08 (V, ID, length=8)
-      // Data: 00 10 00 00 ff 8f 0c 00 (8 bytes: start_addr + end_addr, both little-endian)
-      const configRange = vframes.get(0x0A);
+      // Format: 8 bytes = start_addr (4 bytes LE) + end_addr (4 bytes LE)
+      const configRange = vframes.get(VFRAME.MEMORY_LAYOUT);
       if (!configRange || configRange.length < 8) {
         throw new Error('Failed to get memory layout');
       }
 
-      // V-frame 0x0A data format: 8 bytes = start_addr (4 bytes LE) + end_addr (4 bytes LE)
-      // Example: 00 10 00 00 = 0x001000, ff 8f 0c 00 = 0x0C8FFF
-      const startAddr = configRange[0] | (configRange[1] << 8) | (configRange[2] << 16) | (configRange[3] << 24);
-      const endAddr = configRange[4] | (configRange[5] << 8) | (configRange[6] << 16) | (configRange[7] << 24);
+      const startAddr = this.readUint32LE(configRange, 0);
+      const endAddr = this.readUint32LE(configRange, 4);
 
       // Note: Other memory ranges (zones, contacts) can be parsed from V-frames if needed
       // const zonesRange = vframes.get(0x08);
@@ -133,6 +157,12 @@ export class DM32UVProtocol implements RadioProtocol {
     }
   }
 
+  /**
+   * Disconnect from the radio
+   * 
+   * Closes the serial port connection and clears all cached data.
+   * Safe to call even if not connected.
+   */
   async disconnect(): Promise<void> {
     if (this.connection) {
       await this.connection.disconnect();
@@ -150,10 +180,23 @@ export class DM32UVProtocol implements RadioProtocol {
     this.discoveredBlocks = [];
   }
 
+  /**
+   * Check if currently connected to the radio
+   * @returns True if connected, false otherwise
+   */
   isConnected(): boolean {
     return this.connection !== null && this.port !== null;
   }
 
+  /**
+   * Get radio information
+   * 
+   * Returns cached radio information from the connection handshake.
+   * Must be called after connect().
+   * 
+   * @returns Radio information including model, firmware, versions, and memory layout
+   * @throws {Error} If not connected
+   */
   async getRadioInfo(): Promise<RadioInfo> {
     if (!this.radioInfo) {
       throw new Error('Not connected to radio');
@@ -161,10 +204,18 @@ export class DM32UVProtocol implements RadioProtocol {
     return this.radioInfo;
   }
 
+  /**
+   * Read all channels from the radio
+   * 
+   * Discovers channel blocks, reads channel data, and parses channel structures.
+   * Progress is reported via the onProgress callback.
+   * 
+   * @returns Array of parsed channel objects
+   * @throws {Error} If not connected
+   * @throws {Error} If no channel blocks are found
+   */
   async readChannels(): Promise<Channel[]> {
-    if (!this.connection || !this.radioInfo) {
-      throw new Error('Not connected to radio');
-    }
+    requireConnection(this.connection, this.radioInfo);
 
     this.onProgress?.(0, 'Discovering channel blocks...');
 
@@ -172,9 +223,9 @@ export class DM32UVProtocol implements RadioProtocol {
     // V-frame 0x0A gives us the range: 200 blocks (800KB / 4KB)
     // We read 1 byte at offset 0xFFF for each block
     const blocks = await discoverMemoryBlocks(
-      this.connection,
-      this.radioInfo.memoryLayout.configStart,
-      this.radioInfo.memoryLayout.configEnd,
+      this.connection!,
+      this.radioInfo!.memoryLayout.configStart,
+      this.radioInfo!.memoryLayout.configEnd,
       (current, total) => {
         const progress = Math.floor((current / total) * 20); // 0-20% for discovery
         this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
@@ -205,9 +256,9 @@ export class DM32UVProtocol implements RadioProtocol {
     channelBlocks.sort((a, b) => a.metadata - b.metadata);
     
     // Find the first channel block (metadata 0x12)
-    const firstChannelBlock = channelBlocks.find(b => b.metadata === 0x12);
+    const firstChannelBlock = channelBlocks.find(b => b.metadata === METADATA.CHANNEL_FIRST);
     if (!firstChannelBlock) {
-      throw new Error('First channel block (metadata 0x12) not found');
+      throw new Error(`First channel block (metadata 0x${METADATA.CHANNEL_FIRST.toString(16)}) not found`);
     }
 
     // Calculate metadata range for logging
@@ -220,13 +271,13 @@ export class DM32UVProtocol implements RadioProtocol {
 
     // Read channel count from first 4 bytes of first block (metadata 0x12)
     console.log(`Reading channel count from first block (metadata 0x12) at 0x${firstChannelBlock.address.toString(16)}`);
-    const channelCount = await readChannelCount(this.connection, firstChannelBlock.address);
+    const channelCount = await readChannelCount(this.connection!, firstChannelBlock.address);
     console.log(`Channel count: ${channelCount}`);
     this.onProgress?.(20, `Reading ${channelCount} channels from ${channelBlocks.length} blocks...`);
 
     // Read all channel blocks
     const channelBlockData = await readChannelBlocks(
-      this.connection,
+      this.connection!,
       channelBlocks,
       (progress, message) => {
         // Map 0-100% to 20-50% range for block reading
@@ -249,19 +300,19 @@ export class DM32UVProtocol implements RadioProtocol {
         continue;
       }
 
-      const isFirstBlock = block.metadata === 0x12;
-      const startOffset = isFirstBlock ? 0x10 : 0x00; // First block starts at 0x10, others at 0x00
+      const isFirstBlock = block.metadata === METADATA.CHANNEL_FIRST;
+      const startOffset = isFirstBlock ? OFFSET.FIRST_CHANNEL : 0x00;
       
       // First block has 84 channels (not 85) due to the 16-byte header
       // Last channel in first block is at: 0x10 + 83*48 = 0xFA0 (4000)
       // Subsequent blocks have 85 channels each
       const maxOffset = isFirstBlock 
-        ? 0x10 + 83 * 48  // First block: stop at offset 0xFA0 (4000) = 84 channels
-        : blockDataBytes.length - 48; // Other blocks: use full block (85 channels)
+        ? OFFSET.FIRST_CHANNEL + 83 * BLOCK_SIZE.CHANNEL  // First block: 84 channels
+        : blockDataBytes.length - BLOCK_SIZE.CHANNEL;     // Other blocks: 85 channels
       
       console.log(`Processing block metadata 0x${block.metadata.toString(16)} at 0x${block.address.toString(16)}, isFirst: ${isFirstBlock}, startOffset: 0x${startOffset.toString(16)}, maxOffset: 0x${maxOffset.toString(16)}`);
 
-      for (let offset = startOffset; offset <= maxOffset; offset += 48) {
+      for (let offset = startOffset; offset <= maxOffset; offset += BLOCK_SIZE.CHANNEL) {
         // Stop if we've reached the channel count
         if (channelIndex > channelCount) {
           console.log(`Reached channel count limit (${channelCount}), stopping`);
@@ -269,8 +320,8 @@ export class DM32UVProtocol implements RadioProtocol {
         }
 
         try {
-          const channelData = blockDataBytes.slice(offset, offset + 48);
-          if (channelData.length < 48) {
+          const channelData = blockDataBytes.slice(offset, offset + BLOCK_SIZE.CHANNEL);
+          if (channelData.length < BLOCK_SIZE.CHANNEL) {
             console.warn(`Incomplete channel data at block 0x${block.address.toString(16)} offset 0x${offset.toString(16)}`);
             break;
           }
@@ -332,57 +383,35 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   async readZones(): Promise<Zone[]> {
-    if (!this.connection || !this.radioInfo) {
-      throw new Error('Not connected to radio');
-    }
-
+    requireConnection(this.connection, this.radioInfo);
     this.onProgress?.(0, 'Reading zones...');
+    requireDiscoveredBlocks(this.discoveredBlocks);
 
-    // Reuse discovered blocks from channel reading
-    if (this.discoveredBlocks.length === 0) {
-      throw new Error('No blocks discovered. Read channels first.');
-    }
+    // Zone metadata identified from debug export: 0x5c
+    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE);
+    console.log(`Found ${zoneBlocks.length} zone blocks (metadata 0x${METADATA.ZONE.toString(16)})`);
 
-    // Zone metadata identified from debug export: 0x5c (92)
-    // Found DEFCON and Vector zones in block with metadata 0x5c
-    const zoneMetadata = 0x5c;
-    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === zoneMetadata);
-    console.log(`Found ${zoneBlocks.length} zone blocks (metadata 0x${zoneMetadata.toString(16)})`);
-
-    if (zoneBlocks.length === 0) {
-      console.log('No zone blocks found');
-      this.onProgress?.(100, 'No zones found');
+    if (checkEmptyBlocks(zoneBlocks, 'zone', this.onProgress)) {
       return [];
     }
 
     // Read all zone blocks and concatenate
-    let allZoneData = new Uint8Array(0);
-    for (let i = 0; i < zoneBlocks.length; i++) {
-      const block = zoneBlocks[i];
-      this.onProgress?.(Math.floor((i / zoneBlocks.length) * 50), `Reading zone block ${i + 1} of ${zoneBlocks.length}...`);
-      const blockData = await this.connection.readMemory(block.address, 4096);
-      const newAllZoneData = new Uint8Array(allZoneData.length + blockData.length);
-      newAllZoneData.set(allZoneData);
-      newAllZoneData.set(blockData, allZoneData.length);
-      allZoneData = newAllZoneData;
-      
-      // Add delay between block reads to avoid overwhelming the radio
-      if (i < zoneBlocks.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-    }
+    const allZoneData = await readAndConcatenateBlocks(
+      this.connection!,
+      zoneBlocks,
+      this.onProgress
+    );
 
     this.onProgress?.(50, 'Parsing zone data...');
     const zones = parseZones(allZoneData, (zoneNum, rawData, name) => {
       // Store raw zone data for debug export
-      if (!(this as any).rawZoneData) {
-        (this as any).rawZoneData = new Map();
-      }
-      (this as any).rawZoneData.set(name, {
-        data: new Uint8Array(rawData),
-        zoneNum: zoneNum,
-        offset: 16 + (zoneNum - 1) * 145, // Zones are 145 bytes apart, starting at offset 16
-      });
+      storeRawData(
+        this.rawZoneData,
+        name,
+        rawData,
+        { zoneNum },
+        OFFSET.ZONE_START + (zoneNum - 1) * BLOCK_SIZE.ZONE
+      );
     });
 
     console.log(`Successfully parsed ${zones.length} zones`);
@@ -396,62 +425,36 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   async readScanLists(): Promise<ScanList[]> {
-    if (!this.connection || !this.radioInfo) {
-      throw new Error('Not connected to radio');
-    }
-
+    requireConnection(this.connection, this.radioInfo);
     this.onProgress?.(0, 'Reading scan lists...');
+    requireDiscoveredBlocks(this.discoveredBlocks);
 
-    // Reuse discovered blocks from channel reading
-    if (this.discoveredBlocks.length === 0) {
-      throw new Error('No blocks discovered. Read channels first.');
-    }
+    const scanBlocks = this.discoveredBlocks.filter(b => b.type === 'scan' && b.metadata === METADATA.SCAN_LIST);
+    console.log(`Found ${scanBlocks.length} scan list blocks (metadata 0x${METADATA.SCAN_LIST.toString(16)})`);
 
-    const scanBlocks = this.discoveredBlocks.filter(b => b.type === 'scan' && b.metadata === 0x11);
-    console.log(`Found ${scanBlocks.length} scan list blocks (metadata 0x11)`);
-
-    if (scanBlocks.length === 0) {
-      console.log('No scan list blocks found');
-      this.onProgress?.(100, 'No scan lists found');
+    if (checkEmptyBlocks(scanBlocks, 'scan list', this.onProgress)) {
       return [];
     }
 
     // Read all scan list blocks and concatenate
-    let allScanListData = new Uint8Array(0);
-    for (let i = 0; i < scanBlocks.length; i++) {
-      const block = scanBlocks[i];
-      this.onProgress?.(Math.floor((i / scanBlocks.length) * 50), `Reading scan list block ${i + 1} of ${scanBlocks.length}...`);
-      const blockData = await this.connection.readMemory(block.address, 4096);
-      
-      // Store scan list block data for debug export
-      if (!this.blockData) {
-        this.blockData = new Map();
+    // Store block data for debug export
+    const allScanListData = await readAndConcatenateBlocks(
+      this.connection!,
+      scanBlocks,
+      this.onProgress,
+      (block, blockData) => {
+        this.blockData.set(block.address, blockData);
       }
-      this.blockData.set(block.address, blockData);
-      
-      const newAllScanListData = new Uint8Array(allScanListData.length + blockData.length);
-      newAllScanListData.set(allScanListData);
-      newAllScanListData.set(blockData, allScanListData.length);
-      allScanListData = newAllScanListData;
-      
-      // Add delay between block reads to avoid overwhelming the radio
-      if (i < scanBlocks.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-    }
+    );
 
     this.onProgress?.(50, 'Parsing scan list data...');
     console.log(`Parsing scan list data, total size: ${allScanListData.length} bytes`);
     const scanLists = parseScanLists(allScanListData, (listNum, rawData, name) => {
       // Store raw scan list data for debug export
-      if (!(this as any).rawScanListData) {
-        (this as any).rawScanListData = new Map();
-      }
-      (this as any).rawScanListData.set(name, {
-        data: new Uint8Array(rawData),
-        listNum: listNum,
-        offset: listNum <= 44 ? 16 + (listNum - 1) * 92 : (listNum - 45) * 92,
-      });
+      const offset = listNum <= 44 
+        ? OFFSET.SCAN_LIST_START + (listNum - 1) * BLOCK_SIZE.SCAN_LIST 
+        : (listNum - 45) * BLOCK_SIZE.SCAN_LIST;
+      storeRawData(this.rawScanListData, name, rawData, { listNum }, offset);
       console.log(`Parsed scan list ${listNum}: "${name}" with ${rawData.length >= 25 ? 'channels' : 'no channels'}`);
     });
 
@@ -466,9 +469,7 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   async readContacts(): Promise<Contact[]> {
-    if (!this.connection || !this.radioInfo) {
-      throw new Error('Not connected to radio');
-    }
+    requireConnection(this.connection, this.radioInfo);
 
     // TODO: Find contact block and parse
     this.onProgress?.(0, 'Reading contacts...');
@@ -507,6 +508,40 @@ export class DM32UVProtocol implements RadioProtocol {
   async writeRadioSettings(_settings: RadioSettings): Promise<void> {
     // TODO: Implement settings writing
     throw new Error('Settings writing not yet implemented');
+  }
+
+  /**
+   * Parse a V-frame as a string value
+   * @param vframes Map of V-frame data
+   * @param frameId V-frame ID to parse
+   * @param defaultValue Default value if frame is missing
+   * @returns Decoded string value
+   */
+  private parseVFrameString(
+    vframes: Map<number, Uint8Array>,
+    frameId: number,
+    defaultValue: string
+  ): string {
+    const frameData = vframes.get(frameId);
+    if (!frameData) {
+      return defaultValue;
+    }
+    return new TextDecoder().decode(frameData).replace(/\0/g, '').trim() || defaultValue;
+  }
+
+  /**
+   * Read a 32-bit little-endian unsigned integer from a byte array
+   * @param data Byte array
+   * @param offset Starting offset
+   * @returns 32-bit unsigned integer
+   */
+  private readUint32LE(data: Uint8Array, offset: number): number {
+    return (
+      data[offset] |
+      (data[offset + 1] << 8) |
+      (data[offset + 2] << 16) |
+      (data[offset + 3] << 24)
+    );
   }
 }
 

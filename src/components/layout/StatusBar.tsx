@@ -2,7 +2,7 @@ import React from 'react';
 import { useRadioStore } from '../../store/radioStore';
 
 export const StatusBar: React.FC = () => {
-  const { radioInfo, settings } = useRadioStore();
+  const { radioInfo } = useRadioStore();
 
   return (
     <div className="bg-deep-gray border-b border-neon-cyan px-6 py-2 flex items-center justify-between">

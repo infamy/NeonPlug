@@ -3,20 +3,19 @@
  * Implements the connection sequence as documented in DM32-Protocol-Spec
  */
 
-export interface SerialPort {
-  readable: ReadableStream<Uint8Array>;
-  writable: WritableStream<Uint8Array>;
-  close(): Promise<void>;
-}
+import type { WebSerialPort } from './types';
+
+// Re-export for backward compatibility
+export type SerialPort = WebSerialPort;
 
 export class DM32Connection {
-  private port: SerialPort | null = null;
+  private port: WebSerialPort | null = null;
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private readBuffer: Uint8Array = new Uint8Array(0); // Persistent read buffer
   private isReading: boolean = false; // Prevent concurrent reads
 
-  async connect(port: SerialPort): Promise<void> {
+  async connect(port: WebSerialPort): Promise<void> {
     // Clear any leftover state from previous connections
     this.readBuffer = new Uint8Array(0);
     this.isReading = false;
@@ -25,6 +24,10 @@ export class DM32Connection {
     
     // Check if port already has active readers/writers (locked streams)
     // If so, we can't get new ones - the port is in use
+    if (!port.readable || !port.writable) {
+      throw new Error('Port streams are not available. Port may not be open.');
+    }
+    
     if (port.readable.locked || port.writable.locked) {
       throw new Error('Port has locked streams from a previous connection. Please close other connections first.');
     }
@@ -229,10 +232,15 @@ export class DM32Connection {
       try {
         // Only try to close if streams are not locked
         // If streams are locked, we can't close the port anyway
-        if (!this.port.readable.locked && !this.port.writable.locked) {
-          await this.port.close();
+        if (this.port.readable && this.port.writable) {
+          if (!this.port.readable.locked && !this.port.writable.locked) {
+            await this.port.close();
+          } else {
+            console.warn('Cannot close port: streams are locked');
+          }
         } else {
-          console.warn('Cannot close port: streams are locked');
+          // Streams are null, try to close anyway
+          await this.port.close();
         }
       } catch (e: any) {
         // Port might already be closed or have locked streams
