@@ -109,6 +109,10 @@ export function useRadioConnection() {
       if ((protocol as any).rawScanListData) {
         setRawScanListData((protocol as any).rawScanListData);
       }
+      // Update blockData with scan list blocks
+      if ((protocol as any).blockData) {
+        setBlockData((protocol as any).blockData);
+      }
 
       // Restore original progress handler
       protocol.onProgress = originalScanListProgress;
@@ -132,9 +136,10 @@ export function useRadioConnection() {
           console.warn('Error disconnecting:', e);
         }
       }
-      setConnected(false);
-      setRadioInfo(null);
-      setSettings(null);
+      // Don't clear radio info - keep it displayed after reading
+      // setConnected(false);
+      // setRadioInfo(null);
+      // setSettings(null);
       setIsConnecting(false);
     }
   }, [setConnected, setRadioInfo, setSettings, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData]);

@@ -184,15 +184,15 @@ export class DM32UVProtocol implements RadioProtocol {
     // Store discovered blocks for reuse in zone/scan list reading
     this.discoveredBlocks = blocks;
     
-    // Store all block metadata for debug export
+    // Store ALL block metadata for debug export (including empty blocks)
+    // This helps us find scan lists and other data types
     const blockMetadataMap = new Map<number, { metadata: number; type: string }>();
     for (const block of blocks) {
-      if (block.metadata !== 0x00 && block.metadata !== 0xFF) {
-        blockMetadataMap.set(block.address, {
-          metadata: block.metadata,
-          type: block.type,
-        });
-      }
+      // Include ALL blocks, even empty ones (0x00, 0xFF) so we can see all metadata values
+      blockMetadataMap.set(block.address, {
+        metadata: block.metadata,
+        type: block.type,
+      });
     }
     (this as any).allBlockMetadata = blockMetadataMap;
 
@@ -422,6 +422,13 @@ export class DM32UVProtocol implements RadioProtocol {
       const block = scanBlocks[i];
       this.onProgress?.(Math.floor((i / scanBlocks.length) * 50), `Reading scan list block ${i + 1} of ${scanBlocks.length}...`);
       const blockData = await this.connection.readMemory(block.address, 4096);
+      
+      // Store scan list block data for debug export
+      if (!this.blockData) {
+        this.blockData = new Map();
+      }
+      this.blockData.set(block.address, blockData);
+      
       const newAllScanListData = new Uint8Array(allScanListData.length + blockData.length);
       newAllScanListData.set(allScanListData);
       newAllScanListData.set(blockData, allScanListData.length);
@@ -434,6 +441,7 @@ export class DM32UVProtocol implements RadioProtocol {
     }
 
     this.onProgress?.(50, 'Parsing scan list data...');
+    console.log(`Parsing scan list data, total size: ${allScanListData.length} bytes`);
     const scanLists = parseScanLists(allScanListData, (listNum, rawData, name) => {
       // Store raw scan list data for debug export
       if (!(this as any).rawScanListData) {
@@ -444,9 +452,10 @@ export class DM32UVProtocol implements RadioProtocol {
         listNum: listNum,
         offset: listNum <= 44 ? 16 + (listNum - 1) * 92 : (listNum - 45) * 92,
       });
+      console.log(`Parsed scan list ${listNum}: "${name}" with ${rawData.length >= 25 ? 'channels' : 'no channels'}`);
     });
 
-    console.log(`Successfully parsed ${scanLists.length} scan lists`);
+    console.log(`Successfully parsed ${scanLists.length} scan lists:`, scanLists.map(sl => sl.name));
     this.onProgress?.(100, `Successfully read ${scanLists.length} scan lists`);
     return scanLists;
   }

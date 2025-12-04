@@ -332,8 +332,11 @@ export function parseZones(
 
 /**
  * Parse scan lists from scan list block data
- * Scan lists are 92 bytes each
- * Offset 16 for lists 1-44, offset 0 for lists 45+
+ * Structure discovered from debug analysis:
+ * - Scan lists are NOT at fixed 92-byte boundaries starting at offset 16
+ * - Names are at variable positions: 1, 58, 115, 172 (absolute offsets)
+ * - After name, there's data, then channels start
+ * - Channels are 16-bit LE, 4 bytes apart (2 bytes channel, 2 bytes padding)
  */
 export function parseScanLists(
   data: Uint8Array,
@@ -341,57 +344,129 @@ export function parseScanLists(
 ): ScanList[] {
   const scanLists: ScanList[] = [];
 
-  // Scan lists are 92 bytes each
-  // Lists 1-44 start at offset 16, lists 45+ start at offset 0
-  // Maximum would be ~44 lists (4096 / 92 ≈ 44) for first block
-  // But we can have multiple blocks
+  // Find scan list names by searching for readable ASCII strings
+  // We know the exact positions: 1, 58, 115, 172
+  // But we'll search more carefully to avoid duplicates
+  const foundLists: Array<{ namePos: number; name: string }> = [];
+  const usedPositions = new Set<number>();
   
-  // First, try lists 1-44 (offset 16)
-  for (let listNum = 1; listNum <= 44; listNum++) {
-    const offset = 16 + (listNum - 1) * 92;
-    if (offset + 92 > data.length) break;
-
-    const listData = data.slice(offset, offset + 92);
-
-    // Name (16 bytes, null-terminated)
-    const nameBytes = listData.slice(0, 16);
-    const nullIndex = nameBytes.indexOf(0);
-    const name = new TextDecoder('ascii', { fatal: false })
-      .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : 16))
-      .replace(/\x00/g, '')
-      .trim();
-
-    // Skip empty scan lists
-    if (name.length === 0 || nameBytes[0] === 0xFF || nameBytes[0] === 0x00) {
-      const isAllEmpty = listData.every(b => b === 0xFF || b === 0x00);
-      if (isAllEmpty && listNum > 1) {
-        // Stop if we hit a completely empty scan list (after the first one)
-        break;
-      }
+  // Search through the data for potential scan list names
+  for (let i = 0; i < Math.min(data.length - 10, 500); i++) {
+    // Skip padding bytes
+    if (data[i] === 0x00 || data[i] === 0xFF || data[i] < 32 || data[i] >= 127) {
       continue;
     }
-
-    // CTC scan mode (byte 0x10)
-    const ctcScanMode = listData[0x10];
-
-    // Settings (bytes 0x11-0x18, 8 bytes)
-    const settings = Array.from(listData.slice(0x11, 0x19));
-
-    // Channel list (bytes 0x19-0x58, 64 bytes = up to 16 channels × 4 bytes each)
-    // Per spec: channel_list[64] with up to 16 channels
-    // Format: Each channel entry is 4 bytes, but only first 2 bytes are channel number (16-bit little-endian)
-    // The last 2 bytes of each entry are reserved/padding
-    const channels: number[] = [];
-    for (let i = 0; i < 16; i++) { // Up to 16 channels
-      const chOffset = 0x19 + (i * 4); // Start at byte 0x19, 4 bytes per entry
-      if (chOffset + 2 > listData.length) break;
-      
-      // Read 16-bit little-endian channel number (first 2 bytes of 4-byte entry)
-      const chNum = listData[chOffset] | (listData[chOffset + 1] << 8);
-      if (chNum > 0 && chNum <= 4000) {
-        channels.push(chNum);
+    
+    // Skip if we've already used a position near this one (within 20 bytes)
+    let tooClose = false;
+    for (const usedPos of usedPositions) {
+      if (Math.abs(i - usedPos) < 20) {
+        tooClose = true;
+        break;
       }
     }
+    if (tooClose) continue;
+    
+    // Try to read a name starting here (max 16 bytes per spec)
+    const nameBytes = data.slice(i, i + 16);
+    const nullIndex = nameBytes.indexOf(0);
+    if (nullIndex < 2) continue; // Need at least 2 chars
+    
+    const potentialName = new TextDecoder('ascii', { fatal: false })
+      .decode(nameBytes.slice(0, nullIndex))
+      .replace(/\x00/g, '')
+      .trim();
+    
+    // Check if it looks like a scan list name
+    // Should have letters/numbers, might contain "List", dots, spaces
+    if (potentialName.length >= 2 && 
+        /^[A-Za-z0-9\s\.\-]+$/.test(potentialName) &&
+        (potentialName.includes('List') || 
+         /^[A-Z]{2,}/.test(potentialName) || // Starts with uppercase letters
+         /^[A-Z]/.test(potentialName))) {   // Starts with uppercase
+      
+      // Check if this is a duplicate of an existing name (exact match or substring)
+      const isDuplicate = foundLists.some(l => {
+        const existing = l.name;
+        const newName = potentialName;
+        // Check if one is a substring of the other (but not too short)
+        return existing === newName || 
+               (existing.length > 3 && newName.length > 3 && 
+                (existing.includes(newName) || newName.includes(existing)));
+      });
+      
+      if (!isDuplicate) {
+        foundLists.push({ namePos: i, name: potentialName });
+        usedPositions.add(i);
+        console.log(`Found scan list name "${potentialName}" at offset ${i}`);
+      }
+    }
+  }
+  
+  // Sort by position
+  foundLists.sort((a, b) => a.namePos - b.namePos);
+  
+  // Parse each found scan list
+  for (let listNum = 0; listNum < foundLists.length; listNum++) {
+    const { namePos, name } = foundLists[listNum];
+    
+    // Find where channels start by searching for a SEQUENCE of valid channels after the name
+    // Name is null-terminated, so find the end
+    const nameEnd = namePos + name.length + 1; // +1 for null terminator
+    let channelStart = -1;
+    
+    // Search for a sequence of at least 3 consecutive valid channels
+    // This avoids false matches on single channel numbers that appear in metadata
+    // Channels are 2 bytes apart, so we need to check every 2 bytes
+    for (let i = nameEnd; i < Math.min(nameEnd + 100, data.length - 5); i++) {
+      // Check for at least 3 consecutive valid channels (6 bytes total)
+      const ch1 = data[i] | (data[i + 1] << 8);
+      const ch2 = data[i + 2] | (data[i + 3] << 8);
+      const ch3 = data[i + 4] | (data[i + 5] << 8);
+      
+      // All three must be valid channels
+      if (ch1 > 0 && ch1 <= 4000 && ch2 > 0 && ch2 <= 4000 && ch3 > 0 && ch3 <= 4000) {
+        // Verify this is a sequence - channels should be close together (within 20 of each other)
+        // This ensures we're reading actual channel lists, not random valid numbers
+        if (Math.abs(ch2 - ch1) <= 20 && Math.abs(ch3 - ch2) <= 20) {
+          channelStart = i;
+          break;
+        }
+      }
+    }
+    
+    if (channelStart === -1) {
+      console.warn(`Could not find channel start for scan list "${name}"`);
+      continue;
+    }
+    
+    // Read channels (2 bytes each, 16-bit LE, up to 16 channels)
+    const channels: number[] = [];
+    for (let i = 0; i < 16; i++) {
+      const offset = channelStart + (i * 2); // 2 bytes per channel
+      if (offset + 2 > data.length) break;
+      
+      const chNum = data[offset] | (data[offset + 1] << 8);
+      if (chNum === 0) {
+        break; // End of channel list
+      }
+      if (chNum > 0 && chNum <= 4000) {
+        channels.push(chNum);
+      } else {
+        break; // Invalid channel number
+      }
+    }
+    
+    // Extract 92 bytes for raw data storage (starting from name or before if header exists)
+    let listStart = namePos;
+    if (namePos > 0 && data[namePos - 1] === 0x04) {
+      listStart = namePos - 1; // Include 0x04 header
+    }
+    const listData = data.slice(listStart, Math.min(listStart + 92, data.length));
+
+    // CTC mode and settings - try to find, but for now use defaults
+    const ctcScanMode = 0;
+    const settings = new Array(8).fill(0);
 
     const scanList = {
       name,
@@ -451,5 +526,6 @@ export function parseContacts(data: Uint8Array): Contact[] {
 
   return contacts;
 }
+
 
 
