@@ -23,7 +23,7 @@ export interface Channel {
   loneWorker: boolean;         // Bit 0: 0=Off, 1=On
   
   // Scan & Bandwidth (0x19)
-  bandwidth: Bandwidth;        // Bit 7: 0=25KHz, 1=12.5KHz
+  bandwidth: Bandwidth;        // Bit 7: 0=12.5KHz/Narrow, 1=25KHz/Wide (spec appears inverted)
   scanAdd: boolean;            // Bit 6: 0=Off, 1=On
   scanListId: number;         // Bits 5-2: 0-15
   

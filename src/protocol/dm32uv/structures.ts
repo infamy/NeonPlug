@@ -42,12 +42,20 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   const loneWorker = (modeFlags & 0x01) !== 0;
 
   // Scan & Bandwidth (0x19)
+  // Bit 7: Bandwidth (0=12.5kHz/Narrow, 1=25kHz/Wide) - NOTE: Spec appears inverted!
+  // Bit 6: Scan Add (0=Off, 1=On)
+  // Bits 5-2: Scan List ID (0-15)
+  // Bits 1-0: Reserved
   const scanBw = data[0x19];
-  const bandwidth: Channel['bandwidth'] = (scanBw & 0x80) !== 0 ? '12.5kHz' : '25kHz';
+  const bandwidth: Channel['bandwidth'] = (scanBw & 0x80) !== 0 ? '25kHz' : '12.5kHz';
   const scanAdd = (scanBw & 0x40) !== 0;
   const scanListId = (scanBw >> 2) & 0x0F;
 
   // Talkaround & APRS (0x1A)
+  // Bit 7: Forbid Talkaround (0=Allow, 1=Forbid)
+  // Bits 6-3: Reserved
+  // Bit 2: APRS Receive (0=Off, 1=On)
+  // Bits 1-0: Reverse Frequency (0-3)
   const talkaroundAprs = data[0x1A];
   const forbidTalkaround = (talkaroundAprs & 0x80) !== 0;
   const aprsReceive = (talkaroundAprs & 0x04) !== 0;
@@ -60,15 +68,20 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   const emergencySystemId = emergency & 0x1F;
 
   // Power & APRS (0x1C)
+  // Bits 7-4: Power Level (0=Low, 1=Medium, 2=High, 3-15=Reserved/Invalid)
+  // Bits 3-2: APRS Report Mode (0=Off, 1=Digital, 2=Analog, 3=Reserved)
+  // Bits 1-0: Reserved
   const powerAprs = data[0x1C];
   const powerValue = (powerAprs >> 4) & 0x0F;
   const power: Channel['power'] = 
     powerValue === 0 ? 'Low' : 
-    powerValue === 1 ? 'Medium' : 'High';
+    powerValue === 1 ? 'Medium' : 
+    powerValue === 2 ? 'High' : 'Low'; // Default to Low for invalid values
   const aprsReportValue = (powerAprs >> 2) & 0x03;
   const aprsReportMode: Channel['aprsReportMode'] = 
     aprsReportValue === 0 ? 'Off' : 
-    aprsReportValue === 1 ? 'Digital' : 'Analog';
+    aprsReportValue === 1 ? 'Digital' : 
+    aprsReportValue === 2 ? 'Analog' : 'Off'; // Default to Off for invalid values
 
   // Analog features (0x1D)
   const analogFeatures = data[0x1D];
@@ -110,6 +123,8 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   const voxRelated = (additionalFlags & 0x10) !== 0;
 
   // RX Squelch & PTT ID (0x26)
+  // Bits 7-4: RX Squelch Mode (0=Carrier/CTC, 1=Optional, 2=CTC&Opt, 3=CTC|Opt, 4-7=Reserved)
+  // Bits 3-0: Reserved (possibly PTT ID related, but not in Channel interface)
   const rxSquelchPtt = data[0x26];
   const rxSquelchValue = (rxSquelchPtt >> 4) & 0x07;
   const rxSquelchModeMap: Channel['rxSquelchMode'][] = [
@@ -121,6 +136,8 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   const rxSquelchMode = rxSquelchModeMap[rxSquelchValue] || 'Carrier/CTC';
 
   // Signaling (0x27)
+  // Bits 7-4: Step Frequency (0=2.5K, 1=5K, 2=6.25K, 3=10K, 4=12.5K, 5=25K, 6=50K, 7=100K, 8-15=Reserved)
+  // Bits 3-0: Signaling Type (0=None, 1=DTMF, 2=Two Tone, 3=Five Tone, 4=MDC1200, 5-15=Reserved)
   const signaling = data[0x27];
   const stepFrequency = (signaling >> 4) & 0x0F;
   const signalingValue = signaling & 0x0F;
@@ -133,13 +150,25 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   ];
   const signalingType = signalingTypeMap[signalingValue] || 'None';
 
+  // Reserved (0x28) - Unknown purpose, possibly padding or reserved for future use
+  // const reserved28 = data[0x28];
+
   // PTT ID Type (0x29)
+  // Bits 7-4: PTT ID Type (0=Off, 1=BOT, 2=EOT, 3=Both, 4-15=Reserved)
+  // Bits 3-0: Reserved
   const pttIdTypeValue = (data[0x29] >> 4) & 0x0F;
   const pttIdTypeMap: Channel['pttIdType'][] = ['Off', 'BOT', 'EOT', 'Both'];
   const pttIdType = pttIdTypeMap[pttIdTypeValue] || 'Off';
 
+  // Reserved (0x2A) - Unknown purpose, possibly padding or reserved for future use
+  // const reserved2A = data[0x2A];
+
   // Contact ID (0x2B)
+  // 0-249 (displayed as 1-250 in radio UI)
   const contactId = data[0x2B];
+
+  // Reserved (0x2C-0x2F) - Padding/reserved bytes, likely unused
+  // const reserved2C_2F = data.slice(0x2C, 0x30);
 
   return {
     number: channelNumber,
