@@ -3,13 +3,16 @@ import { useRadioStore } from '../../store/radioStore';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
 import { useContactsStore } from '../../store/contactsStore';
+import { useCalibrationStore } from '../../store/calibrationStore';
 import { getContactCapacityWithFallback } from '../../utils/firmware';
+import { CALIBRATION_PARAM_NAMES } from '../../models/Calibration';
 
 export const SettingsTab: React.FC = () => {
   const { settings, radioInfo } = useRadioStore();
   const { channels } = useChannelsStore();
   const { zones } = useZonesStore();
   const { contacts } = useContactsStore();
+  const { calibration, calibrationLoaded } = useCalibrationStore();
 
   const formatAddress = (addr?: number) => {
     if (addr === undefined) return 'N/A';
@@ -185,6 +188,141 @@ export const SettingsTab: React.FC = () => {
           <p className="text-cool-gray">No radio information available. Read from radio to view details.</p>
         )}
       </div>
+
+      {/* Calibration Data Section - Read Only */}
+      {calibrationLoaded && (
+        <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6 mt-6">
+          <div className="flex items-center gap-2 mb-4">
+            <h3 className="text-lg font-semibold text-yellow-400">Frequency Calibration Data</h3>
+            <span className="px-2 py-1 bg-yellow-900/30 text-yellow-400 text-xs rounded border border-yellow-600/30">
+              READ-ONLY
+            </span>
+          </div>
+          
+          <div className="mb-4 p-3 bg-yellow-900/10 border border-yellow-600/20 rounded">
+            <p className="text-yellow-300 text-sm">
+              <strong>⚠️ Display Only:</strong> This is factory calibration data for your radio. 
+              These values are used for frequency adjustment and should not be modified. 
+              Changing these values may cause your radio to operate outside of its specifications.
+            </p>
+          </div>
+
+          {calibration ? (
+            <div className="space-y-4">
+              {/* Frequency Array 1 */}
+              {calibration.data.frequencyArray1.size > 0 && (
+                <div>
+                  <h4 className="text-md font-semibold text-yellow-400 mb-2">Frequency Array 1</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
+                    {Array.from(calibration.data.frequencyArray1.entries())
+                      .sort(([a], [b]) => a - b)
+                      .map(([param, value]) => {
+                        const paramName = CALIBRATION_PARAM_NAMES[param] || `Param ${param}`;
+                        return (
+                          <div key={param} className="bg-dark-charcoal p-2 rounded">
+                            <span className="text-cool-gray">{paramName}:</span>
+                            <div className="text-white font-mono">{value}</div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* Frequency Array 2 */}
+              {calibration.data.frequencyArray2.size > 0 && (
+                <div>
+                  <h4 className="text-md font-semibold text-yellow-400 mb-2">Frequency Array 2</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
+                    {Array.from(calibration.data.frequencyArray2.entries())
+                      .sort(([a], [b]) => a - b)
+                      .map(([param, value]) => {
+                        const paramName = CALIBRATION_PARAM_NAMES[param] || `Param ${param}`;
+                        return (
+                          <div key={param} className="bg-dark-charcoal p-2 rounded">
+                            <span className="text-cool-gray">{paramName}:</span>
+                            <div className="text-white font-mono">{value}</div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* Value Arrays */}
+              {(calibration.data.valueArray1.size > 0 || 
+                calibration.data.valueArray2.size > 0 || 
+                calibration.data.valueArray3.size > 0) && (
+                <div>
+                  <h4 className="text-md font-semibold text-yellow-400 mb-2">Calibration Values</h4>
+                  <div className="space-y-3">
+                    {calibration.data.valueArray1.size > 0 && (
+                      <div>
+                        <span className="text-cool-gray text-sm font-semibold">Value Array 1:</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm mt-2">
+                          {Array.from(calibration.data.valueArray1.entries())
+                            .sort(([a], [b]) => a - b)
+                            .map(([param, value]) => {
+                              const paramName = CALIBRATION_PARAM_NAMES[param] || `Param ${param}`;
+                              return (
+                                <div key={param} className="bg-dark-charcoal p-2 rounded">
+                                  <span className="text-cool-gray text-xs">{paramName}:</span>
+                                  <div className="text-white font-mono">{value}</div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+                    {calibration.data.valueArray2.size > 0 && (
+                      <div>
+                        <span className="text-cool-gray text-sm font-semibold">Value Array 2:</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm mt-2">
+                          {Array.from(calibration.data.valueArray2.entries())
+                            .sort(([a], [b]) => a - b)
+                            .map(([param, value]) => {
+                              const paramName = CALIBRATION_PARAM_NAMES[param] || `Param ${param}`;
+                              return (
+                                <div key={param} className="bg-dark-charcoal p-2 rounded">
+                                  <span className="text-cool-gray text-xs">{paramName}:</span>
+                                  <div className="text-white font-mono">{value}</div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+                    {calibration.data.valueArray3.size > 0 && (
+                      <div>
+                        <span className="text-cool-gray text-sm font-semibold">Value Array 3:</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm mt-2">
+                          {Array.from(calibration.data.valueArray3.entries())
+                            .sort(([a], [b]) => a - b)
+                            .map(([param, value]) => {
+                              const paramName = CALIBRATION_PARAM_NAMES[param] || `Param ${param}`;
+                              return (
+                                <div key={param} className="bg-dark-charcoal p-2 rounded">
+                                  <span className="text-cool-gray text-xs">{paramName}:</span>
+                                  <div className="text-white font-mono">{value}</div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="text-xs text-cool-gray mt-4">
+                Block Address: 0x{calibration.blockAddress.toString(16).padStart(6, '0').toUpperCase()}
+              </div>
+            </div>
+          ) : (
+            <p className="text-cool-gray">No calibration data found on the radio.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 };

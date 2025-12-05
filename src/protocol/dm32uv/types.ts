@@ -24,6 +24,3 @@ export interface RawDataStorage {
   blockMetadata: Map<number, { metadata: number; type: string }>;
   blockData: Map<number, Uint8Array>;
 }
-
-
-

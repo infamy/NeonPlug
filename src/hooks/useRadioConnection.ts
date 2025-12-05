@@ -5,6 +5,10 @@ import { useChannelsStore } from '../store/channelsStore';
 import { useZonesStore } from '../store/zonesStore';
 import { useScanListsStore } from '../store/scanListsStore';
 import { useContactsStore } from '../store/contactsStore';
+import { useQuickMessagesStore } from '../store/quickMessagesStore';
+import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
+import { useCalibrationStore } from '../store/calibrationStore';
+import { useRXGroupsStore } from '../store/rxGroupsStore';
 
 export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -15,6 +19,10 @@ export function useRadioConnection() {
     const { setZones, setRawZoneData } = useZonesStore();
     const { setScanLists, setRawScanListData } = useScanListsStore();
     const { setContacts } = useContactsStore();
+    const { setMessages, setRawMessageData } = useQuickMessagesStore();
+    const { setRadioIds, setRawRadioIdData } = useDMRRadioIDsStore();
+    const { setCalibration } = useCalibrationStore();
+    const { setGroups: setRXGroups, setRawGroupData } = useRXGroupsStore();
 
   const readFromRadio = useCallback(async (
     onProgress?: (progress: number, message: string, step?: string) => void
@@ -29,8 +37,7 @@ export function useRadioConnection() {
       'Connecting to radio',
       'Reading radio information',
       'Reading channels',
-      'Reading zones',
-      'Reading scan lists',
+      'Reading configuration',
       'Complete',
     ];
 
@@ -75,15 +82,19 @@ export function useRadioConnection() {
         setBlockData((protocol as any).allBlockData);
       }
 
-      // Step 5: Read zones
-      // Map internal progress (0-100%) to overall range (70-85%)
-      const originalZoneProgress = protocol.onProgress;
-      protocol.onProgress = (progress, message) => {
-        const overallProgress = 70 + (progress * 0.15); // 70% to 85%
-        onProgress?.(overallProgress, message, steps[4]);
+      // Step 5: Read configuration (zones, scan lists, quick messages, etc.)
+      // Suppress detailed messages and only show high-level progress
+      const originalConfigProgress = protocol.onProgress;
+      protocol.onProgress = (progress, _message) => {
+        // Only update progress percentage, don't forward detailed messages
+        const overallProgress = 70 + (progress * 0.25); // 70% to 95%
+        // Only forward progress percentage, keep the high-level message
+        onProgress?.(overallProgress, 'Reading configuration...', steps[4]);
       };
 
-      onProgress?.(70, 'Reading zones...', steps[4]);
+      onProgress?.(70, 'Reading configuration...', steps[4]);
+      
+      // Read zones
       const zones = await protocol.readZones();
       setZones(zones);
       // Store raw zone data for debug export
@@ -91,18 +102,7 @@ export function useRadioConnection() {
         setRawZoneData((protocol as any).rawZoneData);
       }
 
-      // Restore original progress handler
-      protocol.onProgress = originalZoneProgress;
-
-      // Step 6: Read scan lists
-      // Map internal progress (0-100%) to overall range (85-90%)
-      const originalScanListProgress = protocol.onProgress;
-      protocol.onProgress = (progress, message) => {
-        const overallProgress = 85 + (progress * 0.05); // 85% to 90%
-        onProgress?.(overallProgress, message, steps[5]);
-      };
-
-      onProgress?.(85, 'Reading scan lists...', steps[5]);
+      // Read scan lists
       const scanLists = await protocol.readScanLists();
       setScanLists(scanLists);
       // Store raw scan list data for debug export
@@ -114,11 +114,65 @@ export function useRadioConnection() {
         setBlockData((protocol as any).blockData);
       }
 
-      // Restore original progress handler
-      protocol.onProgress = originalScanListProgress;
+      // Read quick messages (optional - don't fail if missing)
+      try {
+        const messages = await protocol.readQuickMessages();
+        setMessages(messages);
+        // Store raw message data for debug export
+        const rawDataMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
+        for (const [index, rawData] of protocol.rawMessageData.entries()) {
+          rawDataMap.set(index, rawData);
+        }
+        setRawMessageData(rawDataMap);
+      } catch (err) {
+        // Quick messages are optional - log error but don't fail the entire read
+        console.warn('Failed to read quick messages:', err);
+      }
 
-      // Step 7: Complete (contacts are read separately on demand)
-      onProgress?.(100, 'Read complete!', steps[6]);
+      // Read DMR Radio IDs (optional - don't fail if missing)
+      try {
+        const radioIds = await protocol.readDMRRadioIDs();
+        setRadioIds(radioIds);
+        // Store raw radio ID data for debug export
+        const rawIdDataMap = new Map<number, { data: Uint8Array; idIndex: number; offset: number }>();
+        for (const [index, rawData] of protocol.rawDMRRadioIDData.entries()) {
+          rawIdDataMap.set(index, rawData);
+        }
+        setRawRadioIdData(rawIdDataMap);
+      } catch (err) {
+        // DMR Radio IDs are optional - log error but don't fail the entire read
+        console.warn('Failed to read DMR Radio IDs:', err);
+      }
+
+      // Read calibration data (optional - don't fail if missing)
+      try {
+        const calibration = await protocol.readCalibration();
+        setCalibration(calibration);
+      } catch (err) {
+        // Calibration is optional - log error but don't fail the entire read
+        console.warn('Failed to read calibration data:', err);
+      }
+
+      // Read DMR RX Groups (optional - don't fail if missing)
+      try {
+        const rxGroups = await protocol.readRXGroups();
+        setRXGroups(rxGroups);
+        // Store raw DMR RX group data for debug export
+        const rawGroupDataMap = new Map<number, { data: Uint8Array; groupIndex: number; offset: number }>();
+        for (const [index, rawData] of protocol.rawRXGroupData.entries()) {
+          rawGroupDataMap.set(index, rawData);
+        }
+        setRawGroupData(rawGroupDataMap);
+      } catch (err) {
+        // DMR RX Groups are optional - log error but don't fail the entire read
+        console.warn('Failed to read DMR RX Groups:', err);
+      }
+
+      // Restore original progress handler
+      protocol.onProgress = originalConfigProgress;
+
+      // Step 6: Complete (contacts are read separately on demand)
+      onProgress?.(100, 'Read complete!', steps[5]);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Read failed';
       setError(errorMessage);
@@ -142,7 +196,7 @@ export function useRadioConnection() {
       // setSettings(null);
       setIsConnecting(false);
     }
-  }, [setConnected, setRadioInfo, setSettings, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData]);
+  }, [setConnected, setRadioInfo, setSettings, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData, setMessages, setRawMessageData, setRadioIds, setRawRadioIdData, setCalibration, setRXGroups, setRawGroupData]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
@@ -200,11 +254,64 @@ export function useRadioConnection() {
     }
   }, [setContacts]);
 
+  const readQuickMessages = useCallback(async (
+    onProgress?: (progress: number, message: string) => void
+  ) => {
+    setIsConnecting(true);
+    setError(null);
+    
+    let protocol: DM32UVProtocol | null = null;
+
+    try {
+      // Create protocol instance
+      protocol = new DM32UVProtocol();
+      
+      // Set up progress callback
+      protocol.onProgress = (progress, message) => {
+        onProgress?.(progress, message);
+      };
+      
+      // Connect to radio (this will trigger port selection dialog)
+      onProgress?.(5, 'Please select a serial port in the browser dialog...');
+      onProgress?.(10, 'Connecting to radio...');
+      await protocol.connect();
+      
+      // Read quick messages
+      onProgress?.(20, 'Reading quick messages...');
+      const messages = await protocol.readQuickMessages();
+      setMessages(messages);
+      
+      // Store raw message data for debug export
+      const rawDataMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
+      for (const [index, rawData] of protocol.rawMessageData.entries()) {
+        rawDataMap.set(index, rawData);
+      }
+      setRawMessageData(rawDataMap);
+      
+      onProgress?.(100, 'Quick messages read complete!');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Read failed';
+      setError(errorMessage);
+      onProgress?.(0, `Error: ${errorMessage}`);
+      console.error('Quick messages read error:', err);
+    } finally {
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (e) {
+          console.warn('Error disconnecting:', e);
+        }
+      }
+      setIsConnecting(false);
+    }
+  }, [setMessages, setRawMessageData]);
+
   return {
     isConnecting,
     error,
     readFromRadio,
     readContacts,
+    readQuickMessages,
   };
 }
 

@@ -8,7 +8,7 @@ import { DM32Connection } from './connection';
 export interface MemoryBlock {
   address: number;
   metadata: number;
-  type: 'channel' | 'zone' | 'contact' | 'scan' | 'rxgroup' | 'message' | 'empty' | 'unknown';
+  type: 'channel' | 'zone' | 'contact' | 'scan' | 'rxgroup' | 'message' | 'dmrradioid' | 'calibration' | 'empty' | 'unknown';
 }
 
 /**
@@ -48,6 +48,14 @@ export async function discoverMemoryBlocks(
       type = 'zone'; // Zones identified as metadata 0x5c (92) from debug export analysis
     } else if (metadata === 0x11) {
       type = 'scan'; // Scan lists identified as metadata 0x11 (17) from debug export analysis
+    } else if (metadata === 0x0A) {
+      type = 'message'; // Quick text messages
+    } else if (metadata === 0x02) {
+      type = 'calibration'; // Frequency adjustment/calibration data
+    } else if (metadata === 0x0F) {
+      type = 'rxgroup'; // DMR RX Groups (DMR Receive Groups)
+    } else if (metadata === 0x67) {
+      type = 'dmrradioid'; // DMR Radio ID list
     } else if (metadata === 0xFF) {
       type = 'empty'; // Invalid/unavailable
     } else {
@@ -55,7 +63,6 @@ export async function discoverMemoryBlocks(
       // Known but unhandled metadata values:
       // 0x06 - Previously thought to be scan lists, but appears unused
       // 0x07 - Config header
-      // 0x0A - Message/Text messages
       // 0x0F - RX Groups/Memberships (V-frame 0x0E range)
       // 0x10 - Emergency systems
       // Others - Need investigation
