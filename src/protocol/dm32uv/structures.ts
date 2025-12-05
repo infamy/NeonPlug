@@ -3,7 +3,7 @@
  * Parses channel, zone, and contact structures from radio memory
  */
 
-import type { Channel, Contact, Zone, ScanList } from '../../models';
+import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency } from '../../models';
 import { decodeBCDFrequency, decodeCTCSSDCS, encodeBCDFrequency, encodeCTCSSDCS } from './encoding';
 
 /**
@@ -739,6 +739,704 @@ export function parseContacts(data: Uint8Array): Contact[] {
   }
 
   return contacts;
+}
+
+/**
+ * Decode a chunked radio name string
+ * Radio names are stored as 14-byte strings split into chunks:
+ * - 4 bytes at offset +0
+ * - 4 bytes at offset +4
+ * - 4 bytes at offset +8
+ * - 2 bytes at offset +12
+ * Total: 14 bytes
+ * 
+ * @param data Buffer containing the name data
+ * @param baseOffset Base offset where chunks start
+ * @returns Decoded string (empty if 0xffffffff marker found)
+ */
+function decodeChunkedRadioName(data: Uint8Array, baseOffset: number): string {
+  // Check for empty marker (0xffffffff in first 4 bytes)
+  const firstChunk = data.slice(baseOffset, baseOffset + 4);
+  if (firstChunk[0] === 0xFF && firstChunk[1] === 0xFF && 
+      firstChunk[2] === 0xFF && firstChunk[3] === 0xFF) {
+    return '';
+  }
+
+  // Read chunks: 4+4+4+2 = 14 bytes
+  const chunk1 = data.slice(baseOffset, baseOffset + 4);
+  const chunk2 = data.slice(baseOffset + 4, baseOffset + 8);
+  const chunk3 = data.slice(baseOffset + 8, baseOffset + 12);
+  const chunk4 = data.slice(baseOffset + 12, baseOffset + 14);
+
+  // Concatenate chunks to form 14-byte string
+  const nameBytes = new Uint8Array(14);
+  nameBytes.set(chunk1, 0);
+  nameBytes.set(chunk2, 4);
+  nameBytes.set(chunk3, 8);
+  nameBytes.set(chunk4, 12);
+
+  // Decode as ASCII, null-terminated
+  const nullIndex = nameBytes.indexOf(0);
+  const decoded = new TextDecoder('ascii', { fatal: false })
+    .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : 14))
+    .replace(/\x00/g, '')
+    .trim();
+
+  return decoded;
+}
+
+/**
+ * Encode a radio name into chunked format
+ * @param name String to encode (max 14 chars)
+ * @param data Buffer to write to
+ * @param baseOffset Base offset where chunks start
+ */
+function encodeChunkedRadioName(name: string, data: Uint8Array, baseOffset: number): void {
+  if (name.length === 0) {
+    // Write empty marker (0xffffffff)
+    data[baseOffset] = 0xFF;
+    data[baseOffset + 1] = 0xFF;
+    data[baseOffset + 2] = 0xFF;
+    data[baseOffset + 3] = 0xFF;
+    // Fill rest with 0xFF
+    for (let i = 4; i < 14; i++) {
+      data[baseOffset + i] = 0xFF;
+    }
+    return;
+  }
+
+  // Encode name as ASCII, truncate to 14 bytes (storage limit)
+  const nameBytes = new Uint8Array(14);
+  const encoded = new TextEncoder().encode(name.substring(0, 14));
+  nameBytes.set(encoded.slice(0, 14), 0);
+  // If encoded length is less than 14, pad with null terminator
+  if (encoded.length < 14) {
+    nameBytes[encoded.length] = 0; // Null terminator
+  }
+
+  // Write as chunks: 4+4+4+2
+  data.set(nameBytes.slice(0, 4), baseOffset);
+  data.set(nameBytes.slice(4, 8), baseOffset + 4);
+  data.set(nameBytes.slice(8, 12), baseOffset + 8);
+  data.set(nameBytes.slice(12, 14), baseOffset + 12);
+}
+
+/**
+ * Parse VFO Settings from metadata 0x04 block (4KB)
+ */
+export function parseRadioSettings(data: Uint8Array): RadioSettings {
+  if (data.length < 0x335) {
+    throw new Error('VFO Settings data must be at least 821 bytes (0x335)');
+  }
+
+  // Header fields (0x00-0x20)
+  const unknownFlag = data[0x00];
+  
+  // Radio Name A: chunks at +1, +5, +9, +0xd (14 bytes total)
+  const radioNameA = decodeChunkedRadioName(data, 0x01);
+  
+  // Radio Name B: chunks at +0xf, +0x13, +0x17, +0x1b (14 bytes total)
+  const radioNameB = decodeChunkedRadioName(data, 0x0F);
+  
+  const bitFlags1 = data[0x1D];
+  const value = data[0x1E];
+  const bitFlags2 = data[0x20];
+
+  // Radio Settings (0x301+)
+  const unknownRadioSetting = data[0x301];
+  const radioFlag = data[0x302];
+  const radioEnabled = (radioFlag & 0x01) !== 0;
+
+  // Latitude (0x306, 14 bytes)
+  const latBytes = data.slice(0x306, 0x306 + 14);
+  const latNullIndex = latBytes.indexOf(0);
+  const latitude = new TextDecoder('ascii', { fatal: false })
+    .decode(latBytes.slice(0, latNullIndex >= 0 ? latNullIndex : 14))
+    .replace(/\x00/g, '')
+    .trim();
+
+  // Latitude direction (0x30F)
+  const latDirByte = data[0x30F];
+  const latitudeDirection: 'N' | 'S' = latDirByte === 0x4E ? 'N' : 'S';
+
+  // Longitude (0x310, 14 bytes)
+  const lonBytes = data.slice(0x310, 0x310 + 14);
+  const lonNullIndex = lonBytes.indexOf(0);
+  const longitude = new TextDecoder('ascii', { fatal: false })
+    .decode(lonBytes.slice(0, lonNullIndex >= 0 ? lonNullIndex : 14))
+    .replace(/\x00/g, '')
+    .trim();
+
+  // Longitude direction (0x319)
+  const lonDirByte = data[0x319];
+  const longitudeDirection: 'E' | 'W' = lonDirByte === 0x45 ? 'E' : 'W';
+
+  // Channel settings (little-endian uint16)
+  // Note: Channels are stored as 1-based (channel 1 = 1, channel 2 = 2, 0 = none)
+  const currentChannelA = data[0x320] | (data[0x321] << 8);
+  const currentChannelB = data[0x322] | (data[0x323] << 8);
+  const channelSetting3 = data[0x324] | (data[0x325] << 8);
+  const channelSetting4 = data[0x326] | (data[0x327] << 8);
+  const channelSetting5 = data[0x328] | (data[0x329] << 8);
+  const channelSetting6 = data[0x32A] | (data[0x32B] << 8);
+  const channelSetting7 = data[0x32C] | (data[0x32D] << 8);
+  const channelSetting8 = data[0x32E] | (data[0x32F] << 8);
+  
+  // Debug logging for channel parsing
+  console.log('VFO Channel parsing:', {
+    rawA: `0x${data[0x320].toString(16).padStart(2, '0')} ${data[0x321].toString(16).padStart(2, '0')}`,
+    channelA: currentChannelA,
+    rawB: `0x${data[0x322].toString(16).padStart(2, '0')} ${data[0x323].toString(16).padStart(2, '0')}`,
+    channelB: currentChannelB,
+  });
+
+  // Zone settings
+  const currentZone = data[0x330];
+  const zoneFlag = data[0x331];
+  const zoneEnabled = (zoneFlag & 0x01) !== 0;
+
+  // Unknown value (0x332, 3 bytes, formatted as hex string)
+  const unknownValueBytes = data.slice(0x332, 0x335);
+  const unknownValue = Array.from(unknownValueBytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join(' ');
+
+  return {
+    unknownFlag,
+    radioNameA,
+    radioNameB,
+    bitFlags1,
+    value,
+    bitFlags2,
+    unknownRadioSetting,
+    radioEnabled,
+    latitude,
+    latitudeDirection,
+    longitude,
+    longitudeDirection,
+    currentChannelA,
+    currentChannelB,
+    channelSetting3,
+    channelSetting4,
+    channelSetting5,
+    channelSetting6,
+    channelSetting7,
+    channelSetting8,
+    currentZone,
+    zoneEnabled,
+    unknownValue,
+  };
+}
+
+/**
+ * Encode Radio Settings to metadata 0x04 block format
+ */
+export function encodeRadioSettings(settings: RadioSettings): Uint8Array {
+  const data = new Uint8Array(0x1000); // 4KB block
+  data.fill(0xFF); // Fill with 0xFF (typical for unused areas)
+
+  // Header fields (0x00-0x20)
+  data[0x00] = settings.unknownFlag;
+  
+  // Radio Name A: chunks at +1, +5, +9, +0xd
+  encodeChunkedRadioName(settings.radioNameA, data, 0x01);
+  
+  // Radio Name B: chunks at +0xf, +0x13, +0x17, +0x1b
+  encodeChunkedRadioName(settings.radioNameB, data, 0x0F);
+  
+  data[0x1D] = settings.bitFlags1;
+  data[0x1E] = settings.value;
+  data[0x20] = settings.bitFlags2;
+
+  // Radio Settings (0x301+)
+  data[0x301] = settings.unknownRadioSetting;
+  data[0x302] = settings.radioEnabled ? 0x01 : 0x00;
+
+  // Latitude (0x306, 14 bytes, null-terminated)
+  const latBytes = new Uint8Array(14);
+  const latEncoded = new TextEncoder().encode(settings.latitude.substring(0, 13));
+  latBytes.set(latEncoded, 0);
+  latBytes[latEncoded.length] = 0;
+  data.set(latBytes, 0x306);
+
+  // Latitude direction (0x30F)
+  data[0x30F] = settings.latitudeDirection === 'N' ? 0x4E : 0x53;
+
+  // Longitude (0x310, 14 bytes, null-terminated)
+  const lonBytes = new Uint8Array(14);
+  const lonEncoded = new TextEncoder().encode(settings.longitude.substring(0, 13));
+  lonBytes.set(lonEncoded, 0);
+  lonBytes[lonEncoded.length] = 0;
+  data.set(lonBytes, 0x310);
+
+  // Longitude direction (0x319)
+  data[0x319] = settings.longitudeDirection === 'E' ? 0x45 : 0x57;
+
+  // Channel settings (little-endian uint16)
+  data[0x320] = settings.currentChannelA & 0xFF;
+  data[0x321] = (settings.currentChannelA >> 8) & 0xFF;
+  data[0x322] = settings.currentChannelB & 0xFF;
+  data[0x323] = (settings.currentChannelB >> 8) & 0xFF;
+  data[0x324] = settings.channelSetting3 & 0xFF;
+  data[0x325] = (settings.channelSetting3 >> 8) & 0xFF;
+  data[0x326] = settings.channelSetting4 & 0xFF;
+  data[0x327] = (settings.channelSetting4 >> 8) & 0xFF;
+  data[0x328] = settings.channelSetting5 & 0xFF;
+  data[0x329] = (settings.channelSetting5 >> 8) & 0xFF;
+  data[0x32A] = settings.channelSetting6 & 0xFF;
+  data[0x32B] = (settings.channelSetting6 >> 8) & 0xFF;
+  data[0x32C] = settings.channelSetting7 & 0xFF;
+  data[0x32D] = (settings.channelSetting7 >> 8) & 0xFF;
+  data[0x32E] = settings.channelSetting8 & 0xFF;
+  data[0x32F] = (settings.channelSetting8 >> 8) & 0xFF;
+
+  // Zone settings
+  data[0x330] = settings.currentZone;
+  data[0x331] = settings.zoneEnabled ? 0x01 : 0x00;
+
+  // Unknown value (0x332, 3 bytes)
+  const unknownValueParts = settings.unknownValue.split(' ').filter(s => s.length > 0);
+  for (let i = 0; i < Math.min(3, unknownValueParts.length); i++) {
+    const byte = parseInt(unknownValueParts[i], 16);
+    if (!isNaN(byte)) {
+      data[0x332 + i] = byte;
+    }
+  }
+
+  // Set metadata byte at offset 0xFFF
+  data[0xFFF] = 0x04;
+
+  return data;
+}
+
+/**
+ * Decode Unicode WCHAR string (16 bytes = 8 DWORDs, little-endian)
+ * Each DWORD is a 16-bit Unicode character
+ */
+function decodeWCHAR(data: Uint8Array, offset: number, length: number): string {
+  const chars: string[] = [];
+  for (let i = 0; i < length; i += 2) {
+    if (offset + i + 1 >= data.length) break;
+    const charCode = data[offset + i] | (data[offset + i + 1] << 8);
+    if (charCode === 0) break; // Null terminator
+    chars.push(String.fromCharCode(charCode));
+  }
+  return chars.join('');
+}
+
+/**
+ * Encode Unicode WCHAR string (16 bytes = 8 DWORDs, little-endian)
+ */
+function encodeWCHAR(str: string, data: Uint8Array, offset: number, length: number): void {
+  const encoded = new Uint8Array(length);
+  encoded.fill(0);
+  
+  for (let i = 0; i < Math.min(str.length, length / 2); i++) {
+    const charCode = str.charCodeAt(i);
+    encoded[i * 2] = charCode & 0xFF;
+    encoded[i * 2 + 1] = (charCode >> 8) & 0xFF;
+  }
+  
+  data.set(encoded, offset);
+}
+
+/**
+ * Parse Digital Emergency Systems from metadata 0x03 block
+ */
+export function parseDigitalEmergencies(data: Uint8Array): { systems: DigitalEmergency[]; config: DigitalEmergencyConfig } {
+  if (data.length < 0x7F0) {
+    throw new Error('Digital Emergency data must be at least 2032 bytes (0x7F0)');
+  }
+
+  const systems: DigitalEmergency[] = [];
+  const entryBaseOffset = 0x218; // Entry base offset
+  const entrySize = 40; // 40 bytes per entry
+  const maxEntries = Math.floor((data.length - entryBaseOffset) / entrySize);
+
+  // Parse global configuration
+  const countIndex = data[0x01];
+  const unknown = data[0x30];
+  const numericFields: [number, number, number] = [
+    data[0x31] - 5, // Stored as actual_value + 5
+    data[0x32] - 5,
+    data[0x33] - 5,
+  ];
+  const byteFields: [number, number] = [
+    data[0x34],
+    data[0x36],
+  ];
+  const values16bit: [number, number, number, number] = [
+    data[0x37] | (data[0x38] << 8),
+    data[0x39] | (data[0x3A] << 8),
+    data[0x3B] | (data[0x3C] << 8),
+    data[0x3D] | (data[0x3E] << 8),
+  ];
+  const bitFlags = data[0x3F] & 0x03; // Bits 0 and 1
+  const indexCount = data[0x40] - 1; // Stored as actual_value + 1
+
+  // Parse entry array (16 entries × 4 bytes)
+  const entryArray: number[] = [];
+  for (let i = 0; i < 16; i++) {
+    const offset = 0x41 + (i * 4);
+    const value = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
+    entryArray.push(value);
+  }
+
+  // Additional config (192 bytes)
+  const additionalConfig = data.slice(0x730, 0x7F0);
+
+  const config: DigitalEmergencyConfig = {
+    countIndex,
+    unknown,
+    numericFields,
+    byteFields,
+    values16bit,
+    bitFlags,
+    indexCount,
+    entryArray,
+    additionalConfig,
+  };
+
+  // Parse emergency system entries
+  // NOTE: Structure parsing is experimental and may be incorrect
+  // The name location is ambiguous in the spec (offset +0x1F8 could be relative to block or entry)
+  for (let i = 0; i < maxEntries; i++) {
+    const entryOffset = entryBaseOffset + (i * entrySize);
+    if (entryOffset + entrySize > data.length) break;
+
+    // Check if entry is empty (all zeros or all 0xFF)
+    const entryData = data.slice(entryOffset, entryOffset + entrySize);
+    if (entryData.every(b => b === 0 || b === 0xFF)) {
+      continue;
+    }
+
+    // Flag (1 byte, bit 0: enabled/disabled)
+    const flag = data[entryOffset];
+    const enabled = (flag & 0x01) !== 0;
+
+    // Unknown (2 bytes)
+    const unknown = data[entryOffset + 1] | (data[entryOffset + 2] << 8);
+
+    // Value 1 (2 bytes, little-endian)
+    const value1 = data[entryOffset + 3] | (data[entryOffset + 4] << 8);
+
+    // Value 2 (2 bytes, little-endian)
+    const value2 = data[entryOffset + 5] | (data[entryOffset + 6] << 8);
+
+    // Name (16 bytes, Unicode WCHAR)
+    // The spec says "at offset +0x1F8" which is ambiguous - could be relative to block start or entry
+    // Try multiple locations as the structure may not match the spec
+    let name = '';
+    
+    // Try 1: Within entry after header (7 bytes)
+    const nameOffsetInEntry = entryOffset + 7;
+    if (nameOffsetInEntry + 16 <= data.length) {
+      const nameAtEntry = decodeWCHAR(data, nameOffsetInEntry, 16);
+      if (nameAtEntry.length > 0 && /^[\x20-\x7E]+$/.test(nameAtEntry)) {
+        name = nameAtEntry;
+      }
+    }
+    
+    // Try 2: At block offset 0x1F8 (relative to block start, separate name table)
+    if (!name) {
+      const nameOffsetBlock = 0x1F8 + (i * 16);
+      if (nameOffsetBlock + 16 <= data.length) {
+        const nameAtBlock = decodeWCHAR(data, nameOffsetBlock, 16);
+        if (nameAtBlock.length > 0 && /^[\x20-\x7E]+$/.test(nameAtBlock)) {
+          name = nameAtBlock;
+        }
+      }
+    }
+    
+    // If no valid name found, mark as unreadable
+    if (!name) {
+      name = `[unreadable-${i}]`;
+    }
+
+    systems.push({
+      index: i,
+      enabled,
+      unknown,
+      value1,
+      value2,
+      name,
+    });
+  }
+
+  return { systems, config };
+}
+
+/**
+ * Encode Digital Emergency Systems to metadata 0x03 block format
+ */
+export function encodeDigitalEmergencies(systems: DigitalEmergency[], config: DigitalEmergencyConfig): Uint8Array {
+  const data = new Uint8Array(0x1000); // 4KB block
+  data.fill(0xFF);
+
+  // Write global configuration
+  data[0x01] = config.countIndex;
+  data[0x30] = config.unknown;
+  data[0x31] = config.numericFields[0] + 5;
+  data[0x32] = config.numericFields[1] + 5;
+  data[0x33] = config.numericFields[2] + 5;
+  data[0x34] = config.byteFields[0];
+  data[0x36] = config.byteFields[1];
+  data[0x37] = config.values16bit[0] & 0xFF;
+  data[0x38] = (config.values16bit[0] >> 8) & 0xFF;
+  data[0x39] = config.values16bit[1] & 0xFF;
+  data[0x3A] = (config.values16bit[1] >> 8) & 0xFF;
+  data[0x3B] = config.values16bit[2] & 0xFF;
+  data[0x3C] = (config.values16bit[2] >> 8) & 0xFF;
+  data[0x3D] = config.values16bit[3] & 0xFF;
+  data[0x3E] = (config.values16bit[3] >> 8) & 0xFF;
+  data[0x3F] = config.bitFlags & 0x03;
+  data[0x40] = config.indexCount + 1;
+
+  // Write entry array
+  for (let i = 0; i < Math.min(16, config.entryArray.length); i++) {
+    const offset = 0x41 + (i * 4);
+    const value = config.entryArray[i];
+    data[offset] = value & 0xFF;
+    data[offset + 1] = (value >> 8) & 0xFF;
+    data[offset + 2] = (value >> 16) & 0xFF;
+    data[offset + 3] = (value >> 24) & 0xFF;
+  }
+
+  // Write additional config
+  data.set(config.additionalConfig.slice(0, 192), 0x730);
+
+  // Write emergency system entries
+  const entryBaseOffset = 0x218;
+  for (let i = 0; i < systems.length; i++) {
+    const system = systems[i];
+    const entryOffset = entryBaseOffset + (i * 40);
+    if (entryOffset + 40 > data.length) break;
+
+    data[entryOffset] = system.enabled ? 0x01 : 0x00;
+    data[entryOffset + 1] = system.unknown & 0xFF;
+    data[entryOffset + 2] = (system.unknown >> 8) & 0xFF;
+    data[entryOffset + 3] = system.value1 & 0xFF;
+    data[entryOffset + 4] = (system.value1 >> 8) & 0xFF;
+    data[entryOffset + 5] = system.value2 & 0xFF;
+    data[entryOffset + 6] = (system.value2 >> 8) & 0xFF;
+    
+    // Name (16 bytes, Unicode WCHAR)
+    // Try encoding at both locations - within entry and at block offset 0x1F8
+    const nameOffsetInEntry = entryOffset + 7;
+    encodeWCHAR(system.name, data, nameOffsetInEntry, 16);
+    
+    // Also encode at block offset 0x1F8 (assuming names are in a separate table)
+    const nameOffsetBlock = 0x1F8 + (i * 16);
+    if (nameOffsetBlock + 16 <= data.length) {
+      encodeWCHAR(system.name, data, nameOffsetBlock, 16);
+    }
+  }
+
+  // Set metadata byte at offset 0xFFF
+  data[0xFFF] = 0x03;
+
+  return data;
+}
+
+/**
+ * Parse Analog Emergency Systems from metadata 0x10 block
+ */
+export function parseAnalogEmergencies(data: Uint8Array): AnalogEmergency[] {
+  if (data.length < 0x2D5) {
+    throw new Error('Analog Emergency data must be at least 725 bytes (0x2D5)');
+  }
+
+  const systems: AnalogEmergency[] = [];
+  const entryBaseOffset = 0xAC; // Entry base offset
+  const entrySize = 36; // 36 bytes per entry
+  const maxEntries = Math.floor((data.length - entryBaseOffset) / entrySize);
+
+  // NOTE: Structure parsing is experimental - data may be encrypted or structure may differ from spec
+  for (let i = 0; i < maxEntries; i++) {
+    const entryOffset = entryBaseOffset + (i * entrySize);
+    if (entryOffset + entrySize > data.length) break;
+
+    // Check if entry is empty
+    const entryData = data.slice(entryOffset, entryOffset + entrySize);
+    if (entryData.every(b => b === 0 || b === 0xFF)) {
+      continue;
+    }
+
+    // Name (17 bytes, null-terminated)
+    // Try to decode name, but be defensive as data may be encrypted
+    const nameBytes = data.slice(entryOffset, entryOffset + 17);
+    const nullIndex = nameBytes.indexOf(0);
+    let name = '';
+    
+    if (nullIndex >= 0) {
+      // Try ASCII decoding
+      const decoded = new TextDecoder('ascii', { fatal: false })
+        .decode(nameBytes.slice(0, nullIndex))
+        .replace(/\x00/g, '')
+        .trim();
+      
+      // Only use if it looks like readable text (printable ASCII)
+      if (decoded.length > 0 && /^[\x20-\x7E]+$/.test(decoded)) {
+        name = decoded;
+      }
+    }
+    
+    // If name couldn't be decoded, it might be encrypted or binary
+    if (name.length === 0) {
+      name = `[encrypted/binary-${i}]`;
+    }
+
+    // Padding (1 byte at offset +0x11)
+    // Alarm Type (1 byte at offset +0x12, values 0-4)
+    const alarmType = data[entryOffset + 0x12];
+
+    // Alarm Mode (1 byte at offset +0x13, values 0-1)
+    const alarmMode = data[entryOffset + 0x13];
+
+    // Signalling (1 byte at offset +0x14, values 0-3)
+    const signalling = data[entryOffset + 0x14];
+
+    // Revert Channel (2 bytes at offset +0x15, little-endian, stored as value - 1)
+    const revertChannelRaw = data[entryOffset + 0x15] | (data[entryOffset + 0x16] << 8);
+    const revertChannel = revertChannelRaw + 1; // Add 1 to get actual value
+
+    // Squelch Mode (1 byte at offset +0x17, stored as value + 1)
+    const squelchModeRaw = data[entryOffset + 0x17];
+    const squelchMode = squelchModeRaw - 1; // Subtract 1 to get actual value
+
+    // ID Type (1 byte at offset +0x18, stored as value + 1)
+    const idTypeRaw = data[entryOffset + 0x18];
+    const idType = idTypeRaw - 1; // Subtract 1 to get actual value
+
+    // Flags (1 byte at offset +0x19)
+    const flags = data[entryOffset + 0x19];
+
+    // Frequency/ID (2 bytes at offset +0x1A, little-endian)
+    const frequencyId = data[entryOffset + 0x1A] | (data[entryOffset + 0x1B] << 8);
+
+    // Flags (1 byte at offset +0x1B, bit 0: enabled/disabled)
+    // Wait, that's the same offset as frequencyId high byte...
+    // Let me check - frequencyId is at +0x1A-0x1B, so flags should be at +0x1C
+    const enabledFlag = data[entryOffset + 0x1C];
+    const enabled = (enabledFlag & 0x01) !== 0;
+
+    // Secondary structure (20 bytes at offset -0x14 + entry*0x14)
+    const secondaryOffset = -0x14 + (i * 0x14);
+    let secondaryData: Uint8Array | undefined;
+    if (secondaryOffset >= 0 && secondaryOffset + 20 <= data.length) {
+      secondaryData = data.slice(secondaryOffset, secondaryOffset + 20);
+    }
+
+    // Tertiary structure (44 bytes at offset 0x2D5 + entry*0x2C)
+    const tertiaryOffset = 0x2D5 + (i * 0x2C);
+    let tertiaryData: Uint8Array | undefined;
+    if (tertiaryOffset >= 0 && tertiaryOffset + 44 <= data.length) {
+      tertiaryData = data.slice(tertiaryOffset, tertiaryOffset + 44);
+    }
+
+    systems.push({
+      index: i,
+      name,
+      alarmType,
+      alarmMode,
+      signalling,
+      revertChannel,
+      squelchMode,
+      idType,
+      flags,
+      frequencyId,
+      enabled,
+      secondaryData,
+      tertiaryData,
+    });
+  }
+
+  return systems;
+}
+
+/**
+ * Encode Analog Emergency Systems to metadata 0x10 block format
+ */
+export function encodeAnalogEmergency(system: AnalogEmergency, index: number, data: Uint8Array): void {
+  const entryBaseOffset = 0xAC;
+  const entryOffset = entryBaseOffset + (index * 36);
+
+  if (entryOffset + 36 > data.length) {
+    throw new Error('Entry offset exceeds block size');
+  }
+
+  // Name (17 bytes, null-terminated)
+  const nameBytes = new Uint8Array(17);
+  const nameEncoded = new TextEncoder().encode(system.name.substring(0, 16));
+  nameBytes.set(nameEncoded, 0);
+  nameBytes[nameEncoded.length] = 0; // Null terminator
+  data.set(nameBytes, entryOffset);
+
+  // Padding (1 byte)
+  data[entryOffset + 0x11] = 0x00;
+
+  // Alarm Type (1 byte)
+  data[entryOffset + 0x12] = system.alarmType;
+
+  // Alarm Mode (1 byte)
+  data[entryOffset + 0x13] = system.alarmMode;
+
+  // Signalling (1 byte)
+  data[entryOffset + 0x14] = system.signalling;
+
+  // Revert Channel (2 bytes, little-endian, stored as value - 1)
+  const revertChannelValue = Math.max(0, system.revertChannel - 1);
+  data[entryOffset + 0x15] = revertChannelValue & 0xFF;
+  data[entryOffset + 0x16] = (revertChannelValue >> 8) & 0xFF;
+
+  // Squelch Mode (1 byte, stored as value + 1)
+  data[entryOffset + 0x17] = system.squelchMode + 1;
+
+  // ID Type (1 byte, stored as value + 1)
+  data[entryOffset + 0x18] = system.idType + 1;
+
+  // Flags (1 byte)
+  data[entryOffset + 0x19] = system.flags;
+
+  // Frequency/ID (2 bytes, little-endian)
+  data[entryOffset + 0x1A] = system.frequencyId & 0xFF;
+  data[entryOffset + 0x1B] = (system.frequencyId >> 8) & 0xFF;
+
+  // Flags (1 byte, bit 0: enabled/disabled)
+  data[entryOffset + 0x1C] = system.enabled ? 0x01 : 0x00;
+
+  // Secondary structure (if provided)
+  if (system.secondaryData && system.secondaryData.length === 20) {
+    const secondaryOffset = -0x14 + (index * 0x14);
+    if (secondaryOffset >= 0 && secondaryOffset + 20 <= data.length) {
+      data.set(system.secondaryData, secondaryOffset);
+    }
+  }
+
+  // Tertiary structure (if provided)
+  if (system.tertiaryData && system.tertiaryData.length === 44) {
+    const tertiaryOffset = 0x2D5 + (index * 0x2C);
+    if (tertiaryOffset >= 0 && tertiaryOffset + 44 <= data.length) {
+      data.set(system.tertiaryData, tertiaryOffset);
+    }
+  }
+}
+
+/**
+ * Encode all Analog Emergency Systems to metadata 0x10 block format
+ */
+export function encodeAnalogEmergencies(systems: AnalogEmergency[]): Uint8Array {
+  const data = new Uint8Array(0x1000); // 4KB block
+  data.fill(0xFF);
+
+  for (let i = 0; i < systems.length; i++) {
+    encodeAnalogEmergency(systems[i], i, data);
+  }
+
+  // Set metadata byte at offset 0xFFF
+  data[0xFFF] = 0x10;
+
+  return data;
 }
 
 

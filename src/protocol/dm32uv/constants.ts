@@ -9,6 +9,9 @@ export const METADATA = {
   CHANNEL_LAST: 0x41,       // Last channel block (max)
   ZONE: 0x5c,               // Zone block
   SCAN_LIST: 0x11,          // Scan list block
+  DIGITAL_EMERGENCY: 0x03,  // Digital Emergency Systems
+  VFO_SETTINGS: 0x04,       // VFO Settings / Radio Names / Embedded Information
+  ANALOG_EMERGENCY: 0x10,   // Analog Emergency Systems
   EMPTY: 0x00,              // Empty block
   EMPTY_ALT: 0xFF,          // Alternative empty block marker
 } as const;
@@ -19,6 +22,8 @@ export const BLOCK_SIZE = {
   CHANNEL: 48,              // Bytes per channel
   ZONE: 145,                // Bytes per zone
   SCAN_LIST: 92,            // Bytes per scan list
+  DIGITAL_EMERGENCY: 40,    // Bytes per digital emergency entry
+  ANALOG_EMERGENCY: 36,     // Bytes per analog emergency entry
   ZONE_NAME: 11,            // Bytes for zone name
   CHANNEL_NAME: 16,         // Bytes for channel name
 } as const;
@@ -59,5 +64,7 @@ export const LIMITS = {
   ZONES_PER_BLOCK: 28,      // Approximate (4096 - 16) / 145
   SCAN_LISTS_PER_BLOCK: 44, // First 44 start at offset 16
   SCAN_LIST_CHANNELS_MAX: 16,
+  DIGITAL_EMERGENCY_MAX: 37, // (4096 - 0x218) / 40 ≈ 37
+  ANALOG_EMERGENCY_MAX: 108, // (4096 - 0xAC) / 36 ≈ 108
 } as const;
 

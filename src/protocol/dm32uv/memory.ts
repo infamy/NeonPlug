@@ -8,7 +8,7 @@ import { DM32Connection } from './connection';
 export interface MemoryBlock {
   address: number;
   metadata: number;
-  type: 'channel' | 'zone' | 'contact' | 'scan' | 'rxgroup' | 'message' | 'empty' | 'unknown';
+  type: 'channel' | 'zone' | 'contact' | 'scan' | 'rxgroup' | 'message' | 'vfo' | 'digitalemergency' | 'analogemergency' | 'empty' | 'unknown';
 }
 
 /**
@@ -48,16 +48,21 @@ export async function discoverMemoryBlocks(
       type = 'zone'; // Zones identified as metadata 0x5c (92) from debug export analysis
     } else if (metadata === 0x11) {
       type = 'scan'; // Scan lists identified as metadata 0x11 (17) from debug export analysis
+    } else if (metadata === 0x03) {
+      type = 'digitalemergency'; // Digital Emergency Systems
+    } else if (metadata === 0x04) {
+      type = 'vfo'; // VFO Settings / Radio Names / Embedded Information
+    } else if (metadata === 0x10) {
+      type = 'analogemergency'; // Analog Emergency Systems
     } else if (metadata === 0xFF) {
       type = 'empty'; // Invalid/unavailable
     } else {
       // All other metadata values are marked as 'unknown' for analysis
       // Known but unhandled metadata values:
-      // 0x06 - Previously thought to be scan lists, but appears unused
+      // 0x06 - DTMF Encode Data
       // 0x07 - Config header
       // 0x0A - Message/Text messages
       // 0x0F - RX Groups/Memberships (V-frame 0x0E range)
-      // 0x10 - Emergency systems
       // Others - Need investigation
       type = 'unknown';
     }

@@ -1,6 +1,15 @@
 import type { Channel } from '../../models/Channel';
 import type { RadioSettings } from '../../models/RadioSettings';
 
+interface SettingsWithBandLimits {
+  bandLimits: {
+    vhfMin: number;
+    vhfMax: number;
+    uhfMin: number;
+    uhfMax: number;
+  };
+}
+
 export interface ValidationError {
   field: string;
   message: string;
@@ -8,7 +17,7 @@ export interface ValidationError {
 
 export function validateChannel(
   channel: Channel,
-  settings?: RadioSettings
+  settings?: RadioSettings | SettingsWithBandLimits
 ): ValidationError[] {
   const errors: ValidationError[] = [];
 
@@ -28,8 +37,8 @@ export function validateChannel(
     errors.push({ field: 'txFrequency', message: 'TX frequency must be greater than 0' });
   }
 
-  // Band limits validation (if settings available)
-  if (settings) {
+  // Band limits validation (if settings available with bandLimits)
+  if (settings && 'bandLimits' in settings && settings.bandLimits) {
     const isVHF = channel.rxFrequency >= settings.bandLimits.vhfMin && 
                   channel.rxFrequency <= settings.bandLimits.vhfMax;
     const isUHF = channel.rxFrequency >= settings.bandLimits.uhfMin && 
@@ -65,7 +74,7 @@ export function validateChannel(
 
 export function validateChannels(
   channels: Channel[],
-  settings?: RadioSettings
+  settings?: RadioSettings | SettingsWithBandLimits
 ): Map<number, ValidationError[]> {
   const errors = new Map<number, ValidationError[]>();
   

@@ -11,6 +11,7 @@ const tabs = [
   { id: 'zones', label: 'Zones' },
   { id: 'scanlists', label: 'Scan Lists' },
   { id: 'contacts', label: 'Contacts' },
+  { id: 'emergency', label: 'Emergency' },
   { id: 'settings', label: 'Settings' },
   { id: 'import', label: 'Smart Import' },
   { id: 'about', label: 'About' },
