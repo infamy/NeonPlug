@@ -9,6 +9,9 @@ export const METADATA = {
   CHANNEL_LAST: 0x41,       // Last channel block (max)
   ZONE: 0x5c,               // Zone block
   SCAN_LIST: 0x11,          // Scan list block
+  DIGITAL_EMERGENCY: 0x03,  // Digital Emergency Systems
+  VFO_SETTINGS: 0x04,       // Radio Settings / Radio Names / Embedded Information
+  ANALOG_EMERGENCY: 0x10,   // Analog Emergency Systems
   QUICK_MESSAGES: 0x0A,     // Quick text messages block
   RX_GROUPS: 0x0F,          // DMR RX Groups (DMR Receive Groups) - separate from V-frame 0x0F
   CALIBRATION: 0x02,        // Frequency adjustment/calibration data
@@ -23,6 +26,8 @@ export const BLOCK_SIZE = {
   CHANNEL: 48,              // Bytes per channel
   ZONE: 145,                // Bytes per zone
   SCAN_LIST: 92,            // Bytes per scan list
+  DIGITAL_EMERGENCY: 40,    // Bytes per digital emergency entry
+  ANALOG_EMERGENCY: 36,     // Bytes per analog emergency entry
   ZONE_NAME: 11,            // Bytes for zone name
   CHANNEL_NAME: 16,         // Bytes for channel name
   QUICK_MESSAGE: 129,       // Bytes per quick message entry (0x81)
@@ -70,6 +75,8 @@ export const LIMITS = {
   ZONES_PER_BLOCK: 28,      // Approximate (4096 - 16) / 145
   SCAN_LISTS_PER_BLOCK: 44, // First 44 start at offset 16
   SCAN_LIST_CHANNELS_MAX: 16,
+  DIGITAL_EMERGENCY_MAX: 37, // (4096 - 0x218) / 40 ≈ 37
+  ANALOG_EMERGENCY_MAX: 108, // (4096 - 0xAC) / 36 ≈ 108
   QUICK_MESSAGES_MAX: 30,   // floor((4096 - 128) / 129) = 30
   RX_GROUPS_MAX: 37,        // floor(4096 / 109) = 37
   DMR_RADIO_IDS_MAX: 256,   // 4096 / 16 = 256

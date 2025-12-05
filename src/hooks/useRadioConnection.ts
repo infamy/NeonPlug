@@ -5,6 +5,9 @@ import { useChannelsStore } from '../store/channelsStore';
 import { useZonesStore } from '../store/zonesStore';
 import { useScanListsStore } from '../store/scanListsStore';
 import { useContactsStore } from '../store/contactsStore';
+import { useRadioSettingsStore } from '../store/radioSettingsStore';
+import { useDigitalEmergencyStore } from '../store/digitalEmergencyStore';
+import { useAnalogEmergencyStore } from '../store/analogEmergencyStore';
 import { useQuickMessagesStore } from '../store/quickMessagesStore';
 import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
 import { useCalibrationStore } from '../store/calibrationStore';
@@ -19,6 +22,9 @@ export function useRadioConnection() {
     const { setZones, setRawZoneData } = useZonesStore();
     const { setScanLists, setRawScanListData } = useScanListsStore();
     const { setContacts } = useContactsStore();
+    const { setSettings: setRadioSettings } = useRadioSettingsStore();
+    const { setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
+    const { setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
     const { setMessages, setRawMessageData } = useQuickMessagesStore();
     const { setRadioIds, setRawRadioIdData } = useDMRRadioIDsStore();
     const { setCalibration } = useCalibrationStore();
@@ -168,10 +174,55 @@ export function useRadioConnection() {
         console.warn('Failed to read DMR RX Groups:', err);
       }
 
+      // Step 7: Read configuration blocks (Radio Settings, Emergency Systems, etc.)
+      try {
+        onProgress?.(90, 'Reading configuration...', 'Reading configuration');
+        
+        // Read Radio Settings (for Radio Boot Text)
+        try {
+          const radioSettings = await protocol.readRadioSettings();
+          if (radioSettings) {
+            setRadioSettings(radioSettings);
+          }
+        } catch (err) {
+          // Radio settings are optional - don't fail the entire read if they're missing or cause errors
+          console.warn('Could not read Radio Settings:', err);
+        }
+
+        // Read Digital Emergency Systems
+        try {
+          const digitalEmergency = await protocol.readDigitalEmergencies();
+          if (digitalEmergency) {
+            setDigitalEmergencies(digitalEmergency.systems);
+            setDigitalEmergencyConfig(digitalEmergency.config);
+          }
+        } catch (err) {
+          console.warn('Could not read Digital Emergency Systems:', err);
+        }
+
+        // Read Analog Emergency Systems
+        try {
+          const analogEmergencies = await protocol.readAnalogEmergencies();
+          if (analogEmergencies) {
+            setAnalogEmergencies(analogEmergencies);
+          }
+        } catch (err) {
+          console.warn('Could not read Analog Emergency Systems:', err);
+        }
+
+        // Update blockData with all configuration blocks for debug export
+        if ((protocol as any).blockData) {
+          setBlockData((protocol as any).blockData);
+        }
+      } catch (err) {
+        // Configuration blocks are optional - don't fail the entire read if they're missing or cause errors
+        console.warn('Error reading configuration blocks:', err);
+      }
+
       // Restore original progress handler
       protocol.onProgress = originalConfigProgress;
 
-      // Step 6: Complete (contacts are read separately on demand)
+      // Step 8: Complete (contacts are read separately on demand)
       onProgress?.(100, 'Read complete!', steps[5]);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Read failed';
@@ -196,7 +247,7 @@ export function useRadioConnection() {
       // setSettings(null);
       setIsConnecting(false);
     }
-  }, [setConnected, setRadioInfo, setSettings, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData, setMessages, setRawMessageData, setRadioIds, setRawRadioIdData, setCalibration, setRXGroups, setRawGroupData]);
+  }, [setConnected, setRadioInfo, setSettings, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setRadioIds, setRawRadioIdData, setCalibration, setRXGroups, setRawGroupData]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void

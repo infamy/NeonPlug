@@ -43,7 +43,7 @@ export interface RadioProtocol {
   writeContacts(contacts: Contact[]): Promise<void>;
   
   // Settings
-  readRadioSettings(): Promise<RadioSettings>;
+  readRadioSettings(): Promise<RadioSettings | null>;
   writeRadioSettings(settings: RadioSettings): Promise<void>;
   
   // Progress callbacks

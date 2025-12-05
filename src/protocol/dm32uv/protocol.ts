@@ -5,9 +5,9 @@
 
 import { DM32Connection } from './connection';
 import { discoverMemoryBlocks, readChannelCount, readChannelBlocks, type MemoryBlock } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContacts, encodeChannel, encodeZone, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContacts, encodeChannel, encodeZone, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
-import type { Channel, Zone, Contact, RadioSettings, ScanList, QuickTextMessage, DMRRadioID, Calibration, RXGroup } from '../../models';
+import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup } from '../../models';
 import type { WebSerialPort } from './types';
 import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION } from './constants';
 import { 
@@ -48,6 +48,9 @@ export class DM32UVProtocol implements RadioProtocol {
   public rawChannelData: Map<number, { data: Uint8Array; blockAddr: number; offset: number }> = new Map();
   public rawZoneData: Map<string, { data: Uint8Array; zoneNum: number; offset: number }> = new Map();
   public rawScanListData: Map<string, { data: Uint8Array; listNum: number; offset: number }> = new Map();
+  public rawRadioSettingsData: Uint8Array | null = null;
+  public rawDigitalEmergencyData: Uint8Array | null = null;
+  public rawAnalogEmergencyData: Uint8Array | null = null;
   public rawMessageData: Map<number, { data: Uint8Array; messageIndex: number; offset: number }> = new Map();
   public rawDMRRadioIDData: Map<number, { data: Uint8Array; idIndex: number; offset: number }> = new Map();
   public rawRXGroupData: Map<number, { data: Uint8Array; groupIndex: number; offset: number }> = new Map();
@@ -1015,30 +1018,279 @@ export class DM32UVProtocol implements RadioProtocol {
     return groups;
   }
 
-  async readRadioSettings(): Promise<RadioSettings> {
-    if (!this.radioInfo) {
-      throw new Error('Not connected to radio');
+  /**
+   * Read Radio Settings from metadata 0x04 block
+   * Returns null if block doesn't exist (some radios may not have this block)
+   */
+  async readRadioSettings(): Promise<RadioSettings | null> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    // Use already discovered blocks - don't re-discover to avoid issues
+    if (this.discoveredBlocks.length === 0) {
+      // If blocks aren't discovered, we can't safely read radio settings
+      console.warn('No blocks discovered - cannot read radio settings');
+      return null;
     }
 
-    // Return basic settings from radio info
-    const settings: RadioSettings = {
-      name: 'DM-32UV',
-      model: this.radioInfo.model,
-      firmware: this.radioInfo.firmware,
-      buildDate: this.radioInfo.buildDate,
-      bandLimits: {
-        vhfMin: 136.0000,
-        vhfMax: 174.0000,
-        uhfMin: 400.0000,
-        uhfMax: 480.0000,
-      },
-    };
-    return settings;
+    // Find radio settings block (metadata 0x04)
+    const radioSettingsBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.VFO_SETTINGS);
+
+    if (!radioSettingsBlock) {
+      // Block doesn't exist - this is OK, some radios may not have it
+      console.log('Radio Settings block (metadata 0x04) not found - radio may not support this feature');
+      return null;
+    }
+
+    // Validate address is within reasonable bounds
+    if (radioSettingsBlock.address < 0x1000 || radioSettingsBlock.address > 0x100000) {
+      console.warn(`Radio settings block address 0x${radioSettingsBlock.address.toString(16)} seems invalid - skipping read`);
+      return null;
+    }
+
+    this.onProgress?.(0, 'Reading Radio Settings...');
+
+    try {
+      // Read the entire 4KB block
+      const blockData = await this.connection!.readMemory(radioSettingsBlock.address, BLOCK_SIZE.STANDARD);
+      this.rawRadioSettingsData = blockData;
+      
+      // Store in blockData map for debug export
+      this.blockData.set(radioSettingsBlock.address, blockData);
+
+      this.onProgress?.(100, 'Radio Settings read');
+      return parseRadioSettings(blockData);
+    } catch (err) {
+      // If read fails, don't crash - just return null
+      console.warn('Failed to read Radio Settings block:', err);
+      return null;
+    }
   }
 
-  async writeRadioSettings(_settings: RadioSettings): Promise<void> {
-    // TODO: Implement settings writing
-    throw new Error('Settings writing not yet implemented');
+  /**
+   * Write Radio Settings to metadata 0x04 block
+   */
+  async writeRadioSettings(settings: RadioSettings): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    // Discover blocks if not already discovered
+    if (this.discoveredBlocks.length === 0) {
+      if (!this.radioInfo) {
+        throw new Error('Radio info not available. Connect and read radio info first.');
+      }
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo.memoryLayout.configStart,
+        this.radioInfo.memoryLayout.configEnd,
+        (current, total) => {
+          // Convert to our progress format
+          const progress = Math.floor((current / total) * 100);
+          this.onProgress?.(progress, `Discovering blocks ${current}/${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+    
+    requireDiscoveredBlocks(this.discoveredBlocks);
+
+    // Find radio settings block (metadata 0x04)
+    const radioSettingsBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.VFO_SETTINGS);
+
+    if (!radioSettingsBlock) {
+      throw new Error('Radio Settings block (metadata 0x04) not found');
+    }
+
+    this.onProgress?.(0, 'Writing Radio Settings...');
+
+    // Encode settings to 4KB block
+    const blockData = encodeRadioSettings(settings);
+
+    // Write the entire block (writeMemory takes address, data, and metadata)
+    await this.connection!.writeMemory(radioSettingsBlock.address, blockData, METADATA.VFO_SETTINGS);
+    this.rawRadioSettingsData = blockData;
+
+    this.onProgress?.(100, 'Radio Settings written');
+  }
+
+  /**
+   * Read Digital Emergency Systems from metadata 0x03 block
+   */
+  async readDigitalEmergencies(): Promise<{ systems: DigitalEmergency[]; config: DigitalEmergencyConfig } | null> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    // Use already discovered blocks - don't re-discover to avoid issues
+    if (this.discoveredBlocks.length === 0) {
+      console.warn('No blocks discovered - cannot read Digital Emergency Systems');
+      return null;
+    }
+
+    // Find Digital Emergency Systems block (metadata 0x03)
+    const emergencyBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.DIGITAL_EMERGENCY);
+
+    if (!emergencyBlock) {
+      console.log('Digital Emergency Systems block (metadata 0x03) not found');
+      return null;
+    }
+
+    // Validate address
+    if (emergencyBlock.address < 0x1000 || emergencyBlock.address > 0x100000) {
+      console.warn(`Digital Emergency block address 0x${emergencyBlock.address.toString(16)} seems invalid - skipping read`);
+      return null;
+    }
+
+    this.onProgress?.(0, 'Reading Digital Emergency Systems...');
+
+    try {
+      // Read the entire 4KB block
+      const blockData = await this.connection!.readMemory(emergencyBlock.address, BLOCK_SIZE.STANDARD);
+      this.rawDigitalEmergencyData = blockData;
+      
+      // Store in blockData map for debug export
+      this.blockData.set(emergencyBlock.address, blockData);
+
+      this.onProgress?.(100, 'Digital Emergency Systems read');
+      // TODO: Structure parsing needs verification - return empty for now
+      // return parseDigitalEmergencies(blockData);
+      return { systems: [], config: { countIndex: 0, unknown: 0, numericFields: [0, 0, 0], byteFields: [0, 0], values16bit: [0, 0, 0, 0], bitFlags: 0, indexCount: 0, entryArray: [], additionalConfig: new Uint8Array(192) } };
+    } catch (err) {
+      console.warn('Failed to read Digital Emergency Systems block:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Write Digital Emergency Systems to metadata 0x03 block
+   */
+  async writeDigitalEmergencies(systems: DigitalEmergency[], config: DigitalEmergencyConfig): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    // Discover blocks if not already discovered
+    if (this.discoveredBlocks.length === 0) {
+      if (!this.radioInfo) {
+        throw new Error('Radio info not available. Connect and read radio info first.');
+      }
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo.memoryLayout.configStart,
+        this.radioInfo.memoryLayout.configEnd,
+        (current, total) => {
+          const progress = Math.floor((current / total) * 100);
+          this.onProgress?.(progress, `Discovering blocks ${current}/${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+    
+    requireDiscoveredBlocks(this.discoveredBlocks);
+
+    // Find Digital Emergency Systems block (metadata 0x03)
+    const emergencyBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.DIGITAL_EMERGENCY);
+
+    if (!emergencyBlock) {
+      throw new Error('Digital Emergency Systems block (metadata 0x03) not found');
+    }
+
+    this.onProgress?.(0, 'Writing Digital Emergency Systems...');
+
+    // Encode systems to 4KB block
+    const blockData = encodeDigitalEmergencies(systems, config);
+
+    // Write the entire block
+    await this.connection!.writeMemory(emergencyBlock.address, blockData, METADATA.DIGITAL_EMERGENCY);
+    this.rawDigitalEmergencyData = blockData;
+    this.blockData.set(emergencyBlock.address, blockData);
+
+    this.onProgress?.(100, 'Digital Emergency Systems written');
+  }
+
+  /**
+   * Read Analog Emergency Systems from metadata 0x10 block
+   */
+  async readAnalogEmergencies(): Promise<AnalogEmergency[] | null> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    // Use already discovered blocks - don't re-discover to avoid issues
+    if (this.discoveredBlocks.length === 0) {
+      console.warn('No blocks discovered - cannot read Analog Emergency Systems');
+      return null;
+    }
+
+    // Find Analog Emergency Systems block (metadata 0x10)
+    const emergencyBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.ANALOG_EMERGENCY);
+
+    if (!emergencyBlock) {
+      console.log('Analog Emergency Systems block (metadata 0x10) not found');
+      return null;
+    }
+
+    // Validate address
+    if (emergencyBlock.address < 0x1000 || emergencyBlock.address > 0x100000) {
+      console.warn(`Analog Emergency block address 0x${emergencyBlock.address.toString(16)} seems invalid - skipping read`);
+      return null;
+    }
+
+    this.onProgress?.(0, 'Reading Analog Emergency Systems...');
+
+    try {
+      // Read the entire 4KB block
+      const blockData = await this.connection!.readMemory(emergencyBlock.address, BLOCK_SIZE.STANDARD);
+      this.rawAnalogEmergencyData = blockData;
+      
+      // Store in blockData map for debug export
+      this.blockData.set(emergencyBlock.address, blockData);
+
+      this.onProgress?.(100, 'Analog Emergency Systems read');
+      // TODO: Structure parsing needs verification - return empty for now
+      // return parseAnalogEmergencies(blockData);
+      return [];
+    } catch (err) {
+      console.warn('Failed to read Analog Emergency Systems block:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Write Analog Emergency Systems to metadata 0x10 block
+   */
+  async writeAnalogEmergencies(systems: AnalogEmergency[]): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    // Discover blocks if not already discovered
+    if (this.discoveredBlocks.length === 0) {
+      if (!this.radioInfo) {
+        throw new Error('Radio info not available. Connect and read radio info first.');
+      }
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo.memoryLayout.configStart,
+        this.radioInfo.memoryLayout.configEnd,
+        (current, total) => {
+          const progress = Math.floor((current / total) * 100);
+          this.onProgress?.(progress, `Discovering blocks ${current}/${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+    
+    requireDiscoveredBlocks(this.discoveredBlocks);
+
+    // Find Analog Emergency Systems block (metadata 0x10)
+    const emergencyBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.ANALOG_EMERGENCY);
+
+    if (!emergencyBlock) {
+      throw new Error('Analog Emergency Systems block (metadata 0x10) not found');
+    }
+
+    this.onProgress?.(0, 'Writing Analog Emergency Systems...');
+
+    // Encode systems to 4KB block
+    const blockData = encodeAnalogEmergencies(systems);
+
+    // Write the entire block
+    await this.connection!.writeMemory(emergencyBlock.address, blockData, METADATA.ANALOG_EMERGENCY);
+    this.rawAnalogEmergencyData = blockData;
+    this.blockData.set(emergencyBlock.address, blockData);
+
+    this.onProgress?.(100, 'Analog Emergency Systems written');
   }
 
   /**

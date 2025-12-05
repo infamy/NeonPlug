@@ -4,6 +4,7 @@ import { ChannelsTab } from './components/channels/ChannelsTab';
 import { ZonesTab } from './components/zones/ZonesTab';
 import { ScanListsTab } from './components/scanlists/ScanListsTab';
 import { ContactsTab } from './components/contacts/ContactsTab';
+import { EmergencyTab } from './components/emergency/EmergencyTab';
 import { SettingsTab } from './components/settings/SettingsTab';
 import { SmartImportTab } from './components/import/SmartImportTab';
 import { AboutTab } from './components/about/AboutTab';
@@ -13,8 +14,13 @@ import { StartupModal } from './components/ui/StartupModal';
 import { useChannelsStore } from './store/channelsStore';
 import { useContactsStore } from './store/contactsStore';
 import { useZonesStore } from './store/zonesStore';
+import { useScanListsStore } from './store/scanListsStore';
+import { useRadioSettingsStore } from './store/radioSettingsStore';
+import { useDigitalEmergencyStore } from './store/digitalEmergencyStore';
+import { useAnalogEmergencyStore } from './store/analogEmergencyStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
+import { importCodeplug } from './services/codeplugExport';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
 
 function App() {
@@ -23,6 +29,10 @@ function App() {
   const { setChannels, channels } = useChannelsStore();
   const { setContacts } = useContactsStore();
   const { setZones } = useZonesStore();
+  const { setScanLists } = useScanListsStore();
+  const { setSettings: setRadioSettings } = useRadioSettingsStore();
+  const { setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
+  const { setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
   const { isConnecting, error: radioError } = useRadioConnection();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,29 +68,64 @@ function App() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const text = await file.text();
     const fileName = file.name.toLowerCase();
+    const fileExtension = fileName.split('.').pop()?.toLowerCase();
 
-    if (fileName.includes('channel')) {
-      const result = importChannelsFromCSV(text);
-      if (result.success && result.channels) {
-        setChannels(result.channels);
+    // Check if it's a codeplug XLSX file
+    if (fileExtension === 'xlsx' || fileExtension === 'xls') {
+      try {
+        const codeplugData = await importCodeplug(file);
+        
+        // Populate all stores with imported data
+        setChannels(codeplugData.channels);
+        setZones(codeplugData.zones);
+        setScanLists(codeplugData.scanLists);
+        setContacts(codeplugData.contacts);
+        setDigitalEmergencies(codeplugData.digitalEmergencies);
+        if (codeplugData.digitalEmergencyConfig) {
+          setDigitalEmergencyConfig(codeplugData.digitalEmergencyConfig);
+        }
+        setAnalogEmergencies(codeplugData.analogEmergencies);
+        if (codeplugData.radioSettings) {
+          setRadioSettings(codeplugData.radioSettings);
+        }
+        
         setShowStartupModal(false);
-        alert(`Successfully imported ${result.channels.length} channels`);
-      } else {
-        alert(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
-      }
-    } else if (fileName.includes('contact')) {
-      const result = importContactsFromCSV(text);
-      if (result.success && result.contacts) {
-        setContacts(result.contacts);
-        setShowStartupModal(false);
-        alert(`Successfully imported ${result.contacts.length} contacts`);
-      } else {
-        alert(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
+        alert(
+          `Successfully imported codeplug!\n\n` +
+          `• ${codeplugData.channels.length} channels\n` +
+          `• ${codeplugData.zones.length} zones\n` +
+          `• ${codeplugData.scanLists.length} scan lists\n` +
+          `• ${codeplugData.contacts.length} contacts`
+        );
+      } catch (error) {
+        alert(`Failed to import codeplug: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else {
-      alert('File name must contain "channel" or "contact" to determine import type');
+      // Legacy CSV import support
+      const text = await file.text();
+
+      if (fileName.includes('channel')) {
+        const result = importChannelsFromCSV(text);
+        if (result.success && result.channels) {
+          setChannels(result.channels);
+          setShowStartupModal(false);
+          alert(`Successfully imported ${result.channels.length} channels`);
+        } else {
+          alert(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
+        }
+      } else if (fileName.includes('contact')) {
+        const result = importContactsFromCSV(text);
+        if (result.success && result.contacts) {
+          setContacts(result.contacts);
+          setShowStartupModal(false);
+          alert(`Successfully imported ${result.contacts.length} contacts`);
+        } else {
+          alert(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
+        }
+      } else {
+        alert('File must be a codeplug (.xlsx/.xls) or CSV file containing "channel" or "contact" in the filename');
+      }
     }
 
     // Reset input
@@ -121,6 +166,8 @@ function App() {
         return <ScanListsTab />;
       case 'contacts':
         return <ContactsTab />;
+      case 'emergency':
+        return <EmergencyTab />;
       case 'settings':
         return <SettingsTab />;
       case 'import':
@@ -149,7 +196,7 @@ function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".csv"
+        accept=".csv,.xlsx,.xls"
         onChange={handleFileSelect}
         className="hidden"
       />

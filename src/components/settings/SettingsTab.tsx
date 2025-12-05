@@ -3,15 +3,17 @@ import { useRadioStore } from '../../store/radioStore';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
 import { useContactsStore } from '../../store/contactsStore';
+import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useCalibrationStore } from '../../store/calibrationStore';
 import { getContactCapacityWithFallback } from '../../utils/firmware';
 import { CALIBRATION_PARAM_NAMES } from '../../models/Calibration';
 
 export const SettingsTab: React.FC = () => {
-  const { settings, radioInfo } = useRadioStore();
+  const { radioInfo } = useRadioStore();
   const { channels } = useChannelsStore();
   const { zones } = useZonesStore();
   const { contacts } = useContactsStore();
+  const { settings: radioSettings, updateSettings: updateRadioSettings } = useRadioSettingsStore();
   const { calibration, calibrationLoaded } = useCalibrationStore();
 
   const formatAddress = (addr?: number) => {
@@ -48,146 +50,197 @@ export const SettingsTab: React.FC = () => {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mb-4">
-        <h2 className="text-2xl font-bold text-neon-cyan">Radio Settings</h2>
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-neon-cyan">Settings</h2>
+        <p className="text-cool-gray text-sm mt-1">Radio information, memory usage, and configuration</p>
       </div>
 
-      {/* About Radio Section */}
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-4">About Radio</h3>
-        
-        {radioInfo ? (
-          <div className="space-y-6">
-            <div>
-              <h4 className="text-md font-semibold text-neon-cyan mb-3">Radio Details</h4>
-              <div className="grid grid-cols-2 gap-4">
-                {settings?.name && (
-                  <div>
-                    <span className="text-cool-gray">Radio Name:</span>
-                    <div className="text-white font-mono">{settings.name}</div>
-                  </div>
-                )}
-                <div>
-                  <span className="text-cool-gray">Model:</span>
-                  <div className="text-white font-mono">{radioInfo.model}</div>
-                </div>
-                <div>
-                  <span className="text-cool-gray">Firmware:</span>
-                  <div className="text-white font-mono">{radioInfo.firmware}</div>
-                </div>
-                {radioInfo.buildDate && (
-                  <div>
-                    <span className="text-cool-gray">Build Date:</span>
-                    <div className="text-white font-mono">{radioInfo.buildDate}</div>
-                  </div>
-                )}
-                {radioInfo.dspVersion && (
-                  <div>
-                    <span className="text-cool-gray">DSP Version:</span>
-                    <div className="text-white font-mono">{radioInfo.dspVersion}</div>
-                  </div>
-                )}
-                {radioInfo.radioVersion && (
-                  <div>
-                    <span className="text-cool-gray">Radio Version:</span>
-                    <div className="text-white font-mono">{radioInfo.radioVersion}</div>
-                  </div>
-                )}
-                {radioInfo.codeplugVersion && (
-                  <div>
-                    <span className="text-cool-gray">Codeplug Version:</span>
-                    <div className="text-white font-mono">{radioInfo.codeplugVersion}</div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {settings && (
+      {!radioInfo ? (
+        <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-30 p-8 text-center">
+          <p className="text-cool-gray">No radio information available. Read from radio to view details.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Device Information Section */}
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
+            <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
+              Device Information
+            </h3>
+            <div className="grid grid-cols-2 gap-4 mt-4">
               <div>
-                <h4 className="text-md font-semibold text-neon-cyan mb-3">Band Limits</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <span className="text-cool-gray">VHF Range:</span>
-                    <div className="text-white">
-                      {settings.bandLimits.vhfMin.toFixed(4)} - {settings.bandLimits.vhfMax.toFixed(4)} MHz
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-cool-gray">UHF Range:</span>
-                    <div className="text-white">
-                      {settings.bandLimits.uhfMin.toFixed(4)} - {settings.bandLimits.uhfMax.toFixed(4)} MHz
-                    </div>
-                  </div>
-                </div>
+                <span className="text-cool-gray text-sm block mb-1">Model</span>
+                <div className="text-white font-mono">{radioInfo.model}</div>
               </div>
-            )}
-
-            <div>
-              <h4 className="text-md font-semibold text-neon-cyan mb-3">Memory Layout</h4>
-              <div className="space-y-2 font-mono text-sm">
-                <div className="flex justify-between">
-                  <span className="text-cool-gray">Main Config:</span>
-                  <span className="text-white">
-                    {formatAddress(radioInfo.memoryLayout.configStart)} - {formatAddress(radioInfo.memoryLayout.configEnd)}
-                  </span>
-                </div>
+              <div>
+                <span className="text-cool-gray text-sm block mb-1">Firmware</span>
+                <div className="text-white font-mono">{radioInfo.firmware}</div>
               </div>
+              {radioInfo.buildDate && (
+                <div>
+                  <span className="text-cool-gray text-sm block mb-1">Build Date</span>
+                  <div className="text-white font-mono">{radioInfo.buildDate}</div>
+                </div>
+              )}
+              {radioInfo.dspVersion && (
+                <div>
+                  <span className="text-cool-gray text-sm block mb-1">DSP Version</span>
+                  <div className="text-white font-mono text-sm">{radioInfo.dspVersion}</div>
+                </div>
+              )}
+              {radioInfo.radioVersion && (
+                <div>
+                  <span className="text-cool-gray text-sm block mb-1">Radio Version</span>
+                  <div className="text-white font-mono text-sm">{radioInfo.radioVersion}</div>
+                </div>
+              )}
+              {radioInfo.codeplugVersion && (
+                <div>
+                  <span className="text-cool-gray text-sm block mb-1">Codeplug Version</span>
+                  <div className="text-white font-mono text-sm">{radioInfo.codeplugVersion}</div>
+                </div>
+              )}
             </div>
+          </div>
 
-            <div>
-              <h4 className="text-md font-semibold text-neon-cyan mb-3">Usage Statistics</h4>
-              <div className="space-y-3">
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-cool-gray">Channels:</span>
-                    <span className="text-white font-mono">
-                      {channelUsage.used} / {channelUsage.total} ({channelUsage.percent}%)
+          {/* Memory & Storage Section */}
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
+            <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
+              Memory & Storage
+            </h3>
+            <div className="space-y-6 mt-4">
+              <div>
+                <h4 className="text-md font-semibold text-neon-cyan mb-3">Memory Layout</h4>
+                <div className="space-y-2 font-mono text-sm">
+                  <div className="flex justify-between items-center py-2 px-3 bg-dark-charcoal rounded">
+                    <span className="text-cool-gray">Configuration Region:</span>
+                    <span className="text-white">
+                      {formatAddress(radioInfo.memoryLayout.configStart)} - {formatAddress(radioInfo.memoryLayout.configEnd)}
                     </span>
-                  </div>
-                  <div className="w-full bg-dark-charcoal rounded-full h-2">
-                    <div
-                      className="bg-neon-cyan h-2 rounded-full transition-all"
-                      style={{ width: `${channelUsage.percent}%` }}
-                    />
                   </div>
                 </div>
-                
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-cool-gray">Zones:</span>
-                    <span className="text-white font-mono">
-                      {zoneUsage.used} / {zoneUsage.total} ({zoneUsage.percent}%)
-                    </span>
+              </div>
+
+              <div>
+                <h4 className="text-md font-semibold text-neon-cyan mb-3">Usage Statistics</h4>
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-cool-gray">Channels</span>
+                      <span className="text-white font-mono text-sm">
+                        {channelUsage.used} / {channelUsage.total} ({channelUsage.percent}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-dark-charcoal rounded-full h-2.5">
+                      <div
+                        className="bg-neon-cyan h-2.5 rounded-full transition-all"
+                        style={{ width: `${channelUsage.percent}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-dark-charcoal rounded-full h-2">
-                    <div
-                      className="bg-neon-cyan h-2 rounded-full transition-all"
-                      style={{ width: `${zoneUsage.percent}%` }}
-                    />
+                  
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-cool-gray">Zones</span>
+                      <span className="text-white font-mono text-sm">
+                        {zoneUsage.used} / {zoneUsage.total} ({zoneUsage.percent}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-dark-charcoal rounded-full h-2.5">
+                      <div
+                        className="bg-neon-cyan h-2.5 rounded-full transition-all"
+                        style={{ width: `${zoneUsage.percent}%` }}
+                      />
+                    </div>
                   </div>
-                </div>
-                
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-cool-gray">Contacts:</span>
-                    <span className="text-white font-mono">
-                      {contactUsage.used} / {contactUsage.total.toLocaleString()} ({contactUsage.percent}%)
-                    </span>
-                  </div>
-                  <div className="w-full bg-dark-charcoal rounded-full h-2">
-                    <div
-                      className="bg-neon-cyan h-2 rounded-full transition-all"
-                      style={{ width: `${contactUsage.percent}%` }}
-                    />
+                  
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-cool-gray">Contacts</span>
+                      <span className="text-white font-mono text-sm">
+                        {contactUsage.used} / {contactUsage.total.toLocaleString()} ({contactUsage.percent}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-dark-charcoal rounded-full h-2.5">
+                      <div
+                        className="bg-neon-cyan h-2.5 rounded-full transition-all"
+                        style={{ width: `${contactUsage.percent}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        ) : (
-          <p className="text-cool-gray">No radio information available. Read from radio to view details.</p>
-        )}
-      </div>
+
+          {/* Radio Configuration Section */}
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
+            <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
+              Radio Configuration
+            </h3>
+            <div className="space-y-6 mt-4">
+              {radioSettings && (
+                <>
+                  <div>
+                    <h4 className="text-md font-semibold text-neon-cyan mb-3">Boot Screen Text</h4>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-cool-gray text-sm mb-2">Line 1</label>
+                        <input
+                          type="text"
+                          value={radioSettings.radioNameA}
+                          onChange={(e) => updateRadioSettings({ radioNameA: e.target.value.substring(0, 14) })}
+                          className="w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                          maxLength={14}
+                          placeholder="Enter boot text line 1"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-cool-gray text-sm mb-2">Line 2</label>
+                        <input
+                          type="text"
+                          value={radioSettings.radioNameB}
+                          onChange={(e) => updateRadioSettings({ radioNameB: e.target.value.substring(0, 14) })}
+                          className="w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                          maxLength={14}
+                          placeholder="Enter boot text line 2"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-md font-semibold text-neon-cyan mb-3">Boot Image</h4>
+                    <div className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <p className="text-cool-gray text-sm mb-1">Upload or download boot screen image</p>
+                          <p className="text-yellow-500 text-xs">⚠️ Not yet supported</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          disabled
+                          className="px-4 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-cool-gray text-sm cursor-not-allowed opacity-50"
+                        >
+                          Upload Image
+                        </button>
+                        <button
+                          type="button"
+                          disabled
+                          className="px-4 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-cool-gray text-sm cursor-not-allowed opacity-50"
+                        >
+                          Download Image
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Calibration Data Section - Read Only */}
       {calibrationLoaded && (

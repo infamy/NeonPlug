@@ -47,8 +47,11 @@ export const StartupModal: React.FC<StartupModalProps> = ({
             onClick={onLoadFile}
             className="w-full py-4 text-lg"
           >
-            Load from File
+            Import Codeplug
           </Button>
+          <p className="text-xs text-cool-gray text-center mt-2">
+            Import from XLSX codeplug file
+          </p>
 
           {onDismiss && (
             <button

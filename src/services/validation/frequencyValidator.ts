@@ -1,13 +1,23 @@
 import type { RadioSettings } from '../../models/RadioSettings';
 
+interface SettingsWithBandLimits {
+  bandLimits: {
+    vhfMin: number;
+    vhfMax: number;
+    uhfMin: number;
+    uhfMax: number;
+  };
+}
+
 export function isValidFrequency(
   frequency: number,
-  settings?: RadioSettings
+  settings?: RadioSettings | SettingsWithBandLimits
 ): boolean {
   if (frequency <= 0) return false;
   
-  if (!settings) return true;
-  
+  if (!settings || !('bandLimits' in settings) || !settings.bandLimits) {
+    return true; // Skip validation if bandLimits not available
+  }
   const isVHF = frequency >= settings.bandLimits.vhfMin && 
                 frequency <= settings.bandLimits.vhfMax;
   const isUHF = frequency >= settings.bandLimits.uhfMin && 
@@ -18,9 +28,11 @@ export function isValidFrequency(
 
 export function getFrequencyBand(
   frequency: number,
-  settings?: RadioSettings
+  settings?: RadioSettings | SettingsWithBandLimits
 ): 'VHF' | 'UHF' | 'Unknown' {
-  if (!settings) return 'Unknown';
+  if (!settings || !('bandLimits' in settings) || !settings.bandLimits) {
+    return 'Unknown';
+  }
   
   if (frequency >= settings.bandLimits.vhfMin && 
       frequency <= settings.bandLimits.vhfMax) {
