@@ -79,24 +79,38 @@ export function decodeCTCSSDCS(data: Uint8Array): CTCSSDCSResult {
   const low = data[0];
   const high = data[1];
 
+  // Check for None/Off first (both bytes = 0xFF)
+  if (low === 0xFF && high === 0xFF) {
+    return { type: 'None' };
+  }
+
   // Check if DCS (high byte >= 0x80)
   if (high >= 0x80) {
-    const code = low;
-    const polarity = (high & 0x01) === 0 ? 'N' : 'P';
+    const isInverted = high >= 0xC0;
+    const highNibble = high & 0x0F;
+    
+    // Build DCS code from low byte and high nibble
+    // Format: DXXXN/I where XXX is the code
+    const code = (highNibble << 8) | low;
+    const polarity = isInverted ? 'P' : 'N';
     return { type: 'DCS', value: code, polarity };
   }
 
   // CTCSS: tone in Hz
-  // Format: <tone_low> <tone_high>
-  // Example: 73 12 = 127.3 Hz
-  if (low === 0 && high === 0) {
+  // Format per spec Python implementation:
+  // decimal_part = (low_byte >> 4) & 0x0F
+  // low_digit = low_byte & 0x0F
+  // high_digit = high_byte
+  // ctcss_hz = float(high_digit * 10 + low_digit) + (decimal_part / 10.0)
+  const decimalPart = (low >> 4) & 0x0F;
+  const lowDigit = low & 0x0F;
+  const highDigit = high;
+  const frequency = (highDigit * 10 + lowDigit) + (decimalPart / 10.0);
+
+  // If frequency is 0, treat as None
+  if (frequency === 0) {
     return { type: 'None' };
   }
-
-  // Convert to Hz (tone_low is integer part, tone_high is decimal * 10)
-  const integerPart = low;
-  const decimalPart = high / 10;
-  const frequency = integerPart + decimalPart;
 
   return { type: 'CTCSS', value: frequency };
 }

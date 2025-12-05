@@ -3,13 +3,135 @@
  * Parses channel, zone, and contact structures from radio memory
  */
 
-import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency } from '../../models';
+import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, CalibrationData, RXGroup } from '../../models';
 import { decodeBCDFrequency, decodeCTCSSDCS, encodeBCDFrequency, encodeCTCSSDCS } from './encoding';
+import { OFFSET, BLOCK_SIZE, LIMITS } from './constants';
+
+/**
+ * Calculate the byte offset for a channel's flag byte based on channel number
+ * This is used for flags like Forbid TX that are stored at variable offsets
+ * 
+ * @param channelNumber - Channel number (1-indexed)
+ * @returns The byte offset relative to the channel buffer start
+ */
+export function getChannelFlagByteOffset(channelNumber: number): number {
+  if (channelNumber < 85) {
+    // For channels 1-84: channel_num * 0x30 - 8 (8 bytes before channel entry)
+    return (channelNumber * 0x30) - 8;
+  } else {
+    // For channels >= 85: ((channel_num % 0x55) * 0x30) + 0x18 + ((channel_num / 0x55) * 0x1000)
+    const channelNumMod = channelNumber % 0x55;
+    const channelNumDiv = Math.floor(channelNumber / 0x55);
+    return (channelNumMod * 0x30) + 0x18 + (channelNumDiv * 0x1000);
+  }
+}
+
+/**
+ * Calculate the block offset for a channel's flag byte
+ * 
+ * @param channelNumber - Channel number (1-indexed)
+ * @param channelOffsetInBlock - Offset of channel entry within block
+ * @param blockIndex - Block index (0 for first block, 1 for second, etc.)
+ * @returns The byte offset within the block, or undefined if out of bounds
+ */
+export function getChannelFlagByteBlockOffset(
+  channelNumber: number,
+  channelOffsetInBlock: number,
+  blockIndex: number
+): number | undefined {
+  const isFirstBlock = blockIndex === 0;
+  const blockStartAdjustment = isFirstBlock ? 0x10 : 0x00; // First block has 0x10 header
+  
+  let flagByteOffsetInBlock: number;
+  if (channelNumber < 85) {
+    // For channels 1-84: 8 bytes before channel entry
+    flagByteOffsetInBlock = channelOffsetInBlock - 8;
+  } else {
+    // For channels >= 85: Calculate offset within current block
+    const flagByteOffsetInBuffer = getChannelFlagByteOffset(channelNumber);
+    const blockContribution = blockIndex * 0x1000;
+    flagByteOffsetInBlock = flagByteOffsetInBuffer - blockContribution + blockStartAdjustment;
+  }
+  
+  return flagByteOffsetInBlock;
+}
+
+/**
+ * Read a flag byte for a channel from block data
+ * 
+ * @param channelNumber - Channel number (1-indexed)
+ * @param blockData - Full block data (4096 bytes)
+ * @param channelOffsetInBlock - Offset of channel entry within block
+ * @param blockIndex - Block index (0 for first block, 1 for second, etc.)
+ * @returns The flag byte value, or undefined if offset is out of bounds
+ */
+export function readChannelFlagByte(
+  channelNumber: number,
+  blockData: Uint8Array,
+  channelOffsetInBlock: number,
+  blockIndex: number
+): number | undefined {
+  const flagByteOffsetInBlock = getChannelFlagByteBlockOffset(channelNumber, channelOffsetInBlock, blockIndex);
+  
+  if (flagByteOffsetInBlock === undefined) {
+    return undefined;
+  }
+  
+  // Ensure offset is within block bounds
+  if (flagByteOffsetInBlock >= 0 && flagByteOffsetInBlock < blockData.length) {
+    return blockData[flagByteOffsetInBlock];
+  }
+  
+  return undefined;
+}
+
+/**
+ * Write a flag bit to a channel's flag byte in block data
+ * 
+ * @param channelNumber - Channel number (1-indexed)
+ * @param blockData - Full block data (4096 bytes) - will be modified
+ * @param channelOffsetInBlock - Offset of channel entry within block
+ * @param blockIndex - Block index (0 for first block, 1 for second, etc.)
+ * @param bitMask - Bit mask for the flag (e.g., 0x08 for bit 3)
+ * @param value - Whether to set (true) or clear (false) the bit
+ * @returns true if the flag was written, false if offset is out of bounds
+ */
+export function writeChannelFlagBit(
+  channelNumber: number,
+  blockData: Uint8Array,
+  channelOffsetInBlock: number,
+  blockIndex: number,
+  bitMask: number,
+  value: boolean
+): boolean {
+  const flagByteOffsetInBlock = getChannelFlagByteBlockOffset(channelNumber, channelOffsetInBlock, blockIndex);
+  
+  if (flagByteOffsetInBlock === undefined) {
+    return false;
+  }
+  
+  // Ensure offset is within block bounds
+  if (flagByteOffsetInBlock >= 0 && flagByteOffsetInBlock < blockData.length) {
+    if (value) {
+      blockData[flagByteOffsetInBlock] |= bitMask;
+    } else {
+      blockData[flagByteOffsetInBlock] &= ~bitMask;
+    }
+    return true;
+  }
+  
+  return false;
+}
 
 /**
  * Parse a single channel from 48-byte data
+ * @param data - 48-byte channel data
+ * @param channelNumber - Channel number (1-indexed)
+ * @param blockData - Optional full block data (4096 bytes) to access bytes before channel entry for forbid TX
+ * @param channelOffsetInBlock - Optional offset of channel entry within block (for forbid TX calculation)
+ * @param blockIndex - Optional block index (0 for first block, 1 for second, etc.) for forbid TX calculation
  */
-export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
+export function parseChannel(data: Uint8Array, channelNumber: number, blockData?: Uint8Array, channelOffsetInBlock?: number, blockIndex?: number): Channel {
   if (data.length < 48) {
     throw new Error('Channel data must be 48 bytes');
   }
@@ -34,12 +156,36 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   const modeMap: Channel['mode'][] = ['Analog', 'Digital', 'Fixed Analog', 'Fixed Digital'];
   const mode = modeMap[channelMode] || 'Analog';
 
-  const forbidTx = (modeFlags & 0x08) !== 0;
+  // Forbid TX is stored at a variable offset depending on channel number
+  // Use the reusable helper function to read the flag byte
+  let forbidTx = false;
+  if (blockData && channelOffsetInBlock !== undefined && blockIndex !== undefined) {
+    const forbidTxByte = readChannelFlagByte(channelNumber, blockData, channelOffsetInBlock, blockIndex);
+    if (forbidTxByte !== undefined) {
+      forbidTx = (forbidTxByte & 0x08) !== 0;
+    } else {
+      // Fallback to reading from channel data if offset is out of bounds
+      console.warn(`Forbid TX byte out of bounds for channel ${channelNumber} (block ${blockIndex}), using channel data byte 0x18`);
+      forbidTx = (modeFlags & 0x08) !== 0;
+    }
+  } else {
+    // Fallback: read from channel data byte 0x18 (may be incorrect for some channels)
+    forbidTx = (modeFlags & 0x08) !== 0;
+  }
+  
   const busyLockValue = (modeFlags >> 1) & 0x03;
   const busyLock: Channel['busyLock'] = 
     busyLockValue === 0 ? 'Off' : 
     busyLockValue === 1 ? 'Carrier' : 'Repeater';
   const loneWorker = (modeFlags & 0x01) !== 0;
+
+  // Debug logging for VECTOR channels to diagnose forbid TX issues
+  if (name.toUpperCase().includes('VECTOR') || name.toUpperCase().includes('BCF') || name.toUpperCase().includes('CZBB')) {
+    const bit3 = (modeFlags & 0x08) !== 0;
+    const bit3Raw = (modeFlags >> 3) & 0x01;
+    const rxEqualsTx = Math.abs(rxFreq - txFreq) < 0.0001;
+    console.log(`[DEBUG] Channel ${channelNumber} "${name}": modeFlags=0x${modeFlags.toString(16).padStart(2, '0')} (binary: ${modeFlags.toString(2).padStart(8, '0')}), mode=${mode} (${channelMode}), forbidTx=${forbidTx}, bit3=${bit3}, bit3Raw=${bit3Raw}, busyLock=${busyLockValue}, loneWorker=${loneWorker}, RX=${rxFreq.toFixed(4)}, TX=${txFreq.toFixed(4)}, RX==TX=${rxEqualsTx}`);
+  }
 
   // Scan & Bandwidth (0x19)
   // Bit 7: Bandwidth (0=12.5kHz/Narrow, 1=25kHz/Wide) - NOTE: Spec appears inverted!
@@ -53,11 +199,14 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
 
   // Talkaround & APRS (0x1A)
   // Bit 7: Forbid Talkaround (0=Allow, 1=Forbid)
-  // Bits 6-3: Reserved
+  // Bits 6-4: Unknown Setting (0-3, values ≥4 reset to 0)
+  // Bit 3: Unknown
   // Bit 2: APRS Receive (0=Off, 1=On)
-  // Bits 1-0: Reverse Frequency (0-3)
+  // Bits 1-0: Reverse Frequency (0-2)
   const talkaroundAprs = data[0x1A];
   const forbidTalkaround = (talkaroundAprs & 0x80) !== 0;
+  const unknown1A_6_4 = (talkaroundAprs >> 4) & 0x07;
+  const unknown1A_3 = (talkaroundAprs & 0x08) !== 0;
   const aprsReceive = (talkaroundAprs & 0x04) !== 0;
   const reverseFreq = talkaroundAprs & 0x03;
 
@@ -70,7 +219,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   // Power & APRS (0x1C)
   // Bits 7-4: Power Level (0=Low, 1=Medium, 2=High, 3-15=Reserved/Invalid)
   // Bits 3-2: APRS Report Mode (0=Off, 1=Digital, 2=Analog, 3=Reserved)
-  // Bits 1-0: Reserved
+  // Bits 1-0: Unknown
   const powerAprs = data[0x1C];
   const powerValue = (powerAprs >> 4) & 0x0F;
   const power: Channel['power'] = 
@@ -82,13 +231,20 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     aprsReportValue === 0 ? 'Off' : 
     aprsReportValue === 1 ? 'Digital' : 
     aprsReportValue === 2 ? 'Analog' : 'Off'; // Default to Off for invalid values
+  const unknown1C_1_0 = powerAprs & 0x03;
 
   // Analog features (0x1D)
+  // Bit 7: VOX Function (0=Off, 1=On)
+  // Bit 6: Scramble (0=Off, 1=On)
+  // Bit 5: Compander (0=Off, 1=On)
+  // Bit 4: Talkback (0=Off, 1=On)
+  // Bits 3-0: Unknown Setting (0-15)
   const analogFeatures = data[0x1D];
   const voxFunction = (analogFeatures & 0x80) !== 0;
   const scramble = (analogFeatures & 0x40) !== 0;
   const compander = (analogFeatures & 0x20) !== 0;
   const talkback = (analogFeatures & 0x10) !== 0;
+  const unknown1D_3_0 = analogFeatures & 0x0F;
 
   // Squelch (0x1E)
   const squelchLevel = data[0x1E];
@@ -118,14 +274,23 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   };
 
   // Additional flags (0x25)
+  // Bits 7-6: Unknown
+  // Bit 5: Compander (duplicate) (0=Off, 1=On)
+  // Bit 4: VOX-Related Flag (0=Off, 1=On)
+  // Bits 3-0: Unknown Setting (0-15, possibly VOX or analog related)
   const additionalFlags = data[0x25];
+  const unknown25_7_6 = (additionalFlags >> 6) & 0x03;
   const companderDup = (additionalFlags & 0x20) !== 0;
   const voxRelated = (additionalFlags & 0x10) !== 0;
+  const unknown25_3_0 = additionalFlags & 0x0F;
 
   // RX Squelch & PTT ID (0x26)
-  // Bits 7-4: RX Squelch Mode (0=Carrier/CTC, 1=Optional, 2=CTC&Opt, 3=CTC|Opt, 4-7=Reserved)
-  // Bits 3-0: Reserved (possibly PTT ID related, but not in Channel interface)
+  // Bit 7: PTT ID Display (0=Off, 1=On) - duplicate of 0x1F bit 6?
+  // Bits 6-4: RX Squelch Mode (0=Carrier/CTC, 1=Optional, 2=CTC&Opt, 3=CTC|Opt)
+  // Bits 3-1: Unknown (0-7)
+  // Bit 0: Unknown
   const rxSquelchPtt = data[0x26];
+  const pttIdDisplay2 = (rxSquelchPtt & 0x80) !== 0;
   const rxSquelchValue = (rxSquelchPtt >> 4) & 0x07;
   const rxSquelchModeMap: Channel['rxSquelchMode'][] = [
     'Carrier/CTC',
@@ -134,6 +299,8 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     'CTC|Opt',
   ];
   const rxSquelchMode = rxSquelchModeMap[rxSquelchValue] || 'Carrier/CTC';
+  const unknown26_3_1 = (rxSquelchPtt >> 1) & 0x07;
+  const unknown26_0 = (rxSquelchPtt & 0x01) !== 0;
 
   // Signaling (0x27)
   // Bits 7-4: Step Frequency (0=2.5K, 1=5K, 2=6.25K, 3=10K, 4=12.5K, 5=25K, 6=50K, 7=100K, 8-15=Reserved)
@@ -155,13 +322,18 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
 
   // PTT ID Type (0x29)
   // Bits 7-4: PTT ID Type (0=Off, 1=BOT, 2=EOT, 3=Both, 4-15=Reserved)
-  // Bits 3-0: Reserved
-  const pttIdTypeValue = (data[0x29] >> 4) & 0x0F;
+  // Bits 3-2: Unknown Setting (0-3)
+  // Bits 1-0: Unknown
+  const pttIdTypeByte = data[0x29];
+  const pttIdTypeValue = (pttIdTypeByte >> 4) & 0x0F;
   const pttIdTypeMap: Channel['pttIdType'][] = ['Off', 'BOT', 'EOT', 'Both'];
   const pttIdType = pttIdTypeMap[pttIdTypeValue] || 'Off';
+  const unknown29_3_2 = (pttIdTypeByte >> 2) & 0x03;
+  const unknown29_1_0 = pttIdTypeByte & 0x03;
 
-  // Reserved (0x2A) - Unknown purpose, possibly padding or reserved for future use
-  // const reserved2A = data[0x2A];
+  // Unknown Setting (0x2A)
+  // 8-bit value (0-255), possibly DMR or signaling related
+  const unknown2A = data[0x2A];
 
   // Contact ID (0x2B)
   // 0-249 (displayed as 1-250 in radio UI)
@@ -202,11 +374,23 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     txCtcssDcs,
     companderDup,
     voxRelated,
+    unknown25_7_6,
+    unknown25_3_0,
+    pttIdDisplay2,
     rxSquelchMode,
+    unknown26_3_1,
+    unknown26_0,
     stepFrequency,
     signalingType,
     pttIdType,
+    unknown29_3_2,
+    unknown29_1_0,
+    unknown2A,
     contactId,
+    unknown1A_6_4,
+    unknown1A_3,
+    unknown1C_1_0,
+    unknown1D_3_0,
   };
 }
 
@@ -260,6 +444,8 @@ export function encodeChannel(channel: Channel): Uint8Array {
   // Talkaround & APRS (0x1A)
   let talkaroundAprs = 0;
   if (channel.forbidTalkaround) talkaroundAprs |= 0x80; // Bit 7
+  talkaroundAprs |= ((channel.unknown1A_6_4 & 0x07) << 4) & 0x70; // Bits 6-4
+  if (channel.unknown1A_3) talkaroundAprs |= 0x08; // Bit 3
   if (channel.aprsReceive) talkaroundAprs |= 0x04; // Bit 2
   talkaroundAprs |= channel.reverseFreq & 0x03; // Bits 1-0
   data[0x1A] = talkaroundAprs;
@@ -274,7 +460,7 @@ export function encodeChannel(channel: Channel): Uint8Array {
   // Power & APRS (0x1C)
   const powerValue = channel.power === 'Low' ? 0 : channel.power === 'Medium' ? 1 : 2;
   const aprsReportValue = channel.aprsReportMode === 'Off' ? 0 : channel.aprsReportMode === 'Digital' ? 1 : 2;
-  data[0x1C] = ((powerValue << 4) & 0xF0) | ((aprsReportValue << 2) & 0x0C);
+  data[0x1C] = ((powerValue << 4) & 0xF0) | ((aprsReportValue << 2) & 0x0C) | (channel.unknown1C_1_0 & 0x03);
 
   // Analog features (0x1D)
   let analogFeatures = 0;
@@ -282,6 +468,7 @@ export function encodeChannel(channel: Channel): Uint8Array {
   if (channel.scramble) analogFeatures |= 0x40; // Bit 6
   if (channel.compander) analogFeatures |= 0x20; // Bit 5
   if (channel.talkback) analogFeatures |= 0x10; // Bit 4
+  analogFeatures |= channel.unknown1D_3_0 & 0x0F; // Bits 3-0
   data[0x1D] = analogFeatures;
 
   // Squelch (0x1E)
@@ -305,8 +492,10 @@ export function encodeChannel(channel: Channel): Uint8Array {
 
   // Additional flags (0x25)
   let additionalFlags = 0;
+  additionalFlags |= ((channel.unknown25_7_6 & 0x03) << 6) & 0xC0; // Bits 7-6
   if (channel.companderDup) additionalFlags |= 0x20; // Bit 5
   if (channel.voxRelated) additionalFlags |= 0x10; // Bit 4
+  additionalFlags |= channel.unknown25_3_0 & 0x0F; // Bits 3-0
   data[0x25] = additionalFlags;
 
   // RX Squelch & PTT ID (0x26)
@@ -317,7 +506,11 @@ export function encodeChannel(channel: Channel): Uint8Array {
     'CTC|Opt': 3,
   };
   const rxSquelchValue = rxSquelchModeMap[channel.rxSquelchMode] || 0;
-  data[0x26] = (rxSquelchValue << 4) & 0x70;
+  let rxSquelchPtt = (rxSquelchValue << 4) & 0x70; // Bits 6-4
+  if (channel.pttIdDisplay2) rxSquelchPtt |= 0x80; // Bit 7
+  rxSquelchPtt |= ((channel.unknown26_3_1 & 0x07) << 1) & 0x0E; // Bits 3-1
+  if (channel.unknown26_0) rxSquelchPtt |= 0x01; // Bit 0
+  data[0x26] = rxSquelchPtt;
 
   // Signaling (0x27)
   const signalingTypeMap: Record<Channel['signalingType'], number> = {
@@ -341,10 +534,13 @@ export function encodeChannel(channel: Channel): Uint8Array {
     'Both': 3,
   };
   const pttIdTypeValue = pttIdTypeMap[channel.pttIdType] || 0;
-  data[0x29] = (pttIdTypeValue << 4) & 0xF0;
+  let pttIdTypeByte = (pttIdTypeValue << 4) & 0xF0; // Bits 7-4
+  pttIdTypeByte |= ((channel.unknown29_3_2 & 0x03) << 2) & 0x0C; // Bits 3-2
+  pttIdTypeByte |= channel.unknown29_1_0 & 0x03; // Bits 1-0
+  data[0x29] = pttIdTypeByte;
 
-  // Reserved (0x2A)
-  data[0x2A] = 0x00;
+  // Unknown Setting (0x2A)
+  data[0x2A] = channel.unknown2A & 0xFF;
 
   // Contact ID (0x2B)
   data[0x2B] = channel.contactId & 0xFF;
@@ -742,6 +938,7 @@ export function parseContacts(data: Uint8Array): Contact[] {
 }
 
 /**
+<<<<<<< HEAD
  * Decode a chunked radio name string
  * Radio names are stored as 14-byte strings split into chunks:
  * - 4 bytes at offset +0
@@ -1005,6 +1202,142 @@ export function encodeRadioSettings(settings: RadioSettings): Uint8Array {
 
   // Set metadata byte at offset 0xFFF
   data[0xFFF] = 0x04;
+
+  return data;
+}
+
+/**
+ * Parse quick text messages from message block data
+ * 
+ * Quick Message structure (from spec):
+ * - Count field: Offset 0 (1 byte)
+ * - Entry size: 129 bytes per message (0x81)
+ * - Entry base: Offset 0x80 (128) for entry 0
+ * - Max entries: ~30 messages (floor((4096 - 128) / 129) = 30)
+ * 
+ * Entry calculation: buffer + 0x80 + entry_num * 0x80 = buffer + 0x80 * (entry_num + 1)
+ * 
+ * Entry structure (129 bytes):
+ * - Offset +0x70 (112): Check value (2 bytes)
+ * - Offset +0x70+2 (114): Message text (null-terminated, 0xFF indicates end)
+ * - Offset +0xF (15): Flag/status (1 byte, set to 0 when message is set)
+ */
+export function parseQuickMessages(
+  data: Uint8Array,
+  onRawMessageParsed?: (messageIndex: number, rawData: Uint8Array) => void
+): QuickTextMessage[] {
+  const messages: QuickTextMessage[] = [];
+
+  // Read count field at offset 0
+  const messageCount = data.length > 0 ? data[0] : 0;
+  const maxMessages = Math.min(messageCount, LIMITS.QUICK_MESSAGES_MAX);
+
+  // Parse each message entry
+  for (let entryNum = 0; entryNum < maxMessages; entryNum++) {
+    // Entry offset: 0x80 * (entryNum + 1)
+    const entryOffset = OFFSET.QUICK_MESSAGE_BASE * (entryNum + 1);
+    
+    if (entryOffset + BLOCK_SIZE.QUICK_MESSAGE > data.length) {
+      console.log(`Message ${entryNum} would be at offset ${entryOffset}, but data length is only ${data.length}`);
+      break;
+    }
+
+    const entryData = data.slice(entryOffset, entryOffset + BLOCK_SIZE.QUICK_MESSAGE);
+
+    // Check if entry is empty (all 0xFF or all 0x00)
+    const isAllEmpty = entryData.every(b => b === 0xFF || b === 0x00);
+    if (isAllEmpty) {
+      continue;
+    }
+
+    // Read flag/status at offset +0xF (15)
+    const flag = entryData[0x0F];
+
+    // Read check value at offset +0x70 (112) - 2 bytes
+    const checkValueOffset = 0x70;
+    const checkValue = entryData[checkValueOffset] | (entryData[checkValueOffset + 1] << 8);
+
+    // Read message text starting at offset +0x70+2 (114)
+    // Text is null-terminated, 0xFF indicates end
+    const textStartOffset = 0x70 + 2;
+    let textEndOffset = textStartOffset;
+    
+    // Find end of text (null terminator or 0xFF)
+    for (let i = textStartOffset; i < entryData.length; i++) {
+      if (entryData[i] === 0x00 || entryData[i] === 0xFF) {
+        textEndOffset = i;
+        break;
+      }
+    }
+
+    const textBytes = entryData.slice(textStartOffset, textEndOffset);
+    const text = new TextDecoder('ascii', { fatal: false })
+      .decode(textBytes)
+      .replace(/\x00/g, '')
+      .replace(/\xFF/g, '')
+      .trim();
+
+    // Skip empty messages
+    if (text.length === 0) {
+      continue;
+    }
+
+    const message: QuickTextMessage = {
+      index: entryNum,
+      text,
+      flag,
+      checkValue,
+    };
+
+    messages.push(message);
+
+    // Call callback to store raw data
+    onRawMessageParsed?.(entryNum, entryData);
+  }
+
+  return messages;
+}
+
+/**
+ * Encode a quick text message into binary format
+ * 
+ * @param message - Quick text message to encode
+ * @param messageIndex - 0-based index of the message
+ * @returns 129-byte encoded message entry
+ */
+export function encodeQuickMessage(message: QuickTextMessage): Uint8Array {
+  const data = new Uint8Array(BLOCK_SIZE.QUICK_MESSAGE);
+  
+  // Initialize to 0xFF (empty/padding)
+  data.fill(0xFF);
+
+  // Flag/status at offset +0xF (15) - set to 0 when message is set
+  data[0x0F] = message.flag;
+
+  // Check value at offset +0x70 (112) - 2 bytes, little-endian
+  data[0x70] = message.checkValue & 0xFF;
+  data[0x71] = (message.checkValue >> 8) & 0xFF;
+
+  // Message text starting at offset +0x70+2 (114)
+  // Text is null-terminated, 0xFF indicates end
+  const textStartOffset = 0x70 + 2;
+  const textBytes = new TextEncoder().encode(message.text);
+  
+  // Copy text bytes (up to available space)
+  const maxTextLength = data.length - textStartOffset - 1; // -1 for null terminator
+  const textLength = Math.min(textBytes.length, maxTextLength);
+  
+  for (let i = 0; i < textLength; i++) {
+    data[textStartOffset + i] = textBytes[i];
+  }
+  
+  // Null terminator
+  if (textLength < maxTextLength) {
+    data[textStartOffset + textLength] = 0x00;
+  } else {
+    // If text fills the space, mark end with 0xFF
+    data[textStartOffset + textLength] = 0xFF;
+  }
 
   return data;
 }
@@ -1435,6 +1768,421 @@ export function encodeAnalogEmergencies(systems: AnalogEmergency[]): Uint8Array 
 
   // Set metadata byte at offset 0xFFF
   data[0xFFF] = 0x10;
+
+  return data;
+}
+
+/**
+ * Parse DMR Radio IDs from radio ID block data
+ * 
+ * DMR Radio ID structure (from spec):
+ * - Count field: Offset 0 (4 bytes, DWORD, little-endian)
+ * - Entry size: 16 bytes per entry (0x10)
+ * - Entry base: Offset 0x00 (entries start at buffer base)
+ * - Max entries: 256 entries (4096 / 16 = 256)
+ * 
+ * Entry calculation: buffer + entry_num * 0x10
+ * 
+ * Entry structure (16 bytes):
+ * - Offset +0x00: DMR Radio ID (3 bytes, BCD or binary)
+ * - Offset +0x03: Name (12 bytes, null-terminated)
+ * 
+ * ID encoding: 3 bytes displayed as hex "XX XX XX" (e.g., "01 23 45" for ID 0x012345)
+ */
+export function parseDMRRadioIDs(
+  data: Uint8Array,
+  onRawIDParsed?: (idIndex: number, rawData: Uint8Array, _name: string) => void
+): DMRRadioID[] {
+  const radioIds: DMRRadioID[] = [];
+
+  // Read count field at offset 0 (4 bytes, DWORD, little-endian)
+  const idCount = data.length >= 4 
+    ? data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)
+    : 0;
+  const maxIds = Math.min(idCount, LIMITS.DMR_RADIO_IDS_MAX);
+
+  // According to spec: "Entry Calculation: buffer + entry_num * 0x10"
+  // The count is stored at offset 0 (4 bytes), which is within entry 0 (0x00-0x0F).
+  // So entry 0 (offset 0x00-0x0F) contains the count in its first 4 bytes.
+  // Actual data entries likely start at entry 1 (offset 0x10).
+  // However, the spec says "Entry Base Offset: 0x00", so let's try both:
+  // 1. Entries start at 0x00, entry 0 contains count (skip it)
+  // 2. Entries start at 0x10, entry 0 is reserved for count
+  
+  // Try: entries start at 0x10 (entry 1), entry 0 is reserved for count
+  const entryStartOffset = BLOCK_SIZE.DMR_RADIO_ID; // Start at 0x10 (entry 1)
+
+  // Parse each entry
+  for (let entryNum = 0; entryNum < maxIds; entryNum++) {
+    const entryOffset = entryStartOffset + (entryNum * BLOCK_SIZE.DMR_RADIO_ID);
+    
+    if (entryOffset + BLOCK_SIZE.DMR_RADIO_ID > data.length) {
+      break;
+    }
+
+    const entryData = data.slice(entryOffset, entryOffset + BLOCK_SIZE.DMR_RADIO_ID);
+
+    // Check if entry is empty (all 0xFF or all 0x00)
+    const isAllEmpty = entryData.every(b => b === 0xFF || b === 0x00);
+    if (isAllEmpty) {
+      continue;
+    }
+
+    // Read DMR Radio ID (3 bytes at offset +0x00 within entry)
+    // Stored as little-endian 24-bit number
+    const idBytes = entryData.slice(0, 3);
+    // Parse as little-endian: byte0 + (byte1 << 8) + (byte2 << 16)
+    const dmrIdValue = idBytes[0] | (idBytes[1] << 8) | (idBytes[2] << 16);
+
+    // Read name (12 bytes at offset +0x03, null-terminated)
+    const nameBytes = entryData.slice(3, 15);
+    const nullIndex = nameBytes.indexOf(0);
+    const name = new TextDecoder('ascii', { fatal: false })
+      .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : 12))
+      .replace(/\x00/g, '')
+      .replace(/\xFF/g, '')
+      .trim();
+
+    // Skip entries with empty names and zero IDs
+    if (name.length === 0 && dmrIdValue === 0) {
+      continue;
+    }
+
+    const radioId: DMRRadioID = {
+      index: entryNum,
+      dmrId: dmrIdValue.toString(), // Display as decimal number
+      dmrIdValue: dmrIdValue,
+      dmrIdBytes: new Uint8Array(idBytes),
+      name: name || `ID ${dmrIdValue}`,
+    };
+
+    radioIds.push(radioId);
+
+    // Call callback to store raw data
+    onRawIDParsed?.(entryNum, entryData, name);
+  }
+
+  return radioIds;
+}
+
+/**
+ * Encode a DMR Radio ID into binary format
+ * 
+ * @param radioId - DMR Radio ID to encode
+ * @returns 16-byte encoded ID entry
+ */
+export function encodeDMRRadioID(radioId: DMRRadioID): Uint8Array {
+  const data = new Uint8Array(BLOCK_SIZE.DMR_RADIO_ID);
+  
+  // Initialize to 0xFF (empty/padding)
+  data.fill(0xFF);
+
+  // DMR Radio ID (3 bytes at offset +0x00, stored as little-endian)
+  let dmrIdValue: number;
+  if (radioId.dmrIdValue !== undefined) {
+    dmrIdValue = radioId.dmrIdValue;
+  } else if (radioId.dmrIdBytes && radioId.dmrIdBytes.length === 3) {
+    // Reconstruct from bytes
+    dmrIdValue = radioId.dmrIdBytes[0] | (radioId.dmrIdBytes[1] << 8) | (radioId.dmrIdBytes[2] << 16);
+  } else {
+    // Parse decimal string
+    dmrIdValue = parseInt(radioId.dmrId, 10) || 0;
+  }
+  
+  // Encode as little-endian 24-bit
+  data[0] = dmrIdValue & 0xFF;
+  data[1] = (dmrIdValue >> 8) & 0xFF;
+  data[2] = (dmrIdValue >> 16) & 0xFF;
+
+  // Name (12 bytes at offset +0x03, null-terminated)
+  const nameBytes = new TextEncoder().encode(radioId.name);
+  const maxNameLength = 12;
+  const nameLength = Math.min(nameBytes.length, maxNameLength - 1); // -1 for null terminator
+  
+  for (let i = 0; i < nameLength; i++) {
+    data[3 + i] = nameBytes[i];
+  }
+  
+  // Null terminator
+  if (nameLength < maxNameLength) {
+    data[3 + nameLength] = 0x00;
+  }
+
+  return data;
+}
+
+/**
+ * Parse frequency adjustment/calibration data from calibration block
+ * 
+ * Calibration structure (from spec):
+ * - Frequency array 1: indexed by param * 4, relative offset -4
+ * - Frequency array 2: indexed by param * 4, offset 0x3C (60)
+ * - Value array 1: indexed by param * 2, offset 0x7E (126)
+ * - Value array 2: indexed by param * 2, offset 0x9E (158)
+ * - Value array 3: indexed by param * 2, offset 0xB0 (176)
+ * 
+ * Frequencies are 4-byte BCD values, formatted as "XXX.XXXXXX" MHz
+ * Values are 2-byte little-endian integers
+ */
+export function parseCalibration(data: Uint8Array): CalibrationData {
+  const frequencyArray1 = new Map<number, number>();
+  const frequencyArray2 = new Map<number, number>();
+  const valueArray1 = new Map<number, number>();
+  const valueArray2 = new Map<number, number>();
+  const valueArray3 = new Map<number, number>();
+
+  // Frequency array 1: relative offset -4, indexed by param * 4
+  // This means for param 0, offset is -4 (which doesn't make sense in a buffer)
+  // Likely means the array starts at offset 0, and param 0 is at offset 0
+  // Let's interpret as: base offset 0, indexed by param * 4
+  // Store as raw 32-bit little-endian unsigned integer (not decoded to MHz)
+  for (let param = 1; param <= 77; param++) { // Parameters are 1-indexed (1-77)
+    const paramIndex = param - 1; // Convert to 0-indexed for offset calculation
+    const offset = paramIndex * 4;
+    if (offset + 4 <= data.length) {
+      // Read as 32-bit little-endian unsigned integer (0 to 4,294,967,295)
+      const value = (data[offset] | 
+                    (data[offset + 1] << 8) | 
+                    (data[offset + 2] << 16) | 
+                    (data[offset + 3] << 24)) >>> 0; // >>> 0 ensures unsigned
+      if (value !== 0 && value !== 0xFFFFFFFF) { // Skip empty/zero values
+        frequencyArray1.set(param, value);
+      }
+    }
+  }
+
+  // Frequency array 2: offset 0x3C (60), indexed by param * 4
+  const baseOffset2 = 0x3C;
+  for (let param = 1; param <= 77; param++) {
+    const paramIndex = param - 1; // Convert to 0-indexed for offset calculation
+    const offset = baseOffset2 + (paramIndex * 4);
+    if (offset + 4 <= data.length) {
+      // Read as 32-bit little-endian unsigned integer (0 to 4,294,967,295)
+      const value = (data[offset] | 
+                    (data[offset + 1] << 8) | 
+                    (data[offset + 2] << 16) | 
+                    (data[offset + 3] << 24)) >>> 0; // >>> 0 ensures unsigned
+      if (value !== 0 && value !== 0xFFFFFFFF) { // Skip empty/zero values
+        frequencyArray2.set(param, value);
+      }
+    }
+  }
+
+  // Value array 1: offset 0x7E (126), indexed by param * 2
+  // Parameters are 1-indexed (1-77)
+  const baseOffset3 = 0x7E;
+  for (let param = 1; param <= 77; param++) {
+    const paramIndex = param - 1; // Convert to 0-indexed for offset calculation
+    const offset = baseOffset3 + (paramIndex * 2);
+    if (offset + 2 <= data.length) {
+      // Read as 16-bit little-endian unsigned integer (0 to 65,535)
+      const value = (data[offset] | (data[offset + 1] << 8)) & 0xFFFF; // & 0xFFFF ensures unsigned 16-bit
+      if (value !== 0 && value !== 0xFFFF) { // Skip empty/zero values
+        valueArray1.set(param, value);
+      }
+    }
+  }
+
+  // Value array 2: offset 0x9E (158), indexed by param * 2
+  const baseOffset4 = 0x9E;
+  for (let param = 1; param <= 77; param++) {
+    const paramIndex = param - 1; // Convert to 0-indexed for offset calculation
+    const offset = baseOffset4 + (paramIndex * 2);
+    if (offset + 2 <= data.length) {
+      // Read as 16-bit little-endian unsigned integer (0 to 65,535)
+      const value = (data[offset] | (data[offset + 1] << 8)) & 0xFFFF; // & 0xFFFF ensures unsigned 16-bit
+      if (value !== 0 && value !== 0xFFFF) {
+        valueArray2.set(param, value);
+      }
+    }
+  }
+
+  // Value array 3: offset 0xB0 (176), indexed by param * 2
+  const baseOffset5 = 0xB0;
+  for (let param = 1; param <= 77; param++) {
+    const paramIndex = param - 1; // Convert to 0-indexed for offset calculation
+    const offset = baseOffset5 + (paramIndex * 2);
+    if (offset + 2 <= data.length) {
+      // Read as 16-bit little-endian unsigned integer (0 to 65,535)
+      const value = (data[offset] | (data[offset + 1] << 8)) & 0xFFFF; // & 0xFFFF ensures unsigned 16-bit
+      if (value !== 0 && value !== 0xFFFF) {
+        valueArray3.set(param, value);
+      }
+    }
+  }
+
+  return {
+    frequencyArray1,
+    frequencyArray2,
+    valueArray1,
+    valueArray2,
+    valueArray3,
+  };
+}
+
+/**
+ * Parse DMR RX Groups from metadata 0x0F block data
+ * 
+ * DMR RX Group structure (from spec):
+ * - Entry size: 109 bytes per entry (0x6D)
+ * - Entry calculation: buffer + entry_num * 0x6D
+ * - Max entries: ~37 entries (floor(4096 / 109) = 37)
+ * 
+ * Entry structure (109 bytes):
+ * - Offset +0x00: Bitmask (4 bytes, little-endian, 32-bit)
+ * - Offset +0x04: Status flag (1 byte)
+ * - Offset +0x05: Reserved (10 bytes)
+ * - Offset +0x0F: Entry flag (1 byte)
+ * 
+ * Additional fields stored BEFORE entry base:
+ * - entry_base - 0x5D: Validation flag (1 byte)
+ * - entry_base - 0x5C: Group name (11 bytes, null-terminated)
+ * - entry_base - 0x54: Contact ID slots (3 bytes per slot, variable number)
+ * 
+ * Note: The "before entry base" fields suggest a header area. For now, we'll parse
+ * the main entry structure and attempt to find the name/ID fields in adjacent areas.
+ */
+export function parseRXGroups(
+  data: Uint8Array,
+  onRawGroupParsed?: (groupIndex: number, rawData: Uint8Array, name: string) => void
+): RXGroup[] {
+  const groups: RXGroup[] = [];
+
+  // Parse each entry (109 bytes each)
+  for (let entryNum = 0; entryNum < LIMITS.RX_GROUPS_MAX; entryNum++) {
+    const entryOffset = entryNum * BLOCK_SIZE.RX_GROUP;
+    
+    if (entryOffset + BLOCK_SIZE.RX_GROUP > data.length) {
+      break;
+    }
+
+    const entryData = data.slice(entryOffset, entryOffset + BLOCK_SIZE.RX_GROUP);
+
+    // Check if entry is empty (all 0xFF or all 0x00)
+    const isAllEmpty = entryData.every(b => b === 0xFF || b === 0x00);
+    if (isAllEmpty) {
+      continue;
+    }
+
+    // Read bitmask (4 bytes, little-endian, at offset +0x00)
+    const bitmask = (entryData[0] | 
+                     (entryData[1] << 8) | 
+                     (entryData[2] << 16) | 
+                     (entryData[3] << 24)) >>> 0; // Unsigned 32-bit
+
+    // Read status flag (1 byte at offset +0x04)
+    const statusFlag = entryData[0x04];
+
+    // Read entry flag (1 byte at offset +0x0F)
+    const entryFlag = entryData[0x0F];
+
+    // Try to find contact name and IDs
+    // The spec says these are stored "before entry base", which might mean:
+    // - In a header area before the entries
+    // - Or in the previous entry's space
+    // For now, let's try looking in the block before this entry's start
+    let name = '';
+    let validationFlag = 0;
+    const contactIds: number[] = [];
+
+    // Try to read name from offset entry_base - 0x5C (entryOffset - 0x5C)
+    // But if entryOffset < 0x5C, we can't read before the buffer start
+    if (entryOffset >= 0x5C) {
+      const nameOffset = entryOffset - 0x5C;
+      if (nameOffset + 11 <= data.length) {
+        const nameBytes = data.slice(nameOffset, nameOffset + 11);
+        const nullIndex = nameBytes.indexOf(0);
+        const ffIndex = nameBytes.indexOf(0xFF);
+        const endIndex = nullIndex >= 0 ? nullIndex : (ffIndex >= 0 ? ffIndex : 11);
+        name = new TextDecoder('ascii', { fatal: false })
+          .decode(nameBytes.slice(0, endIndex))
+          .replace(/\x00/g, '')
+          .replace(/\xFF/g, '')
+          .trim();
+      }
+
+      // Read validation flag from entry_base - 0x5D
+      const validationOffset = entryOffset - 0x5D;
+      if (validationOffset >= 0 && validationOffset < data.length) {
+        validationFlag = data[validationOffset];
+      }
+
+      // Try to read contact IDs from entry_base - 0x54
+      // Contact IDs are 3 bytes each, stored as little-endian DMR IDs
+      // We'll try to read a reasonable number (up to 10 slots = 30 bytes)
+      const idsStartOffset = entryOffset - 0x54;
+      if (idsStartOffset >= 0) {
+        for (let slot = 0; slot < 10; slot++) {
+          const idOffset = idsStartOffset + (slot * 3);
+          if (idOffset + 3 <= data.length && idOffset + 3 <= entryOffset) {
+            // Read 3-byte little-endian DMR ID
+            const idValue = data[idOffset] | 
+                           (data[idOffset + 1] << 8) | 
+                           (data[idOffset + 2] << 16);
+            if (idValue !== 0 && idValue !== 0xFFFFFF) {
+              contactIds.push(idValue);
+            } else {
+              // Stop at first empty slot
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Skip entries with empty names and zero bitmasks
+    if (name.length === 0 && bitmask === 0 && contactIds.length === 0) {
+      continue;
+    }
+
+    const group: RXGroup = {
+      index: entryNum,
+      name: name || `DMR RX Group ${entryNum + 1}`,
+      bitmask,
+      statusFlag,
+      entryFlag,
+      validationFlag,
+      contactIds,
+    };
+
+    groups.push(group);
+
+    // Call callback to store raw data
+    onRawGroupParsed?.(entryNum, entryData, name);
+  }
+
+  return groups;
+}
+
+/**
+ * Encode a DMR RX Group into binary format
+ * 
+ * @param group - DMR RX Group to encode
+ * @returns 109-byte encoded group entry
+ */
+export function encodeRXGroup(group: RXGroup): Uint8Array {
+  const data = new Uint8Array(BLOCK_SIZE.RX_GROUP);
+  
+  // Initialize to 0xFF (empty/padding)
+  data.fill(0xFF);
+
+  // Bitmask (4 bytes, little-endian, at offset +0x00)
+  data[0] = group.bitmask & 0xFF;
+  data[1] = (group.bitmask >> 8) & 0xFF;
+  data[2] = (group.bitmask >> 16) & 0xFF;
+  data[3] = (group.bitmask >> 24) & 0xFF;
+
+  // Status flag (1 byte at offset +0x04)
+  data[0x04] = group.statusFlag & 0xFF;
+
+  // Reserved (10 bytes at offset +0x05) - already 0xFF from fill
+
+  // Entry flag (1 byte at offset +0x0F)
+  data[0x0F] = group.entryFlag & 0xFF;
+
+  // Note: Name, validation flag, and contact IDs would need to be written
+  // to the "before entry base" area, which requires knowing the entry's position
+  // in the block. This encoding function only handles the main 109-byte entry.
 
   return data;
 }

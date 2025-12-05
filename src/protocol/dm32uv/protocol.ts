@@ -5,18 +5,19 @@
 
 import { DM32Connection } from './connection';
 import { discoverMemoryBlocks, readChannelCount, readChannelBlocks, type MemoryBlock } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContacts, encodeChannel, encodeZone, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContacts, encodeChannel, encodeZone, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
-import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency } from '../../models';
+import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup } from '../../models';
 import type { WebSerialPort } from './types';
 import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION } from './constants';
-import {
-  requireConnection,
-  requireDiscoveredBlocks,
+import { 
+  requireConnection, 
+  requireDiscoveredBlocks, 
   checkEmptyBlocks,
   readAndConcatenateBlocks,
   storeRawData,
 } from './helpers';
+import { writeChannelFlagBit } from './structures';
 
 /**
  * DM-32UV Protocol Implementation
@@ -50,6 +51,9 @@ export class DM32UVProtocol implements RadioProtocol {
   public rawRadioSettingsData: Uint8Array | null = null;
   public rawDigitalEmergencyData: Uint8Array | null = null;
   public rawAnalogEmergencyData: Uint8Array | null = null;
+  public rawMessageData: Map<number, { data: Uint8Array; messageIndex: number; offset: number }> = new Map();
+  public rawDMRRadioIDData: Map<number, { data: Uint8Array; idIndex: number; offset: number }> = new Map();
+  public rawRXGroupData: Map<number, { data: Uint8Array; groupIndex: number; offset: number }> = new Map();
   public blockMetadata: Map<number, { metadata: number; type: string }> = new Map();
   public blockData: Map<number, Uint8Array> = new Map();
   private discoveredBlocks: MemoryBlock[] = []; // Store discovered blocks for reuse
@@ -264,24 +268,42 @@ export class DM32UVProtocol implements RadioProtocol {
       throw new Error(`First channel block (metadata 0x${METADATA.CHANNEL_FIRST.toString(16)}) not found`);
     }
 
-    // Calculate metadata range for logging
-    // Metadata ranges from 0x12 to 0x41 (48 blocks max)
-    const maxMetadata = Math.max(...channelBlocks.map(b => b.metadata));
-    const minMetadata = Math.min(...channelBlocks.map(b => b.metadata));
-    console.log(`Found ${channelBlocks.length} channel blocks (metadata range: 0x${minMetadata.toString(16)}-0x${maxMetadata.toString(16)})`);
-
-    this.onProgress?.(10, `Found ${channelBlocks.length} channel blocks`);
-
     // Read channel count from first 4 bytes of first block (metadata 0x12)
     console.log(`Reading channel count from first block (metadata 0x12) at 0x${firstChannelBlock.address.toString(16)}`);
     const channelCount = await readChannelCount(this.connection!, firstChannelBlock.address);
     console.log(`Channel count: ${channelCount}`);
-    this.onProgress?.(20, `Reading ${channelCount} channels from ${channelBlocks.length} blocks...`);
+    this.onProgress?.(10, `Found ${channelCount} channels`);
 
-    // Read all channel blocks
+    // Calculate how many blocks we need to read based on channel count
+    // First block: 84 channels (due to 16-byte header)
+    // Subsequent blocks: 85 channels each
+    // Add 1 extra block for safety
+    const channelsInFirstBlock = 84;
+    let blocksNeeded: number;
+    if (channelCount <= channelsInFirstBlock) {
+      blocksNeeded = 1;
+    } else {
+      const remainingChannels = channelCount - channelsInFirstBlock;
+      const additionalBlocks = Math.ceil(remainingChannels / 85);
+      blocksNeeded = 1 + additionalBlocks + 1; // +1 for safety
+    }
+    
+    // Limit to actual number of channel blocks available
+    blocksNeeded = Math.min(blocksNeeded, channelBlocks.length);
+    
+    // Select only the blocks we need (in metadata order: 0x12, 0x13, 0x14, ...)
+    const blocksToRead = channelBlocks.slice(0, blocksNeeded);
+    
+    // Calculate metadata range for logging
+    const maxMetadata = Math.max(...blocksToRead.map(b => b.metadata));
+    const minMetadata = Math.min(...blocksToRead.map(b => b.metadata));
+    console.log(`Reading ${blocksToRead.length} channel blocks (metadata range: 0x${minMetadata.toString(16)}-0x${maxMetadata.toString(16)}) for ${channelCount} channels`);
+    this.onProgress?.(20, `Reading ${blocksToRead.length} blocks for ${channelCount} channels...`);
+
+    // Read only the blocks we need
     const channelBlockData = await readChannelBlocks(
       this.connection!,
-      channelBlocks,
+      blocksToRead,
       (progress, message) => {
         // Map 0-100% to 20-50% range for block reading
         const mappedProgress = 20 + (progress * 0.30);
@@ -295,8 +317,9 @@ export class DM32UVProtocol implements RadioProtocol {
     const channels: Channel[] = [];
     const rawChannelData = new Map<number, { data: Uint8Array; blockAddr: number; offset: number }>();
     let channelIndex = 1;
+    let currentBlockIndex = 0;
 
-    for (const block of channelBlocks) {
+    for (const block of blocksToRead) {
       const blockDataBytes = channelBlockData.get(block.address);
       if (!blockDataBytes) {
         console.warn(`No data for block with metadata 0x${block.metadata.toString(16)} at 0x${block.address.toString(16)}`);
@@ -344,7 +367,8 @@ export class DM32UVProtocol implements RadioProtocol {
             offset: offset,
           });
 
-          const channel = parseChannel(channelData, channelIndex);
+          // Pass block data, offset, and block index for correct forbid TX parsing
+          const channel = parseChannel(channelData, channelIndex, blockDataBytes, offset, currentBlockIndex);
           channels.push(channel);
           channelIndex++;
 
@@ -364,6 +388,8 @@ export class DM32UVProtocol implements RadioProtocol {
       if (channelIndex > channelCount) {
         break;
       }
+      
+      currentBlockIndex++;
     }
 
     console.log(`Successfully parsed ${channels.length} channels (expected ${channelCount})`);
@@ -465,7 +491,12 @@ export class DM32UVProtocol implements RadioProtocol {
       
       // Write channels to this block
       for (let offset = startOffset; offset < maxOffset && channelIndex < channels.length; offset += BLOCK_SIZE.CHANNEL) {
+        const channel = channels[channelIndex];
         blockData.set(encodedChannels[channelIndex], offset);
+        
+        // Write forbid TX flag to the correct offset (not in the 48-byte channel data)
+        writeChannelFlagBit(channel.number, blockData, offset, blockIdx, 0x08, channel.forbidTx);
+        
         channelIndex++;
         
         // Update progress
@@ -806,6 +837,185 @@ export class DM32UVProtocol implements RadioProtocol {
   async writeContacts(_contacts: Contact[]): Promise<void> {
     // TODO: Implement contact writing
     throw new Error('Contact writing not yet implemented');
+  }
+
+  async readQuickMessages(): Promise<QuickTextMessage[]> {
+    requireConnection(this.connection, this.radioInfo);
+
+    this.onProgress?.(0, 'Discovering quick message blocks...');
+
+    const blocks = await discoverMemoryBlocks(
+      this.connection!,
+      this.radioInfo!.memoryLayout.configStart,
+      this.radioInfo!.memoryLayout.configEnd,
+      (current, total) => {
+        const progress = Math.floor((current / total) * 20); // 0-20% for discovery
+        this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+      }
+    );
+
+    const messageBlocks = blocks.filter(b => b.type === 'message');
+    if (messageBlocks.length === 0) {
+      throw new Error('No quick message blocks found');
+    }
+
+    this.onProgress?.(20, `Reading ${messageBlocks.length} message block(s)...`);
+
+    this.rawMessageData.clear();
+    const messages: QuickTextMessage[] = [];
+
+    for (let i = 0; i < messageBlocks.length; i++) {
+      const block = messageBlocks[i];
+      this.onProgress?.(20 + (i / messageBlocks.length) * 70, `Reading message block ${i + 1} of ${messageBlocks.length}...`);
+
+      const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
+      
+      const parsedMessages = parseQuickMessages(blockData, (messageIndex, rawData) => {
+        this.rawMessageData.set(messageIndex, {
+          data: new Uint8Array(rawData),
+          messageIndex,
+          offset: OFFSET.QUICK_MESSAGE_BASE * (messageIndex + 1),
+        });
+      });
+
+      messages.push(...parsedMessages);
+    }
+
+    this.onProgress?.(100, `Successfully read ${messages.length} quick messages`);
+    return messages;
+  }
+
+  async readDMRRadioIDs(): Promise<DMRRadioID[]> {
+    requireConnection(this.connection, this.radioInfo);
+
+    this.onProgress?.(0, 'Discovering DMR Radio ID blocks...');
+
+    const blocks = await discoverMemoryBlocks(
+      this.connection!,
+      this.radioInfo!.memoryLayout.configStart,
+      this.radioInfo!.memoryLayout.configEnd,
+      (current, total) => {
+        const progress = Math.floor((current / total) * 20); // 0-20% for discovery
+        this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+      }
+    );
+
+    const radioIdBlocks = blocks.filter(b => b.type === 'dmrradioid');
+    if (radioIdBlocks.length === 0) {
+      // DMR Radio IDs are optional - return empty array if not found
+      console.log('No DMR Radio ID blocks found');
+      return [];
+    }
+
+    this.onProgress?.(20, `Reading ${radioIdBlocks.length} DMR Radio ID block(s)...`);
+
+    this.rawDMRRadioIDData.clear();
+    const radioIds: DMRRadioID[] = [];
+
+    for (let i = 0; i < radioIdBlocks.length; i++) {
+      const block = radioIdBlocks[i];
+      this.onProgress?.(20 + (i / radioIdBlocks.length) * 70, `Reading DMR Radio ID block ${i + 1} of ${radioIdBlocks.length}...`);
+
+      const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
+      
+      const parsedIds = parseDMRRadioIDs(blockData, (idIndex, rawData, _name) => {
+        this.rawDMRRadioIDData.set(idIndex, {
+          data: new Uint8Array(rawData),
+          idIndex,
+          offset: OFFSET.DMR_RADIO_ID_BASE + (idIndex * BLOCK_SIZE.DMR_RADIO_ID),
+        });
+      });
+
+      radioIds.push(...parsedIds);
+    }
+
+    this.onProgress?.(100, `Successfully read ${radioIds.length} DMR Radio IDs`);
+    return radioIds;
+  }
+
+  async readCalibration(): Promise<Calibration | null> {
+    requireConnection(this.connection, this.radioInfo);
+
+    this.onProgress?.(0, 'Discovering calibration blocks...');
+
+    const blocks = await discoverMemoryBlocks(
+      this.connection!,
+      this.radioInfo!.memoryLayout.configStart,
+      this.radioInfo!.memoryLayout.configEnd,
+      (current, total) => {
+        const progress = Math.floor((current / total) * 20); // 0-20% for discovery
+        this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+      }
+    );
+
+    const calibrationBlocks = blocks.filter(b => b.type === 'calibration');
+    if (calibrationBlocks.length === 0) {
+      // Calibration is optional - return null if not found
+      console.log('No calibration blocks found');
+      return null;
+    }
+
+    // Use the first calibration block
+    const block = calibrationBlocks[0];
+    this.onProgress?.(20, 'Reading calibration data...');
+
+    const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
+    const calibrationData = parseCalibration(blockData);
+
+    this.onProgress?.(100, 'Successfully read calibration data');
+    
+    return {
+      blockAddress: block.address,
+      data: calibrationData,
+    };
+  }
+
+  async readRXGroups(): Promise<RXGroup[]> {
+    requireConnection(this.connection, this.radioInfo);
+
+    this.onProgress?.(0, 'Discovering DMR RX group blocks...');
+
+    const blocks = await discoverMemoryBlocks(
+      this.connection!,
+      this.radioInfo!.memoryLayout.configStart,
+      this.radioInfo!.memoryLayout.configEnd,
+      (current, total) => {
+        const progress = Math.floor((current / total) * 20); // 0-20% for discovery
+        this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+      }
+    );
+
+    const rxGroupBlocks = blocks.filter(b => b.type === 'rxgroup');
+    if (rxGroupBlocks.length === 0) {
+      // DMR RX Groups are optional - return empty array if not found
+      console.log('No DMR RX group blocks found');
+      return [];
+    }
+
+    this.onProgress?.(20, `Reading ${rxGroupBlocks.length} DMR RX group block(s)...`);
+
+    this.rawRXGroupData.clear();
+    const groups: RXGroup[] = [];
+
+    for (let i = 0; i < rxGroupBlocks.length; i++) {
+      const block = rxGroupBlocks[i];
+      this.onProgress?.(20 + (i / rxGroupBlocks.length) * 70, `Reading DMR RX group block ${i + 1} of ${rxGroupBlocks.length}...`);
+
+      const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
+      
+      const parsedGroups = parseRXGroups(blockData, (groupIndex, rawData, _name) => {
+        this.rawRXGroupData.set(groupIndex, {
+          data: new Uint8Array(rawData),
+          groupIndex,
+          offset: groupIndex * BLOCK_SIZE.RX_GROUP,
+        });
+      });
+
+      groups.push(...parsedGroups);
+    }
+
+    this.onProgress?.(100, `Successfully read ${groups.length} DMR RX groups`);
+    return groups;
   }
 
   /**

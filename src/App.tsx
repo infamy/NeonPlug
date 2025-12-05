@@ -8,6 +8,7 @@ import { EmergencyTab } from './components/emergency/EmergencyTab';
 import { SettingsTab } from './components/settings/SettingsTab';
 import { SmartImportTab } from './components/import/SmartImportTab';
 import { AboutTab } from './components/about/AboutTab';
+import { MessagesAndGroupsTab } from './components/messages/MessagesAndGroupsTab';
 import { DebugPanel } from './components/ui/DebugPanel';
 import { StartupModal } from './components/ui/StartupModal';
 import { useChannelsStore } from './store/channelsStore';
@@ -173,6 +174,8 @@ function App() {
         return <SmartImportTab />;
       case 'about':
         return <AboutTab />;
+      case 'messages':
+        return <MessagesAndGroupsTab />;
       default:
         return <ChannelsTab />;
     }
