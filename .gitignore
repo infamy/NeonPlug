@@ -30,6 +30,7 @@ neonplug-debug-*.json
 DM32-Protocol-Spec
 METADATA-*
 PLAN.md
+READPLAN.md
 SPECS.md
 DESIGN.md
 DEVLOG.md

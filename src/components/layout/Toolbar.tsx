@@ -20,8 +20,7 @@ export const Toolbar: React.FC = () => {
     'Connecting to radio',
     'Reading radio information',
     'Reading channels',
-    'Reading zones',
-    'Reading scan lists',
+    'Reading configuration',
     'Complete',
   ];
 
