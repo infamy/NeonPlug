@@ -239,17 +239,29 @@ export function useRadioConnection() {
       setError(errorMessage);
       onProgress?.(0, `Error: ${errorMessage}`, 'Error');
       
-      // Don't throw - let the caller handle showing the startup modal
-      // This prevents the page from "crashing" on error
       console.error('Radio read error:', err);
-    } finally {
-      // Disconnect is already handled by bulkReadRequiredBlocks()
-      // No need to disconnect again here
-      // Don't clear radio info - keep it displayed after reading
-      // setConnected(false);
-      // setRadioInfo(null);
-      // setSettings(null);
+      
+      // Set connecting to false so modal can show error state
       setIsConnecting(false);
+      
+      // Try to disconnect on error (if connection exists)
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (disconnectErr) {
+          // Ignore disconnect errors - connection might already be closed
+          console.warn('Error during disconnect cleanup:', disconnectErr);
+        }
+      }
+      
+      // Re-throw the error so the caller (Toolbar) can handle it and show error in modal
+      throw err;
+    } finally {
+      // Only set connecting to false if we didn't already (success case)
+      // On error, we set it in the catch block so modal stays open to show error
+      if (!error) {
+        setIsConnecting(false);
+      }
     }
   }, [setConnected, setRadioInfo, setSettings, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setRadioIds, setRawRadioIdData, setCalibration, setRXGroups, setRawGroupData]);
 

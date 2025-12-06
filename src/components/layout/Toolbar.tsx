@@ -28,6 +28,7 @@ export const Toolbar: React.FC = () => {
   const [currentStep, setCurrentStep] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const handleImport = () => {
     fileInputRef.current?.click();
@@ -95,7 +96,9 @@ export const Toolbar: React.FC = () => {
 
   const handleRead = async () => {
     try {
-      // Show progress modal immediately
+      // Clear any previous error immediately
+      setConnectionError(null);
+      // Show progress modal immediately with initial state
       setProgress(0);
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
@@ -108,25 +111,43 @@ export const Toolbar: React.FC = () => {
         }
       });
       
-      // Keep progress at 100% for a moment
+      // Success - clear error and close modal after a moment
+      setConnectionError(null);
       setTimeout(() => {
         setProgress(0);
         setProgressMessage('');
         setCurrentStep('');
       }, 2000);
     } catch (err) {
-      setProgress(0);
-      setProgressMessage('');
-      setCurrentStep('');
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       
-      // If radio not found, show a user-friendly message
-      if (errorMessage.includes('Radio not found')) {
-        alert(`Radio not found: ${errorMessage}\n\nPlease check:\n- Radio is powered on\n- USB cable is connected\n- Correct port is selected\n\nYou can try again from the startup dialog.`);
-      } else {
-        alert(`Error reading from radio: ${errorMessage}`);
+      // Format error message for display
+      let displayError = errorMessage;
+      if (errorMessage.includes('timed out') || errorMessage.includes('timeout')) {
+        displayError = `Connection timed out: ${errorMessage}`;
+      } else if (errorMessage.includes('Radio not found')) {
+        displayError = `Radio not found: ${errorMessage}`;
       }
+      
+      // Set error state - modal will stay open to show error
+      setConnectionError(displayError);
+      // Reset progress state to show error clearly
+      setProgress(0);
+      setProgressMessage('Connection failed');
+      // Don't close modal - let user see error and retry
     }
+  };
+
+  const handleRetry = () => {
+    // Force page refresh to reset everything
+    window.location.reload();
+  };
+
+  const handleCloseModal = () => {
+    setConnectionError(null);
+    setProgress(0);
+    setProgressMessage('');
+    setCurrentStep('');
   };
 
   const handleWrite = () => {
@@ -193,11 +214,14 @@ export const Toolbar: React.FC = () => {
         </div>
       </div>
       <ReadProgressModal
-        isOpen={isConnecting}
+        isOpen={isConnecting || !!connectionError}
         progress={progress}
         message={progressMessage}
         currentStep={currentStep || readSteps[0]}
         steps={readSteps}
+        error={connectionError}
+        onRetry={handleRetry}
+        onClose={handleCloseModal}
       />
     </>
   );
