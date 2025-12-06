@@ -66,6 +66,15 @@ export const CONNECTION = {
   INIT_DELAY: 200,          // ms after port open
   CLEAR_BUFFER_DELAY: 100,  // ms after clearing buffer
   BLOCK_READ_DELAY: 50,     // ms between block reads
+  // Timeout values (in milliseconds)
+  TIMEOUT: {
+    HANDSHAKE: 2000,        // 2s for handshake commands (PSEARCH, PASSSTA, etc.)
+    READ_BYTES: 5000,       // 5s for reading bytes (should be fast)
+    READ_MEMORY: 10000,     // 10s for reading memory blocks (4KB blocks can be slow)
+    WRITE_MEMORY: 15000,    // 15s for writing memory blocks (larger timeout for writes)
+    VFRAME_QUERY: 3000,     // 3s for V-frame queries
+    FILL_BUFFER: 1000,      // 1s for filling buffer (should be very fast)
+  },
 } as const;
 
 // Channel limits

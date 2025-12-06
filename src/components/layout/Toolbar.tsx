@@ -22,21 +22,12 @@ export const Toolbar: React.FC = () => {
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
   const { radioInfo } = useRadioStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { readFromRadio, isConnecting, error } = useRadioConnection();
+  const { readFromRadio, isConnecting, error, readSteps } = useRadioConnection();
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
   const [currentStep, setCurrentStep] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
-  
-  const readSteps = [
-    'Selecting port',
-    'Connecting to radio',
-    'Reading radio information',
-    'Reading channels',
-    'Reading configuration',
-    'Complete',
-  ];
 
   const handleImport = () => {
     fileInputRef.current?.click();

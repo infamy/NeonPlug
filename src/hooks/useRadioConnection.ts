@@ -13,6 +13,16 @@ import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
 import { useCalibrationStore } from '../store/calibrationStore';
 import { useRXGroupsStore } from '../store/rxGroupsStore';
 
+// Export steps so UI components can use them (single source of truth)
+const READ_STEPS: string[] = [
+  'Selecting port',
+  'Connecting to radio',
+  'Reading radio information',
+  'Reading memory blocks',
+  'Parsing channels',
+  'Parsing configuration',
+];
+
 export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,14 +48,9 @@ export function useRadioConnection() {
     
     let protocol: DM32UVProtocol | null = null;
 
-    const steps = [
-      'Selecting port',
-      'Connecting to radio',
-      'Reading radio information',
-      'Reading channels',
-      'Reading configuration',
-      'Complete',
-    ];
+    // Define steps once - this is the single source of truth
+    // Use the exported READ_STEPS array (single source of truth)
+    const steps = READ_STEPS;
 
     try {
       // Create protocol instance
@@ -63,17 +68,22 @@ export function useRadioConnection() {
       onProgress?.(10, 'Connecting to radio...', steps[1]);
       await protocol.connect();
       
-      // Step 3: Get radio info and settings
+      // Step 3: Get radio info
       onProgress?.(10, 'Reading radio information...', steps[2]);
       const radioInfo = await protocol.getRadioInfo();
-      const settings = await protocol.readRadioSettings();
       
       setRadioInfo(radioInfo);
-      setSettings(settings);
       setConnected(true);
       
-      // Step 4: Read channels
-      onProgress?.(20, 'Reading channels...', steps[3]);
+      // Step 4: Bulk read all required blocks upfront
+      // This will read all blocks and then disconnect from the radio
+      onProgress?.(15, 'Reading all memory blocks...', steps[3]);
+      await protocol.bulkReadRequiredBlocks();
+      
+      // Connection is now closed - all data is in cache
+      // All parsing happens from cached blocks, no connection needed
+      // Step 5: Process cached blocks to extract data (no connection needed)
+      onProgress?.(20, 'Parsing channels from cache...', steps[4]);
       const channels = await protocol.readChannels();
       setChannels(channels);
       // Store raw channel data for debug export
@@ -88,17 +98,17 @@ export function useRadioConnection() {
         setBlockData((protocol as any).allBlockData);
       }
 
-      // Step 5: Read configuration (zones, scan lists, quick messages, etc.)
+      // Step 6: Parse configuration (zones, scan lists, quick messages, etc.)
       // Suppress detailed messages and only show high-level progress
       const originalConfigProgress = protocol.onProgress;
       protocol.onProgress = (progress, _message) => {
         // Only update progress percentage, don't forward detailed messages
         const overallProgress = 70 + (progress * 0.25); // 70% to 95%
         // Only forward progress percentage, keep the high-level message
-        onProgress?.(overallProgress, 'Reading configuration...', steps[4]);
+        onProgress?.(overallProgress, 'Parsing configuration...', steps[5]);
       };
 
-      onProgress?.(70, 'Reading configuration...', steps[4]);
+      onProgress?.(70, 'Parsing configuration from cache...', steps[5]);
       
       // Read zones
       const zones = await protocol.readZones();
@@ -222,7 +232,7 @@ export function useRadioConnection() {
       // Restore original progress handler
       protocol.onProgress = originalConfigProgress;
 
-      // Step 8: Complete (contacts are read separately on demand)
+      // Step 6: Complete (contacts are read separately on demand)
       onProgress?.(100, 'Read complete!', steps[5]);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Read failed';
@@ -233,14 +243,8 @@ export function useRadioConnection() {
       // This prevents the page from "crashing" on error
       console.error('Radio read error:', err);
     } finally {
-      // Always disconnect after reading
-      if (protocol) {
-        try {
-          await protocol.disconnect();
-        } catch (e) {
-          console.warn('Error disconnecting:', e);
-        }
-      }
+      // Disconnect is already handled by bulkReadRequiredBlocks()
+      // No need to disconnect again here
       // Don't clear radio info - keep it displayed after reading
       // setConnected(false);
       // setRadioInfo(null);
@@ -252,117 +256,20 @@ export function useRadioConnection() {
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
   ) => {
-    // Ask for confirmation since this is a slow operation
-    const confirmed = window.confirm(
-      'Reading contacts from the radio can take a long time.\n\n' +
-      'This operation will discover and read all contact blocks, which may take several minutes.\n\n' +
-      'Do you want to continue?'
-    );
-    
-    if (!confirmed) {
-      return;
-    }
-
-    setIsConnecting(true);
-    setError(null);
-    
-    let protocol: DM32UVProtocol | null = null;
-
-    try {
-      // Create protocol instance
-      protocol = new DM32UVProtocol();
-      
-      // Set up progress callback
-      protocol.onProgress = (progress, message) => {
-        onProgress?.(progress, message);
-      };
-      
-      // Connect to radio (this will trigger port selection dialog)
-      onProgress?.(5, 'Please select a serial port in the browser dialog...');
-      onProgress?.(10, 'Connecting to radio...');
-      await protocol.connect();
-      
-      // Read contacts
-      onProgress?.(20, 'Reading contacts...');
-      const contacts = await protocol.readContacts();
-      setContacts(contacts);
-      
-      onProgress?.(100, 'Contacts read complete!');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Read failed';
-      setError(errorMessage);
-      onProgress?.(0, `Error: ${errorMessage}`);
-      console.error('Contacts read error:', err);
-    } finally {
-      if (protocol) {
-        try {
-          await protocol.disconnect();
-        } catch (e) {
-          console.warn('Error disconnecting:', e);
-        }
-      }
-      setIsConnecting(false);
-    }
-  }, [setContacts]);
-
-  const readQuickMessages = useCallback(async (
-    onProgress?: (progress: number, message: string) => void
-  ) => {
-    setIsConnecting(true);
-    setError(null);
-    
-    let protocol: DM32UVProtocol | null = null;
-
-    try {
-      // Create protocol instance
-      protocol = new DM32UVProtocol();
-      
-      // Set up progress callback
-      protocol.onProgress = (progress, message) => {
-        onProgress?.(progress, message);
-      };
-      
-      // Connect to radio (this will trigger port selection dialog)
-      onProgress?.(5, 'Please select a serial port in the browser dialog...');
-      onProgress?.(10, 'Connecting to radio...');
-      await protocol.connect();
-      
-      // Read quick messages
-      onProgress?.(20, 'Reading quick messages...');
-      const messages = await protocol.readQuickMessages();
-      setMessages(messages);
-      
-      // Store raw message data for debug export
-      const rawDataMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
-      for (const [index, rawData] of protocol.rawMessageData.entries()) {
-        rawDataMap.set(index, rawData);
-      }
-      setRawMessageData(rawDataMap);
-      
-      onProgress?.(100, 'Quick messages read complete!');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Read failed';
-      setError(errorMessage);
-      onProgress?.(0, `Error: ${errorMessage}`);
-      console.error('Quick messages read error:', err);
-    } finally {
-      if (protocol) {
-        try {
-          await protocol.disconnect();
-        } catch (e) {
-          console.warn('Error disconnecting:', e);
-        }
-      }
-      setIsConnecting(false);
-    }
-  }, [setMessages, setRawMessageData]);
+    // TODO: Reimplement contacts reading from cached blocks
+    // Contacts need to be discovered and read from the cache array
+    // This is a stub until we reimplement the contact reading logic
+    onProgress?.(0, 'Contacts reading not yet implemented');
+    console.warn('readContacts is a stub - needs reimplementation');
+    throw new Error('Contacts reading is not yet implemented. It will be reimplemented to read from cached blocks.');
+  }, []);
 
   return {
     isConnecting,
     error,
     readFromRadio,
     readContacts,
-    readQuickMessages,
+    readSteps: READ_STEPS,
   };
 }
 

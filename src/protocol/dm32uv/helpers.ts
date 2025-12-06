@@ -21,6 +21,16 @@ export function requireConnection(
 }
 
 /**
+ * Validate that radio info is available (for parsing methods that don't need connection)
+ * @throws {Error} If radio info not available
+ */
+export function requireRadioInfo(radioInfo: any): void {
+  if (!radioInfo) {
+    throw new Error('Radio info not available');
+  }
+}
+
+/**
  * Validate that blocks have been discovered
  * @throws {Error} If no blocks discovered
  */
