@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
 import { useRadioStore } from '../../store/radioStore';
-import { exportFullDebug, downloadDebug } from '../../services/debugExport';
+import { exportFullDebug, exportWriteBlocks, downloadDebug } from '../../services/debugExport';
 import { analyzeMetadata, generateMetadataReport } from '../../services/metadataAnalysis';
 
 export interface LogEntry {
@@ -19,7 +19,7 @@ export const DebugPanel: React.FC = () => {
         const logEndRef = useRef<HTMLDivElement>(null);
         const { channels, rawChannelData } = useChannelsStore();
         const { zones, rawZoneData } = useZonesStore();
-        const { blockMetadata, blockData } = useRadioStore();
+        const { blockMetadata, blockData, writeBlockData } = useRadioStore();
 
   useEffect(() => {
     // Capture console.log, console.warn, console.error
@@ -106,10 +106,22 @@ export const DebugPanel: React.FC = () => {
       rawZoneData, 
       exportLogs,
       blockMetadata,
-      blockData
+      blockData,
+      writeBlockData
     );
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
     downloadDebug(debugData, `neonplug-debug-${timestamp}.json`);
+  };
+
+  const handleWriteBlocksExport = () => {
+    if (writeBlockData.size === 0) {
+      alert('No write blocks available. Please write to radio first.');
+      return;
+    }
+
+    const writeBlocksData = exportWriteBlocks(writeBlockData);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    downloadDebug(writeBlocksData, `neonplug-write-blocks-${timestamp}.json`);
   };
 
   const handleMetadataAnalysisExport = () => {
@@ -182,6 +194,15 @@ export const DebugPanel: React.FC = () => {
           <div className="flex items-center justify-between px-4 py-2 border-b border-neon-cyan border-opacity-20">
             <span className="text-xs text-gray-400">Console Output</span>
             <div className="flex gap-2">
+              {writeBlockData.size > 0 && (
+                <button
+                  onClick={handleWriteBlocksExport}
+                  className="text-xs text-neon-cyan hover:text-neon-cyan-bright px-2 py-1"
+                  title="Export write blocks for confirmation"
+                >
+                  Export Write Blocks
+                </button>
+              )}
               <button
                 onClick={handleMetadataAnalysisExport}
                 className="text-xs text-neon-cyan hover:text-neon-cyan-bright px-2 py-1"

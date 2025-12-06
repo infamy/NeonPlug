@@ -1,0 +1,92 @@
+[
+  {
+    "name": "FRS",
+    "description": "Family Radio Service - 14 channels, license-free, 0.5W max",
+    "defaultPower": "Low",
+    "defaultBandwidth": "12.5kHz",
+    "defaultMode": "Analog",
+    "frequencies": [
+      { "number": 1, "rx": 462.5625, "tx": 462.5625, "name": "FRS 1" },
+      { "number": 2, "rx": 462.5875, "tx": 462.5875, "name": "FRS 2" },
+      { "number": 3, "rx": 462.6125, "tx": 462.6125, "name": "FRS 3" },
+      { "number": 4, "rx": 462.6375, "tx": 462.6375, "name": "FRS 4" },
+      { "number": 5, "rx": 462.6625, "tx": 462.6625, "name": "FRS 5" },
+      { "number": 6, "rx": 462.6875, "tx": 462.6875, "name": "FRS 6" },
+      { "number": 7, "rx": 462.7125, "tx": 462.7125, "name": "FRS 7" },
+      { "number": 8, "rx": 467.5625, "tx": 467.5625, "name": "FRS 8" },
+      { "number": 9, "rx": 467.5875, "tx": 467.5875, "name": "FRS 9" },
+      { "number": 10, "rx": 467.6125, "tx": 467.6125, "name": "FRS 10" },
+      { "number": 11, "rx": 467.6375, "tx": 467.6375, "name": "FRS 11" },
+      { "number": 12, "rx": 467.6625, "tx": 467.6625, "name": "FRS 12" },
+      { "number": 13, "rx": 467.6875, "tx": 467.6875, "name": "FRS 13" },
+      { "number": 14, "rx": 467.7125, "tx": 467.7125, "name": "FRS 14" }
+    ]
+  },
+  {
+    "name": "GMRS",
+    "description": "General Mobile Radio Service - 30 channels, license required",
+    "defaultPower": "High",
+    "defaultBandwidth": "12.5kHz",
+    "defaultMode": "Analog",
+    "frequencies": [
+      { "number": 1, "rx": 462.5625, "tx": 462.5625, "name": "GMRS 1" },
+      { "number": 2, "rx": 462.5875, "tx": 462.5875, "name": "GMRS 2" },
+      { "number": 3, "rx": 462.6125, "tx": 462.6125, "name": "GMRS 3" },
+      { "number": 4, "rx": 462.6375, "tx": 462.6375, "name": "GMRS 4" },
+      { "number": 5, "rx": 462.6625, "tx": 462.6625, "name": "GMRS 5" },
+      { "number": 6, "rx": 462.6875, "tx": 462.6875, "name": "GMRS 6" },
+      { "number": 7, "rx": 462.7125, "tx": 462.7125, "name": "GMRS 7" },
+      { "number": 8, "rx": 467.5625, "tx": 462.5625, "name": "GMRS 8" },
+      { "number": 9, "rx": 467.5875, "tx": 462.5875, "name": "GMRS 9" },
+      { "number": 10, "rx": 467.6125, "tx": 462.6125, "name": "GMRS 10" },
+      { "number": 11, "rx": 467.6375, "tx": 462.6375, "name": "GMRS 11" },
+      { "number": 12, "rx": 467.6625, "tx": 462.6625, "name": "GMRS 12" },
+      { "number": 13, "rx": 467.6875, "tx": 462.6875, "name": "GMRS 13" },
+      { "number": 14, "rx": 467.7125, "tx": 462.7125, "name": "GMRS 14" },
+      { "number": 15, "rx": 462.5500, "tx": 462.5500, "name": "GMRS 15" },
+      { "number": 16, "rx": 462.5750, "tx": 462.5750, "name": "GMRS 16" },
+      { "number": 17, "rx": 462.6000, "tx": 462.6000, "name": "GMRS 17" },
+      { "number": 18, "rx": 462.6250, "tx": 462.6250, "name": "GMRS 18" },
+      { "number": 19, "rx": 462.6500, "tx": 462.6500, "name": "GMRS 19" },
+      { "number": 20, "rx": 462.6750, "tx": 462.6750, "name": "GMRS 20" },
+      { "number": 21, "rx": 462.7000, "tx": 462.7000, "name": "GMRS 21" },
+      { "number": 22, "rx": 462.7250, "tx": 462.7250, "name": "GMRS 22" },
+      { "number": 23, "rx": 462.5500, "tx": 467.5500, "name": "GMRS 23" },
+      { "number": 24, "rx": 462.5750, "tx": 467.5750, "name": "GMRS 24" },
+      { "number": 25, "rx": 462.6000, "tx": 467.6000, "name": "GMRS 25" },
+      { "number": 26, "rx": 462.6250, "tx": 467.6250, "name": "GMRS 26" },
+      { "number": 27, "rx": 462.6500, "tx": 467.6500, "name": "GMRS 27" },
+      { "number": 28, "rx": 462.6750, "tx": 467.6750, "name": "GMRS 28" },
+      { "number": 29, "rx": 462.7000, "tx": 467.7000, "name": "GMRS 29" },
+      { "number": 30, "rx": 462.7250, "tx": 467.7250, "name": "GMRS 30" }
+    ]
+  },
+  {
+    "name": "MURS",
+    "description": "Multi-Use Radio Service - 5 channels, license-free, VHF",
+    "defaultPower": "High",
+    "defaultBandwidth": "12.5kHz",
+    "defaultMode": "Analog",
+    "frequencies": [
+      { "number": 1, "rx": 151.820, "tx": 151.820, "name": "MURS 1" },
+      { "number": 2, "rx": 151.880, "tx": 151.880, "name": "MURS 2" },
+      { "number": 3, "rx": 151.940, "tx": 151.940, "name": "MURS 3" },
+      { "number": 4, "rx": 154.570, "tx": 154.570, "name": "MURS 4" },
+      { "number": 5, "rx": 154.600, "tx": 154.600, "name": "MURS 5" }
+    ]
+  },
+  {
+    "name": "Ham Calling",
+    "description": "Common ham radio calling frequencies",
+    "defaultPower": "High",
+    "defaultBandwidth": "25kHz",
+    "defaultMode": "Analog",
+    "frequencies": [
+      { "number": 1, "rx": 146.520, "tx": 146.520, "name": "2m Calling" },
+      { "number": 2, "rx": 446.000, "tx": 446.000, "name": "70cm Calling" },
+      { "number": 3, "rx": 145.500, "tx": 145.500, "name": "2m APRS" },
+      { "number": 4, "rx": 144.390, "tx": 144.390, "name": "2m APRS Alt" }
+    ]
+  }
+]
+

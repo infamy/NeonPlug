@@ -18,6 +18,7 @@ export const Toolbar: React.FC = () => {
   const { scanLists, setScanLists } = useScanListsStore();
   const { contacts, setContacts } = useContactsStore();
   const { settings: radioSettings, setSettings: setRadioSettings } = useRadioSettingsStore();
+  const { setWriteBlockData } = useRadioStore();
   const { systems: digitalEmergencies, config: digitalEmergencyConfig, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
   const { radioInfo } = useRadioStore();
@@ -184,8 +185,13 @@ export const Toolbar: React.FC = () => {
       
       // Write all data
       setProgress(20);
-      setProgressMessage('Writing data to radio...');
+      setProgressMessage('Preparing write blocks...');
       await protocol.writeAllData(channels, zones, scanLists);
+      
+      // Store write blocks for debug export
+      if ((protocol as any).writeBlockData) {
+        setWriteBlockData((protocol as any).writeBlockData);
+      }
       
       // Disconnect
       await protocol.disconnect();

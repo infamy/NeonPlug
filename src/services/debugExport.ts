@@ -93,6 +93,53 @@ export interface LogEntry {
 }
 
 /**
+ * Export write blocks for debug confirmation
+ */
+export function exportWriteBlocks(
+  writeBlockData: Map<number, { address: number; data: Uint8Array; metadata: number }>
+): string {
+  const writeBlocksArray: Array<{ 
+    address: string; 
+    metadata: number; 
+    metadataHex: string;
+    hex: string; 
+    bytes: number[]; 
+    ascii: string;
+    size: number;
+  }> = [];
+  
+  for (const [, block] of writeBlockData.entries()) {
+    const ascii = Array.from(block.data)
+      .map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.')
+      .join('');
+    
+    writeBlocksArray.push({
+      address: `0x${block.address.toString(16).padStart(6, '0')}`,
+      metadata: block.metadata,
+      metadataHex: `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`,
+      hex: Array.from(block.data).map(b => b.toString(16).padStart(2, '0')).join(' '),
+      bytes: Array.from(block.data),
+      ascii: ascii,
+      size: block.data.length,
+    });
+  }
+  
+  // Sort by address
+  writeBlocksArray.sort((a, b) => parseInt(a.address, 16) - parseInt(b.address, 16));
+  
+  const debugData = {
+    writeBlocks: writeBlocksArray,
+    summary: {
+      blockCount: writeBlocksArray.length,
+      totalBytes: writeBlocksArray.reduce((sum, b) => sum + b.size, 0),
+      exportDate: new Date().toISOString(),
+    },
+  };
+  
+  return JSON.stringify(debugData, null, 2);
+}
+
+/**
  * Export comprehensive debug data (channels + zones + console logs + all block metadata and data)
  */
 export function exportFullDebug(
@@ -102,7 +149,8 @@ export function exportFullDebug(
   rawZoneData: Map<string, { data: Uint8Array; zoneNum: number; offset: number }>,
   consoleLogs?: LogEntry[],
   allBlockMetadata?: Map<number, { metadata: number; type: string }>,
-  allBlockData?: Map<number, Uint8Array>
+  allBlockData?: Map<number, Uint8Array>,
+  writeBlockData?: Map<number, { address: number; data: Uint8Array; metadata: number }>
 ): string {
   const channelDebug = JSON.parse(exportChannelDebug(channels, rawChannelData));
   const zoneDebug = JSON.parse(exportZoneDebug(zones, rawZoneData));
@@ -150,6 +198,36 @@ export function exportFullDebug(
   if (allBlockMetadata) {
     metadataAnalysis = analyzeMetadata(allBlockMetadata, allBlockData);
   }
+  
+  // Convert write blocks to JSON-serializable format
+  const writeBlocksArray: Array<{ 
+    address: string; 
+    metadata: number; 
+    metadataHex: string;
+    hex: string; 
+    bytes: number[]; 
+    ascii: string;
+    size: number;
+  }> = [];
+  if (writeBlockData) {
+    for (const [, block] of writeBlockData.entries()) {
+      const ascii = Array.from(block.data)
+        .map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.')
+        .join('');
+      
+      writeBlocksArray.push({
+        address: `0x${block.address.toString(16).padStart(6, '0')}`,
+        metadata: block.metadata,
+        metadataHex: `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`,
+        hex: Array.from(block.data).map(b => b.toString(16).padStart(2, '0')).join(' '),
+        bytes: Array.from(block.data),
+        ascii: ascii,
+        size: block.data.length,
+      });
+    }
+    // Sort by address
+    writeBlocksArray.sort((a, b) => parseInt(a.address, 16) - parseInt(b.address, 16));
+  }
 
   const debugData = {
     channels: channelDebug,
@@ -157,6 +235,7 @@ export function exportFullDebug(
     consoleLogs: consoleLogs || [],
     blockMetadata: blockMetadataArray,
     blockData: blockDataArray,
+    writeBlocks: writeBlocksArray,
     metadataAnalysis: metadataAnalysis ? JSON.parse(exportMetadataAnalysis(metadataAnalysis)) : null,
     metadata: {
       channelCount: channels.length,
@@ -164,6 +243,7 @@ export function exportFullDebug(
       logCount: consoleLogs?.length || 0,
       blockCount: blockMetadataArray.length,
       nonEmptyBlockCount: blockDataArray.length,
+      writeBlockCount: writeBlocksArray.length,
       exportDate: new Date().toISOString(),
     },
   };
