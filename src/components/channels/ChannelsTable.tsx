@@ -3,8 +3,13 @@ import { useChannelsStore } from '../../store/channelsStore';
 import type { Channel } from '../../models/Channel';
 import { ChannelEditModal } from './ChannelEditModal';
 
-export const ChannelsTable: React.FC = () => {
-  const { channels, updateChannel, deleteChannel } = useChannelsStore();
+interface ChannelsTableProps {
+  channels?: Channel[];
+}
+
+export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channelsProp }) => {
+  const { channels: channelsFromStore, updateChannel, deleteChannel } = useChannelsStore();
+  const channels = channelsProp ?? channelsFromStore;
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
 
   const handleCellChange = (

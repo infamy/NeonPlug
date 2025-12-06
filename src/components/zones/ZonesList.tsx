@@ -123,6 +123,7 @@ interface ZoneEditorProps {
 const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone }) => {
   const { updateZone } = useZonesStore();
   const { channels } = useChannelsStore();
+  const [searchQuery, setSearchQuery] = useState('');
 
   const handleAddChannel = (channelNumber: number) => {
     if (!zone.channels.includes(channelNumber)) {
@@ -149,6 +150,37 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone }) => {
     .filter(ch => !zone.channels.includes(ch.number))
     .map(ch => ch.number)
     .sort((a, b) => a - b);
+
+  const filteredAvailableChannels = searchQuery.trim()
+    ? availableChannels.filter((chNum) => {
+        const channel = channels.find(ch => ch.number === chNum);
+        if (!channel) return false;
+        
+        const query = searchQuery.toLowerCase().trim();
+        
+        // Search in name
+        if (channel.name.toLowerCase().includes(query)) return true;
+        
+        // Search in channel number
+        if (channel.number.toString().includes(query)) return true;
+        
+        // Search in frequencies
+        const rxFreq = channel.rxFrequency.toFixed(4);
+        const txFreq = channel.txFrequency.toFixed(4);
+        if (rxFreq.includes(query) || txFreq.includes(query)) return true;
+        
+        // Search in mode
+        if (channel.mode.toLowerCase().includes(query)) return true;
+        
+        // Search in bandwidth
+        if (channel.bandwidth.toLowerCase().includes(query)) return true;
+        
+        // Search in power
+        if (channel.power.toLowerCase().includes(query)) return true;
+        
+        return false;
+      })
+    : availableChannels;
 
   const zoneChannels = zone.channels
     .map(chNum => channels.find(ch => ch.number === chNum))
@@ -206,24 +238,55 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone }) => {
       </div>
 
       <div>
-        <h4 className="text-white font-medium mb-2">Available Channels ({availableChannels.length})</h4>
+        <h4 className="text-white font-medium mb-2">
+          Available Channels ({filteredAvailableChannels.length} of {availableChannels.length})
+        </h4>
         {availableChannels.length === 0 ? (
           <p className="text-cool-gray text-sm">All channels are in this zone</p>
         ) : (
-          <div className="flex flex-wrap gap-2 max-h-80 overflow-y-auto">
-            {availableChannels.map((chNum) => {
-              const channel = channels.find(ch => ch.number === chNum);
-              return (
-                <button
-                  key={chNum}
-                  onClick={() => handleAddChannel(chNum)}
-                  className="px-3 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-xs hover:bg-opacity-50 hover:border-neon-cyan transition-colors"
-                >
-                  {chNum}: {channel?.name || 'Unknown'}
-                </button>
-              );
-            })}
-          </div>
+          <>
+            <div className="mb-3">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search channels..."
+                  className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-3 py-1.5 pl-9 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                />
+                <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-cool-gray text-xs">
+                  🔍
+                </span>
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-cool-gray hover:text-white text-sm"
+                    title="Clear search"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+            {filteredAvailableChannels.length === 0 ? (
+              <p className="text-cool-gray text-sm">No channels match your search</p>
+            ) : (
+              <div className="flex flex-wrap gap-2 max-h-80 overflow-y-auto">
+                {filteredAvailableChannels.map((chNum) => {
+                  const channel = channels.find(ch => ch.number === chNum);
+                  return (
+                    <button
+                      key={chNum}
+                      onClick={() => handleAddChannel(chNum)}
+                      className="px-3 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-xs hover:bg-opacity-50 hover:border-neon-cyan transition-colors"
+                    >
+                      {chNum}: {channel?.name || 'Unknown'}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
