@@ -10,6 +10,7 @@ import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup } from '../../models';
 import type { WebSerialPort } from './types';
 import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION } from './constants';
+import { withTimeout } from './utils';
 import { 
   requireConnection,
   requireRadioInfo,
@@ -72,6 +73,8 @@ export class DM32UVProtocol implements RadioProtocol {
    * @throws {Error} If connection handshake fails
    */
   async connect(): Promise<void> {
+    // Per-request timeouts handle each message/ack cycle (2s each, resets on response)
+    // No overall connection timeout - each request/response has its own 2s timeout
     try {
       // Clear any previous cached data before starting a new connection
       this.clearCache();
@@ -81,30 +84,49 @@ export class DM32UVProtocol implements RadioProtocol {
         throw new Error('Web Serial API not supported. Please use Chrome/Edge.');
       }
 
-      const port = await (navigator as any).serial.requestPort() as WebSerialPort;
+      // Port selection dialog - no timeout, user can take as long as needed
+      // Note: If user cancels, this will throw a DOMException, which we'll catch
+      let port: WebSerialPort;
+      try {
+        port = await (navigator as any).serial.requestPort() as WebSerialPort;
+      } catch (e: unknown) {
+        const error = e as Error;
+        // If user cancelled the port selection dialog, provide a clear message
+        if (error.message && (error.message.includes('No port selected') || error.message.includes('cancelled') || error.name === 'NotFoundError')) {
+          throw new Error('Port selection cancelled. Please select a port to continue.');
+        }
+        // Otherwise, rethrow the original error
+        throw error;
+      }
       
       // Check if port is already open
       // readable and writable being non-null indicates the port is open
       const isAlreadyOpen = port.readable !== null && port.writable !== null;
       
-      if (isAlreadyOpen) {
+      if (isAlreadyOpen && port.readable && port.writable) {
         // Check if streams are locked (from a previous connection)
         if (port.readable.locked || port.writable.locked) {
           throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
         }
         console.log('Port is already open, will use existing connection');
       } else {
-        // Port is not open, so open it
+        // Port is not open, so open it - wrap in timeout
         try {
-          await port.open({ baudRate: CONNECTION.BAUD_RATE });
+          await withTimeout(
+            port.open({ baudRate: CONNECTION.BAUD_RATE }),
+            CONNECTION.TIMEOUT.PORT_OPEN,
+            'Port open'
+          );
         } catch (e: unknown) {
           const error = e as Error;
           // If it says already open (race condition), check for locked streams
           if (error.message && error.message.includes('already open')) {
-            if (port.readable?.locked || port.writable?.locked) {
+            if ((port.readable && port.readable.locked) || (port.writable && port.writable.locked)) {
               throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
             }
             console.log('Port opened by another process, will use existing connection');
+          } else if (error.message && error.message.includes('timed out')) {
+            throw new Error('Port open timed out. Please check the USB connection and try again.');
           } else {
             throw new Error(`Failed to open port: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
@@ -116,9 +138,11 @@ export class DM32UVProtocol implements RadioProtocol {
 
       this.port = port;
       this.connection = new DM32Connection();
+      // Each request/response in connect() has its own 2s timeout (per-request basis)
       await this.connection.connect(port);
 
       // Query V-frames to get radio info
+      // Each V-frame query has its own 2s timeout (per-request basis)
       const vframes = await this.connection.queryVFrames();
 
       // Parse V-frame data
@@ -157,6 +181,7 @@ export class DM32UVProtocol implements RadioProtocol {
       };
 
       // Enter programming mode
+      // Each request/response in enterProgrammingMode() has its own 2s timeout
       await this.connection.enterProgrammingMode();
     } catch (error) {
       // Try to disconnect, but don't fail if we can't (e.g., locked streams)

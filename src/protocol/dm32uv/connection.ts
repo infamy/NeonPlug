@@ -57,11 +57,7 @@ export class DM32Connection {
     await this.sendCommand('PSEARCH');
     await this.delay(50); // Increased delay to give radio time to respond
     
-    const psearchResponse = await withTimeout(
-      this.readBytes(8),
-      CONNECTION.TIMEOUT.HANDSHAKE,
-      'PSEARCH response'
-    );
+    const psearchResponse = await this.readBytes(8);
     
     // Validate: first byte should be 0x06 (ACK)
     if (psearchResponse[0] !== 0x06) {
@@ -83,11 +79,7 @@ export class DM32Connection {
     await this.sendCommand('PASSSTA');
     await this.delay(50);
     
-    const passstaResponse = await withTimeout(
-      this.readBytes(3),
-      CONNECTION.TIMEOUT.HANDSHAKE,
-      'PASSSTA response'
-    );
+    const passstaResponse = await this.readBytes(3);
     if (passstaResponse[0] !== 0x50) {
       throw new Error(`PASSSTA failed: Expected 0x50, got 0x${passstaResponse[0].toString(16).padStart(2, '0')}`);
     }
@@ -98,11 +90,7 @@ export class DM32Connection {
     await this.sendCommand('SYSINFO');
     await this.delay(50);
     
-    const sysinfoResponse = await withTimeout(
-      this.readBytes(1),
-      CONNECTION.TIMEOUT.HANDSHAKE,
-      'SYSINFO response'
-    );
+    const sysinfoResponse = await this.readBytes(1);
     if (sysinfoResponse[0] !== 0x06) {
       throw new Error(`SYSINFO failed: Expected 0x06, got 0x${sysinfoResponse[0].toString(16).padStart(2, '0')}`);
     }
@@ -130,116 +118,95 @@ export class DM32Connection {
   }
 
   async queryVFrame(frameId: number): Promise<Uint8Array> {
-    // Wrap entire V-frame query in timeout
-    return withTimeout(
-      (async () => {
-        const command = new Uint8Array([0x56, 0x00, 0x00, 0x00, frameId]);
-        console.log(`Sending V-frame query: 0x${frameId.toString(16).padStart(2, '0')}`);
-        await this.write(command);
-        
-        // Wait for response - V-frames may take longer
-        await this.delay(50);
+    const command = new Uint8Array([0x56, 0x00, 0x00, 0x00, frameId]);
+    console.log(`Sending V-frame query: 0x${frameId.toString(16).padStart(2, '0')}`);
+    await this.write(command);
+    
+    // Wait for response - V-frames may take longer
+    await this.delay(50);
 
-        console.log(`Reading V-frame 0x${frameId.toString(16).padStart(2, '0')} header (3 bytes)...`);
-        const header = await this.readBytes(3);
-        const headerHex = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join(' ');
-        console.log(`V-frame header: ${headerHex}`);
-        
-        if (header[0] !== 0x56 || header[1] !== frameId) {
-          throw new Error(`Invalid V-frame response for frame 0x${frameId.toString(16)}: header=${headerHex}`);
-        }
+    console.log(`Reading V-frame 0x${frameId.toString(16).padStart(2, '0')} header (3 bytes)...`);
+    const header = await this.readBytes(3);
+    const headerHex = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    console.log(`V-frame header: ${headerHex}`);
+    
+    if (header[0] !== 0x56 || header[1] !== frameId) {
+      throw new Error(`Invalid V-frame response for frame 0x${frameId.toString(16)}: header=${headerHex}`);
+    }
 
-        const length = header[2];
-        console.log(`V-frame 0x${frameId.toString(16).padStart(2, '0')} data length: ${length}`);
-        
-        if (length === 0) {
-          return new Uint8Array(0);
-        }
+    const length = header[2];
+    console.log(`V-frame 0x${frameId.toString(16).padStart(2, '0')} data length: ${length}`);
+    
+    if (length === 0) {
+      return new Uint8Array(0);
+    }
 
-        const data = await this.readBytes(length);
-        const dataHex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
-        console.log(`V-frame 0x${frameId.toString(16).padStart(2, '0')} data: ${dataHex}`);
-        
-        // Delay after reading V-frame before next command
-        await this.delay(50);
-        
-        return data;
-      })(),
-      CONNECTION.TIMEOUT.VFRAME_QUERY,
-      `Query V-frame 0x${frameId.toString(16)}`
-    );
+    const data = await this.readBytes(length);
+    const dataHex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
+    console.log(`V-frame 0x${frameId.toString(16).padStart(2, '0')} data: ${dataHex}`);
+    
+    // Delay after reading V-frame before next command
+    await this.delay(50);
+    
+    return data;
   }
 
   async enterProgrammingMode(): Promise<void> {
-    // Wrap entire programming mode entry in timeout
-    await withTimeout(
-      (async () => {
-        // Step 6a: PROGRAM command
-        const programCmd = new Uint8Array([
-          0xFF, 0xFF, 0xFF, 0xFF, 0x0C,
-          ...new TextEncoder().encode('PROGRAM')
-        ]);
-        await this.write(programCmd);
+    // Step 6a: PROGRAM command
+    const programCmd = new Uint8Array([
+      0xFF, 0xFF, 0xFF, 0xFF, 0x0C,
+      ...new TextEncoder().encode('PROGRAM')
+    ]);
+    await this.write(programCmd);
         const ack1 = await this.readBytes(1);
-        if (ack1[0] !== 0x06) {
-          throw new Error('PROGRAM command failed');
-        }
-        await this.delay(10);
+    if (ack1[0] !== 0x06) {
+      throw new Error('PROGRAM command failed');
+    }
+    await this.delay(10);
 
-        // Step 6b: Mode 02
-        await this.write(new Uint8Array([0x02]));
+    // Step 6b: Mode 02
+    await this.write(new Uint8Array([0x02]));
         const response = await this.readBytes(8);
-        // Should be 8 bytes of 0xFF
-        if (!response.every(b => b === 0xFF)) {
-          throw new Error('Mode 02 failed');
-        }
-        await this.delay(10);
+    // Should be 8 bytes of 0xFF
+    if (!response.every(b => b === 0xFF)) {
+      throw new Error('Mode 02 failed');
+    }
+    await this.delay(10);
 
-        // Step 6c: ACK 06
-        await this.write(new Uint8Array([0x06]));
+    // Step 6c: ACK 06
+    await this.write(new Uint8Array([0x06]));
         const ack2 = await this.readBytes(1);
-        if (ack2[0] !== 0x06) {
-          throw new Error('ACK 06 failed');
-        }
-        await this.delay(10);
-      })(),
-      CONNECTION.TIMEOUT.HANDSHAKE * 2, // Programming mode takes longer
-      'Enter programming mode'
-    );
+    if (ack2[0] !== 0x06) {
+      throw new Error('ACK 06 failed');
+    }
+    await this.delay(10);
   }
 
   async readMemory(address: number, length: number): Promise<Uint8Array> {
-    // Wrap entire read operation in timeout (memory reads can be slow)
-    return withTimeout(
-      (async () => {
-        // Read command: 0x52 <addr:3> <len:2>
-        const addrBytes = new Uint8Array([
-          address & 0xFF,
-          (address >> 8) & 0xFF,
-          (address >> 16) & 0xFF,
-        ]);
-        const lenBytes = new Uint8Array([
-          length & 0xFF,
-          (length >> 8) & 0xFF,
-        ]);
+    // Read command: 0x52 <addr:3> <len:2>
+    const addrBytes = new Uint8Array([
+      address & 0xFF,
+      (address >> 8) & 0xFF,
+      (address >> 16) & 0xFF,
+    ]);
+    const lenBytes = new Uint8Array([
+      length & 0xFF,
+      (length >> 8) & 0xFF,
+    ]);
 
-        const command = new Uint8Array([0x52, ...addrBytes, ...lenBytes]);
-        await this.write(command);
-        await this.delay(25); // Longer delay for block reads
+    const command = new Uint8Array([0x52, ...addrBytes, ...lenBytes]);
+    await this.write(command);
+    await this.delay(25); // Longer delay for block reads
 
-        // Response: 0x57 <addr:3> <len:2> <data>
-        const header = await this.readBytes(6);
-        if (header[0] !== 0x57) {
-          throw new Error('Invalid read response');
-        }
+    // Response: 0x57 <addr:3> <len:2> <data>
+    const header = await this.readBytes(6);
+    if (header[0] !== 0x57) {
+      throw new Error('Invalid read response');
+    }
 
-        const responseLength = header[4] | (header[5] << 8);
-        const data = await this.readBytes(responseLength);
-        return data;
-      })(),
-      CONNECTION.TIMEOUT.READ_MEMORY,
-      `Read memory at 0x${address.toString(16)} (${length} bytes)`
-    );
+    const responseLength = header[4] | (header[5] << 8);
+    const data = await this.readBytes(responseLength);
+    return data;
   }
 
   /**
@@ -277,12 +244,8 @@ export class DM32Connection {
     await this.write(command);
     await this.delay(50); // Longer delay for writes (per spec: 10-50ms)
 
-    // Response: 0x06 (ACK) - wrap in timeout
-    const response = await withTimeout(
-      this.readBytes(1),
-      CONNECTION.TIMEOUT.WRITE_MEMORY,
-      'Write memory ACK'
-    );
+    // Response: 0x06 (ACK)
+    const response = await this.readBytes(1);
     if (response[0] !== 0x06) {
       throw new Error(`Write not acknowledged. Got 0x${response[0].toString(16)} instead of 0x06`);
     }
@@ -360,6 +323,7 @@ export class DM32Connection {
   /**
    * Fill the read buffer by reading from the stream.
    * This is called when we need more data than is currently in the buffer.
+   * No timeout here - timeout is handled at readBytes level.
    */
   private async fillBuffer(): Promise<void> {
     if (!this.reader || this.isReading) {
@@ -368,12 +332,7 @@ export class DM32Connection {
 
     this.isReading = true;
     try {
-      const readPromise = this.reader.read();
-      const { value, done } = await withTimeout(
-        readPromise,
-        CONNECTION.TIMEOUT.FILL_BUFFER,
-        'Fill buffer'
-      );
+      const { value, done } = await this.reader.read();
       
       if (done) {
         throw new Error('Stream ended unexpectedly');
@@ -395,18 +354,32 @@ export class DM32Connection {
    * Read exactly 'count' bytes from the buffer.
    * If the buffer doesn't have enough data, we fill it by reading from the stream.
    * This matches how Go/Python serial libraries work - they maintain an internal buffer.
+   * 
+   * Timeout: 1s per request/response cycle. If no data arrives within 1s, timeout.
+   * This is the ONLY place we apply timeout - all read operations go through here.
    */
   private async readBytes(count: number): Promise<Uint8Array> {
     if (!this.reader) {
       throw new Error('Not connected');
     }
 
-    // Wrap the entire read operation in a timeout
+    const startTime = Date.now();
+    
     return withTimeout(
       (async () => {
         // Keep reading from stream until we have enough data in buffer
         while (this.readBuffer.length < count) {
+          const bufferLengthBefore = this.readBuffer.length;
           await this.fillBuffer();
+          
+          // If fillBuffer didn't add any data and we still don't have enough,
+          // check if we've been waiting too long
+          if (this.readBuffer.length === bufferLengthBefore && this.readBuffer.length < count) {
+            const elapsed = Date.now() - startTime;
+            if (elapsed >= CONNECTION.TIMEOUT.REQUEST_RESPONSE) {
+              throw new Error(`Read ${count} bytes timed out after ${CONNECTION.TIMEOUT.REQUEST_RESPONSE}ms (got ${this.readBuffer.length} bytes)`);
+            }
+          }
         }
 
         // Extract exactly 'count' bytes from buffer
@@ -417,7 +390,7 @@ export class DM32Connection {
 
         return result;
       })(),
-      CONNECTION.TIMEOUT.READ_BYTES,
+      CONNECTION.TIMEOUT.REQUEST_RESPONSE,
       `Read ${count} bytes`
     );
   }
