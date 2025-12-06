@@ -148,21 +148,37 @@ export const DebugPanel: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-0 right-0 z-50 w-full max-w-2xl">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full bg-deep-gray border-t border-l border-neon-cyan border-opacity-30 px-4 py-2 text-left hover:bg-deep-gray-light transition-colors flex items-center justify-between"
-      >
-        <span className="text-neon-cyan text-sm font-mono">
-          Debug Console {logs.length > 0 && `(${logs.length})`}
-        </span>
-        <span className="text-neon-cyan text-xs">
-          {isOpen ? '▼' : '▲'}
-        </span>
-      </button>
-      
-      {isOpen && (
-        <div className="bg-black border-t border-l border-neon-cyan border-opacity-30 h-64 flex flex-col">
+    <div className="fixed bottom-4 left-4 z-50">
+      {!isOpen ? (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded-lg px-3 py-2 hover:bg-deep-gray-light transition-colors flex items-center gap-2 shadow-lg"
+          title="Open Debug Console"
+        >
+          <span className="text-neon-cyan text-xs font-mono">
+            🐛 Debug
+          </span>
+          {logs.length > 0 && (
+            <span className="bg-neon-cyan text-dark-charcoal text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+              {logs.length}
+            </span>
+          )}
+        </button>
+      ) : (
+        <div className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded-lg shadow-lg w-96 max-h-[70vh] flex flex-col">
+          <button
+            onClick={() => setIsOpen(false)}
+            className="w-full bg-deep-gray border-b border-neon-cyan border-opacity-30 px-4 py-2 text-left hover:bg-deep-gray-light transition-colors flex items-center justify-between rounded-t-lg"
+          >
+            <span className="text-neon-cyan text-sm font-mono">
+              Debug Console {logs.length > 0 && `(${logs.length})`}
+            </span>
+            <span className="text-neon-cyan text-xs">
+              ✕
+            </span>
+          </button>
+          
+          <div className="bg-black border-neon-cyan border-opacity-30 flex-1 overflow-hidden flex flex-col rounded-b-lg">
           <div className="flex items-center justify-between px-4 py-2 border-b border-neon-cyan border-opacity-20">
             <span className="text-xs text-gray-400">Console Output</span>
             <div className="flex gap-2">
@@ -228,6 +244,7 @@ export const DebugPanel: React.FC = () => {
             )}
             <div ref={logEndRef} />
           </div>
+        </div>
         </div>
       )}
     </div>

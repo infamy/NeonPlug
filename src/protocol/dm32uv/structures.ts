@@ -897,6 +897,76 @@ export function parseScanLists(
 }
 
 /**
+ * Encode a scan list to binary format
+ * This is the reverse of parseScanLists()
+ * 
+ * @param scanList - Scan list to encode
+ * @param listNum - Scan list number (1-indexed)
+ * @returns Encoded scan list data (92 bytes)
+ */
+export function encodeScanList(scanList: ScanList, listNum: number): Uint8Array {
+  const data = new Uint8Array(92);
+  
+  // Initialize to 0xFF (empty/padding)
+  data.fill(0xFF);
+  
+  // Calculate name position based on list number
+  // Lists 1-44: positions 1, 58, 115, 172 (repeating pattern)
+  // For simplicity, we'll use a pattern: listNum % 4 determines offset
+  let nameOffset = 1;
+  if (listNum <= 44) {
+    // Pattern: 1, 58, 115, 172, then repeat
+    const patternIndex = (listNum - 1) % 4;
+    const offsets = [1, 58, 115, 172];
+    nameOffset = offsets[patternIndex] + Math.floor((listNum - 1) / 4) * 228; // 228 = 4 * 57 (approximate spacing)
+  } else {
+    // Lists 45+: start at offset 0 in subsequent blocks
+    nameOffset = 0;
+  }
+  
+  // Ensure name offset is within bounds
+  if (nameOffset >= data.length - 16) {
+    nameOffset = 1; // Fallback to start
+  }
+  
+  // Name (max 16 bytes, null-terminated)
+  const nameBytes = new TextEncoder().encode(scanList.name.slice(0, 16));
+  const nameLength = Math.min(nameBytes.length, 16 - 1); // -1 for null terminator
+  
+  for (let i = 0; i < nameLength; i++) {
+    data[nameOffset + i] = nameBytes[i];
+  }
+  data[nameOffset + nameLength] = 0; // Null terminator
+  
+  // Find channel start position (after name)
+  const nameEnd = nameOffset + nameLength + 1;
+  const channelStart = nameEnd;
+  
+  // Channels (2 bytes each, 16-bit LE, max 16 channels)
+  const channelCount = Math.min(scanList.channels.length, 16);
+  for (let i = 0; i < channelCount; i++) {
+    const offset = channelStart + (i * 2);
+    if (offset + 2 > data.length) break;
+    
+    const chNum = scanList.channels[i];
+    // Write 16-bit little-endian
+    data[offset] = chNum & 0xFF;
+    data[offset + 1] = (chNum >> 8) & 0xFF;
+  }
+  
+  // End marker (0x0000 after last channel)
+  if (channelCount < 16) {
+    const endOffset = channelStart + (channelCount * 2);
+    if (endOffset + 2 <= data.length) {
+      data[endOffset] = 0x00;
+      data[endOffset + 1] = 0x00;
+    }
+  }
+  
+  return data;
+}
+
+/**
  * Parse contacts from contact block data
  */
 export function parseContacts(data: Uint8Array): Contact[] {

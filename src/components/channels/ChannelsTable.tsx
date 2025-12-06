@@ -1,9 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { Channel } from '../../models/Channel';
+import { ChannelEditModal } from './ChannelEditModal';
 
-export const ChannelsTable: React.FC = () => {
-  const { channels, updateChannel } = useChannelsStore();
+interface ChannelsTableProps {
+  channels?: Channel[];
+}
+
+export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channelsProp }) => {
+  const { channels: channelsFromStore, updateChannel, deleteChannel } = useChannelsStore();
+  const channels = channelsProp ?? channelsFromStore;
+  const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
 
   const handleCellChange = (
     channelNumber: number,
@@ -31,8 +38,10 @@ export const ChannelsTable: React.FC = () => {
   }
 
   return (
-    <div className="bg-deep-gray rounded-lg border border-neon-cyan overflow-auto max-h-[calc(100vh-200px)]">
-      <table className="w-full border-collapse text-xs">
+    <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-200px)] flex flex-col">
+      <div className="flex-1 overflow-auto">
+        <div className="inline-block min-w-full">
+          <table className="w-full border-collapse text-xs">
         <thead className="sticky top-0 z-20">
           <tr className="bg-dark-charcoal border-b border-neon-cyan">
             <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-0 bg-dark-charcoal z-30 min-w-[40px]">#</th>
@@ -42,6 +51,10 @@ export const ChannelsTable: React.FC = () => {
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">Mode</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">BW</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">PWR</th>
+            {/* Essential columns - always visible */}
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">Color Code</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">RX CTCSS/DCS</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">TX CTCSS/DCS</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Forbid TX</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[75px]">
               <div className="leading-tight">Busy<br />Lock</div>
@@ -63,9 +76,6 @@ export const ChannelsTable: React.FC = () => {
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">SQL</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">PTT ID Display</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">PTT ID</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">Color Code</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">RX CTCSS/DCS</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">TX CTCSS/DCS</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Compander Dup</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">VOX Related</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">RX Squelch Mode</th>
@@ -73,6 +83,7 @@ export const ChannelsTable: React.FC = () => {
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">Signaling Type</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">PTT ID Type</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">Contact ID</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px] sticky right-0 bg-dark-charcoal z-30">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -149,6 +160,86 @@ export const ChannelsTable: React.FC = () => {
                     <option value="Medium">Medium</option>
                     <option value="High">High</option>
                   </select>
+                </td>
+                <td className="px-2 py-2">
+                  {showColorCode ? (
+                    <input
+                      type="number"
+                      min="0"
+                      max="15"
+                      value={channel.colorCode}
+                      onChange={(e) => handleCellChange(channel.number, 'colorCode', parseInt(e.target.value) || 0)}
+                      className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
+                    />
+                  ) : (
+                    <span className="text-cool-gray text-xs text-center block">-</span>
+                  )}
+                </td>
+                <td className="px-2 py-2">
+                  <div className="flex flex-col gap-1">
+                    <select
+                      value={channel.rxCtcssDcs.type}
+                      onChange={(e) => {
+                        const type = e.target.value as 'CTCSS' | 'DCS' | 'None';
+                        handleCellChange(channel.number, 'rxCtcssDcs', {
+                          ...channel.rxCtcssDcs,
+                          type,
+                          value: type === 'None' ? undefined : channel.rxCtcssDcs.value,
+                        });
+                      }}
+                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                    >
+                      <option value="None">None</option>
+                      <option value="CTCSS">CTCSS</option>
+                      <option value="DCS">DCS</option>
+                    </select>
+                    {channel.rxCtcssDcs.type !== 'None' && (
+                      <input
+                        type="number"
+                        step={channel.rxCtcssDcs.type === 'CTCSS' ? '0.1' : '1'}
+                        value={channel.rxCtcssDcs.value || ''}
+                        onChange={(e) => handleCellChange(channel.number, 'rxCtcssDcs', {
+                          ...channel.rxCtcssDcs,
+                          value: parseFloat(e.target.value) || 0,
+                        })}
+                        className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+                        placeholder={channel.rxCtcssDcs.type === 'CTCSS' ? 'Hz' : 'Code'}
+                      />
+                    )}
+                  </div>
+                </td>
+                <td className="px-2 py-2">
+                  <div className="flex flex-col gap-1">
+                    <select
+                      value={channel.txCtcssDcs.type}
+                      onChange={(e) => {
+                        const type = e.target.value as 'CTCSS' | 'DCS' | 'None';
+                        handleCellChange(channel.number, 'txCtcssDcs', {
+                          ...channel.txCtcssDcs,
+                          type,
+                          value: type === 'None' ? undefined : channel.txCtcssDcs.value,
+                        });
+                      }}
+                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                    >
+                      <option value="None">None</option>
+                      <option value="CTCSS">CTCSS</option>
+                      <option value="DCS">DCS</option>
+                    </select>
+                    {channel.txCtcssDcs.type !== 'None' && (
+                      <input
+                        type="number"
+                        step={channel.txCtcssDcs.type === 'CTCSS' ? '0.1' : '1'}
+                        value={channel.txCtcssDcs.value || ''}
+                        onChange={(e) => handleCellChange(channel.number, 'txCtcssDcs', {
+                          ...channel.txCtcssDcs,
+                          value: parseFloat(e.target.value) || 0,
+                        })}
+                        className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+                        placeholder={channel.txCtcssDcs.type === 'CTCSS' ? 'Hz' : 'Code'}
+                      />
+                    )}
+                  </div>
                 </td>
                 <td className="px-2 py-2 text-center">
                   <input
@@ -315,86 +406,6 @@ export const ChannelsTable: React.FC = () => {
                     className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
                   />
                 </td>
-                <td className="px-2 py-2">
-                  {showColorCode ? (
-                    <input
-                      type="number"
-                      min="0"
-                      max="15"
-                      value={channel.colorCode}
-                      onChange={(e) => handleCellChange(channel.number, 'colorCode', parseInt(e.target.value) || 0)}
-                      className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
-                    />
-                  ) : (
-                    <span className="text-cool-gray text-xs text-center block">-</span>
-                  )}
-                </td>
-                <td className="px-2 py-2">
-                  <div className="flex flex-col gap-1">
-                    <select
-                      value={channel.rxCtcssDcs.type}
-                      onChange={(e) => {
-                        const type = e.target.value as 'CTCSS' | 'DCS' | 'None';
-                        handleCellChange(channel.number, 'rxCtcssDcs', {
-                          ...channel.rxCtcssDcs,
-                          type,
-                          value: type === 'None' ? undefined : channel.rxCtcssDcs.value,
-                        });
-                      }}
-                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
-                    >
-                      <option value="None">None</option>
-                      <option value="CTCSS">CTCSS</option>
-                      <option value="DCS">DCS</option>
-                    </select>
-                    {channel.rxCtcssDcs.type !== 'None' && (
-                      <input
-                        type="number"
-                        step={channel.rxCtcssDcs.type === 'CTCSS' ? '0.1' : '1'}
-                        value={channel.rxCtcssDcs.value || ''}
-                        onChange={(e) => handleCellChange(channel.number, 'rxCtcssDcs', {
-                          ...channel.rxCtcssDcs,
-                          value: parseFloat(e.target.value) || 0,
-                        })}
-                        className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
-                        placeholder={channel.rxCtcssDcs.type === 'CTCSS' ? 'Hz' : 'Code'}
-                      />
-                    )}
-                  </div>
-                </td>
-                <td className="px-2 py-2">
-                  <div className="flex flex-col gap-1">
-                    <select
-                      value={channel.txCtcssDcs.type}
-                      onChange={(e) => {
-                        const type = e.target.value as 'CTCSS' | 'DCS' | 'None';
-                        handleCellChange(channel.number, 'txCtcssDcs', {
-                          ...channel.txCtcssDcs,
-                          type,
-                          value: type === 'None' ? undefined : channel.txCtcssDcs.value,
-                        });
-                      }}
-                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
-                    >
-                      <option value="None">None</option>
-                      <option value="CTCSS">CTCSS</option>
-                      <option value="DCS">DCS</option>
-                    </select>
-                    {channel.txCtcssDcs.type !== 'None' && (
-                      <input
-                        type="number"
-                        step={channel.txCtcssDcs.type === 'CTCSS' ? '0.1' : '1'}
-                        value={channel.txCtcssDcs.value || ''}
-                        onChange={(e) => handleCellChange(channel.number, 'txCtcssDcs', {
-                          ...channel.txCtcssDcs,
-                          value: parseFloat(e.target.value) || 0,
-                        })}
-                        className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
-                        placeholder={channel.txCtcssDcs.type === 'CTCSS' ? 'Hz' : 'Code'}
-                      />
-                    )}
-                  </div>
-                </td>
                 <td className="px-2 py-2 text-center">
                   <input
                     type="checkbox"
@@ -474,11 +485,46 @@ export const ChannelsTable: React.FC = () => {
                     className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
                   />
                 </td>
+                <td className="px-2 py-2 text-center sticky right-0 bg-deep-gray z-10">
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => setEditingChannel(channel)}
+                      className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+                      title={`Edit channel ${channel.number}`}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(`Delete channel ${channel.number}: "${channel.name}"?`)) {
+                          deleteChannel(channel.number);
+                        }
+                      }}
+                      className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-red-400 border border-red-600 border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+                      title={`Delete channel ${channel.number}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+        </div>
+      </div>
+      {editingChannel && (
+        <ChannelEditModal
+          isOpen={!!editingChannel}
+          onClose={() => setEditingChannel(null)}
+          channel={editingChannel}
+          onSave={(updatedChannel) => {
+            updateChannel(updatedChannel.number, updatedChannel);
+            setEditingChannel(null);
+          }}
+        />
+      )}
     </div>
   );
 };

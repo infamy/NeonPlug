@@ -5,7 +5,7 @@
 
 import { DM32Connection } from './connection';
 import { discoverMemoryBlocks, readChannelCount, type MemoryBlock } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContacts, encodeChannel, encodeZone, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContacts, encodeChannel, encodeZone, encodeScanList, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup } from '../../models';
 import type { WebSerialPort } from './types';
@@ -891,9 +891,97 @@ export class DM32UVProtocol implements RadioProtocol {
     return scanLists;
   }
 
-  async writeScanLists(_scanLists: ScanList[]): Promise<void> {
-    // TODO: Implement scan list writing
-    throw new Error('Scan list writing not yet implemented');
+  async writeScanLists(scanLists: ScanList[]): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    if (scanLists.length === 0) {
+      throw new Error('No scan lists to write');
+    }
+
+    this.onProgress?.(0, 'Preparing to write scan lists...');
+
+    // Discover blocks if not already discovered
+    if (this.discoveredBlocks.length === 0) {
+      this.onProgress?.(5, 'Discovering scan list blocks...');
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo!.memoryLayout.configStart,
+        this.radioInfo!.memoryLayout.configEnd,
+        (current, total) => {
+          const progress = 5 + Math.floor((current / total) * 5); // 5-10%
+          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+
+    // Get scan list blocks (metadata 0x5d)
+    const scanBlocks = this.discoveredBlocks.filter(b => b.type === 'scan' && b.metadata === METADATA.SCAN_LIST);
+
+    if (scanBlocks.length === 0) {
+      throw new Error('No scan list blocks found');
+    }
+
+    this.onProgress?.(10, `Writing ${scanLists.length} scan lists to ${scanBlocks.length} block(s)...`);
+
+    // Read all scan list blocks and concatenate
+    const allScanListData = await readAndConcatenateBlocks(
+      this.connection!,
+      scanBlocks,
+      this.onProgress
+    );
+
+    // Encode scan lists
+    const encodedScanLists = scanLists.map((scanList, idx) => encodeScanList(scanList, idx + 1));
+    
+    // Write scan lists to the concatenated data
+    // Scan lists are 92 bytes each, starting at offset 16 for first 44 lists
+    for (let i = 0; i < encodedScanLists.length; i++) {
+      let scanListOffset: number;
+      if (i < 44) {
+        // Lists 1-44: offset 16 + (i * 92)
+        scanListOffset = OFFSET.SCAN_LIST_START + (i * BLOCK_SIZE.SCAN_LIST);
+      } else {
+        // Lists 45+: offset 0 in subsequent blocks
+        const blockIndex = Math.floor((i - 44) / 44); // Which block (0-indexed from first scan block)
+        const listIndexInBlock = (i - 44) % 44;
+        scanListOffset = (blockIndex * BLOCK_SIZE.STANDARD) + (listIndexInBlock * BLOCK_SIZE.SCAN_LIST);
+      }
+      
+      if (scanListOffset + BLOCK_SIZE.SCAN_LIST > allScanListData.length) {
+        throw new Error(`Scan list ${i + 1} would exceed block size`);
+      }
+      
+      allScanListData.set(encodedScanLists[i], scanListOffset);
+      
+      const progress = 50 + Math.floor((i / scanLists.length) * 40); // 50-90%
+      if (i % 5 === 0 || i === scanLists.length - 1) {
+        this.onProgress?.(progress, `Encoded ${i + 1} of ${scanLists.length} scan lists...`);
+      }
+    }
+
+    // Write blocks back to radio
+    // We need to split the concatenated data back into blocks
+    let dataOffset = 0;
+    for (let blockIdx = 0; blockIdx < scanBlocks.length; blockIdx++) {
+      const block = scanBlocks[blockIdx];
+      const blockData = allScanListData.slice(dataOffset, dataOffset + BLOCK_SIZE.STANDARD);
+      
+      const progress = 90 + Math.floor((blockIdx / scanBlocks.length) * 10); // 90-100%
+      this.onProgress?.(progress, `Writing scan list block ${blockIdx + 1} of ${scanBlocks.length}...`);
+      
+      await this.connection!.writeMemory(block.address, blockData, block.metadata);
+      
+      dataOffset += BLOCK_SIZE.STANDARD;
+      
+      // Delay between block writes
+      if (blockIdx < scanBlocks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+      }
+    }
+
+    this.onProgress?.(100, `Successfully wrote ${scanLists.length} scan lists`);
+    console.log(`Successfully wrote ${scanLists.length} scan lists to radio`);
   }
 
   /**
@@ -1534,6 +1622,264 @@ export class DM32UVProtocol implements RadioProtocol {
       (data[offset + 2] << 16) |
       (data[offset + 3] << 24)
     );
+  }
+
+  /**
+   * Unified write function that generates new block data from current state
+   * Writes channels, zones, and scan lists together
+   * 
+   * This generates fresh block data from the current state rather than modifying cached blocks.
+   * All block calculations and generation happen only when this method is called.
+   * All metadata bytes at 0xFFF are preserved.
+   * 
+   * @param channels Channels to write
+   * @param zones Zones to write
+   * @param scanLists Scan lists to write
+   */
+  async writeAllData(channels: Channel[], zones: Zone[], scanLists: ScanList[]): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    this.onProgress?.(0, 'Preparing to write all data to radio...');
+
+    // Step 1: Discover blocks (only done once, when write is clicked)
+    this.onProgress?.(5, 'Discovering memory blocks...');
+    const blocks = await discoverMemoryBlocks(
+      this.connection!,
+      this.radioInfo!.memoryLayout.configStart,
+      this.radioInfo!.memoryLayout.configEnd,
+      (current, total) => {
+        const progress = 5 + Math.floor((current / total) * 5); // 5-10%
+        this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+      }
+    );
+    this.discoveredBlocks = blocks;
+
+    // Step 2: Generate new block data arrays from current state
+    this.onProgress?.(10, 'Generating block data from current state...');
+
+    // Generate channel blocks
+    const channelBlocks = this.discoveredBlocks
+      .filter(b => b.type === 'channel')
+      .sort((a, b) => a.metadata - b.metadata);
+
+    if (channels.length > 0 && channelBlocks.length === 0) {
+      throw new Error('No channel blocks found');
+    }
+
+    const generatedChannelBlocks: Array<{ address: number; data: Uint8Array; metadata: number }> = [];
+    if (channels.length > 0) {
+      if (channels.length > 4000) {
+        throw new Error(`Too many channels: ${channels.length} (maximum 4000)`);
+      }
+
+      const firstChannelBlock = channelBlocks.find(b => b.metadata === METADATA.CHANNEL_FIRST);
+      if (!firstChannelBlock) {
+        throw new Error(`First channel block (metadata 0x${METADATA.CHANNEL_FIRST.toString(16)}) not found`);
+      }
+
+      // Encode all channels to binary
+      const encodedChannels = channels.map(ch => encodeChannel(ch));
+      
+      // Generate new block data for each channel block
+      let channelIndex = 0;
+      for (let blockIdx = 0; blockIdx < channelBlocks.length && channelIndex < channels.length; blockIdx++) {
+        const block = channelBlocks[blockIdx];
+        const isFirstBlock = block.metadata === METADATA.CHANNEL_FIRST;
+        
+        // Generate new 4KB block filled with 0xFF
+        const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
+        blockData.fill(0xFF);
+        
+        // Set metadata byte at 0xFFF
+        blockData[0xFFF] = block.metadata;
+        
+        // Update channel count in first block header (bytes 0-3)
+        if (isFirstBlock) {
+          blockData[0] = channels.length & 0xFF;
+          blockData[1] = (channels.length >> 8) & 0xFF;
+          blockData[2] = (channels.length >> 16) & 0xFF;
+          blockData[3] = (channels.length >> 24) & 0xFF;
+        }
+        
+        // Determine start offset and max channels for this block
+        const startOffset = isFirstBlock ? OFFSET.FIRST_CHANNEL : 0x00;
+        const maxChannelsInBlock = isFirstBlock ? 84 : 85;
+        const maxOffset = startOffset + (maxChannelsInBlock * BLOCK_SIZE.CHANNEL);
+        
+        // Write channels to this block
+        for (let offset = startOffset; offset < maxOffset && channelIndex < channels.length; offset += BLOCK_SIZE.CHANNEL) {
+          const channel = channels[channelIndex];
+          blockData.set(encodedChannels[channelIndex], offset);
+          
+          // Write forbid TX flag to the correct offset
+          writeChannelFlagBit(channel.number, blockData, offset, blockIdx, 0x08, channel.forbidTx);
+          
+          channelIndex++;
+        }
+        
+        generatedChannelBlocks.push({
+          address: block.address,
+          data: blockData,
+          metadata: block.metadata,
+        });
+        
+        // Stop if we've written all channels
+        if (channelIndex >= channels.length) {
+          break;
+        }
+      }
+    }
+
+    // Generate zone blocks
+    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE);
+    const generatedZoneBlocks: Array<{ address: number; data: Uint8Array; metadata: number }> = [];
+    if (zones.length > 0) {
+      if (zoneBlocks.length === 0) {
+        throw new Error('No zone blocks found');
+      }
+
+      // Encode zones
+      const encodedZones = zones.map((zone, idx) => encodeZone(zone, idx + 1));
+      
+      // Calculate total size needed
+      const totalZoneSize = zones.length * BLOCK_SIZE.ZONE + OFFSET.ZONE_START;
+      const totalBlocksNeeded = Math.ceil(totalZoneSize / BLOCK_SIZE.STANDARD);
+      
+      // Generate concatenated zone data
+      const allZoneData = new Uint8Array(totalBlocksNeeded * BLOCK_SIZE.STANDARD);
+      allZoneData.fill(0xFF);
+      
+      // Write zones to the concatenated data
+      for (let i = 0; i < encodedZones.length; i++) {
+        const zoneOffset = OFFSET.ZONE_START + (i * BLOCK_SIZE.ZONE);
+        if (zoneOffset + BLOCK_SIZE.ZONE > allZoneData.length) {
+          throw new Error(`Zone ${i + 1} would exceed block size`);
+        }
+        allZoneData.set(encodedZones[i], zoneOffset);
+      }
+      
+      // Split into blocks and set metadata
+      let dataOffset = 0;
+      for (let blockIdx = 0; blockIdx < zoneBlocks.length; blockIdx++) {
+        const block = zoneBlocks[blockIdx];
+        const blockData = allZoneData.slice(dataOffset, dataOffset + BLOCK_SIZE.STANDARD);
+        blockData[0xFFF] = block.metadata; // Preserve metadata
+        
+        generatedZoneBlocks.push({
+          address: block.address,
+          data: blockData,
+          metadata: block.metadata,
+        });
+        
+        dataOffset += BLOCK_SIZE.STANDARD;
+      }
+    }
+
+    // Generate scan list blocks
+    const scanBlocks = this.discoveredBlocks.filter(b => b.type === 'scan' && b.metadata === METADATA.SCAN_LIST);
+    const generatedScanBlocks: Array<{ address: number; data: Uint8Array; metadata: number }> = [];
+    if (scanLists.length > 0) {
+      if (scanBlocks.length === 0) {
+        throw new Error('No scan list blocks found');
+      }
+
+      // Encode scan lists
+      const encodedScanLists = scanLists.map((scanList, idx) => encodeScanList(scanList, idx + 1));
+      
+      // Calculate total size needed
+      let totalScanListSize = 0;
+      for (let i = 0; i < scanLists.length; i++) {
+        if (i < 44) {
+          totalScanListSize = Math.max(totalScanListSize, OFFSET.SCAN_LIST_START + ((i + 1) * BLOCK_SIZE.SCAN_LIST));
+        } else {
+          const blockIndex = Math.floor((i - 44) / 44);
+          const listIndexInBlock = (i - 44) % 44;
+          const offset = (blockIndex * BLOCK_SIZE.STANDARD) + ((listIndexInBlock + 1) * BLOCK_SIZE.SCAN_LIST);
+          totalScanListSize = Math.max(totalScanListSize, offset);
+        }
+      }
+      const totalBlocksNeeded = Math.ceil(totalScanListSize / BLOCK_SIZE.STANDARD);
+      
+      // Generate concatenated scan list data
+      const allScanListData = new Uint8Array(totalBlocksNeeded * BLOCK_SIZE.STANDARD);
+      allScanListData.fill(0xFF);
+      
+      // Write scan lists to the concatenated data
+      for (let i = 0; i < encodedScanLists.length; i++) {
+        let scanListOffset: number;
+        if (i < 44) {
+          scanListOffset = OFFSET.SCAN_LIST_START + (i * BLOCK_SIZE.SCAN_LIST);
+        } else {
+          const blockIndex = Math.floor((i - 44) / 44);
+          const listIndexInBlock = (i - 44) % 44;
+          scanListOffset = (blockIndex * BLOCK_SIZE.STANDARD) + (listIndexInBlock * BLOCK_SIZE.SCAN_LIST);
+        }
+        
+        if (scanListOffset + BLOCK_SIZE.SCAN_LIST > allScanListData.length) {
+          throw new Error(`Scan list ${i + 1} would exceed block size`);
+        }
+        
+        allScanListData.set(encodedScanLists[i], scanListOffset);
+      }
+      
+      // Split into blocks and set metadata
+      let dataOffset = 0;
+      for (let blockIdx = 0; blockIdx < scanBlocks.length; blockIdx++) {
+        const block = scanBlocks[blockIdx];
+        const blockData = allScanListData.slice(dataOffset, dataOffset + BLOCK_SIZE.STANDARD);
+        blockData[0xFFF] = block.metadata; // Preserve metadata
+        
+        generatedScanBlocks.push({
+          address: block.address,
+          data: blockData,
+          metadata: block.metadata,
+        });
+        
+        dataOffset += BLOCK_SIZE.STANDARD;
+      }
+    }
+
+    // Step 3: Write all generated blocks to radio
+    this.onProgress?.(50, 'Writing blocks to radio...');
+    
+    let totalBlocks = generatedChannelBlocks.length + generatedZoneBlocks.length + generatedScanBlocks.length;
+    let blocksWritten = 0;
+    
+    // Write channel blocks
+    for (const block of generatedChannelBlocks) {
+      const progress = 50 + Math.floor((blocksWritten / totalBlocks) * 50);
+      this.onProgress?.(progress, `Writing channel block ${blocksWritten + 1} of ${totalBlocks}...`);
+      await this.connection!.writeMemory(block.address, block.data, block.metadata);
+      blocksWritten++;
+      if (blocksWritten < totalBlocks) {
+        await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+      }
+    }
+    
+    // Write zone blocks
+    for (const block of generatedZoneBlocks) {
+      const progress = 50 + Math.floor((blocksWritten / totalBlocks) * 50);
+      this.onProgress?.(progress, `Writing zone block ${blocksWritten + 1} of ${totalBlocks}...`);
+      await this.connection!.writeMemory(block.address, block.data, block.metadata);
+      blocksWritten++;
+      if (blocksWritten < totalBlocks) {
+        await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+      }
+    }
+    
+    // Write scan list blocks
+    for (const block of generatedScanBlocks) {
+      const progress = 50 + Math.floor((blocksWritten / totalBlocks) * 50);
+      this.onProgress?.(progress, `Writing scan list block ${blocksWritten + 1} of ${totalBlocks}...`);
+      await this.connection!.writeMemory(block.address, block.data, block.metadata);
+      blocksWritten++;
+      if (blocksWritten < totalBlocks) {
+        await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+      }
+    }
+
+    this.onProgress?.(100, 'Successfully wrote all data to radio');
+    console.log(`Successfully wrote: ${channels.length} channels, ${zones.length} zones, ${scanLists.length} scan lists`);
   }
 }
 

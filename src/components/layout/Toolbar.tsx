@@ -29,6 +29,7 @@ export const Toolbar: React.FC = () => {
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [isWriting, setIsWriting] = useState(false);
 
   const handleImport = () => {
     fileInputRef.current?.click();
@@ -150,9 +151,72 @@ export const Toolbar: React.FC = () => {
     setCurrentStep('');
   };
 
-  const handleWrite = () => {
-    // TODO: Implement write to radio
-    alert('Write to radio not yet implemented');
+  const handleWrite = async () => {
+    setIsWriting(true);
+    try {
+      // Clear any previous error immediately
+      setConnectionError(null);
+      // Show progress modal immediately with initial state
+      setProgress(0);
+      setProgressMessage('Selecting port...');
+      setCurrentStep('Selecting port');
+      
+      // Import protocol
+      const { DM32UVProtocol } = await import('../../protocol/dm32uv/protocol');
+      
+      // Create protocol instance
+      const protocol = new DM32UVProtocol();
+      
+      // Set up progress callback
+      protocol.onProgress = (progress, message) => {
+        setProgress(progress);
+        setProgressMessage(message);
+      };
+      
+      // Connect to radio
+      setProgress(5);
+      setProgressMessage('Please select a serial port in the browser dialog...');
+      await protocol.connect();
+      
+      setProgress(10);
+      setProgressMessage('Reading radio information...');
+      await protocol.getRadioInfo();
+      
+      // Write all data
+      setProgress(20);
+      setProgressMessage('Writing data to radio...');
+      await protocol.writeAllData(channels, zones, scanLists);
+      
+      // Disconnect
+      await protocol.disconnect();
+      
+      // Success - clear error and close modal after a moment
+      setConnectionError(null);
+      setProgress(100);
+      setProgressMessage('Successfully wrote all data to radio!');
+      setTimeout(() => {
+        setProgress(0);
+        setProgressMessage('');
+        setCurrentStep('');
+      }, 2000);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      
+      // Format error message for display
+      let displayError = errorMessage;
+      if (errorMessage.includes('timed out') || errorMessage.includes('timeout')) {
+        displayError = `Write timed out: ${errorMessage}`;
+      } else if (errorMessage.includes('Radio not found')) {
+        displayError = `Radio not found: ${errorMessage}`;
+      }
+      
+      // Set error state - modal will stay open to show error
+      setConnectionError(displayError);
+      // Reset progress state to show error clearly
+      setProgress(0);
+      setProgressMessage('Write failed');
+      // Don't close modal - let user see error and retry
+    }
   };
 
   return (
@@ -197,10 +261,10 @@ export const Toolbar: React.FC = () => {
           <Button
             variant="primary"
             onClick={handleWrite}
-            disabled={isConnecting}
+            disabled={isConnecting || isWriting}
             glow
           >
-            Write to Radio
+            {isWriting ? 'Writing...' : 'Write to Radio'}
           </Button>
           {error && (
             <span className="text-red-400 text-xs ml-2">{error}</span>
@@ -214,7 +278,7 @@ export const Toolbar: React.FC = () => {
         </div>
       </div>
       <ReadProgressModal
-        isOpen={isConnecting || !!connectionError}
+        isOpen={isConnecting || isWriting || !!connectionError}
         progress={progress}
         message={progressMessage}
         currentStep={currentStep || readSteps[0]}
