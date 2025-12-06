@@ -7,6 +7,8 @@ import { getAvailableFixedChannelSets, getFRSChannels, getGMRSChannels, getMURSC
 import { mergeOverlappingChannels } from '../../services/channelMerger';
 import { generateAirportChannels } from '../../services/airportChannels';
 import { findNearbyAirports, getAirportFrequenciesWithTypes, type AirportData } from '../../data/airportsData';
+import { generateTaflChannels } from '../../services/taflChannels';
+import { findNearbyTaflEntries, groupTaflEntriesByName, type TaflData } from '../../data/taflData';
 import type { Channel } from '../../models';
 import type { Zone } from '../../models';
 import { Button } from '../ui/Button';
@@ -45,6 +47,15 @@ export const SmartImportTab: React.FC = () => {
   const [airports, setAirports] = useState<AirportData[]>([]);
   const [selectedAirports, setSelectedAirports] = useState<Set<number>>(new Set());
   const [airportZoneGrouping, setAirportZoneGrouping] = useState<'individual' | 'single'>('individual');
+  
+  // TAFL channels state
+  const [taflRadius, setTaflRadius] = useState('10'); // Reduced default from 50 to 10
+  const [taflSearchFilter, setTaflSearchFilter] = useState('');
+  const [isAddingTafl, setIsAddingTafl] = useState(false);
+  const [isSearchingTafl, setIsSearchingTafl] = useState(false);
+  const [taflEntries, setTaflEntries] = useState<TaflData[]>([]);
+  const [selectedTaflEntries, setSelectedTaflEntries] = useState<Set<number>>(new Set());
+  const [expandedTaflGroups, setExpandedTaflGroups] = useState<Set<string>>(new Set());
 
   const handleUseCurrentLocation = async () => {
     setIsSearching(true);
@@ -432,6 +443,178 @@ export const SmartImportTab: React.FC = () => {
     }
   };
 
+  const handleSearchTafl = async () => {
+    setIsSearchingTafl(true);
+    setError(null);
+    setTaflEntries([]);
+    setSelectedTaflEntries(new Set());
+    
+    try {
+      let lat: number;
+      let lon: number;
+      
+      if (locationType === 'current') {
+        const currentLoc = await getCurrentLocation();
+        lat = currentLoc.latitude;
+        lon = currentLoc.longitude;
+      } else if (locationType === 'coordinates') {
+        const parsedLat = parseFloat(latitude);
+        const parsedLon = parseFloat(longitude);
+        
+        if (isNaN(parsedLat) || isNaN(parsedLon)) {
+          throw new Error('Invalid coordinates');
+        }
+        
+        if (parsedLat < -90 || parsedLat > 90) {
+          throw new Error('Latitude must be between -90 and 90');
+        }
+        
+        if (parsedLon < -180 || parsedLon > 180) {
+          throw new Error('Longitude must be between -180 and 180');
+        }
+        
+        lat = parsedLat;
+        lon = parsedLon;
+      } else {
+        // City/State - need to geocode
+        const geocoded = await geocodeLocation(city, state);
+        if (!geocoded) {
+          throw new Error('Could not find location. Please use coordinates instead.');
+        }
+        
+        lat = geocoded.latitude;
+        lon = geocoded.longitude;
+      }
+      
+      const nearbyTafl = findNearbyTaflEntries(lat, lon, parseFloat(taflRadius) || 10);
+      setTaflEntries(nearbyTafl);
+      
+      // Don't auto-select - let user filter and select manually
+      setSelectedTaflEntries(new Set());
+      
+      // Auto-expand all groups by default
+      const groups = groupTaflEntriesByName(nearbyTafl, 2);
+      setExpandedTaflGroups(new Set(groups.keys()));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to search TAFL entries');
+    } finally {
+      setIsSearchingTafl(false);
+    }
+  };
+
+  // Note: handleToggleTafl is now handled inline in the render for deduplicated entries
+
+  // Compute filtered TAFL entries for display
+  const filteredTaflEntries = taflSearchFilter.trim()
+    ? taflEntries.filter(entry => 
+        entry.c.toLowerCase().includes(taflSearchFilter.toLowerCase())
+      )
+    : taflEntries;
+  
+  // Deduplicate entries: if same name AND frequency, only keep one
+  const uniqueFilteredEntries = new Map<string, TaflData>();
+  const entryIndexMap = new Map<string, number>(); // Map unique key to original index
+  
+  for (let i = 0; i < filteredTaflEntries.length; i++) {
+    const entry = filteredTaflEntries[i];
+    const key = `${entry.c}|${entry.f}`; // Use name + frequency (in kHz) as unique key
+    if (!uniqueFilteredEntries.has(key)) {
+      uniqueFilteredEntries.set(key, entry);
+      entryIndexMap.set(key, i);
+    }
+  }
+  
+  const deduplicatedEntries = Array.from(uniqueFilteredEntries.values());
+  
+  // Map deduplicated entries to their original indices in filteredTaflEntries
+  const filteredTaflIndices = deduplicatedEntries.map(entry => {
+    const key = `${entry.c}|${entry.f}`;
+    return entryIndexMap.get(key) ?? filteredTaflEntries.findIndex(e => e === entry);
+  });
+  
+  // Group deduplicated entries by name prefix for display
+  const taflGroups = groupTaflEntriesByName(deduplicatedEntries, 2);
+  const taflGroupArray = Array.from(taflGroups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  
+  const handleSelectAllFilteredTafl = () => {
+    const newSelected = new Set(selectedTaflEntries);
+    filteredTaflIndices.forEach(idx => newSelected.add(idx));
+    setSelectedTaflEntries(newSelected);
+  };
+
+  const handleDeselectAllTafl = () => {
+    setSelectedTaflEntries(new Set());
+  };
+
+  const handleAddTaflChannels = async () => {
+    if (selectedTaflEntries.size === 0) {
+      setError('Please select at least one TAFL entry');
+      return;
+    }
+    
+    setIsAddingTafl(true);
+    setError(null);
+    
+    try {
+      // Get selected entries
+      const selectedTaflList = Array.from(selectedTaflEntries)
+        .map(i => taflEntries[i])
+        .filter(Boolean);
+      
+      if (selectedTaflList.length === 0) {
+        throw new Error('No TAFL entries selected');
+      }
+      
+      // Get location from first entry (they're all nearby)
+      const firstEntry = selectedTaflList[0];
+      const [firstLat, firstLon] = firstEntry.l;
+      
+      // Find next available channel number
+      const existingNumbers = new Set(channels.map(ch => ch.number));
+      let nextChannelNumber = 1;
+      while (existingNumbers.has(nextChannelNumber)) {
+        nextChannelNumber++;
+      }
+      
+      // Generate channels and zones for selected entries
+      // TAFL always uses individual zones grouped by name
+      const result = generateTaflChannels(
+        firstLat,
+        firstLon,
+        parseFloat(taflRadius) || 10,
+        nextChannelNumber,
+        selectedTaflList, // Pass selected entries
+        false, // Always use individual zones (not single zone)
+        true // Always group by name
+      );
+      
+      if (result.channels.length === 0) {
+        setError('No channels to add from selected TAFL entries');
+        return;
+      }
+      
+      // Add channels
+      const updatedChannels = [...channels, ...result.channels];
+      setChannels(updatedChannels);
+      
+      // Add zones
+      const updatedZones = [...zones, ...result.zones];
+      setZones(updatedZones);
+      
+      setGenerationResult({
+        channels: result.channels.length,
+        zones: result.zones.length,
+      });
+      
+      // Clear selection
+      setSelectedTaflEntries(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add TAFL channels');
+    } finally {
+      setIsAddingTafl(false);
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="mb-6">
@@ -704,6 +887,243 @@ export const SmartImportTab: React.FC = () => {
                     : `Add ${selectedAirports.size} Airport Channel${selectedAirports.size !== 1 ? 's' : ''}`}
                 </Button>
               </>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* TAFL Search Section */}
+      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
+        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Local TAFL Entries</h3>
+        <p className="text-sm text-cool-gray mb-4">
+          Search for nearby TAFL (Technical Acceptance and Frequency List) entries and add their frequencies as channels (readonly data from tafl_min.json)
+        </p>
+
+        <div className="mb-4 space-y-3">
+          <div className="flex items-end gap-3">
+            <div>
+              <label className="block text-sm text-cool-gray mb-2">Search Radius (miles)</label>
+              <input
+                type="number"
+                value={taflRadius}
+                onChange={(e) => setTaflRadius(e.target.value)}
+                min="1"
+                max="50"
+                className="w-32 bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              />
+            </div>
+            <Button
+              onClick={handleSearchTafl}
+              disabled={isSearchingTafl}
+              className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright"
+            >
+              {isSearchingTafl ? 'Searching...' : 'Search by Location'}
+            </Button>
+          </div>
+          
+          {taflEntries.length > 0 && (
+            <div>
+              <label className="block text-sm text-cool-gray mb-2">Filter by Name/Code</label>
+              <input
+                type="text"
+                value={taflSearchFilter}
+                onChange={(e) => setTaflSearchFilter(e.target.value)}
+                placeholder="Search entries..."
+                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              />
+            </div>
+          )}
+        </div>
+
+        {taflEntries.length > 0 && (
+          <>
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="text-md font-semibold text-neon-cyan">
+                {filteredTaflEntries.length} of {taflEntries.length} TAFL Entr{filteredTaflEntries.length !== 1 ? 'ies' : 'y'}
+                {taflSearchFilter.trim() && ` (filtered)`}
+              </h4>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSelectAllFilteredTafl}
+                  className="text-sm text-neon-cyan hover:text-neon-cyan-bright"
+                >
+                  Select All Filtered
+                </button>
+                <button
+                  onClick={handleDeselectAllTafl}
+                  className="text-sm text-neon-cyan hover:text-neon-cyan-bright"
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3 max-h-96 overflow-y-auto mb-4">
+              {taflGroupArray.map(([groupName, groupEntries]) => {
+                // Get original indices for this group (using deduplicated entry mapping)
+                const groupIndices = groupEntries.map(entry => {
+                  const key = `${entry.c}|${entry.f}`;
+                  return entryIndexMap.get(key) ?? filteredTaflEntries.findIndex(e => e === entry);
+                }).filter(idx => idx !== -1);
+                
+                const allSelected = groupIndices.every(idx => selectedTaflEntries.has(idx));
+                const someSelected = groupIndices.some(idx => selectedTaflEntries.has(idx));
+                const isGroup = groupEntries.length > 1;
+                const isExpanded = expandedTaflGroups.has(groupName);
+                
+                const handleToggleGroup = () => {
+                  const newSelected = new Set(selectedTaflEntries);
+                  if (allSelected) {
+                    // Deselect all in group
+                    groupIndices.forEach(idx => newSelected.delete(idx));
+                  } else {
+                    // Select all in group
+                    groupIndices.forEach(idx => newSelected.add(idx));
+                  }
+                  setSelectedTaflEntries(newSelected);
+                };
+                
+                const handleToggleExpand = (e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  const newExpanded = new Set(expandedTaflGroups);
+                  if (isExpanded) {
+                    newExpanded.delete(groupName);
+                  } else {
+                    newExpanded.add(groupName);
+                  }
+                  setExpandedTaflGroups(newExpanded);
+                };
+                
+                return (
+                  <div
+                    key={groupName}
+                    className={`border rounded transition-colors ${
+                      someSelected
+                        ? 'border-neon-cyan bg-neon-cyan bg-opacity-10'
+                        : 'border-gray-600'
+                    }`}
+                  >
+                    {isGroup && (
+                      <div
+                        className="p-2 bg-deep-gray cursor-pointer hover:bg-opacity-80"
+                        onClick={handleToggleGroup}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={handleToggleGroup}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const input = e.target as HTMLInputElement;
+                              input.indeterminate = someSelected && !allSelected;
+                            }}
+                            className="mr-2"
+                          />
+                          <button
+                            onClick={handleToggleExpand}
+                            className="mr-1 text-neon-cyan hover:text-neon-cyan-bright"
+                            title={isExpanded ? 'Collapse' : 'Expand'}
+                          >
+                            {isExpanded ? '▼' : '▶'}
+                          </button>
+                          <span className="font-semibold text-neon-cyan">
+                            {groupName} ({groupEntries.length} entries)
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {(isGroup ? isExpanded : true) && (
+                      <div className={isGroup ? 'pl-4' : ''}>
+                        {groupEntries.map((entry) => {
+                          // Find all indices in filteredTaflEntries that match this entry (name + frequency)
+                          const matchingIndices = filteredTaflEntries
+                            .map((e, idx) => e.c === entry.c && e.f === entry.f ? idx : -1)
+                            .filter(idx => idx !== -1);
+                          
+                          // Use first matching index as the key for display
+                          const displayIndex = matchingIndices[0] ?? -1;
+                          if (displayIndex === -1) return null;
+                          
+                          // Check if any of the matching entries are selected
+                          const isSelected = matchingIndices.some(idx => selectedTaflEntries.has(idx));
+                          
+                          const handleToggleEntry = () => {
+                            const newSelected = new Set(selectedTaflEntries);
+                            if (isSelected) {
+                              // Deselect all matching entries
+                              matchingIndices.forEach(idx => newSelected.delete(idx));
+                            } else {
+                              // Select all matching entries (they're duplicates, so select all)
+                              matchingIndices.forEach(idx => newSelected.add(idx));
+                            }
+                            setSelectedTaflEntries(newSelected);
+                          };
+                          
+                          return (
+                            <div
+                              key={`${entry.c}|${entry.f}`}
+                              className={`border-t border-gray-600 p-3 cursor-pointer transition-colors ${
+                                isSelected
+                                  ? 'bg-neon-cyan bg-opacity-5'
+                                  : 'hover:bg-gray-800'
+                              }`}
+                              onClick={handleToggleEntry}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={handleToggleEntry}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="mr-2"
+                                    />
+                                    <span className="font-semibold text-neon-cyan">{entry.c}</span>
+                                    {matchingIndices.length > 1 && (
+                                      <span className="text-xs text-cool-gray">
+                                        ({matchingIndices.length} duplicates)
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-sm text-cool-gray ml-6">
+                                    <div className="mb-1">
+                                      {'distance' in entry && typeof entry.distance === 'number' 
+                                        ? `${entry.distance.toFixed(1)} miles away`
+                                        : 'Distance unknown'}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <span className="font-semibold text-cool-gray">Frequency:</span>
+                                      <div className="ml-2 text-xs">
+                                        <span className="font-semibold text-neon-cyan">
+                                          {(entry.f / 1000.0).toFixed(3)} MHz
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {selectedTaflEntries.size > 0 && (
+              <Button
+                onClick={handleAddTaflChannels}
+                disabled={isAddingTafl}
+                className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
+              >
+                {isAddingTafl
+                  ? 'Adding TAFL Channels...'
+                  : `Add ${selectedTaflEntries.size} TAFL Channel${selectedTaflEntries.size !== 1 ? 's' : ''}`}
+              </Button>
             )}
           </>
         )}
