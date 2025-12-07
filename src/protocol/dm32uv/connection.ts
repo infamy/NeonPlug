@@ -11,7 +11,6 @@ import { CONNECTION } from './constants';
 export type SerialPort = WebSerialPort;
 
 export class DM32Connection {
-  private port: WebSerialPort | null = null;
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private readBuffer: Uint8Array = new Uint8Array(0); // Persistent read buffer
@@ -21,8 +20,6 @@ export class DM32Connection {
     // Clear any leftover state from previous connections
     this.readBuffer = new Uint8Array(0);
     this.isReading = false;
-    
-    this.port = port;
     
     // Check if port already has active readers/writers (locked streams)
     // If so, we can't get new ones - the port is in use

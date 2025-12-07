@@ -449,6 +449,128 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   /**
+   * Read all required blocks into cache without disconnecting
+   * Used when we need to read blocks before writing (connection must stay open)
+   */
+  async bulkReadRequiredBlocksForWrite(): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+
+    // Reuse the same logic as bulkReadRequiredBlocks, but don't disconnect
+    // We'll copy the block reading logic here
+    
+    // Step 1: Discover all metadata blocks (if not already discovered)
+    if (this.discoveredBlocks.length === 0) {
+      this.onProgress?.(0, 'Discovering memory blocks...');
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo!.memoryLayout.configStart,
+        this.radioInfo!.memoryLayout.configEnd,
+        (current, total) => {
+          const progress = Math.floor((current / total) * 10); // 0-10% for discovery
+          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+
+    // Step 2: Determine which blocks we need to read (same logic as bulkReadRequiredBlocks)
+    const blocksToRead: MemoryBlock[] = [];
+
+    // Step 2a: Determine channel blocks needed
+    const channelBlocks = this.discoveredBlocks.filter(b => b.type === 'channel').sort((a, b) => a.metadata - b.metadata);
+    if (channelBlocks.length > 0) {
+      const firstChannelBlock = channelBlocks.find(b => b.metadata === METADATA.CHANNEL_FIRST);
+      if (firstChannelBlock) {
+        this.onProgress?.(10, 'Reading channel count from first block...');
+        const channelCount = await readChannelCount(this.connection!, firstChannelBlock.address);
+        console.log(`Channel count: ${channelCount}`);
+        
+        const channelsInFirstBlock = 84;
+        let blocksNeeded: number;
+        if (channelCount <= channelsInFirstBlock) {
+          blocksNeeded = 1;
+        } else {
+          const remainingChannels = channelCount - channelsInFirstBlock;
+          const additionalBlocks = Math.ceil(remainingChannels / 85);
+          blocksNeeded = 1 + additionalBlocks + 1; // +1 for safety
+        }
+        blocksNeeded = Math.min(blocksNeeded, channelBlocks.length);
+        blocksToRead.push(...channelBlocks.slice(0, blocksNeeded));
+      }
+    }
+
+    // Step 2b: Add fixed metadata blocks
+    const fixedMetadataBlocks = [
+      METADATA.VFO_SETTINGS,
+      METADATA.DIGITAL_EMERGENCY,
+      METADATA.ANALOG_EMERGENCY,
+      METADATA.QUICK_MESSAGES,
+      METADATA.DMR_RADIO_IDS,
+      METADATA.CALIBRATION,
+      METADATA.RX_GROUPS,
+    ];
+
+    for (const metadata of fixedMetadataBlocks) {
+      const block = this.discoveredBlocks.find(b => b.metadata === metadata);
+      if (block) {
+        blocksToRead.push(block);
+      }
+    }
+
+    // Step 2c: Add zone and scan list blocks
+    const zoneBlocks = this.discoveredBlocks.filter(b => b.type === 'zone');
+    const scanBlocks = this.discoveredBlocks.filter(b => b.type === 'scan');
+    blocksToRead.push(...zoneBlocks);
+    blocksToRead.push(...scanBlocks);
+
+    // Step 2d: Add other data type blocks
+    const messageBlocks = this.discoveredBlocks.filter(b => b.type === 'message');
+    const dmrRadioIdBlocks = this.discoveredBlocks.filter(b => b.type === 'dmrradioid');
+    const rxGroupBlocks = this.discoveredBlocks.filter(b => b.type === 'rxgroup');
+    blocksToRead.push(...messageBlocks);
+    blocksToRead.push(...dmrRadioIdBlocks);
+    blocksToRead.push(...rxGroupBlocks);
+
+    // Remove duplicates
+    const uniqueBlocks = new Map<number, MemoryBlock>();
+    for (const block of blocksToRead) {
+      uniqueBlocks.set(block.address, block);
+    }
+
+    const finalBlocksToRead = Array.from(uniqueBlocks.values());
+    console.log(`Bulk reading ${finalBlocksToRead.length} blocks for write operation`);
+
+    // Step 3: Read all required blocks
+    this.onProgress?.(10, `Reading ${finalBlocksToRead.length} blocks...`);
+    this.cachedBlockData = [];
+
+    for (let i = 0; i < finalBlocksToRead.length; i++) {
+      const block = finalBlocksToRead[i];
+      const progress = 10 + Math.floor((i / finalBlocksToRead.length) * 85); // 10-95%
+      this.onProgress?.(progress, `Reading block ${i + 1} of ${finalBlocksToRead.length} (metadata 0x${block.metadata.toString(16)})...`);
+
+      const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
+      
+      this.cachedBlockData.push({
+        metadata: block.metadata,
+        address: block.address,
+        data: blockData,
+      });
+
+      this.blockData.set(block.address, blockData);
+
+      if (i < finalBlocksToRead.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+      }
+    }
+
+    this.onProgress?.(100, `Successfully cached ${this.cachedBlockData.length} blocks`);
+    console.log(`Bulk read complete: ${this.cachedBlockData.length} blocks cached`);
+    console.log('All blocks are now in cache - connection remains open for writing');
+    // NOTE: We do NOT disconnect here - connection must stay open for writing
+  }
+
+  /**
    * Get cached block data by metadata value
    */
   getCachedBlocksByMetadata(metadata: number): Array<{ metadata: number; address: number; data: Uint8Array }> {
@@ -1828,11 +1950,14 @@ export class DM32UVProtocol implements RadioProtocol {
       );
       this.discoveredBlocks = blocks;
       
-      // Read all blocks into cache
-      await this.bulkReadRequiredBlocks();
+      // Read all blocks into cache (but don't disconnect - we need connection for writing)
+      await this.bulkReadRequiredBlocksForWrite();
     } else {
       this.onProgress?.(5, 'Using cached blocks for smart write...');
     }
+    
+    // Verify connection is still valid before proceeding
+    requireConnection(this.connection, this.radioInfo);
 
     // Step 2: Generate new block data for channels, zones, and scan lists
     // All other blocks will be used from cache as-is
@@ -2038,13 +2163,16 @@ export class DM32UVProtocol implements RadioProtocol {
       }
     }
 
-    // Step 3: Prepare all blocks to write in the correct order
-    // Write order:
-    // 1. Channel blocks: 0x12 through 0x41 (incrementing order)
-    // 2. Configuration blocks: 0x11, 0x0F, 0x06, 0x10, 0x0A, 0x03, 0x04, 0x65, 0x66, 0x67
+    // Step 3: Prepare blocks to write - ONLY channels, zones, and scan lists
+    // We should NOT write other configuration blocks (they remain unchanged)
     this.onProgress?.(50, 'Preparing blocks in write order...');
     
     const finalBlocksToWrite: Array<{ address: number; data: Uint8Array; metadata: number }> = [];
+    
+    // Only write blocks we actually changed:
+    // 1. Channel blocks (metadata 0x12-0x41)
+    // 2. Zone blocks (metadata 0x5c)
+    // 3. Scan list blocks (metadata 0x11)
     
     // 1. Channel blocks: Only write blocks that contain channel data (in incrementing order)
     const channelBlocksToWrite = blocksToWrite
@@ -2055,32 +2183,22 @@ export class DM32UVProtocol implements RadioProtocol {
       finalBlocksToWrite.push(block);
     }
     
-    // 2. Configuration blocks in specified order: 0x11, 0x0F, 0x06, 0x10, 0x0A, 0x03, 0x04, 0x65, 0x66, 0x67
-    const configMetadataOrder = [0x11, 0x0F, 0x06, 0x10, 0x0A, 0x03, 0x04, 0x65, 0x66, 0x67];
+    // 2. Zone blocks (metadata 0x5c)
+    const zoneBlocksToWrite = blocksToWrite
+      .filter(b => b.metadata === METADATA.ZONE)
+      .sort((a, b) => a.address - b.address);
     
-    for (const metadata of configMetadataOrder) {
-      // Find all blocks with this metadata
-      const blocksWithMetadata = this.discoveredBlocks
-        .filter(b => b.metadata === metadata)
-        .sort((a, b) => a.address - b.address); // Sort by address for consistency
-      
-      for (const block of blocksWithMetadata) {
-        // Use new data if we generated it (for zones and scan lists), otherwise use cached data
-        const newBlock = blocksToWrite.find(b => b.address === block.address);
-        if (newBlock) {
-          finalBlocksToWrite.push(newBlock);
-        } else {
-          // Use cached block data
-          const cachedBlock = this.getCachedBlockByAddress(block.address);
-          if (cachedBlock) {
-            finalBlocksToWrite.push({
-              address: cachedBlock.address,
-              data: cachedBlock.data,
-              metadata: cachedBlock.metadata,
-            });
-          }
-        }
-      }
+    for (const block of zoneBlocksToWrite) {
+      finalBlocksToWrite.push(block);
+    }
+    
+    // 3. Scan list blocks (metadata 0x11)
+    const scanListBlocksToWrite = blocksToWrite
+      .filter(b => b.metadata === METADATA.SCAN_LIST)
+      .sort((a, b) => a.address - b.address);
+    
+    for (const block of scanListBlocksToWrite) {
+      finalBlocksToWrite.push(block);
     }
     
     // Step 4: Store write blocks for debug confirmation before writing
@@ -2108,8 +2226,34 @@ export class DM32UVProtocol implements RadioProtocol {
       const block = finalBlocksToWrite[i];
       const progress = 60 + Math.floor((i / finalBlocksToWrite.length) * 40);
       const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`;
+      const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
+      
+      console.log(`[WRITE ALL DATA] Writing block ${i + 1}/${finalBlocksToWrite.length}:`);
+      console.log(`  Address: ${addressHex}`);
+      console.log(`  Metadata: ${metadataHex}`);
+      console.log(`  Data size: ${block.data.length} bytes`);
+      console.log(`  Data preview (first 32 bytes): ${Array.from(block.data.slice(0, 32)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')}`);
+      console.log(`  Metadata byte at 0xFFF: 0x${block.data[0xFFF].toString(16).padStart(2, '0').toUpperCase()}`);
+      
       this.onProgress?.(progress, `Writing block ${i + 1} of ${finalBlocksToWrite.length} (${metadataHex})...`);
-      await this.connection!.writeMemory(block.address, block.data, block.metadata);
+      
+      // Verify connection is still valid before writing
+      if (!this.connection) {
+        throw new Error('Connection lost - cannot write block. Please reconnect and try again.');
+      }
+      
+      try {
+        await this.connection.writeMemory(block.address, block.data, block.metadata);
+        console.log(`[WRITE ALL DATA] ✓ Successfully wrote block ${i + 1}/${finalBlocksToWrite.length} at ${addressHex}`);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`[WRITE ALL DATA ERROR] ✗ Failed to write block ${i + 1}/${finalBlocksToWrite.length} at ${addressHex} (metadata: ${metadataHex}):`, errorMsg);
+        console.error(`[WRITE ALL DATA ERROR] Block data size: ${block.data.length} bytes`);
+        console.error(`[WRITE ALL DATA ERROR] Block data metadata byte: 0x${block.data[0xFFF].toString(16).padStart(2, '0').toUpperCase()}`);
+        console.error(`[WRITE ALL DATA ERROR] Expected metadata: ${metadataHex}`);
+        throw error;
+      }
+      
       if (i < finalBlocksToWrite.length - 1) {
         await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
       }

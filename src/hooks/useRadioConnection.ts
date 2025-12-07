@@ -13,6 +13,8 @@ import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
 import { useCalibrationStore } from '../store/calibrationStore';
 import { useRXGroupsStore } from '../store/rxGroupsStore';
 import type { Channel } from '../models/Channel';
+import type { Zone } from '../models/Zone';
+import type { ScanList } from '../models/ScanList';
 
 // Export steps so UI components can use them (single source of truth)
 const READ_STEPS: string[] = [
