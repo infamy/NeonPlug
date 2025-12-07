@@ -2,7 +2,7 @@
  * TAFL Data Service
  * Loads and processes TAFL (Technical Acceptance and Frequency List) data from tafl_min.json
  * TAFL contains Canadian radio frequency licenses
- * Data is loaded dynamically on-demand from the public directory
+ * Data is loaded dynamically with fallback paths for different deployment scenarios
  */
 
 import { calculateDistance } from '../services/repeaterFinder';
@@ -19,7 +19,7 @@ let taflCache: TaflData[] | null = null;
 let taflLoadPromise: Promise<TaflData[]> | null = null;
 
 /**
- * Load all TAFL entries from JSON (dynamically)
+ * Load all TAFL entries from JSON (dynamically with fallback paths)
  * This is a large dataset, so we'll filter by location when needed
  * @param onProgress - Optional progress callback
  * @returns Promise resolving to array of TAFL entries
@@ -38,7 +38,7 @@ export async function loadTaflData(onProgress?: ProgressCallback): Promise<TaflD
     return taflLoadPromise;
   }
   
-  // Start loading
+  // Start loading with fallback paths
   taflLoadPromise = loadJsonFileCached<TaflData[]>('tafl_min.json', onProgress);
   taflCache = await taflLoadPromise;
   

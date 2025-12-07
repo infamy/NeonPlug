@@ -1,7 +1,11 @@
 /**
- * Dynamic JSON Loader Service
- * Loads large JSON files on-demand with progress tracking
- * Files are loaded from the same location as index.html (public/dist directory)
+ * Dynamic JSON Loader Service with Fallback Paths
+ * Tries multiple locations to find JSON files:
+ * 1. Same directory as index.html (./filename.json)
+ * 2. Public directory (./public/filename.json)
+ * 3. Root directory (/filename.json)
+ * 
+ * This works for both single-file builds and regular builds
  */
 
 export interface LoadProgress {
@@ -13,22 +17,16 @@ export interface LoadProgress {
 export type ProgressCallback = (progress: LoadProgress) => void;
 
 /**
- * Load a JSON file dynamically with progress tracking
- * @param filename - Name of the JSON file (e.g., 'airports_min.json')
- * @param onProgress - Optional callback for progress updates
- * @returns Promise resolving to the parsed JSON data
+ * Try to load a JSON file from a specific URL
  */
-export async function loadJsonFile<T = any>(
-  filename: string,
+async function tryLoadFromUrl(
+  url: string,
   onProgress?: ProgressCallback
-): Promise<T> {
-  // Load from the same location as index.html (relative path)
-  const url = `./${filename}`;
-  
+): Promise<any> {
   const response = await fetch(url);
   
   if (!response.ok) {
-    throw new Error(`Failed to load ${filename}: ${response.status} ${response.statusText}`);
+    throw new Error(`Failed to load ${url}: ${response.status} ${response.statusText}`);
   }
   
   // Get content length if available
@@ -36,7 +34,7 @@ export async function loadJsonFile<T = any>(
   const total = contentLength ? parseInt(contentLength, 10) : 0;
   
   if (!response.body) {
-    throw new Error(`No response body for ${filename}`);
+    throw new Error(`No response body for ${url}`);
   }
   
   const reader = response.body.getReader();
@@ -76,7 +74,52 @@ export async function loadJsonFile<T = any>(
   
   // Decode to string and parse JSON
   const text = new TextDecoder().decode(combined);
-  return JSON.parse(text) as T;
+  return JSON.parse(text);
+}
+
+/**
+ * Load a JSON file with fallback paths
+ * Tries multiple locations in order:
+ * 1. Same directory as index.html (./filename.json)
+ * 2. Public directory (./public/filename.json)
+ * 3. Root directory (/filename.json)
+ * 
+ * @param filename - Name of the JSON file (e.g., 'tafl_min.json')
+ * @param onProgress - Optional callback for progress updates
+ * @returns Promise resolving to the parsed JSON data
+ */
+export async function loadJsonFile<T = any>(
+  filename: string,
+  onProgress?: ProgressCallback
+): Promise<T> {
+  // List of paths to try in order
+  const pathsToTry = [
+    `./${filename}`,           // Same directory as index.html (for single-file builds)
+    `./public/${filename}`,    // Public directory
+    `/${filename}`,            // Root directory
+  ];
+  
+  let lastError: Error | null = null;
+  
+  // Try each path in order
+  for (const path of pathsToTry) {
+    try {
+      const data = await tryLoadFromUrl(path, onProgress);
+      console.log(`Successfully loaded ${filename} from ${path}`);
+      return data as T;
+    } catch (error) {
+      // Store the error but continue trying other paths
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.warn(`Failed to load ${filename} from ${path}:`, lastError.message);
+      // Continue to next path
+    }
+  }
+  
+  // If all paths failed, throw the last error
+  throw new Error(
+    `Failed to load ${filename} from all attempted paths: ${pathsToTry.join(', ')}. ` +
+    `Last error: ${lastError?.message || 'Unknown error'}`
+  );
 }
 
 /**
@@ -85,7 +128,7 @@ export async function loadJsonFile<T = any>(
 const jsonCache = new Map<string, Promise<any>>();
 
 /**
- * Load a JSON file with caching (only loads once)
+ * Load a JSON file with caching and fallback paths (only loads once)
  * @param filename - Name of the JSON file
  * @param onProgress - Optional callback for progress updates
  * @returns Promise resolving to the parsed JSON data
@@ -102,6 +145,8 @@ export function loadJsonFileCached<T = any>(
       // If already loaded, report 100% immediately
       cachedPromise.then(() => {
         onProgress({ loaded: 1, total: 1, percent: 100 });
+      }).catch(() => {
+        // Ignore errors in progress callback
       });
     }
     return cachedPromise;
@@ -113,4 +158,3 @@ export function loadJsonFileCached<T = any>(
   
   return promise;
 }
-

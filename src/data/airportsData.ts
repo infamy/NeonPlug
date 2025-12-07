@@ -2,7 +2,7 @@
  * Airport Data Service
  * Loads and processes airport data from airports_min.json
  * Airports are location-based, so we filter by proximity to user location
- * Data is loaded dynamically on-demand from the public directory
+ * Data is loaded dynamically with fallback paths for different deployment scenarios
  */
 
 import { calculateDistance } from '../services/repeaterFinder';
@@ -22,7 +22,7 @@ let airportsCache: AirportData[] | null = null;
 let airportsLoadPromise: Promise<AirportData[]> | null = null;
 
 /**
- * Load all airports from JSON (dynamically)
+ * Load all airports from JSON (dynamically with fallback paths)
  * This is a large dataset, so we'll filter by location when needed
  * @param onProgress - Optional progress callback
  * @returns Promise resolving to array of airports
@@ -41,7 +41,7 @@ export async function loadAirportsData(onProgress?: ProgressCallback): Promise<A
     return airportsLoadPromise;
   }
   
-  // Start loading
+  // Start loading with fallback paths
   airportsLoadPromise = loadJsonFileCached<AirportData[]>('airports_min.json', onProgress);
   airportsCache = await airportsLoadPromise;
   
