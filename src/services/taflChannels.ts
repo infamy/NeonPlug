@@ -5,7 +5,7 @@
 
 import type { Channel, Zone } from '../models';
 import { createDefaultChannel } from '../utils/channelHelpers';
-import { findNearbyTaflEntries, groupTaflEntriesByName, type TaflData } from '../data/taflData';
+import { groupTaflEntriesByName, type TaflData } from '../data/taflData';
 
 // Helper to remove distance property for compatibility
 function removeDistance(entry: TaflData & { distance?: number }): TaflData {
@@ -21,16 +21,16 @@ function getEntryCode(entry: TaflData): string {
 }
 
 /**
- * Generate channels and zones from nearby TAFL entries
+ * Generate channels and zones from TAFL entry data
  * Creates one zone per entry, with channels named "ENTRY_CODE"
+ * @param startChannelNumber - Starting channel number
+ * @param selectedEntries - Array of TAFL entries to generate channels for (required)
  * @param singleZone - If true, creates one zone with all entries. If false, creates one zone per entry.
+ * @param groupByName - If true, group entries by name prefix into zones
  */
 export function generateTaflChannels(
-  latitude: number,
-  longitude: number,
-  radius: number = 50, // miles
   startChannelNumber: number = 1,
-  selectedEntries?: TaflData[], // Optional: only generate for these entries
+  selectedEntries: TaflData[], // Required: entries to generate channels for
   singleZone: boolean = false, // If true, group all entries in one zone
   groupByName: boolean = true // If true, group entries by name prefix into zones
 ): {
@@ -43,12 +43,14 @@ export function generateTaflChannels(
     zonesCreated: number;
   };
 } {
-  // Find nearby TAFL entries (returns with distance property)
-  const nearbyEntriesWithDistance = findNearbyTaflEntries(latitude, longitude, radius);
-  const nearbyEntries = nearbyEntriesWithDistance.map(removeDistance);
+  // Use selected entries if provided, otherwise this function should not be called
+  // (The caller should load entries first using findNearbyTaflEntries)
+  if (!selectedEntries || selectedEntries.length === 0) {
+    throw new Error('No TAFL entries provided. Load entries first using findNearbyTaflEntries().');
+  }
   
-  // Filter to selected entries if provided
-  const entriesToProcess = selectedEntries || nearbyEntries;
+  // Remove distance property if present
+  const entriesToProcess = selectedEntries.map(removeDistance);
   
   // Generate channels
   const channels: Channel[] = [];
