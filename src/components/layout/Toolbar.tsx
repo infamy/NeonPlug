@@ -151,13 +151,7 @@ export const Toolbar: React.FC = () => {
     setCurrentStep('');
   };
 
-  const handleWrite = async () => {
-    if (channels.length === 0) {
-      alert('No channels to write');
-      return;
-    }
-
-    // Show warning dialog before proceeding
+  const showWriteWarning = (): boolean => {
     const warningMessage = 
       '⚠️ EXPERIMENTAL FEATURE WARNING ⚠️\n\n' +
       'Writing to the radio is an EXPERIMENTAL feature and is used at your own risk.\n\n' +
@@ -168,8 +162,16 @@ export const Toolbar: React.FC = () => {
       '• You understand that this operation may modify your radio\'s memory\n\n' +
       'Do you want to continue?';
     
-    const confirmed = window.confirm(warningMessage);
-    if (!confirmed) {
+    return window.confirm(warningMessage);
+  };
+
+  const handleWrite = async () => {
+    if (channels.length === 0 && zones.length === 0 && scanLists.length === 0) {
+      alert('No data to write (channels, zones, or scan lists)');
+      return;
+    }
+
+    if (!showWriteWarning()) {
       return;
     }
 
@@ -182,7 +184,8 @@ export const Toolbar: React.FC = () => {
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
       
-      await writeChannelsToRadio(channels, (progress, message, step) => {
+      // Write channels, zones, and scan lists together
+      await writeChannelsToRadio(channels, zones, scanLists, (progress, message, step) => {
         setProgress(progress);
         setProgressMessage(message);
         if (step) {
@@ -261,10 +264,10 @@ export const Toolbar: React.FC = () => {
           <Button
             variant="primary"
             onClick={handleWrite}
-            disabled={isConnecting || isWriting || channels.length === 0}
+            disabled={isConnecting || isWriting || (channels.length === 0 && zones.length === 0 && scanLists.length === 0)}
             glow
           >
-            {isWriting ? 'Writing...' : 'Write Channels'}
+            {isWriting ? 'Writing...' : 'Write'}
           </Button>
           {error && (
             <span className="text-red-400 text-xs ml-2">{error}</span>
