@@ -2,10 +2,11 @@
  * TAFL Data Service
  * Loads and processes TAFL (Technical Acceptance and Frequency List) data from tafl_min.json
  * TAFL contains Canadian radio frequency licenses
+ * Data is loaded dynamically on-demand from the public directory
  */
 
-import taflJson from './tafl_min.json';
 import { calculateDistance } from '../services/repeaterFinder';
+import { loadJsonFileCached, type ProgressCallback } from '../services/jsonLoader';
 
 export interface TaflData {
   c: string; // Code/name (e.g., "Dow_Chemical_Can")
@@ -13,22 +14,59 @@ export interface TaflData {
   f: number; // frequency in kHz (e.g., 470000 = 470 MHz)
 }
 
+// Cache for loaded TAFL data
+let taflCache: TaflData[] | null = null;
+let taflLoadPromise: Promise<TaflData[]> | null = null;
+
 /**
- * Load all TAFL entries from JSON
+ * Load all TAFL entries from JSON (dynamically)
  * This is a large dataset, so we'll filter by location when needed
+ * @param onProgress - Optional progress callback
+ * @returns Promise resolving to array of TAFL entries
  */
-export function getAllTaflEntries(): TaflData[] {
-  return taflJson as unknown as TaflData[];
+export async function loadTaflData(onProgress?: ProgressCallback): Promise<TaflData[]> {
+  if (taflCache) {
+    // Already loaded, report 100% if callback provided
+    if (onProgress) {
+      onProgress({ loaded: 1, total: 1, percent: 100 });
+    }
+    return taflCache;
+  }
+  
+  // If already loading, return the existing promise
+  if (taflLoadPromise) {
+    return taflLoadPromise;
+  }
+  
+  // Start loading
+  taflLoadPromise = loadJsonFileCached<TaflData[]>('tafl_min.json', onProgress);
+  taflCache = await taflLoadPromise;
+  
+  return taflCache;
 }
 
 /**
- * Find TAFL entries near a location
+ * Get all TAFL entries (synchronous, requires data to be loaded first)
+ * @throws Error if data hasn't been loaded yet
  */
-export function findNearbyTaflEntries(
+export function getAllTaflEntries(): TaflData[] {
+  if (!taflCache) {
+    throw new Error('TAFL data not loaded. Call loadTaflData() first.');
+  }
+  return taflCache;
+}
+
+/**
+ * Find TAFL entries near a location (async, loads data if needed)
+ */
+export async function findNearbyTaflEntries(
   latitude: number,
   longitude: number,
-  radius: number = 50 // miles
-): (TaflData & { distance: number })[] {
+  radius: number = 50, // miles
+  onProgress?: ProgressCallback
+): Promise<(TaflData & { distance: number })[]> {
+  // Ensure data is loaded
+  await loadTaflData(onProgress);
   const allEntries = getAllTaflEntries();
   const entriesWithDistance: (TaflData & { distance: number })[] = [];
   

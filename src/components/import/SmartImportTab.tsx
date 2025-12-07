@@ -13,6 +13,15 @@ import type { Channel } from '../../models';
 import type { Zone } from '../../models';
 import { Button } from '../ui/Button';
 
+// Helper function to format bytes
+const formatBytes = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+};
+
 export const SmartImportTab: React.FC = () => {
   const { channels, setChannels } = useChannelsStore();
   const { zones, setZones } = useZonesStore();
@@ -47,6 +56,7 @@ export const SmartImportTab: React.FC = () => {
   const [airports, setAirports] = useState<AirportData[]>([]);
   const [selectedAirports, setSelectedAirports] = useState<Set<number>>(new Set());
   const [airportZoneGrouping, setAirportZoneGrouping] = useState<'individual' | 'single'>('individual');
+  const [airportLoadProgress, setAirportLoadProgress] = useState<{ percent: number; loaded: number; total: number } | null>(null);
   
   // TAFL channels state
   const [taflRadius, setTaflRadius] = useState('10'); // Reduced default from 50 to 10
@@ -56,6 +66,7 @@ export const SmartImportTab: React.FC = () => {
   const [taflEntries, setTaflEntries] = useState<TaflData[]>([]);
   const [selectedTaflEntries, setSelectedTaflEntries] = useState<Set<number>>(new Set());
   const [expandedTaflGroups, setExpandedTaflGroups] = useState<Set<string>>(new Set());
+  const [taflLoadProgress, setTaflLoadProgress] = useState<{ percent: number; loaded: number; total: number } | null>(null);
 
   const handleUseCurrentLocation = async () => {
     setIsSearching(true);
@@ -308,6 +319,7 @@ export const SmartImportTab: React.FC = () => {
     setError(null);
     setAirports([]);
     setSelectedAirports(new Set());
+    setAirportLoadProgress({ percent: 0, loaded: 0, total: 0 });
     
     try {
       let lat: number;
@@ -346,7 +358,19 @@ export const SmartImportTab: React.FC = () => {
         lon = geocoded.longitude;
       }
       
-      const nearbyAirports = findNearbyAirports(lat, lon, parseFloat(airportRadius) || 50);
+      // Load airports data with progress tracking
+      const nearbyAirports = await findNearbyAirports(
+        lat, 
+        lon, 
+        parseFloat(airportRadius) || 50,
+        (progress) => {
+          setAirportLoadProgress({
+            percent: progress.percent,
+            loaded: progress.loaded,
+            total: progress.total,
+          });
+        }
+      );
       setAirports(nearbyAirports);
       
       // Auto-select all airports
@@ -355,6 +379,7 @@ export const SmartImportTab: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Failed to search airports');
     } finally {
       setIsSearchingAirports(false);
+      setAirportLoadProgress(null);
     }
   };
 
@@ -395,10 +420,6 @@ export const SmartImportTab: React.FC = () => {
         throw new Error('No airports selected');
       }
       
-      // Get location from first airport (they're all nearby)
-      const firstAirport = selectedAirportList[0];
-      const [firstLat, firstLon] = firstAirport.l;
-      
       // Find next available channel number
       const existingNumbers = new Set(channels.map(ch => ch.number));
       let nextChannelNumber = 1;
@@ -408,9 +429,6 @@ export const SmartImportTab: React.FC = () => {
       
       // Generate channels and zones for selected airports
       const result = generateAirportChannels(
-        firstLat,
-        firstLon,
-        parseFloat(airportRadius) || 50,
         nextChannelNumber,
         selectedAirportList, // Pass selected airports
         airportZoneGrouping === 'single' // Group all in one zone if selected
@@ -448,6 +466,7 @@ export const SmartImportTab: React.FC = () => {
     setError(null);
     setTaflEntries([]);
     setSelectedTaflEntries(new Set());
+    setTaflLoadProgress({ percent: 0, loaded: 0, total: 0 });
     
     try {
       let lat: number;
@@ -486,7 +505,19 @@ export const SmartImportTab: React.FC = () => {
         lon = geocoded.longitude;
       }
       
-      const nearbyTafl = findNearbyTaflEntries(lat, lon, parseFloat(taflRadius) || 10);
+      // Load TAFL data with progress tracking
+      const nearbyTafl = await findNearbyTaflEntries(
+        lat, 
+        lon, 
+        parseFloat(taflRadius) || 10,
+        (progress) => {
+          setTaflLoadProgress({
+            percent: progress.percent,
+            loaded: progress.loaded,
+            total: progress.total,
+          });
+        }
+      );
       setTaflEntries(nearbyTafl);
       
       // Don't auto-select - let user filter and select manually
@@ -499,6 +530,7 @@ export const SmartImportTab: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Failed to search TAFL entries');
     } finally {
       setIsSearchingTafl(false);
+      setTaflLoadProgress(null);
     }
   };
 
@@ -565,10 +597,6 @@ export const SmartImportTab: React.FC = () => {
         throw new Error('No TAFL entries selected');
       }
       
-      // Get location from first entry (they're all nearby)
-      const firstEntry = selectedTaflList[0];
-      const [firstLat, firstLon] = firstEntry.l;
-      
       // Find next available channel number
       const existingNumbers = new Set(channels.map(ch => ch.number));
       let nextChannelNumber = 1;
@@ -579,9 +607,6 @@ export const SmartImportTab: React.FC = () => {
       // Generate channels and zones for selected entries
       // TAFL always uses individual zones grouped by name
       const result = generateTaflChannels(
-        firstLat,
-        firstLon,
-        parseFloat(taflRadius) || 10,
         nextChannelNumber,
         selectedTaflList, // Pass selected entries
         false, // Always use individual zones (not single zone)
@@ -772,8 +797,33 @@ export const SmartImportTab: React.FC = () => {
           disabled={isSearchingAirports}
           className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright w-full mb-4"
         >
-          {isSearchingAirports ? 'Searching...' : 'Search Airports'}
+          {isSearchingAirports ? 'Loading...' : 'Search Airports'}
         </Button>
+
+        {/* Progress Bar */}
+        {airportLoadProgress && (
+          <div className="mb-4">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-sm text-cool-gray">
+                Loading airport data...
+              </span>
+              <span className="text-sm text-cool-gray">
+                {airportLoadProgress.percent.toFixed(1)}%
+              </span>
+            </div>
+            <div className="w-full bg-black rounded-full h-2 border border-neon-cyan overflow-hidden">
+              <div
+                className="h-full bg-neon-cyan transition-all duration-300"
+                style={{ width: `${airportLoadProgress.percent}%` }}
+              />
+            </div>
+            {airportLoadProgress.total > 0 && (
+              <div className="text-xs text-cool-gray mt-1">
+                {formatBytes(airportLoadProgress.loaded)} / {formatBytes(airportLoadProgress.total)}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Airport Results */}
         {airports.length > 0 && (
@@ -917,9 +967,34 @@ export const SmartImportTab: React.FC = () => {
               disabled={isSearchingTafl}
               className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright"
             >
-              {isSearchingTafl ? 'Searching...' : 'Search by Location'}
+              {isSearchingTafl ? 'Loading...' : 'Search by Location'}
             </Button>
           </div>
+
+          {/* Progress Bar */}
+          {taflLoadProgress && (
+            <div className="mb-4">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-sm text-cool-gray">
+                  Loading TAFL data...
+                </span>
+                <span className="text-sm text-cool-gray">
+                  {taflLoadProgress.percent.toFixed(1)}%
+                </span>
+              </div>
+              <div className="w-full bg-black rounded-full h-2 border border-neon-magenta overflow-hidden">
+                <div
+                  className="h-full bg-neon-magenta transition-all duration-300"
+                  style={{ width: `${taflLoadProgress.percent}%` }}
+                />
+              </div>
+              {taflLoadProgress.total > 0 && (
+                <div className="text-xs text-cool-gray mt-1">
+                  {formatBytes(taflLoadProgress.loaded)} / {formatBytes(taflLoadProgress.total)}
+                </div>
+              )}
+            </div>
+          )}
           
           {taflEntries.length > 0 && (
             <div>

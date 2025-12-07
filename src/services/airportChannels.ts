@@ -5,7 +5,7 @@
 
 import type { Channel, Zone } from '../models';
 import { createDefaultChannel } from '../utils/channelHelpers';
-import { findNearbyAirports, getAirportFrequenciesWithTypes, type AirportData } from '../data/airportsData';
+import { getAirportFrequenciesWithTypes, type AirportData } from '../data/airportsData';
 
 // Helper to remove distance property for compatibility
 function removeDistance(airport: AirportData & { distance?: number }): AirportData {
@@ -21,16 +21,15 @@ function getAirportCode(airport: AirportData): string {
 }
 
 /**
- * Generate channels and zones from nearby airports
+ * Generate channels and zones from airport data
  * Creates one zone per airport, with channels named "AIRPORT_CODE TYPE"
+ * @param startChannelNumber - Starting channel number
+ * @param selectedAirports - Array of airports to generate channels for (required)
  * @param singleZone - If true, creates one zone with all airports. If false, creates one zone per airport.
  */
 export function generateAirportChannels(
-  latitude: number,
-  longitude: number,
-  radius: number = 50, // miles
   startChannelNumber: number = 1,
-  selectedAirports?: AirportData[], // Optional: only generate for these airports
+  selectedAirports: AirportData[], // Required: airports to generate channels for
   singleZone: boolean = false // If true, group all airports in one zone
 ): {
   channels: Channel[];
@@ -42,12 +41,14 @@ export function generateAirportChannels(
     zonesCreated: number;
   };
 } {
-  // Find nearby airports (returns with distance property)
-  const nearbyAirportsWithDistance = findNearbyAirports(latitude, longitude, radius);
-  const nearbyAirports = nearbyAirportsWithDistance.map(removeDistance);
+  // Use selected airports if provided, otherwise this function should not be called
+  // (The caller should load airports first using findNearbyAirports)
+  if (!selectedAirports || selectedAirports.length === 0) {
+    throw new Error('No airports provided. Load airports first using findNearbyAirports().');
+  }
   
-  // Filter to selected airports if provided
-  const airportsToProcess = selectedAirports || nearbyAirports;
+  // Remove distance property if present
+  const airportsToProcess = selectedAirports.map(removeDistance);
   
   // Generate channels
   const channels: Channel[] = [];

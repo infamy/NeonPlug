@@ -2,10 +2,11 @@
  * Airport Data Service
  * Loads and processes airport data from airports_min.json
  * Airports are location-based, so we filter by proximity to user location
+ * Data is loaded dynamically on-demand from the public directory
  */
 
-import airportsJson from './airports_min.json';
 import { calculateDistance } from '../services/repeaterFinder';
+import { loadJsonFileCached, type ProgressCallback } from '../services/jsonLoader';
 
 // Frequency format: [frequency_khz, type_code] or just frequency_khz (legacy)
 type AirportFrequency = number | [number, string];
@@ -16,22 +17,59 @@ export interface AirportData {
   f: AirportFrequency | AirportFrequency[]; // frequencies: single [freq, type] or array of [freq, type] or legacy number
 }
 
+// Cache for loaded airport data
+let airportsCache: AirportData[] | null = null;
+let airportsLoadPromise: Promise<AirportData[]> | null = null;
+
 /**
- * Load all airports from JSON
+ * Load all airports from JSON (dynamically)
  * This is a large dataset, so we'll filter by location when needed
+ * @param onProgress - Optional progress callback
+ * @returns Promise resolving to array of airports
  */
-export function getAllAirports(): AirportData[] {
-  return airportsJson as unknown as AirportData[];
+export async function loadAirportsData(onProgress?: ProgressCallback): Promise<AirportData[]> {
+  if (airportsCache) {
+    // Already loaded, report 100% if callback provided
+    if (onProgress) {
+      onProgress({ loaded: 1, total: 1, percent: 100 });
+    }
+    return airportsCache;
+  }
+  
+  // If already loading, return the existing promise
+  if (airportsLoadPromise) {
+    return airportsLoadPromise;
+  }
+  
+  // Start loading
+  airportsLoadPromise = loadJsonFileCached<AirportData[]>('airports_min.json', onProgress);
+  airportsCache = await airportsLoadPromise;
+  
+  return airportsCache;
 }
 
 /**
- * Find airports near a location
+ * Get all airports (synchronous, requires data to be loaded first)
+ * @throws Error if data hasn't been loaded yet
  */
-export function findNearbyAirports(
+export function getAllAirports(): AirportData[] {
+  if (!airportsCache) {
+    throw new Error('Airport data not loaded. Call loadAirportsData() first.');
+  }
+  return airportsCache;
+}
+
+/**
+ * Find airports near a location (async, loads data if needed)
+ */
+export async function findNearbyAirports(
   latitude: number,
   longitude: number,
-  radius: number = 50 // miles
-): (AirportData & { distance: number })[] {
+  radius: number = 50, // miles
+  onProgress?: ProgressCallback
+): Promise<(AirportData & { distance: number })[]> {
+  // Ensure data is loaded
+  await loadAirportsData(onProgress);
   const allAirports = getAllAirports();
   const airportsWithDistance: (AirportData & { distance: number })[] = [];
   
