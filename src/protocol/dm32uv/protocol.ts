@@ -86,53 +86,98 @@ export class DM32UVProtocol implements RadioProtocol {
         throw new Error('Web Serial API not supported. Please use Chrome/Edge.');
       }
 
-      // Port selection dialog - no timeout, user can take as long as needed
-      // Note: If user cancels, this will throw a DOMException, which we'll catch
-      let port: WebSerialPort;
-      try {
-        port = await (navigator as any).serial.requestPort() as WebSerialPort;
-      } catch (e: unknown) {
-        const error = e as Error;
-        // If user cancelled the port selection dialog, provide a clear message
-        if (error.message && (error.message.includes('No port selected') || error.message.includes('cancelled') || error.name === 'NotFoundError')) {
-          throw new Error('Port selection cancelled. Please select a port to continue.');
+      // Check if we already have a port that we can reuse
+      let port: WebSerialPort | null = this.port;
+      let needToPromptForPort = true;
+      
+      if (port) {
+        // Check if port is still usable (open and streams not locked)
+        const isAlreadyOpen = port.readable !== null && port.writable !== null;
+        const streamsLocked = port.readable?.locked || port.writable?.locked;
+        
+        if (isAlreadyOpen && !streamsLocked) {
+          // Port is open and streams are available - we can reuse it
+          console.log('Reusing existing port connection');
+          needToPromptForPort = false;
+        } else if (!isAlreadyOpen) {
+          // Port was closed, try to reopen it
+          console.log('Port was closed, attempting to reopen...');
+          try {
+            await withTimeout(
+              port.open({ baudRate: CONNECTION.BAUD_RATE }),
+              CONNECTION.TIMEOUT.PORT_OPEN,
+              'Port reopen'
+            );
+            console.log('Successfully reopened existing port');
+            needToPromptForPort = false;
+          } catch (e: unknown) {
+            const error = e as Error;
+            // If reopen failed, we'll need to get a new port
+            console.warn('Failed to reopen existing port, will prompt for new port:', error.message);
+            port = null;
+            this.port = null;
+          }
+        } else {
+          // Streams are locked, can't reuse
+          console.warn('Port streams are locked, will prompt for new port');
+          port = null;
+          this.port = null;
         }
-        // Otherwise, rethrow the original error
-        throw error;
       }
       
-      // Check if port is already open
-      // readable and writable being non-null indicates the port is open
-      const isAlreadyOpen = port.readable !== null && port.writable !== null;
-      
-      if (isAlreadyOpen && port.readable && port.writable) {
-        // Check if streams are locked (from a previous connection)
-        if (port.readable.locked || port.writable.locked) {
-          throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
-        }
-        console.log('Port is already open, will use existing connection');
-      } else {
-        // Port is not open, so open it - wrap in timeout
+      // Prompt for port only if we don't have a usable one
+      if (needToPromptForPort) {
+        // Port selection dialog - no timeout, user can take as long as needed
+        // Note: If user cancels, this will throw a DOMException, which we'll catch
         try {
-          await withTimeout(
-            port.open({ baudRate: CONNECTION.BAUD_RATE }),
-            CONNECTION.TIMEOUT.PORT_OPEN,
-            'Port open'
-          );
+          port = await (navigator as any).serial.requestPort() as WebSerialPort;
+          this.port = port; // Store the port for future use
         } catch (e: unknown) {
           const error = e as Error;
-          // If it says already open (race condition), check for locked streams
-          if (error.message && error.message.includes('already open')) {
-            if ((port.readable && port.readable.locked) || (port.writable && port.writable.locked)) {
-              throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
+          // If user cancelled the port selection dialog, provide a clear message
+          if (error.message && (error.message.includes('No port selected') || error.message.includes('cancelled') || error.name === 'NotFoundError')) {
+            throw new Error('Port selection cancelled. Please select a port to continue.');
+          }
+          // Otherwise, rethrow the original error
+          throw error;
+        }
+        
+        // Check if port is already open
+        const isAlreadyOpen = port.readable !== null && port.writable !== null;
+        
+        if (isAlreadyOpen && port.readable && port.writable) {
+          // Check if streams are locked (from a previous connection)
+          if (port.readable.locked || port.writable.locked) {
+            throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
+          }
+          console.log('Port is already open, will use existing connection');
+        } else {
+          // Port is not open, so open it - wrap in timeout
+          try {
+            await withTimeout(
+              port.open({ baudRate: CONNECTION.BAUD_RATE }),
+              CONNECTION.TIMEOUT.PORT_OPEN,
+              'Port open'
+            );
+          } catch (e: unknown) {
+            const error = e as Error;
+            // If it says already open (race condition), check for locked streams
+            if (error.message && error.message.includes('already open')) {
+              if ((port.readable && port.readable.locked) || (port.writable && port.writable.locked)) {
+                throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
+              }
+              console.log('Port opened by another process, will use existing connection');
+            } else if (error.message && error.message.includes('timed out')) {
+              throw new Error('Port open timed out. Please check the USB connection and try again.');
+            } else {
+              throw new Error(`Failed to open port: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
-            console.log('Port opened by another process, will use existing connection');
-          } else if (error.message && error.message.includes('timed out')) {
-            throw new Error('Port open timed out. Please check the USB connection and try again.');
-          } else {
-            throw new Error(`Failed to open port: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
         }
+      }
+      
+      if (!port) {
+        throw new Error('No port available');
       }
       
       // Brief delay after opening port (as per spec)
@@ -209,8 +254,11 @@ export class DM32UVProtocol implements RadioProtocol {
       await this.connection.disconnect();
       this.connection = null;
     }
-    // Port is managed by connection, so we just clear the reference
-    this.port = null;
+    // Keep the port reference so we can reuse it for subsequent operations
+    // Don't close the port - just release the reader/writer locks
+    // The port will stay open and can be reused
+    // Only clear the port if it's explicitly closed or if we want to force a new selection
+    // this.port = null; // Commented out to allow port reuse
     // Keep radioInfo and cachedBlockData - they're needed for parsing
     // Only clear connection-related state
   }
@@ -641,18 +689,89 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(10, `Writing ${channels.length} channels to ${channelBlocks.length} blocks...`);
 
+    console.log(`[WRITE CHANNELS] Starting write operation:`);
+    console.log(`  Total channels: ${channels.length}`);
+    console.log(`  Channel blocks found: ${channelBlocks.length}`);
+    console.log(`  Block addresses: ${channelBlocks.map(b => `0x${b.address.toString(16).padStart(6, '0').toUpperCase()}`).join(', ')}`);
+
     // Encode all channels to binary
     const encodedChannels = channels.map(ch => encodeChannel(ch));
+    console.log(`[WRITE CHANNELS] Encoded ${encodedChannels.length} channels to binary format`);
     
-    // Write channels to blocks
-    let channelIndex = 0;
-    for (let blockIdx = 0; blockIdx < channelBlocks.length && channelIndex < channels.length; blockIdx++) {
+    // Step 1: Read metadata bytes from ALL active channel blocks (1 byte per block at offset 0xFFF)
+    // This matches the serial capture pattern: read all metadata first, then write only blocks we change
+    console.log(`[WRITE CHANNELS] Reading metadata bytes (1 byte each) from all ${channelBlocks.length} active channel blocks...`);
+    
+    for (let blockIdx = 0; blockIdx < channelBlocks.length; blockIdx++) {
       const block = channelBlocks[blockIdx];
-      const isFirstBlock = block.metadata === METADATA.CHANNEL_FIRST;
+      const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
+      const metadataAddr = block.address + 0xFFF; // Read metadata byte at offset 0xFFF
+      const metadataAddrHex = `0x${metadataAddr.toString(16).padStart(6, '0').toUpperCase()}`;
       
-      // Read existing block data
-      const existingBlockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
-      const blockData = new Uint8Array(existingBlockData);
+      try {
+        console.log(`[WRITE CHANNELS] Reading metadata byte from block ${blockIdx + 1}/${channelBlocks.length} at ${metadataAddrHex} (block address: ${addressHex}, metadata: 0x${block.metadata.toString(16).padStart(2, '0')})`);
+        
+        // Read only the metadata byte (1 byte at offset 0xFFF)
+        const metadataData = await this.connection!.readMemory(metadataAddr, 1);
+        const metadataValue = metadataData[0];
+        
+        console.log(`[WRITE CHANNELS] Successfully read metadata byte from ${addressHex}: 0x${metadataValue.toString(16).padStart(2, '0')}`);
+        
+        // Verify metadata matches what we discovered
+        if (metadataValue !== block.metadata) {
+          console.warn(`[WRITE CHANNELS] Metadata mismatch at ${addressHex}: expected 0x${block.metadata.toString(16).padStart(2, '0')}, got 0x${metadataValue.toString(16).padStart(2, '0')}. Using discovered value.`);
+        }
+        
+        // Add delay between metadata reads
+        if (blockIdx < channelBlocks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`[WRITE CHANNELS ERROR] Failed to read metadata from block ${blockIdx + 1}/${channelBlocks.length} at ${addressHex} (metadata address: ${metadataAddrHex}): ${errorMsg}`);
+        console.error(`[WRITE CHANNELS ERROR] This was block ${blockIdx + 1} of ${channelBlocks.length} total blocks`);
+        throw new Error(`Failed to read metadata from block ${blockIdx + 1} at ${addressHex}: ${errorMsg}`);
+      }
+    }
+    
+    console.log(`[WRITE CHANNELS] Metadata read complete, starting write operations...`);
+    
+    // Step 2: Calculate how many blocks we actually need to write
+    // First block: 84 channels (starts at offset 0x10, so (4096 - 0x10) / 48 = 84)
+    // Subsequent blocks: 85 channels each (4096 / 48 = 85)
+    const channelsPerFirstBlock = 84;
+    const channelsPerSubsequentBlock = 85;
+    
+    let blocksNeeded = 0;
+    if (channels.length > 0) {
+      blocksNeeded = 1; // First block
+      const remainingChannels = channels.length - channelsPerFirstBlock;
+      if (remainingChannels > 0) {
+        blocksNeeded += Math.ceil(remainingChannels / channelsPerSubsequentBlock);
+      }
+    }
+    
+    // Only write to the blocks we actually need
+    const blocksToWrite = channelBlocks.slice(0, blocksNeeded);
+    console.log(`[WRITE CHANNELS] Will write to ${blocksToWrite.length} blocks (${channels.length} channels)`);
+    
+    // Step 3: Create new block data and write only to blocks we need
+    // We create fresh 4KB blocks filled with 0xFF, then write our channel data
+    let channelIndex = 0;
+    for (let blockIdx = 0; blockIdx < blocksToWrite.length && channelIndex < channels.length; blockIdx++) {
+      const block = blocksToWrite[blockIdx];
+      const isFirstBlock = block.metadata === METADATA.CHANNEL_FIRST;
+      const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
+      const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`;
+      
+      console.log(`[WRITE CHANNELS] Processing block ${blockIdx + 1}/${blocksToWrite.length}:`);
+      console.log(`  Address: ${addressHex}`);
+      console.log(`  Metadata: ${metadataHex}`);
+      console.log(`  Is first block: ${isFirstBlock}`);
+      
+      // Create a new 4KB block filled with 0xFF (empty marker)
+      const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
+      blockData.fill(0xFF);
       
       // Update channel count in first block header (bytes 0-3)
       if (isFirstBlock) {
@@ -662,6 +781,7 @@ export class DM32UVProtocol implements RadioProtocol {
         channelCountBytes[2] = (channels.length >> 16) & 0xFF;
         channelCountBytes[3] = (channels.length >> 24) & 0xFF;
         blockData.set(channelCountBytes, 0);
+        console.log(`[WRITE CHANNELS] Updated channel count in first block header: ${channels.length} (bytes: ${Array.from(channelCountBytes).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ')})`);
       }
       
       // Determine start offset and max channels for this block
@@ -669,14 +789,25 @@ export class DM32UVProtocol implements RadioProtocol {
       const maxChannelsInBlock = isFirstBlock ? 84 : 85;
       const maxOffset = startOffset + (maxChannelsInBlock * BLOCK_SIZE.CHANNEL);
       
+      console.log(`[WRITE CHANNELS] Block channel layout:`);
+      console.log(`  Start offset: 0x${startOffset.toString(16).padStart(2, '0').toUpperCase()}`);
+      console.log(`  Max channels in block: ${maxChannelsInBlock}`);
+      console.log(`  Max offset: 0x${maxOffset.toString(16).padStart(4, '0').toUpperCase()}`);
+      
+      const channelsInThisBlock: number[] = [];
+      
       // Write channels to this block
       for (let offset = startOffset; offset < maxOffset && channelIndex < channels.length; offset += BLOCK_SIZE.CHANNEL) {
         const channel = channels[channelIndex];
-        blockData.set(encodedChannels[channelIndex], offset);
+        
+        // Encode channel to binary
+        const encodedChannel = encodedChannels[channelIndex];
+        blockData.set(encodedChannel, offset);
         
         // Write forbid TX flag to the correct offset (not in the 48-byte channel data)
         writeChannelFlagBit(channel.number, blockData, offset, blockIdx, 0x08, channel.forbidTx);
         
+        channelsInThisBlock.push(channel.number);
         channelIndex++;
         
         // Update progress
@@ -686,19 +817,54 @@ export class DM32UVProtocol implements RadioProtocol {
         }
       }
       
-      // Write the block back to radio
-      const progress = 90 + Math.floor((blockIdx / channelBlocks.length) * 10); // 90-100%
-      this.onProgress?.(progress, `Writing block ${blockIdx + 1} of ${channelBlocks.length}...`);
-      
-      await this.connection!.writeMemory(block.address, blockData, block.metadata);
-      
-      // Delay between block writes (per spec: 10-50ms)
-      if (blockIdx < channelBlocks.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+      // CRITICAL: Fill any unused channel slots with 0xFF (empty channel marker)
+      // This ensures the block is properly formatted even if we're writing fewer channels than the block can hold
+      const lastChannelOffset = startOffset + (channelsInThisBlock.length * BLOCK_SIZE.CHANNEL);
+      if (lastChannelOffset < maxOffset) {
+        // Fill remaining channel slots with 0xFF
+        const emptyChannel = new Uint8Array(BLOCK_SIZE.CHANNEL);
+        emptyChannel.fill(0xFF);
+        for (let offset = lastChannelOffset; offset < maxOffset; offset += BLOCK_SIZE.CHANNEL) {
+          blockData.set(emptyChannel, offset);
+        }
+        console.log(`[WRITE CHANNELS] Filled ${Math.floor((maxOffset - lastChannelOffset) / BLOCK_SIZE.CHANNEL)} unused channel slots with 0xFF`);
       }
+      
+      console.log(`[WRITE CHANNELS] Block ${blockIdx + 1} prepared:`);
+      console.log(`  Channels in this block: ${channelsInThisBlock.length} (${channelsInThisBlock.join(', ')})`);
+      console.log(`  Total channels encoded so far: ${channelIndex}/${channels.length}`);
+      
+      // CRITICAL: Set metadata byte at offset 0xFFF in the block data
+      // This must match the metadata byte we send at the end of the write command
+      blockData[0xFFF] = block.metadata;
+      console.log(`[WRITE CHANNELS] Set metadata byte at 0xFFF to ${metadataHex}`);
+      
+      // Final validation: Ensure block is exactly 4KB before writing
+      if (blockData.length !== BLOCK_SIZE.STANDARD) {
+        throw new Error(`Block data size error at ${addressHex}: must be exactly ${BLOCK_SIZE.STANDARD} bytes (4KB), got ${blockData.length} bytes`);
+      }
+      console.log(`[WRITE CHANNELS] Block ${blockIdx + 1} validated: ${blockData.length} bytes (4KB)`);
+      
+      // Write the block back to radio
+      const progress = 90 + Math.floor((blockIdx / blocksToWrite.length) * 10); // 90-100%
+      this.onProgress?.(progress, `Writing block ${blockIdx + 1} of ${blocksToWrite.length}...`);
+      
+      console.log(`[WRITE CHANNELS] Writing block ${blockIdx + 1}/${blocksToWrite.length} to radio at ${addressHex} (metadata: ${metadataHex})...`);
+      try {
+        await this.connection!.writeMemory(block.address, blockData, block.metadata);
+        console.log(`[WRITE CHANNELS] ✓ Successfully wrote block ${blockIdx + 1}/${blocksToWrite.length} to radio at ${addressHex}`);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`[WRITE CHANNELS ERROR] ✗ Failed to write block ${blockIdx + 1}/${blocksToWrite.length} at ${addressHex} (metadata: ${metadataHex}): ${errorMsg}`);
+        console.error(`[WRITE CHANNELS ERROR] This was write attempt ${blockIdx + 1} of ${blocksToWrite.length} total blocks`);
+        throw error;
+      }
+      
+      // No delay needed - we wait for ACK before proceeding, just like the original C code
       
       // Stop if we've written all channels
       if (channelIndex >= channels.length) {
+        console.log(`[WRITE CHANNELS] All ${channelIndex} channels have been written, stopping block iteration`);
         break;
       }
     }

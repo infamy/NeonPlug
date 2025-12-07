@@ -67,15 +67,15 @@ export const CONNECTION = {
   CLEAR_BUFFER_DELAY: 100,  // ms after clearing buffer
   BLOCK_READ_DELAY: 50,     // ms between block reads
   // Timeout values (in milliseconds)
-  // Per-request timeout: 1s per message/ack cycle, resets with each response
+  // Per-request timeout: 5s per message/ack cycle (matches C code), resets with each response
   TIMEOUT: {
-    REQUEST_RESPONSE: 1000,  // 1s per request/response cycle (resets on each message/ack)
-    HANDSHAKE: 2000,         // 2s for handshake commands (PSEARCH, PASSSTA, etc.)
-    READ_BYTES: 2000,        // 2s for reading bytes (per read operation)
-    READ_MEMORY: 5000,       // 5s for reading memory blocks (allows for multiple 2s reads within a block)
-    WRITE_MEMORY: 2000,      // 2s for write acknowledgment
-    VFRAME_QUERY: 2000,      // 2s per V-frame query
-    FILL_BUFFER: 2000,       // 2s for filling buffer
+    REQUEST_RESPONSE: 5000,  // 5s per request/response cycle (matches C code, resets on each message/ack)
+    HANDSHAKE: 5000,         // 5s for handshake commands (PSEARCH, PASSSTA, etc.)
+    READ_BYTES: 5000,        // 5s for reading bytes (per read operation)
+    READ_MEMORY: 5000,       // 5s for reading memory blocks
+    WRITE_MEMORY: 5000,      // 5s for write acknowledgment
+    VFRAME_QUERY: 5000,      // 5s per V-frame query
+    FILL_BUFFER: 5000,       // 5s for filling buffer
     PORT_OPEN: 5000,         // 5s for opening serial port (one-time operation)
   },
 } as const;
