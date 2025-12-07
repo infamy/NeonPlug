@@ -41,6 +41,7 @@ export function createDefaultChannel(overrides: Partial<Channel> = {}): Channel 
     talkback: false,
     unknown1D_3_0: 0,
     squelchLevel: 0,
+    digitalEmergencySystemId: 0, // 0 = None
     pttIdDisplay: false,
     pttId: 0,
     colorCode: 0,

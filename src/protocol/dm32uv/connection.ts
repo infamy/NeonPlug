@@ -11,7 +11,6 @@ import { CONNECTION } from './constants';
 export type SerialPort = WebSerialPort;
 
 export class DM32Connection {
-  private port: WebSerialPort | null = null;
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private readBuffer: Uint8Array = new Uint8Array(0); // Persistent read buffer
@@ -21,8 +20,6 @@ export class DM32Connection {
     // Clear any leftover state from previous connections
     this.readBuffer = new Uint8Array(0);
     this.isReading = false;
-    
-    this.port = port;
     
     // Check if port already has active readers/writers (locked streams)
     // If so, we can't get new ones - the port is in use
@@ -183,37 +180,62 @@ export class DM32Connection {
   }
 
   async readMemory(address: number, length: number): Promise<Uint8Array> {
-    // Read command: 0x52 <addr:3> <len:2>
-    const addrBytes = new Uint8Array([
-      address & 0xFF,
-      (address >> 8) & 0xFF,
-      (address >> 16) & 0xFF,
-    ]);
-    const lenBytes = new Uint8Array([
-      length & 0xFF,
-      (length >> 8) & 0xFF,
-    ]);
+    const addressHex = `0x${address.toString(16).padStart(6, '0').toUpperCase()}`;
+    
+    try {
+      // Read command: 0x52 ("R") <addr:3> <len:2>
+      const addrBytes = new Uint8Array([
+        address & 0xFF,
+        (address >> 8) & 0xFF,
+        (address >> 16) & 0xFF,
+      ]);
+      const lenBytes = new Uint8Array([
+        length & 0xFF,
+        (length >> 8) & 0xFF,
+      ]);
 
-    const command = new Uint8Array([0x52, ...addrBytes, ...lenBytes]);
-    await this.write(command);
-    await this.delay(25); // Longer delay for block reads
+      const command = new Uint8Array([0x52, ...addrBytes, ...lenBytes]);
+      const commandHex = Array.from(command)
+        .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+        .join(' ');
+      console.log(`[READ] Sending read command (0x52 "R"): ${commandHex} (address: ${addressHex}, length: ${length})`);
+      await this.write(command);
+      await this.delay(25); // Longer delay for block reads
 
-    // Response: 0x57 <addr:3> <len:2> <data>
-    const header = await this.readBytes(6);
-    if (header[0] !== 0x57) {
-      throw new Error('Invalid read response');
+      // Response: 0x57 <addr:3> <len:2> <data>
+      const header = await this.readBytes(6);
+      if (header[0] !== 0x57) {
+        const headerHex = Array.from(header).map(b => `0x${b.toString(16).padStart(2, '0').toUpperCase()}`).join(' ');
+        throw new Error(`Invalid read response header at ${addressHex}. Expected 0x57, got ${headerHex}`);
+      }
+
+      const responseLength = header[4] | (header[5] << 8);
+      if (responseLength === 0 || responseLength > length) {
+        throw new Error(`Invalid response length at ${addressHex}. Expected <= ${length}, got ${responseLength}`);
+      }
+      
+      const data = await this.readBytes(responseLength);
+      return data;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[READ MEMORY ERROR] Failed to read ${length} bytes from ${addressHex}: ${errorMsg}`);
+      throw new Error(`Failed to read memory at ${addressHex}: ${errorMsg}`);
     }
-
-    const responseLength = header[4] | (header[5] << 8);
-    const data = await this.readBytes(responseLength);
-    return data;
   }
 
   /**
    * Write memory block to radio
    * 
-   * Format: 0x57 <addr:3> <0x00> <0x10> <data:4096> <metadata:1>
+   * Format: 0x57 ("W") <addr:3> <0x00> <0x10> <data:4096> <metadata:1>
    * Total: 4103 bytes
+   * 
+   * Command structure (matches serial capture):
+   * - Byte 0: 0x57 (write command, ASCII "W")
+   * - Bytes 1-3: Address (24-bit, little-endian)
+   * - Byte 4: 0x00 (reserved)
+   * - Byte 5: 0x10 (size indicator for 4KB block)
+   * - Bytes 6-4101: Data (4096 bytes)
+   * - Byte 4102: Metadata byte
    * 
    * @param address 24-bit address (must be 4KB-aligned)
    * @param data 4096 bytes of data
@@ -225,29 +247,82 @@ export class DM32Connection {
       throw new Error(`Write data must be exactly 4096 bytes, got ${data.length}`);
     }
 
-    // Write command format: 0x57 <addr:3> <0x00> <0x10> <data:4096> <metadata:1>
+    // Write command format: 0x57 ("W") <addr:3> <0x00> <0x10> <data:4096>
+    // The metadata byte is INSIDE the data block at offset 0xFFF, not sent separately
     const addrBytes = new Uint8Array([
       address & 0xFF,
       (address >> 8) & 0xFF,
       (address >> 16) & 0xFF,
     ]);
 
-    // Build command: 4103 bytes total
-    const command = new Uint8Array(4103);
-    command[0] = 0x57; // Write command
+    // Build command: 4102 bytes total (6 header + 4096 data)
+    const command = new Uint8Array(4102);
+    command[0] = 0x57; // Write command ("W")
     command.set(addrBytes, 1); // Address (bytes 1-3)
     command[4] = 0x00; // Reserved
     command[5] = 0x10; // Size indicator (4KB)
-    command.set(data, 6); // Data (bytes 6-4101)
-    command[4102] = metadata; // Metadata byte (byte 4102)
+    command.set(data, 6); // Data (bytes 6-4101) - includes metadata byte at data[0xFFF] which becomes command[4101]
 
-    await this.write(command);
-    await this.delay(50); // Longer delay for writes (per spec: 10-50ms)
+    // Debug logging: Log write command details
+    const addressHex = `0x${address.toString(16).padStart(6, '0').toUpperCase()}`;
+    const metadataHex = `0x${metadata.toString(16).padStart(2, '0').toUpperCase()}`;
+    const commandHeader = Array.from(command.slice(0, 6))
+      .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+      .join(' ');
+    
+    console.log(`[WRITE] Sending write command (0x57 "W"):`);
+    console.log(`  Command header (first 6 bytes): ${commandHeader}`);
+    console.log(`  Address: ${addressHex}`);
+    console.log(`  Metadata: ${metadataHex}`);
+    console.log(`  Data size: ${data.length} bytes`);
+    console.log(`  Command total size: ${command.length} bytes (6 header + 4096 data)`);
+    
+    // Log first 64 bytes of data for debugging
+    const dataPreview = Array.from(data.slice(0, 64))
+      .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+      .join(' ');
+    console.log(`  Data preview (first 64 bytes): ${dataPreview}`);
+    
+    // Log metadata byte location in data (this is the ONLY place the metadata byte appears)
+    const dataMetadataByte = data[0xFFF];
+    console.log(`  Data metadata byte at 0xFFF: 0x${dataMetadataByte.toString(16).padStart(2, '0').toUpperCase()}`);
+    console.log(`  Metadata byte in command[4101] (from data[0xFFF]): 0x${command[4101].toString(16).padStart(2, '0').toUpperCase()}`);
+    
+    // Verify metadata byte in data matches what we expect
+    if (dataMetadataByte !== metadata) {
+      console.warn(`[WRITE WARNING] Metadata byte mismatch: data[0xFFF] = 0x${dataMetadataByte.toString(16).padStart(2, '0').toUpperCase()}, expected 0x${metadataHex}`);
+    }
 
-    // Response: 0x06 (ACK)
-    const response = await this.readBytes(1);
-    if (response[0] !== 0x06) {
-      throw new Error(`Write not acknowledged. Got 0x${response[0].toString(16)} instead of 0x06`);
+    try {
+      await this.write(command);
+      console.log(`[WRITE] Command sent successfully, waiting for ACK...`);
+      
+      // Response: 0x06 (ACK) or error code
+      // readBytes will wait for the response - no artificial delay needed
+      const response = await this.readBytes(1);
+      const responseHex = `0x${response[0].toString(16).padStart(2, '0').toUpperCase()}`;
+      console.log(`[WRITE] Response received: ${responseHex}`);
+      
+      if (response[0] !== 0x06) {
+        // Common error codes:
+        // 0xC0 might indicate write error, invalid address, or radio not in programming mode
+        // 0xC8 might indicate invalid block data, checksum error, or block format issue
+        let errorMsg = `Write not acknowledged. Expected 0x06 (ACK), got ${responseHex}`;
+        if (response[0] === 0xC0) {
+          errorMsg += '. Error code 0xC0 may indicate: write rejected, invalid address, or radio not in programming mode.';
+        } else if (response[0] === 0xC8) {
+          errorMsg += '. Error code 0xC8 may indicate: invalid block data format, checksum error, or block structure issue.';
+        } else if (response[0] === 0x48) {
+          errorMsg += '. Error code 0x48 may indicate: write timeout, radio busy processing previous write, or need for longer delay between writes.';
+        }
+        console.error(`[WRITE ERROR] ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+      
+      console.log(`[WRITE] Write successful for block at ${addressHex} with metadata ${metadataHex}`);
+    } catch (error) {
+      console.error(`[WRITE ERROR] Failed to write block at ${addressHex} with metadata ${metadataHex}:`, error);
+      throw error;
     }
   }
 
@@ -256,6 +331,7 @@ export class DM32Connection {
     this.readBuffer = new Uint8Array(0);
     this.isReading = false;
     
+    // Release reader lock (but keep the port open for reuse)
     if (this.reader) {
       try {
         this.reader.releaseLock();
@@ -264,6 +340,7 @@ export class DM32Connection {
       }
       this.reader = null;
     }
+    // Release writer lock (but keep the port open for reuse)
     if (this.writer) {
       try {
         this.writer.releaseLock();
@@ -272,30 +349,9 @@ export class DM32Connection {
       }
       this.writer = null;
     }
-    if (this.port) {
-      try {
-        // Only try to close if streams are not locked
-        // If streams are locked, we can't close the port anyway
-        if (this.port.readable && this.port.writable) {
-          if (!this.port.readable.locked && !this.port.writable.locked) {
-            await this.port.close();
-          } else {
-            console.warn('Cannot close port: streams are locked');
-          }
-        } else {
-          // Streams are null, try to close anyway
-          await this.port.close();
-        }
-      } catch (e: any) {
-        // Port might already be closed or have locked streams
-        if (e.message && e.message.includes('locked stream')) {
-          console.warn('Cannot close port: streams are locked');
-        } else {
-          console.warn('Port close error:', e);
-        }
-      }
-      this.port = null;
-    }
+    // Don't close the port or clear the reference - let the protocol manage it
+    // The port can be reused for subsequent connections
+    // this.port = null; // Commented out to allow port reuse
   }
 
   private async sendCommand(command: string): Promise<void> {
@@ -316,6 +372,33 @@ export class DM32Connection {
     if (!this.writer) {
       throw new Error('Not connected');
     }
+    
+    // Determine command type from first byte
+    const commandByte = data[0];
+    let commandType = 'UNKNOWN';
+    if (commandByte === 0x52) {
+      commandType = 'READ (0x52 "R")';
+    } else if (commandByte === 0x57) {
+      commandType = 'WRITE (0x57 "W")';
+    } else if (commandByte === 0x56) {
+      commandType = 'V-FRAME (0x56 "V")';
+    } else {
+      commandType = `0x${commandByte.toString(16).padStart(2, '0').toUpperCase()}`;
+    }
+    
+    // Log command with type and bytes
+    if (data.length > 100) {
+      const commandPreview = Array.from(data.slice(0, 16))
+        .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+        .join(' ');
+      console.log(`[SEND] ${commandType} command: ${commandPreview}... (${data.length} bytes total)`);
+    } else {
+      const commandHex = Array.from(data)
+        .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+        .join(' ');
+      console.log(`[SEND] ${commandType} command: ${commandHex}`);
+    }
+    
     await this.writer.write(data);
   }
 
@@ -355,7 +438,7 @@ export class DM32Connection {
    * If the buffer doesn't have enough data, we fill it by reading from the stream.
    * This matches how Go/Python serial libraries work - they maintain an internal buffer.
    * 
-   * Timeout: 1s per request/response cycle. If no data arrives within 1s, timeout.
+   * Timeout: 2s per request/response cycle. If no data arrives within 2s, timeout.
    * This is the ONLY place we apply timeout - all read operations go through here.
    */
   private async readBytes(count: number): Promise<Uint8Array> {

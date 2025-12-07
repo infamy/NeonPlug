@@ -359,6 +359,7 @@ export async function smartImportCodeplug(
                 contactId: parseInt(row['Contact ID'] || '0') || 0,
                 colorCode: parseInt(row['Color Code'] || '0') || 0,
                 squelchLevel: parseInt(row['Squelch'] || row['Squelch Level'] || '0') || 0,
+                digitalEmergencySystemId: parseInt(row['Digital Emergency System ID'] || '0') || 0,
                 emergencySystemId: parseInt(row['Emergency ID'] || row['Emergency System ID'] || '0') || 0,
                 reverseFreq: parseInt(row['Reverse Freq'] || '0') || 0,
                 emergencyIndicator: row['Emergency'] === 'Yes' || row['Emergency'] === true,

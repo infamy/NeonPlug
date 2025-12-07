@@ -39,6 +39,9 @@ export interface Channel {
   emergencyAck: boolean;       // Bit 6: 0=Off, 1=On
   emergencySystemId: number;  // Bits 4-0: 0-31
   
+  // Digital Emergency System ID/Index (0x1E)
+  digitalEmergencySystemId: number; // 0=None, 1-77=Index into Digital Emergency Systems list (1-based)
+  
   // Power & APRS (0x1C)
   power: PowerLevel;           // Bits 7-4: 0=Low, 1=Medium, 2=High
   aprsReportMode: 'Off' | 'Digital' | 'Analog'; // Bits 3-2: 0=Off, 1=Digital, 2=Analog

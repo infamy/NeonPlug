@@ -10,6 +10,7 @@ interface ReadProgressModalProps {
   error?: string | null;
   onRetry?: () => void;
   onClose?: () => void;
+  mode?: 'read' | 'write';
 }
 
 export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
@@ -21,10 +22,12 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
   error,
   onRetry,
   onClose,
+  mode = 'read',
 }) => {
   if (!isOpen) return null;
 
   const isError = !!error;
+  const isWriting = mode === 'write';
 
   return (
     <div
@@ -40,7 +43,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
         <h2 className={`text-2xl font-bold mb-4 ${
           isError ? 'text-red-400' : 'text-neon-cyan'
         }`}>
-          {isError ? 'Connection Error' : 'Reading from Radio'}
+          {isError ? 'Connection Error' : isWriting ? 'Writing to Radio' : 'Reading from Radio'}
         </h2>
         
         {isError ? (

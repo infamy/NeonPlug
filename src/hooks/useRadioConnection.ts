@@ -12,6 +12,9 @@ import { useQuickMessagesStore } from '../store/quickMessagesStore';
 import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
 import { useCalibrationStore } from '../store/calibrationStore';
 import { useRXGroupsStore } from '../store/rxGroupsStore';
+import type { Channel } from '../models/Channel';
+import type { Zone } from '../models/Zone';
+import type { ScanList } from '../models/ScanList';
 
 // Export steps so UI components can use them (single source of truth)
 const READ_STEPS: string[] = [
@@ -21,6 +24,30 @@ const READ_STEPS: string[] = [
   'Reading memory blocks',
   'Parsing channels',
   'Parsing configuration',
+];
+
+const WRITE_CHANNELS_STEPS: string[] = [
+  'Selecting port',
+  'Connecting to radio',
+  'Reading radio information',
+  'Discovering channel blocks',
+  'Writing channels',
+];
+
+const WRITE_ZONES_STEPS: string[] = [
+  'Selecting port',
+  'Connecting to radio',
+  'Reading radio information',
+  'Discovering zone blocks',
+  'Writing zones',
+];
+
+const WRITE_SCAN_LISTS_STEPS: string[] = [
+  'Selecting port',
+  'Connecting to radio',
+  'Reading radio information',
+  'Discovering scan list blocks',
+  'Writing scan lists',
 ];
 
 export function useRadioConnection() {
@@ -276,12 +303,242 @@ export function useRadioConnection() {
     throw new Error('Contacts reading is not yet implemented. It will be reimplemented to read from cached blocks.');
   }, []);
 
+  const writeChannelsToRadio = useCallback(async (
+    channels: Channel[],
+    zones: Zone[],
+    scanLists: ScanList[],
+    onProgress?: (progress: number, message: string, step?: string) => void
+  ) => {
+    setIsConnecting(true);
+    setError(null);
+    
+    let protocol: DM32UVProtocol | null = null;
+    const steps = WRITE_CHANNELS_STEPS;
+
+    try {
+      // Create protocol instance
+      protocol = new DM32UVProtocol();
+      
+      // Set up progress callback that forwards to our callback
+      protocol.onProgress = (progress, message) => {
+        onProgress?.(progress, message);
+      };
+      
+      // Step 1: Select port
+      onProgress?.(5, 'Please select a serial port in the browser dialog...', steps[0]);
+      
+      // Step 2: Connect to radio
+      onProgress?.(10, 'Connecting to radio...', steps[1]);
+      await protocol.connect();
+      
+      // Step 3: Get radio info
+      onProgress?.(10, 'Reading radio information...', steps[2]);
+      const radioInfo = await protocol.getRadioInfo();
+      
+      setRadioInfo(radioInfo);
+      setConnected(true);
+      
+      // Step 4: Write channels, zones, and scan lists
+      onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
+      await protocol.writeAllData(channels, zones, scanLists);
+      
+      // Step 5: Disconnect
+      await protocol.disconnect();
+      
+      const summary = [
+        channels.length > 0 ? `${channels.length} channels` : null,
+        zones.length > 0 ? `${zones.length} zones` : null,
+        scanLists.length > 0 ? `${scanLists.length} scan lists` : null,
+      ].filter(Boolean).join(', ');
+      
+      onProgress?.(100, `Successfully wrote ${summary} to radio!`, steps[4]);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Write failed';
+      setError(errorMessage);
+      onProgress?.(0, `Error: ${errorMessage}`, 'Error');
+      
+      console.error('Radio write error:', err);
+      
+      // Set connecting to false so modal can show error state
+      setIsConnecting(false);
+      
+      // Try to disconnect on error (if connection exists)
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (disconnectErr) {
+          // Ignore disconnect errors - connection might already be closed
+          console.warn('Error during disconnect cleanup:', disconnectErr);
+        }
+      }
+      
+      // Re-throw the error so the caller can handle it and show error in modal
+      throw err;
+    } finally {
+      // Only set connecting to false if we didn't already (success case)
+      // On error, we set it in the catch block so modal stays open to show error
+      if (!error) {
+        setIsConnecting(false);
+      }
+    }
+  }, [setConnected, setRadioInfo]);
+
+  const writeZonesToRadio = useCallback(async (
+    zones: Zone[],
+    onProgress?: (progress: number, message: string, step?: string) => void
+  ) => {
+    setIsConnecting(true);
+    setError(null);
+    
+    let protocol: DM32UVProtocol | null = null;
+    const steps = WRITE_ZONES_STEPS;
+
+    try {
+      // Create protocol instance
+      protocol = new DM32UVProtocol();
+      
+      // Set up progress callback that forwards to our callback
+      protocol.onProgress = (progress, message) => {
+        onProgress?.(progress, message);
+      };
+      
+      // Step 1: Select port
+      onProgress?.(5, 'Please select a serial port in the browser dialog...', steps[0]);
+      
+      // Step 2: Connect to radio
+      onProgress?.(10, 'Connecting to radio...', steps[1]);
+      await protocol.connect();
+      
+      // Step 3: Get radio info
+      onProgress?.(10, 'Reading radio information...', steps[2]);
+      const radioInfo = await protocol.getRadioInfo();
+      
+      setRadioInfo(radioInfo);
+      setConnected(true);
+      
+      // Step 4: Write zones
+      onProgress?.(20, 'Writing zones to radio...', steps[4]);
+      await protocol.writeZones(zones);
+      
+      // Step 5: Disconnect
+      await protocol.disconnect();
+      
+      onProgress?.(100, `Successfully wrote ${zones.length} zones to radio!`, steps[4]);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Write failed';
+      setError(errorMessage);
+      onProgress?.(0, `Error: ${errorMessage}`, 'Error');
+      
+      console.error('Radio write error:', err);
+      
+      // Set connecting to false so modal can show error state
+      setIsConnecting(false);
+      
+      // Try to disconnect on error (if connection exists)
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (disconnectErr) {
+          // Ignore disconnect errors - connection might already be closed
+          console.warn('Error during disconnect cleanup:', disconnectErr);
+        }
+      }
+      
+      // Re-throw the error so the caller can handle it and show error in modal
+      throw err;
+    } finally {
+      // Only set connecting to false if we didn't already (success case)
+      // On error, we set it in the catch block so modal stays open to show error
+      if (!error) {
+        setIsConnecting(false);
+      }
+    }
+  }, [setConnected, setRadioInfo]);
+
+  const writeScanListsToRadio = useCallback(async (
+    scanLists: ScanList[],
+    onProgress?: (progress: number, message: string, step?: string) => void
+  ) => {
+    setIsConnecting(true);
+    setError(null);
+    
+    let protocol: DM32UVProtocol | null = null;
+    const steps = WRITE_SCAN_LISTS_STEPS;
+
+    try {
+      // Create protocol instance
+      protocol = new DM32UVProtocol();
+      
+      // Set up progress callback that forwards to our callback
+      protocol.onProgress = (progress, message) => {
+        onProgress?.(progress, message);
+      };
+      
+      // Step 1: Select port
+      onProgress?.(5, 'Please select a serial port in the browser dialog...', steps[0]);
+      
+      // Step 2: Connect to radio
+      onProgress?.(10, 'Connecting to radio...', steps[1]);
+      await protocol.connect();
+      
+      // Step 3: Get radio info
+      onProgress?.(10, 'Reading radio information...', steps[2]);
+      const radioInfo = await protocol.getRadioInfo();
+      
+      setRadioInfo(radioInfo);
+      setConnected(true);
+      
+      // Step 4: Write scan lists
+      onProgress?.(20, 'Writing scan lists to radio...', steps[4]);
+      await protocol.writeScanLists(scanLists);
+      
+      // Step 5: Disconnect
+      await protocol.disconnect();
+      
+      onProgress?.(100, `Successfully wrote ${scanLists.length} scan lists to radio!`, steps[4]);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Write failed';
+      setError(errorMessage);
+      onProgress?.(0, `Error: ${errorMessage}`, 'Error');
+      
+      console.error('Radio write error:', err);
+      
+      // Set connecting to false so modal can show error state
+      setIsConnecting(false);
+      
+      // Try to disconnect on error (if connection exists)
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (disconnectErr) {
+          // Ignore disconnect errors - connection might already be closed
+          console.warn('Error during disconnect cleanup:', disconnectErr);
+        }
+      }
+      
+      // Re-throw the error so the caller can handle it and show error in modal
+      throw err;
+    } finally {
+      // Only set connecting to false if we didn't already (success case)
+      // On error, we set it in the catch block so modal stays open to show error
+      if (!error) {
+        setIsConnecting(false);
+      }
+    }
+  }, [setConnected, setRadioInfo]);
+
   return {
     isConnecting,
     error,
     readFromRadio,
     readContacts,
+    writeChannelsToRadio,
+    writeZonesToRadio,
+    writeScanListsToRadio,
     readSteps: READ_STEPS,
+    writeChannelsSteps: WRITE_CHANNELS_STEPS,
+    writeZonesSteps: WRITE_ZONES_STEPS,
+    writeScanListsSteps: WRITE_SCAN_LISTS_STEPS,
   };
 }
 

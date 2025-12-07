@@ -141,6 +141,7 @@ export function importChannelsFromCSV(content: string): ImportResult {
           talkback: getBool('talkback'),
           unknown1D_3_0: getNumber('unknown1d_3_0', 0),
           squelchLevel: getNumber('squelch', 0),
+          digitalEmergencySystemId: getNumber('digital emergency system id', 0),
           pttIdDisplay: getBool('ptt id display'),
           pttId: getNumber('ptt id', 0),
           colorCode: getNumber('color code', 0),

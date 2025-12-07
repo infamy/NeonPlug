@@ -18,12 +18,11 @@ export const Toolbar: React.FC = () => {
   const { scanLists, setScanLists } = useScanListsStore();
   const { contacts, setContacts } = useContactsStore();
   const { settings: radioSettings, setSettings: setRadioSettings } = useRadioSettingsStore();
-  const { setWriteBlockData } = useRadioStore();
   const { systems: digitalEmergencies, config: digitalEmergencyConfig, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
   const { radioInfo } = useRadioStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { readFromRadio, isConnecting, error, readSteps } = useRadioConnection();
+  const { readFromRadio, writeChannelsToRadio, isConnecting, error, readSteps, writeChannelsSteps } = useRadioConnection();
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
   const [currentStep, setCurrentStep] = useState('');
@@ -152,7 +151,30 @@ export const Toolbar: React.FC = () => {
     setCurrentStep('');
   };
 
+  const showWriteWarning = (): boolean => {
+    const warningMessage = 
+      '⚠️ EXPERIMENTAL FEATURE WARNING ⚠️\n\n' +
+      'Writing to the radio is an EXPERIMENTAL feature and is used at your own risk.\n\n' +
+      'IMPORTANT: Before proceeding, ensure that:\n' +
+      '• Allow Reset is ENABLED via the Baofeng CPS\n' +
+      '• You have done a radio read with the Baofeng CPS and saved that as a backup\n' +
+      '• You have a backup of your current codeplug\n' +
+      '• You understand that this operation may modify your radio\'s memory\n\n' +
+      'Do you want to continue?';
+    
+    return window.confirm(warningMessage);
+  };
+
   const handleWrite = async () => {
+    if (channels.length === 0 && zones.length === 0 && scanLists.length === 0) {
+      alert('No data to write (channels, zones, or scan lists)');
+      return;
+    }
+
+    if (!showWriteWarning()) {
+      return;
+    }
+
     setIsWriting(true);
     try {
       // Clear any previous error immediately
@@ -162,45 +184,19 @@ export const Toolbar: React.FC = () => {
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
       
-      // Import protocol
-      const { DM32UVProtocol } = await import('../../protocol/dm32uv/protocol');
-      
-      // Create protocol instance
-      const protocol = new DM32UVProtocol();
-      
-      // Set up progress callback
-      protocol.onProgress = (progress, message) => {
+      // Write channels, zones, and scan lists together
+      await writeChannelsToRadio(channels, zones, scanLists, (progress, message, step) => {
         setProgress(progress);
         setProgressMessage(message);
-      };
-      
-      // Connect to radio
-      setProgress(5);
-      setProgressMessage('Please select a serial port in the browser dialog...');
-      await protocol.connect();
-      
-      setProgress(10);
-      setProgressMessage('Reading radio information...');
-      await protocol.getRadioInfo();
-      
-      // Write all data
-      setProgress(20);
-      setProgressMessage('Preparing write blocks...');
-      await protocol.writeAllData(channels, zones, scanLists);
-      
-      // Store write blocks for debug export
-      if ((protocol as any).writeBlockData) {
-        setWriteBlockData((protocol as any).writeBlockData);
-      }
-      
-      // Disconnect
-      await protocol.disconnect();
+        if (step) {
+          setCurrentStep(step);
+        }
+      });
       
       // Success - clear error and close modal after a moment
       setConnectionError(null);
-      setProgress(100);
-      setProgressMessage('Successfully wrote all data to radio!');
       setTimeout(() => {
+        setIsWriting(false);
         setProgress(0);
         setProgressMessage('');
         setCurrentStep('');
@@ -221,6 +217,7 @@ export const Toolbar: React.FC = () => {
       // Reset progress state to show error clearly
       setProgress(0);
       setProgressMessage('Write failed');
+      setIsWriting(false);
       // Don't close modal - let user see error and retry
     }
   };
@@ -267,10 +264,10 @@ export const Toolbar: React.FC = () => {
           <Button
             variant="primary"
             onClick={handleWrite}
-            disabled={isConnecting || isWriting}
+            disabled={isConnecting || isWriting || (channels.length === 0 && zones.length === 0 && scanLists.length === 0)}
             glow
           >
-            {isWriting ? 'Writing...' : 'Write to Radio'}
+            {isWriting ? 'Writing...' : 'Write'}
           </Button>
           {error && (
             <span className="text-red-400 text-xs ml-2">{error}</span>
@@ -287,11 +284,12 @@ export const Toolbar: React.FC = () => {
         isOpen={isConnecting || isWriting || !!connectionError}
         progress={progress}
         message={progressMessage}
-        currentStep={currentStep || readSteps[0]}
-        steps={readSteps}
+        currentStep={currentStep || (isWriting ? writeChannelsSteps[0] : readSteps[0])}
+        steps={isWriting ? writeChannelsSteps : readSteps}
         error={connectionError}
         onRetry={handleRetry}
         onClose={handleCloseModal}
+        mode={isWriting ? 'write' : 'read'}
       />
     </>
   );

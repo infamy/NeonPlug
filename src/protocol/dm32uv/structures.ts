@@ -216,22 +216,26 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
   const emergencyAck = (emergency & 0x40) !== 0;
   const emergencySystemId = emergency & 0x1F;
 
-  // Power & APRS (0x1C)
-  // Bits 7-4: Power Level (0=Low, 1=Medium, 2=High, 3-15=Reserved/Invalid)
-  // Bits 3-2: APRS Report Mode (0=Off, 1=Digital, 2=Analog, 3=Reserved)
-  // Bits 1-0: Unknown
-  const powerAprs = data[0x1C];
-  const powerValue = (powerAprs >> 4) & 0x0F;
+  // Power & APRS & SQL (0x1C)
+  // Bits 7-4: SQL Level (0-9)
+  // Bits 3-2: Power Level (0=Low, 1=Medium, 2=High) - moved from upper bits
+  // Bits 1-0: APRS Report Mode (0=Off, 1=Digital, 2=Analog)
+  const powerAprsSql = data[0x1C];
+  // SQL Level: Upper 4 bits (bits 4-7), value range 0-9
+  const squelchLevel = (powerAprsSql >> 4) & 0x0F;
+  // Power: Bits 2-3
+  const powerValue = (powerAprsSql >> 2) & 0x03;
   const power: Channel['power'] = 
     powerValue === 0 ? 'Low' : 
     powerValue === 1 ? 'Medium' : 
-    powerValue === 2 ? 'High' : 'Low'; // Default to Low for invalid values
-  const aprsReportValue = (powerAprs >> 2) & 0x03;
+    powerValue === 2 ? 'High' : 'Low';
+  // APRS: Bits 0-1
+  const aprsReportValue = powerAprsSql & 0x03;
   const aprsReportMode: Channel['aprsReportMode'] = 
     aprsReportValue === 0 ? 'Off' : 
     aprsReportValue === 1 ? 'Digital' : 
-    aprsReportValue === 2 ? 'Analog' : 'Off'; // Default to Off for invalid values
-  const unknown1C_1_0 = powerAprs & 0x03;
+    aprsReportValue === 2 ? 'Analog' : 'Off';
+  const unknown1C_1_0 = 0; // No longer used
 
   // Analog features (0x1D)
   // Bit 7: VOX Function (0=Off, 1=On)
@@ -246,8 +250,10 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
   const talkback = (analogFeatures & 0x10) !== 0;
   const unknown1D_3_0 = analogFeatures & 0x0F;
 
-  // Squelch (0x1E)
-  const squelchLevel = data[0x1E];
+  // Digital Emergency System ID/Index (0x1E)
+  // 0 = None (no emergency system)
+  // 1-77 = Index into the Digital Emergency Systems list (1-based)
+  const digitalEmergencySystemId = data[0x1E];
 
   // PTT ID (0x1F)
   const pttIdSettings = data[0x1F];
@@ -367,6 +373,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
     compander,
     talkback,
     squelchLevel,
+    digitalEmergencySystemId,
     pttIdDisplay,
     pttId,
     colorCode,
@@ -457,10 +464,14 @@ export function encodeChannel(channel: Channel): Uint8Array {
   emergency |= channel.emergencySystemId & 0x1F; // Bits 4-0
   data[0x1B] = emergency;
 
-  // Power & APRS (0x1C)
+  // Power & APRS & SQL (0x1C)
+  // SQL Level: Upper 4 bits (bits 4-7), value range 0-9
+  const squelchValue = Math.min(9, Math.max(0, channel.squelchLevel || 0)) & 0x0F;
+  // Power: Bits 2-3 (keeping compatibility, but may need adjustment)
   const powerValue = channel.power === 'Low' ? 0 : channel.power === 'Medium' ? 1 : 2;
+  // APRS: Bits 0-1
   const aprsReportValue = channel.aprsReportMode === 'Off' ? 0 : channel.aprsReportMode === 'Digital' ? 1 : 2;
-  data[0x1C] = ((powerValue << 4) & 0xF0) | ((aprsReportValue << 2) & 0x0C) | (channel.unknown1C_1_0 & 0x03);
+  data[0x1C] = ((squelchValue << 4) & 0xF0) | ((powerValue << 2) & 0x0C) | (aprsReportValue & 0x03);
 
   // Analog features (0x1D)
   let analogFeatures = 0;
@@ -471,8 +482,12 @@ export function encodeChannel(channel: Channel): Uint8Array {
   analogFeatures |= channel.unknown1D_3_0 & 0x0F; // Bits 3-0
   data[0x1D] = analogFeatures;
 
-  // Squelch (0x1E)
-  data[0x1E] = channel.squelchLevel & 0xFF;
+  // Digital Emergency System ID/Index (0x1E)
+  // 0 = None (no emergency system)
+  // 1-77 = Index into the Digital Emergency Systems list (1-based)
+  // Clamp to valid range (0-77)
+  const digitalEmergencySystemIdValue = Math.min(77, Math.max(0, channel.digitalEmergencySystemId ?? 0)) & 0xFF;
+  data[0x1E] = digitalEmergencySystemIdValue;
 
   // PTT ID (0x1F)
   let pttIdSettings = channel.pttId & 0x3F; // Bits 5-0
