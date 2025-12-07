@@ -78,11 +78,39 @@ async function tryLoadFromUrl(
 }
 
 /**
+ * Get the GitHub repository URL from the current page location
+ * Returns null if not on GitHub Pages
+ */
+function getGitHubRepoUrl(): string | null {
+  // Try to detect GitHub Pages URL pattern
+  // e.g., https://username.github.io/repo-name/ or https://custom-domain.com/
+  const hostname = window.location.hostname;
+  const pathname = window.location.pathname;
+  
+  // Check if we're on GitHub Pages (github.io or custom domain)
+  // Extract repo name from pathname if on github.io
+  if (hostname.includes('github.io')) {
+    const parts = pathname.split('/').filter(p => p);
+    if (parts.length > 0) {
+      const repoName = parts[0];
+      // Extract username from hostname (username.github.io)
+      const username = hostname.split('.')[0];
+      return `https://raw.githubusercontent.com/${username}/${repoName}/refs/heads/main/src/data`;
+    }
+  }
+  
+  // For custom domains or if we can't detect, try the known repo
+  // This is a fallback - you might want to make this configurable
+  return 'https://raw.githubusercontent.com/infamy/NeonPlug/refs/heads/main/src/data';
+}
+
+/**
  * Load a JSON file with fallback paths
  * Tries multiple locations in order:
  * 1. Same directory as index.html (./filename.json)
  * 2. Public directory (./public/filename.json)
  * 3. Root directory (/filename.json)
+ * 4. Raw GitHub file URL (from src/data/)
  * 
  * @param filename - Name of the JSON file (e.g., 'tafl_min.json')
  * @param onProgress - Optional callback for progress updates
@@ -92,12 +120,20 @@ export async function loadJsonFile<T = any>(
   filename: string,
   onProgress?: ProgressCallback
 ): Promise<T> {
+  // Get GitHub repo URL for fallback
+  const githubBaseUrl = getGitHubRepoUrl();
+  
   // List of paths to try in order
   const pathsToTry = [
     `./${filename}`,           // Same directory as index.html (for single-file builds)
     `./public/${filename}`,    // Public directory
     `/${filename}`,            // Root directory
   ];
+  
+  // Add GitHub raw URL as fallback if available
+  if (githubBaseUrl) {
+    pathsToTry.push(`${githubBaseUrl}/${filename}`);
+  }
   
   let lastError: Error | null = null;
   
