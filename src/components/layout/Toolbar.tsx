@@ -157,6 +157,22 @@ export const Toolbar: React.FC = () => {
       return;
     }
 
+    // Show warning dialog before proceeding
+    const warningMessage = 
+      '⚠️ EXPERIMENTAL FEATURE WARNING ⚠️\n\n' +
+      'Writing to the radio is an EXPERIMENTAL feature and is used at your own risk.\n\n' +
+      'IMPORTANT: Before proceeding, ensure that:\n' +
+      '• Data Reset is ENABLED via the Baofeng CPS\n' +
+      '• You have done a radio read with the Baofeng CPS and saved that as a backup\n' +
+      '• You have a backup of your current codeplug\n' +
+      '• You understand that this operation may modify your radio\'s memory\n\n' +
+      'Do you want to continue?';
+    
+    const confirmed = window.confirm(warningMessage);
+    if (!confirmed) {
+      return;
+    }
+
     setIsWriting(true);
     try {
       // Clear any previous error immediately
