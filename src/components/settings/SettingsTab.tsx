@@ -19,6 +19,50 @@ const COLOR_OPTIONS = [
   { value: 7, label: 'Blue', hex: '#0000FF' },
 ];
 
+const UTC_ZONE_OPTIONS = [
+  { value: 0, label: 'UTC -12:00' },
+  { value: 1, label: 'UTC -11:00' },
+  { value: 2, label: 'UTC -10:00' },
+  { value: 3, label: 'UTC -9:00' },
+  { value: 4, label: 'UTC -8:00' },
+  { value: 5, label: 'UTC -7:00' },
+  { value: 6, label: 'UTC -6:00' },
+  { value: 7, label: 'UTC -5:00' },
+  { value: 8, label: 'UTC -4:00' },
+  { value: 9, label: 'UTC -3:00' },
+  { value: 10, label: 'UTC -2:00' },
+  { value: 11, label: 'UTC -1:00' },
+  { value: 12, label: 'UTC' },
+  { value: 13, label: 'UTC +1:00' },
+  { value: 14, label: 'UTC +2:00' },
+  { value: 15, label: 'UTC +3:00' },
+  { value: 16, label: 'UTC +4:00' },
+  { value: 17, label: 'UTC +5:00' },
+  { value: 18, label: 'UTC +6:00' },
+  { value: 19, label: 'UTC +7:00' },
+  { value: 20, label: 'UTC +8:00' },
+  { value: 21, label: 'UTC +9:00' },
+  { value: 22, label: 'UTC +10:00' },
+  { value: 23, label: 'UTC +11:00' },
+  { value: 24, label: 'UTC +12:00' },
+  { value: 25, label: 'UTC +13:00' },
+];
+
+const POWER_ON_INTERFACE_OPTIONS = [
+  { value: 0, label: 'Power On Picture' },
+  { value: 1, label: 'Custom Message' },
+  { value: 2, label: 'Battery Volt' },
+];
+
+const AUTO_POWER_OFF_OPTIONS = [
+  { value: 0, label: 'Off' },
+  { value: 1, label: '30 Min' },
+  { value: 2, label: '60 Min' },
+  { value: 3, label: '120 Min' },
+  { value: 4, label: '240 Min' },
+  { value: 5, label: '480 Min' },
+];
+
 const getColorHex = (colorValue: number): string => {
   const color = COLOR_OPTIONS.find(c => c.value === colorValue);
   return color?.hex || '#FFFFFF';
@@ -228,8 +272,8 @@ export const SettingsTab: React.FC = () => {
                           onChange={(e) => updateRadioSettings({ powerOnInterface: parseInt(e.target.value) })}
                           className="w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
                         >
-                          {[0, 1, 2, 3, 4, 5].map(val => (
-                            <option key={val} value={val}>{val}</option>
+                          {POWER_ON_INTERFACE_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
                           ))}
                         </select>
                       </div>
@@ -242,6 +286,18 @@ export const SettingsTab: React.FC = () => {
                           className="w-4 h-4 text-neon-cyan bg-dark-charcoal border-neon-cyan rounded focus:ring-neon-cyan"
                         />
                         <label htmlFor="allowReset" className="text-cool-gray text-sm">Allow Reset</label>
+                      </div>
+                      <div>
+                        <label className="block text-cool-gray text-sm mb-2">Auto Power Off</label>
+                        <select
+                          value={radioSettings.autoPowerOff ?? 0}
+                          onChange={(e) => updateRadioSettings({ autoPowerOff: parseInt(e.target.value) || 0 })}
+                          className="w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        >
+                          {AUTO_POWER_OFF_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                 </div>
@@ -340,14 +396,19 @@ export const SettingsTab: React.FC = () => {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-cool-gray text-sm mb-2">Backlight Brightness</label>
+                      <label className="block text-cool-gray text-sm mb-2">
+                        Backlight Brightness: {radioSettings.backlightBrightness}
+                      </label>
                       <input
-                        type="number"
+                        type="range"
                         min="1"
                         max="6"
                         value={radioSettings.backlightBrightness}
                         onChange={(e) => updateRadioSettings({ backlightBrightness: parseInt(e.target.value) || 1 })}
-                        className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        className="w-full h-2 bg-deep-gray rounded-lg appearance-none cursor-pointer accent-neon-cyan"
+                        style={{
+                          background: `linear-gradient(to right, #00FFFF 0%, #00FFFF ${((radioSettings.backlightBrightness - 1) / 5) * 100}%, #1a1a1a ${((radioSettings.backlightBrightness - 1) / 5) * 100}%, #1a1a1a 100%)`
+                        }}
                       />
                     </div>
                     <div>
@@ -381,14 +442,15 @@ export const SettingsTab: React.FC = () => {
                   <div className="space-y-3">
                     <div>
                       <label className="block text-cool-gray text-sm mb-2">UTC Zone</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="25"
+                      <select
                         value={radioSettings.utcZone}
                         onChange={(e) => updateRadioSettings({ utcZone: parseInt(e.target.value) || 0 })}
                         className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                      />
+                      >
+                        {UTC_ZONE_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-cool-gray text-sm mb-2">Measure Period Interval (s)</label>
@@ -715,6 +777,774 @@ export const SettingsTab: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Menu Items Section */}
+          {radioSettings && (
+            <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6 mt-6">
+              <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
+                Menu Items
+              </h3>
+              <p className="text-cool-gray text-sm mb-4">Enable or disable menu items on the radio</p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Zones Section */}
+              <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                <h4 className="text-md font-semibold text-neon-cyan mb-3">Zones</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuZoneList"
+                      checked={radioSettings.menuEnableFlags?.zoneList ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...(radioSettings.menuEnableFlags || {}),
+                          zoneList: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuZoneList" className="text-cool-gray text-sm">Zone List</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuNewZone"
+                      checked={radioSettings.menuEnableFlags?.newZone ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          newZone: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuNewZone" className="text-cool-gray text-sm">New Zone</label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Digital Features Section */}
+              <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                <h4 className="text-md font-semibold text-neon-cyan mb-3">Digital Features</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuCallAlert"
+                      checked={radioSettings.menuEnableFlags?.callAlert ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...(radioSettings.menuEnableFlags || {}),
+                          callAlert: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuCallAlert" className="text-cool-gray text-sm">Call Alert</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuRadioCheck"
+                      checked={radioSettings.menuEnableFlags?.radioCheck ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          radioCheck: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuRadioCheck" className="text-cool-gray text-sm">Radio Check</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuRemoteMonitor"
+                      checked={radioSettings.menuEnableFlags?.remoteMonitor ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          remoteMonitor: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuRemoteMonitor" className="text-cool-gray text-sm">Remote Monitor</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuRadioEnable"
+                      checked={radioSettings.menuEnableFlags?.radioEnable ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          radioEnable: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuRadioEnable" className="text-cool-gray text-sm">Radio Enable</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuRadioDisable"
+                      checked={radioSettings.menuEnableFlags?.radioDisable ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          radioDisable: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuRadioDisable" className="text-cool-gray text-sm">Radio Disable</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuMeasurePeriod"
+                      checked={radioSettings.menuEnableFlags?.measurePeriod ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          measurePeriod: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuMeasurePeriod" className="text-cool-gray text-sm">Measure Period</label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Display/UI Section */}
+              <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                <h4 className="text-md font-semibold text-neon-cyan mb-3">Display/UI</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    {/* Inverted: bit=0 means enabled, so we invert the display */}
+                    <input
+                      type="checkbox"
+                      id="menuTalkaround"
+                      checked={radioSettings.menuEnableFlags?.talkaround ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...(radioSettings.menuEnableFlags || {}),
+                          talkaround: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuTalkaround" className="text-cool-gray text-sm">Talkaround</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuAlertTone"
+                      checked={radioSettings.menuEnableFlags?.alertTone ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          alertTone: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuAlertTone" className="text-cool-gray text-sm">Alert Tone</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuTxPower"
+                      checked={radioSettings.menuEnableFlags?.txPower ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          txPower: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuTxPower" className="text-cool-gray text-sm">TX Power</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuStartDisplay"
+                      checked={radioSettings.menuEnableFlags?.startDisplay ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          startDisplay: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuStartDisplay" className="text-cool-gray text-sm">Start Display</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuLangSelect"
+                      checked={radioSettings.menuEnableFlags?.langSelect ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          langSelect: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuLangSelect" className="text-cool-gray text-sm">Lang Select</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuMatchPrivate"
+                      checked={radioSettings.menuEnableFlags?.matchPrivate ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          matchPrivate: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuMatchPrivate" className="text-cool-gray text-sm">Match Private</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuMatchGroup"
+                      checked={radioSettings.menuEnableFlags?.matchGroup ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          matchGroup: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuMatchGroup" className="text-cool-gray text-sm">Match Group</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuDisplayMode"
+                      checked={radioSettings.menuEnableFlags?.displayMode ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          displayMode: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuDisplayMode" className="text-cool-gray text-sm">Display Mode</label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Communication Section */}
+              <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                <h4 className="text-md font-semibold text-neon-cyan mb-3">Communication</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    {/* Inverted: bit=0 means enabled, so we invert the display */}
+                    <input
+                      type="checkbox"
+                      id="menuSmsFormat"
+                      checked={radioSettings.menuEnableFlags?.smsFormat ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...(radioSettings.menuEnableFlags || {}),
+                          smsFormat: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuSmsFormat" className="text-cool-gray text-sm">SMS Format</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuSubChannelMode"
+                      checked={radioSettings.menuEnableFlags?.subChannelMode ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          subChannelMode: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuSubChannelMode" className="text-cool-gray text-sm">Sub Channel Mode</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuPowerSave"
+                      checked={radioSettings.menuEnableFlags?.powerSave ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          powerSave: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuPowerSave" className="text-cool-gray text-sm">Power Save</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuFmRadio"
+                      checked={radioSettings.menuEnableFlags?.fmRadio ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          fmRadio: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuFmRadio" className="text-cool-gray text-sm">FM Radio</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuGps"
+                      checked={radioSettings.menuEnableFlags?.gps ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          gps: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuGps" className="text-cool-gray text-sm">GPS</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuAprs"
+                      checked={radioSettings.menuEnableFlags?.aprs ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          aprs: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuAprs" className="text-cool-gray text-sm">APRS</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuRecord"
+                      checked={radioSettings.menuEnableFlags?.record ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          record: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuRecord" className="text-cool-gray text-sm">Record</label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contacts Section */}
+              <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                <h4 className="text-md font-semibold text-neon-cyan mb-3">Contacts</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuAddContact"
+                      checked={radioSettings.menuEnableFlags?.addContact ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...(radioSettings.menuEnableFlags || {}),
+                          addContact: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuAddContact" className="text-cool-gray text-sm">Add Contact</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuDelContact"
+                      checked={radioSettings.menuEnableFlags?.delContact ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          delContact: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuDelContact" className="text-cool-gray text-sm">Del Contact</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuEditContact"
+                      checked={radioSettings.menuEnableFlags?.editContact ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          editContact: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuEditContact" className="text-cool-gray text-sm">Edit Contact</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuSendMessage"
+                      checked={radioSettings.menuEnableFlags?.sendMessage ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          sendMessage: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuSendMessage" className="text-cool-gray text-sm">Send Message</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuFunctionality"
+                      checked={radioSettings.menuEnableFlags?.functionality ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          functionality: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuFunctionality" className="text-cool-gray text-sm">Functionality</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuManualDial"
+                      checked={radioSettings.menuEnableFlags?.manualDial ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          manualDial: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuManualDial" className="text-cool-gray text-sm">Manual Dial</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuCsvContacts"
+                      checked={radioSettings.menuEnableFlags?.csvContacts ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          csvContacts: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuCsvContacts" className="text-cool-gray text-sm">CSV Contacts</label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Call Log Section */}
+              <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                <h4 className="text-md font-semibold text-neon-cyan mb-3">Call Log</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuMissedCall"
+                      checked={radioSettings.menuEnableFlags?.missedCall ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...(radioSettings.menuEnableFlags || {}),
+                          missedCall: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuMissedCall" className="text-cool-gray text-sm">Missed Call</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuAnsweredCall"
+                      checked={radioSettings.menuEnableFlags?.answeredCall ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          answeredCall: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuAnsweredCall" className="text-cool-gray text-sm">Answered Call</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuSentCall"
+                      checked={radioSettings.menuEnableFlags?.sentCall ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          sentCall: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuSentCall" className="text-cool-gray text-sm">Sent Call</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuDelLog"
+                      checked={radioSettings.menuEnableFlags?.delLog ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          delLog: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuDelLog" className="text-cool-gray text-sm">Del Log</label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Program Section */}
+              <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                <h4 className="text-md font-semibold text-neon-cyan mb-3">Program</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuRxFrequency"
+                      checked={radioSettings.menuEnableFlags?.rxFrequency ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...(radioSettings.menuEnableFlags || {}),
+                          rxFrequency: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuRxFrequency" className="text-cool-gray text-sm">RX Frequency</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuTxFrequency"
+                      checked={radioSettings.menuEnableFlags?.txFrequency ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          txFrequency: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuTxFrequency" className="text-cool-gray text-sm">TX Frequency</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuCtcDcs"
+                      checked={radioSettings.menuEnableFlags?.ctcDcs ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          ctcDcs: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuCtcDcs" className="text-cool-gray text-sm">CTC/DCS</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuTxContact"
+                      checked={radioSettings.menuEnableFlags?.txContact ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          txContact: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuTxContact" className="text-cool-gray text-sm">TX Contact</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuColorCode"
+                      checked={radioSettings.menuEnableFlags?.colorCode ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          colorCode: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuColorCode" className="text-cool-gray text-sm">Color Code</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuTimeSlot"
+                      checked={radioSettings.menuEnableFlags?.timeSlot ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          timeSlot: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuTimeSlot" className="text-cool-gray text-sm">Time Slot</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuRadioId"
+                      checked={radioSettings.menuEnableFlags?.radioId ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          radioId: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuRadioId" className="text-cool-gray text-sm">Radio ID</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuRadioName"
+                      checked={radioSettings.menuEnableFlags?.radioName ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          radioName: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuRadioName" className="text-cool-gray text-sm">Radio Name</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuChannelType"
+                      checked={radioSettings.menuEnableFlags?.channelType ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...(radioSettings.menuEnableFlags || {}),
+                          channelType: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuChannelType" className="text-cool-gray text-sm">Channel Type</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuTdmaDirectMode"
+                      checked={radioSettings.menuEnableFlags?.tdmaDirectMode ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          tdmaDirectMode: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuTdmaDirectMode" className="text-cool-gray text-sm">TDMA Direct Mode</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuRxGroupList"
+                      checked={radioSettings.menuEnableFlags?.rxGroupList ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          rxGroupList: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuRxGroupList" className="text-cool-gray text-sm">RX Group List</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuAddChannel"
+                      checked={radioSettings.menuEnableFlags?.addChannel ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          addChannel: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuAddChannel" className="text-cool-gray text-sm">Add Channel</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="menuChannelName"
+                      checked={radioSettings.menuEnableFlags?.channelName ?? false}
+                      onChange={(e) => updateRadioSettings({
+                        menuEnableFlags: {
+                          ...radioSettings.menuEnableFlags,
+                          channelName: e.target.checked
+                        }
+                      })}
+                      className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
+                    />
+                    <label htmlFor="menuChannelName" className="text-cool-gray text-sm">Channel Name</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            </div>
+          )}
         </div>
       )}
 

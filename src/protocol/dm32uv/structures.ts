@@ -1044,12 +1044,13 @@ export function parseContacts(data: Uint8Array): Contact[] {
  * Parse Radio Settings from metadata 0x04 block (4KB)
  */
 export function parseRadioSettings(data: Uint8Array): RadioSettings {
-  if (data.length < 0x335) {
-    throw new Error('Radio Settings data must be at least 821 bytes (0x335)');
+  if (data.length < 0x508) {
+    throw new Error('Radio Settings data must be at least 1288 bytes (0x508)');
   }
 
   // Header fields (0x00-0x20)
-  const unknownFlag = data[0x00];
+  // Power On Interface: 0x00 (0-2)
+  const powerOnInterface = data[0x00] & 0xFF;
   
   // Power On Display Line 1: 0x01-0x0D (14 bytes, null-terminated)
   const powerOnLine1Bytes = data.slice(0x01, 0x01 + 14);
@@ -1070,8 +1071,8 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   // Allow Reset: 0x1D (bit 0)
   const allowReset = (data[0x1D] & 0x01) !== 0;
   
-  // Power On Interface: 0x1E (0-5)
-  const powerOnInterface = data[0x1E] & 0xFF;
+  // Auto Power Off: 0x1E (0-5: 0=Off, 1=30 Min, 2=60 Min, 3=120 Min, 4=240 Min, 5=480 Min)
+  const autoPowerOff = Math.max(0, Math.min(5, data[0x1E] & 0xFF));
   
   // Alert Tone Flags: 0x20 (8 bits, bit flags)
   const alertToneFlags = data[0x20];
@@ -1080,8 +1081,8 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const alertToneFlagsCont = data[0x21];
 
   // Display and UI settings (0x30-0x3B)
-  const zoneAColor = data[0x30] & 0x0F; // 0-15
-  const zoneBColor = data[0x31] & 0x0F; // 0-15
+  const zoneAColor = data[0x30] & 0x0F; // 0-15 (mask to lower 4 bits)
+  const zoneBColor = data[0x31] & 0x0F; // 0-15 (mask to lower 4 bits)
   const unknownDisplay = data[0x32];
   const displayFlags = data[0x33];
   const backlightBrightness = Math.max(1, Math.min(6, data[0x34] & 0xFF)); // 1-6
@@ -1175,11 +1176,97 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     .map(b => b.toString(16).padStart(2, '0'))
     .join(' ');
 
+  // Menu Enable/Disable Flags (0x500-0x507)
+  /**
+   * Read a menu bit from the 4KB memory block
+   * @param data - The 4KB memory block data
+   * @param offset - Byte offset (e.g., 0x500)
+   * @param bit - Bit number (0-7)
+   * @returns true if enabled (bit=1), false if disabled (bit=0)
+   */
+  const readMenuBit = (data: Uint8Array, offset: number, bit: number): boolean => {
+    if (offset >= data.length) {
+      console.warn(`readMenuBit: offset ${offset} (0x${offset.toString(16)}) is out of bounds (data length: ${data.length})`);
+      return false;
+    }
+    const byte = data[offset];
+    const mask = 1 << bit;
+    const bitValue = (byte & mask) !== 0;
+    // Normal bits: bit=1 means enabled, bit=0 means disabled
+    return bitValue;
+  };
+
+  const menuEnableFlags = {
+    // Offset 0x500
+    zoneList: readMenuBit(data, 0x500, 0),      // Bit 0
+    newZone: readMenuBit(data, 0x500, 1),       // Bit 1
+    
+    // Offset 0x501
+    callAlert: readMenuBit(data, 0x501, 0),      // Bit 0
+    radioCheck: readMenuBit(data, 0x501, 1),     // Bit 1
+    remoteMonitor: readMenuBit(data, 0x501, 2),  // Bit 2
+    radioEnable: readMenuBit(data, 0x501, 3),    // Bit 3
+    radioDisable: readMenuBit(data, 0x501, 4),   // Bit 4
+    measurePeriod: readMenuBit(data, 0x501, 5),  // Bit 5
+    
+    // Offset 0x502
+    talkaround: readMenuBit(data, 0x502, 0),     // Bit 0
+    alertTone: readMenuBit(data, 0x502, 1),       // Bit 1
+    txPower: readMenuBit(data, 0x502, 2),        // Bit 2
+    startDisplay: readMenuBit(data, 0x502, 3),    // Bit 3
+    langSelect: readMenuBit(data, 0x502, 4),      // Bit 4
+    matchPrivate: readMenuBit(data, 0x502, 5),   // Bit 5
+    matchGroup: readMenuBit(data, 0x502, 6),      // Bit 6
+    displayMode: readMenuBit(data, 0x502, 7),     // Bit 7
+    
+    // Offset 0x503
+    smsFormat: readMenuBit(data, 0x503, 0),      // Bit 0
+    subChannelMode: readMenuBit(data, 0x503, 1),  // Bit 1
+    powerSave: readMenuBit(data, 0x503, 2),      // Bit 2
+    fmRadio: readMenuBit(data, 0x503, 3),         // Bit 3
+    gps: readMenuBit(data, 0x503, 4),             // Bit 4
+    aprs: readMenuBit(data, 0x503, 5),            // Bit 5
+    record: readMenuBit(data, 0x503, 6),          // Bit 6
+    
+    // Offset 0x504
+    addContact: readMenuBit(data, 0x504, 0),     // Bit 0
+    delContact: readMenuBit(data, 0x504, 1),     // Bit 1
+    editContact: readMenuBit(data, 0x504, 2),    // Bit 2
+    sendMessage: readMenuBit(data, 0x504, 3),    // Bit 3
+    functionality: readMenuBit(data, 0x504, 4),   // Bit 4
+    manualDial: readMenuBit(data, 0x504, 5),      // Bit 5
+    csvContacts: readMenuBit(data, 0x504, 6),     // Bit 6
+    
+    // Offset 0x505 (Call Log section)
+    missedCall: readMenuBit(data, 0x505, 0),      // Bit 0
+    answeredCall: readMenuBit(data, 0x505, 1),    // Bit 1
+    sentCall: readMenuBit(data, 0x505, 2),        // Bit 2
+    delLog: readMenuBit(data, 0x505, 3),          // Bit 3
+    
+    // Offset 0x506 (Program section)
+    rxFrequency: readMenuBit(data, 0x506, 0),    // Bit 0
+    txFrequency: readMenuBit(data, 0x506, 1),    // Bit 1
+    ctcDcs: readMenuBit(data, 0x506, 2),         // Bit 2
+    txContact: readMenuBit(data, 0x506, 3),      // Bit 3
+    colorCode: readMenuBit(data, 0x506, 4),      // Bit 4
+    timeSlot: readMenuBit(data, 0x506, 5),       // Bit 5
+    radioId: readMenuBit(data, 0x506, 6),        // Bit 6
+    radioName: readMenuBit(data, 0x506, 7),      // Bit 7
+    
+    // Offset 0x507 (Program section continued)
+    channelType: readMenuBit(data, 0x507, 0),    // Bit 0
+    tdmaDirectMode: readMenuBit(data, 0x507, 1),  // Bit 1
+    rxGroupList: readMenuBit(data, 0x507, 2),     // Bit 2
+    addChannel: readMenuBit(data, 0x507, 3),     // Bit 3
+    channelName: readMenuBit(data, 0x507, 4),    // Bit 4
+  };
+
   return {
-    unknownFlag,
+    unknownFlag: 0, // No longer used - Power On Interface is at 0x00
     powerOnDisplayLine1,
     powerOnDisplayLine2,
     allowReset,
+    autoPowerOff,
     powerOnInterface,
     alertToneFlags,
     alertToneFlagsCont,
@@ -1227,6 +1314,7 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     currentZone,
     zoneEnabled,
     unknownValue,
+    menuEnableFlags,
   };
 }
 
@@ -1238,7 +1326,8 @@ export function encodeRadioSettings(settings: RadioSettings): Uint8Array {
   data.fill(0xFF); // Fill with 0xFF (typical for unused areas)
 
   // Header fields (0x00-0x20)
-  data[0x00] = settings.unknownFlag;
+  // Power On Interface: 0x00 (0-2)
+  data[0x00] = Math.max(0, Math.min(2, settings.powerOnInterface)) & 0xFF;
   
   // Power On Display Line 1: 0x01-0x0D (14 bytes, null-terminated)
   const powerOnLine1Bytes = new Uint8Array(14);
@@ -1261,8 +1350,8 @@ export function encodeRadioSettings(settings: RadioSettings): Uint8Array {
   // Allow Reset: 0x1D (bit 0)
   data[0x1D] = settings.allowReset ? (data[0x1D] | 0x01) : (data[0x1D] & ~0x01);
   
-  // Power On Interface: 0x1E (0-5)
-  data[0x1E] = Math.max(0, Math.min(5, settings.powerOnInterface)) & 0xFF;
+  // Auto Power Off: 0x1E (0-5: 0=Off, 1=30 Min, 2=60 Min, 3=120 Min, 4=240 Min, 5=480 Min)
+  data[0x1E] = Math.max(0, Math.min(5, settings.autoPowerOff)) & 0xFF;
   
   // Alert Tone Flags: 0x20 (8 bits, bit flags)
   data[0x20] = settings.alertToneFlags & 0xFF;
@@ -1363,6 +1452,109 @@ export function encodeRadioSettings(settings: RadioSettings): Uint8Array {
       data[0x332 + i] = byte;
     }
   }
+
+  // Menu Enable/Disable Flags (0x500-0x507)
+  /**
+   * Write a menu bit to a byte
+   * @param byte - The byte to modify
+   * @param bit - Bit number (0-7)
+   * @param enabled - true if enabled, false if disabled
+   * @returns The modified byte
+   */
+  const writeMenuBit = (byte: number, bit: number, enabled: boolean): number => {
+    const mask = 1 << bit;
+    // Normal bits: enabled=true means write 1, enabled=false means write 0
+    if (enabled) {
+      return byte | mask;  // Set bit (bit=1 = enabled)
+    } else {
+      return byte & ~mask; // Clear bit (bit=0 = disabled)
+    }
+  };
+
+  // Initialize menu bytes to 0x00 (all bits clear)
+  let menuByte500 = 0x00;
+  let menuByte501 = 0x00;
+  let menuByte502 = 0x00;
+  let menuByte503 = 0x00;
+  let menuByte504 = 0x00;
+  let menuByte505 = 0x00;
+  let menuByte506 = 0x00;
+  let menuByte507 = 0x00;
+
+  const flags = settings.menuEnableFlags;
+
+  // Offset 0x500
+  menuByte500 = writeMenuBit(menuByte500, 0, flags.zoneList);      // Bit 0
+  menuByte500 = writeMenuBit(menuByte500, 1, flags.newZone);       // Bit 1
+  
+  // Offset 0x501
+  menuByte501 = writeMenuBit(menuByte501, 0, flags.callAlert);     // Bit 0
+  menuByte501 = writeMenuBit(menuByte501, 1, flags.radioCheck);     // Bit 1
+  menuByte501 = writeMenuBit(menuByte501, 2, flags.remoteMonitor);  // Bit 2
+  menuByte501 = writeMenuBit(menuByte501, 3, flags.radioEnable);    // Bit 3
+  menuByte501 = writeMenuBit(menuByte501, 4, flags.radioDisable);   // Bit 4
+  menuByte501 = writeMenuBit(menuByte501, 5, flags.measurePeriod);  // Bit 5
+  
+  // Offset 0x502
+  menuByte502 = writeMenuBit(menuByte502, 0, flags.talkaround);    // Bit 0
+  menuByte502 = writeMenuBit(menuByte502, 1, flags.alertTone);       // Bit 1
+  menuByte502 = writeMenuBit(menuByte502, 2, flags.txPower);        // Bit 2
+  menuByte502 = writeMenuBit(menuByte502, 3, flags.startDisplay);    // Bit 3
+  menuByte502 = writeMenuBit(menuByte502, 4, flags.langSelect);      // Bit 4
+  menuByte502 = writeMenuBit(menuByte502, 5, flags.matchPrivate);   // Bit 5
+  menuByte502 = writeMenuBit(menuByte502, 6, flags.matchGroup);      // Bit 6
+  menuByte502 = writeMenuBit(menuByte502, 7, flags.displayMode);     // Bit 7
+  
+  // Offset 0x503
+  menuByte503 = writeMenuBit(menuByte503, 0, flags.smsFormat);     // Bit 0
+  menuByte503 = writeMenuBit(menuByte503, 1, flags.subChannelMode);  // Bit 1
+  menuByte503 = writeMenuBit(menuByte503, 2, flags.powerSave);      // Bit 2
+  menuByte503 = writeMenuBit(menuByte503, 3, flags.fmRadio);         // Bit 3
+  menuByte503 = writeMenuBit(menuByte503, 4, flags.gps);             // Bit 4
+  menuByte503 = writeMenuBit(menuByte503, 5, flags.aprs);            // Bit 5
+  menuByte503 = writeMenuBit(menuByte503, 6, flags.record);          // Bit 6
+  
+  // Offset 0x504
+  menuByte504 = writeMenuBit(menuByte504, 0, flags.addContact);     // Bit 0
+  menuByte504 = writeMenuBit(menuByte504, 1, flags.delContact);     // Bit 1
+  menuByte504 = writeMenuBit(menuByte504, 2, flags.editContact);    // Bit 2
+  menuByte504 = writeMenuBit(menuByte504, 3, flags.sendMessage);    // Bit 3
+  menuByte504 = writeMenuBit(menuByte504, 4, flags.functionality);   // Bit 4
+  menuByte504 = writeMenuBit(menuByte504, 5, flags.manualDial);      // Bit 5
+  menuByte504 = writeMenuBit(menuByte504, 6, flags.csvContacts);     // Bit 6
+  
+  // Offset 0x505 (Call Log section)
+  menuByte505 = writeMenuBit(menuByte505, 0, flags.missedCall);      // Bit 0
+  menuByte505 = writeMenuBit(menuByte505, 1, flags.answeredCall);    // Bit 1
+  menuByte505 = writeMenuBit(menuByte505, 2, flags.sentCall);        // Bit 2
+  menuByte505 = writeMenuBit(menuByte505, 3, flags.delLog);          // Bit 3
+  
+  // Offset 0x506 (Program section)
+  menuByte506 = writeMenuBit(menuByte506, 0, flags.rxFrequency);     // Bit 0
+  menuByte506 = writeMenuBit(menuByte506, 1, flags.txFrequency);    // Bit 1
+  menuByte506 = writeMenuBit(menuByte506, 2, flags.ctcDcs);         // Bit 2
+  menuByte506 = writeMenuBit(menuByte506, 3, flags.txContact);      // Bit 3
+  menuByte506 = writeMenuBit(menuByte506, 4, flags.colorCode);      // Bit 4
+  menuByte506 = writeMenuBit(menuByte506, 5, flags.timeSlot);       // Bit 5
+  menuByte506 = writeMenuBit(menuByte506, 6, flags.radioId);        // Bit 6
+  menuByte506 = writeMenuBit(menuByte506, 7, flags.radioName);      // Bit 7
+  
+  // Offset 0x507 (Program section continued)
+  menuByte507 = writeMenuBit(menuByte507, 0, flags.channelType);     // Bit 0
+  menuByte507 = writeMenuBit(menuByte507, 1, flags.tdmaDirectMode);  // Bit 1
+  menuByte507 = writeMenuBit(menuByte507, 2, flags.rxGroupList);     // Bit 2
+  menuByte507 = writeMenuBit(menuByte507, 3, flags.addChannel);     // Bit 3
+  menuByte507 = writeMenuBit(menuByte507, 4, flags.channelName);    // Bit 4
+
+  // Write menu bytes
+  data[0x500] = menuByte500;
+  data[0x501] = menuByte501;
+  data[0x502] = menuByte502;
+  data[0x503] = menuByte503;
+  data[0x504] = menuByte504;
+  data[0x505] = menuByte505;
+  data[0x506] = menuByte506;
+  data[0x507] = menuByte507;
 
   // Set metadata byte at offset 0xFFF
   data[0xFFF] = 0x04;
