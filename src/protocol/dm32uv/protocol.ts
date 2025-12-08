@@ -391,20 +391,33 @@ export class DM32UVProtocol implements RadioProtocol {
 
     // Step 2b: Add fixed metadata blocks we always need
     const fixedMetadataBlocks = [
-      METADATA.VFO_SETTINGS,        // Radio Settings
-      METADATA.DIGITAL_EMERGENCY,    // Digital Emergency Systems
-      METADATA.ANALOG_EMERGENCY,     // Analog Emergency Systems
-      METADATA.QUICK_MESSAGES,       // Quick Messages
-      METADATA.DMR_RADIO_IDS,        // DMR Radio IDs
-      METADATA.CALIBRATION,          // Calibration
-      METADATA.RX_GROUPS,            // RX Groups
+      METADATA.VFO_SETTINGS,        // Radio Settings (0x04) - ALWAYS REQUIRED
+      METADATA.DIGITAL_EMERGENCY,    // Digital Emergency Systems (0x03)
+      METADATA.ANALOG_EMERGENCY,     // Analog Emergency Systems (0x10)
+      METADATA.QUICK_MESSAGES,       // Quick Messages (0x0A)
+      METADATA.DMR_RADIO_IDS,        // DMR Radio IDs (0x67)
+      METADATA.CALIBRATION,          // Calibration (0x02)
+      METADATA.RX_GROUPS,            // RX Groups (0x0F)
     ];
 
     for (const metadata of fixedMetadataBlocks) {
       const block = blocks.find(b => b.metadata === metadata);
       if (block) {
         blocksToRead.push(block);
+      } else {
+        // Warn if required block is missing (especially 0x04)
+        if (metadata === METADATA.VFO_SETTINGS) {
+          console.warn(`⚠️  WARNING: Radio Settings block (metadata 0x04) not found during discovery! This block is required.`);
+        } else {
+          console.log(`ℹ️  Info: Metadata block 0x${metadata.toString(16)} not found (optional)`);
+        }
       }
+    }
+    
+    // Verify 0x04 block is included
+    const vfoBlock = blocksToRead.find(b => b.metadata === METADATA.VFO_SETTINGS);
+    if (!vfoBlock) {
+      console.error(`❌ ERROR: Radio Settings block (metadata 0x04) is missing from blocks to read!`);
     }
 
     // Step 2c: Add zone and scan list blocks
@@ -442,15 +455,24 @@ export class DM32UVProtocol implements RadioProtocol {
 
       const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
       
+      // Verify we got exactly 4096 bytes
+      if (blockData.length !== BLOCK_SIZE.STANDARD) {
+        console.error(`⚠️  WARNING: Block at 0x${block.address.toString(16)} (metadata 0x${block.metadata.toString(16)}) has incorrect length: ${blockData.length} bytes (expected ${BLOCK_SIZE.STANDARD})`);
+      }
+      
+      // IMPORTANT: Create a copy of the data to prevent corruption if the buffer is reused
+      // Uint8Arrays are views into buffers - we need to copy the actual data
+      const blockDataCopy = new Uint8Array(blockData);
+      
       // Store as [metadata, address, 4k block data] in array
       this.cachedBlockData.push({
         metadata: block.metadata,
         address: block.address,
-        data: blockData,
+        data: blockDataCopy,
       });
 
-      // Also store in blockData map for backward compatibility
-      this.blockData.set(block.address, blockData);
+      // Also store in blockData map for backward compatibility (use copy here too)
+      this.blockData.set(block.address, blockDataCopy);
 
       // Small delay between reads
       if (i < finalBlocksToRead.length - 1) {
@@ -1709,8 +1731,8 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(0, 'Writing Radio Settings...');
 
-    // Encode settings to 4KB block
-    const blockData = encodeRadioSettings(settings);
+    // Encode settings to 4KB block, preserving original data if available
+    const blockData = encodeRadioSettings(settings, this.rawRadioSettingsData || undefined);
 
     // Write the entire block (writeMemory takes address, data, and metadata)
     await this.connection!.writeMemory(radioSettingsBlock.address, blockData, METADATA.VFO_SETTINGS);

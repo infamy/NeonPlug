@@ -63,6 +63,52 @@ const AUTO_POWER_OFF_OPTIONS = [
   { value: 5, label: '480 Min' },
 ];
 
+const BUTTON_FUNCTION_OPTIONS = [
+  { value: 0, label: 'None' },
+  { value: 1, label: 'Power Select' },
+  { value: 2, label: 'Volt' },
+  { value: 3, label: 'Talkaround' },
+  { value: 4, label: 'Digital Encrypt' },
+  { value: 5, label: 'Call' },
+  { value: 6, label: 'VOX' },
+  { value: 7, label: 'V/M' },
+  { value: 8, label: 'Alarm' },
+  { value: 9, label: 'One Touch Call 1' },
+  { value: 10, label: 'One Touch Call 2' },
+  { value: 11, label: 'One Touch Call 3' },
+  { value: 12, label: 'One Touch Call 4' },
+  { value: 13, label: 'One Touch Call 5' },
+  { value: 14, label: 'SMS' },
+  { value: 15, label: 'Contacts' },
+  { value: 16, label: 'Zone Up' },
+  { value: 17, label: 'Zone Down' },
+  { value: 18, label: 'Scan' },
+  { value: 19, label: 'Record Switch' },
+  { value: 20, label: 'Previous Record' },
+  { value: 21, label: 'Next Record' },
+  { value: 22, label: 'FM Radio' },
+  { value: 23, label: 'FM Search' },
+  { value: 24, label: 'GPS Information' },
+  { value: 25, label: 'Monitor' },
+  { value: 26, label: 'Switch Main Channel' },
+  { value: 27, label: 'Lone Work' },
+  { value: 28, label: 'Keypad Lock' },
+  { value: 29, label: 'Nuisance Channel Delete' },
+  { value: 30, label: 'TBST Send' },
+  { value: 31, label: 'APRS Send' },
+  { value: 32, label: 'Channel Type' },
+  { value: 33, label: 'Display Mode' },
+  { value: 34, label: 'CTC Scan' },
+  { value: 35, label: 'CTC Setting' },
+  { value: 36, label: 'Silent Tone' },
+  { value: 37, label: 'Roaming' },
+  { value: 38, label: 'Sub-PTT' },
+  { value: 39, label: 'Analog Scramble Switch' },
+  { value: 40, label: 'One Key Scan Freq' },
+  { value: 41, label: 'Flashlight' },
+  { value: 42, label: 'Man Down Alarm' },
+];
+
 const getColorHex = (colorValue: number): string => {
   const color = COLOR_OPTIONS.find(c => c.value === colorValue);
   return color?.hex || '#FFFFFF';
@@ -1543,6 +1589,182 @@ export const SettingsTab: React.FC = () => {
                 </div>
               </div>
             </div>
+            </div>
+          )}
+
+          {/* Button Functions Section */}
+          {radioSettings && (
+            <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6 mt-6">
+              <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
+                Button Functions
+              </h3>
+              <p className="text-cool-gray text-sm mb-4">Configure functions for SK1, SK2, P1, and P2 buttons (Short and Long press)</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {/* SK1 Button Functions */}
+                <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                  <h4 className="text-md font-semibold text-neon-cyan mb-4">SK1 Button</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="sk1Short" className="block text-sm text-cool-gray mb-2">
+                        Short Press
+                      </label>
+                      <select
+                        id="sk1Short"
+                        value={radioSettings.sk1Short ?? 0}
+                        onChange={(e) => updateRadioSettings({ sk1Short: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:ring-2 focus:ring-neon-cyan"
+                      >
+                        {BUTTON_FUNCTION_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="sk1Long" className="block text-sm text-cool-gray mb-2">
+                        Long Press
+                      </label>
+                      <select
+                        id="sk1Long"
+                        value={radioSettings.sk1Long ?? 0}
+                        onChange={(e) => updateRadioSettings({ sk1Long: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:ring-2 focus:ring-neon-cyan"
+                      >
+                        {BUTTON_FUNCTION_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SK2 Button Functions */}
+                <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                  <h4 className="text-md font-semibold text-neon-cyan mb-4">SK2 Button</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="sk2Short" className="block text-sm text-cool-gray mb-2">
+                        Short Press
+                      </label>
+                      <select
+                        id="sk2Short"
+                        value={radioSettings.sk2Short ?? 0}
+                        onChange={(e) => updateRadioSettings({ sk2Short: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:ring-2 focus:ring-neon-cyan"
+                      >
+                        {BUTTON_FUNCTION_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="sk2Long" className="block text-sm text-cool-gray mb-2">
+                        Long Press
+                      </label>
+                      <select
+                        id="sk2Long"
+                        value={radioSettings.sk2Long ?? 0}
+                        onChange={(e) => updateRadioSettings({ sk2Long: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:ring-2 focus:ring-neon-cyan"
+                      >
+                        {BUTTON_FUNCTION_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* P1 Button Functions */}
+                <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                  <h4 className="text-md font-semibold text-neon-cyan mb-4">P1 Button</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="p1Short" className="block text-sm text-cool-gray mb-2">
+                        Short Press
+                      </label>
+                      <select
+                        id="p1Short"
+                        value={radioSettings.p1Short ?? 0}
+                        onChange={(e) => updateRadioSettings({ p1Short: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:ring-2 focus:ring-neon-cyan"
+                      >
+                        {BUTTON_FUNCTION_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="p1Long" className="block text-sm text-cool-gray mb-2">
+                        Long Press
+                      </label>
+                      <select
+                        id="p1Long"
+                        value={radioSettings.p1Long ?? 0}
+                        onChange={(e) => updateRadioSettings({ p1Long: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:ring-2 focus:ring-neon-cyan"
+                      >
+                        {BUTTON_FUNCTION_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* P2 Button Functions */}
+                <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                  <h4 className="text-md font-semibold text-neon-cyan mb-4">P2 Button</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="p2Short" className="block text-sm text-cool-gray mb-2">
+                        Short Press
+                      </label>
+                      <select
+                        id="p2Short"
+                        value={radioSettings.p2Short ?? 0}
+                        onChange={(e) => updateRadioSettings({ p2Short: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:ring-2 focus:ring-neon-cyan"
+                      >
+                        {BUTTON_FUNCTION_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="p2Long" className="block text-sm text-cool-gray mb-2">
+                        Long Press
+                      </label>
+                      <select
+                        id="p2Long"
+                        value={radioSettings.p2Long ?? 0}
+                        onChange={(e) => updateRadioSettings({ p2Long: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:ring-2 focus:ring-neon-cyan"
+                      >
+                        {BUTTON_FUNCTION_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -1117,6 +1117,16 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   // Language/Other settings (0xA0-0xA7)
   const languageOtherSettings = data.slice(0xA0, 0xA0 + 8);
 
+  // Button Functions (0x87-0x90)
+  const sk1Short = Math.max(0, Math.min(42, data[0x87] & 0xFF));     // Offset 0x87 (0-42)
+  const sk1Long = Math.max(0, Math.min(42, data[0x88] & 0xFF));     // Offset 0x88 (0-42)
+  const sk2Short = Math.max(0, Math.min(42, data[0x89] & 0xFF));     // Offset 0x89 (0-42)
+  const sk2Long = Math.max(0, Math.min(42, data[0x8A] & 0xFF));     // Offset 0x8A (0-42)
+  const p1Short = Math.max(0, Math.min(42, data[0x8D] & 0xFF));     // Offset 0x8D (0-42)
+  const p1Long = Math.max(0, Math.min(42, data[0x8E] & 0xFF));      // Offset 0x8E (0-42)
+  const p2Short = Math.max(0, Math.min(42, data[0x8F] & 0xFF));     // Offset 0x8F (0-42)
+  const p2Long = Math.max(0, Math.min(42, data[0x90] & 0xFF));      // Offset 0x90 (0-42)
+
   // Legacy fields (0x301+) - keeping for backward compatibility
   const unknownRadioSetting = data[0x301];
   const radioFlag = data[0x302];
@@ -1156,14 +1166,6 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const channelSetting6 = data[0x32A] | (data[0x32B] << 8);
   const channelSetting7 = data[0x32C] | (data[0x32D] << 8);
   const channelSetting8 = data[0x32E] | (data[0x32F] << 8);
-  
-  // Debug logging for channel parsing
-  console.log('VFO Channel parsing:', {
-    rawA: `0x${data[0x320].toString(16).padStart(2, '0')} ${data[0x321].toString(16).padStart(2, '0')}`,
-    channelA: currentChannelA,
-    rawB: `0x${data[0x322].toString(16).padStart(2, '0')} ${data[0x323].toString(16).padStart(2, '0')}`,
-    channelB: currentChannelB,
-  });
 
   // Zone settings
   const currentZone = data[0x330];
@@ -1297,6 +1299,14 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     vfoEmbeddedFlags,
     txDwellTime,
     languageOtherSettings,
+    sk1Short,
+    sk1Long,
+    sk2Short,
+    sk2Long,
+    p1Short,
+    p1Long,
+    p2Short,
+    p2Long,
     unknownRadioSetting,
     radioEnabled,
     latitude,
@@ -1320,10 +1330,20 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
 
 /**
  * Encode Radio Settings to metadata 0x04 block format
+ * @param settings - The radio settings to encode
+ * @param originalData - Optional original data block to preserve unknown bytes. If provided, starts with this data instead of 0xFF.
  */
-export function encodeRadioSettings(settings: RadioSettings): Uint8Array {
+export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint8Array): Uint8Array {
   const data = new Uint8Array(0x1000); // 4KB block
-  data.fill(0xFF); // Fill with 0xFF (typical for unused areas)
+  
+  // Start with original data if provided, otherwise fill with 0xFF
+  if (originalData && originalData.length >= 0x1000) {
+    // Copy original data to preserve unknown bytes
+    data.set(originalData.slice(0, 0x1000));
+  } else {
+    // Fill with 0xFF (typical for unused areas) if no original data
+    data.fill(0xFF);
+  }
 
   // Header fields (0x00-0x20)
   // Power On Interface: 0x00 (0-2)
@@ -1360,18 +1380,20 @@ export function encodeRadioSettings(settings: RadioSettings): Uint8Array {
   data[0x21] = settings.alertToneFlagsCont & 0xFF;
 
   // Display and UI settings (0x30-0x3B)
-  data[0x30] = Math.max(0, Math.min(15, settings.zoneAColor)) & 0x0F;
-  data[0x31] = Math.max(0, Math.min(15, settings.zoneBColor)) & 0x0F;
+  // Preserve upper 4 bits, only modify lower 4 bits
+  data[0x30] = (data[0x30] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneAColor)) & 0x0F);
+  data[0x31] = (data[0x31] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneBColor)) & 0x0F);
   data[0x32] = settings.unknownDisplay & 0xFF;
   data[0x33] = settings.displayFlags & 0xFF;
   data[0x34] = Math.max(1, Math.min(6, settings.backlightBrightness)) & 0xFF;
   data[0x35] = Math.max(5, Math.min(30, settings.autoBacklightDuration)) & 0xFF;
   data[0x36] = Math.max(1, Math.min(30, settings.menuExitTime)) & 0xFF;
   data[0x37] = Math.max(0, Math.min(30, settings.standbyCharacterColor1)) & 0xFF;
-  data[0x38] = Math.max(0, Math.min(15, settings.callDisplayColor)) & 0x0F;
-  data[0x39] = Math.max(0, Math.min(15, settings.standbyCharacterColor2)) & 0x0F;
-  data[0x3A] = Math.max(0, Math.min(15, settings.aChannelNameColor)) & 0x0F;
-  data[0x3B] = Math.max(0, Math.min(15, settings.bChannelNameColor)) & 0x0F;
+  // Preserve upper 4 bits, only modify lower 4 bits
+  data[0x38] = (data[0x38] & 0xF0) | (Math.max(0, Math.min(15, settings.callDisplayColor)) & 0x0F);
+  data[0x39] = (data[0x39] & 0xF0) | (Math.max(0, Math.min(15, settings.standbyCharacterColor2)) & 0x0F);
+  data[0x3A] = (data[0x3A] & 0xF0) | (Math.max(0, Math.min(15, settings.aChannelNameColor)) & 0x0F);
+  data[0x3B] = (data[0x3B] & 0xF0) | (Math.max(0, Math.min(15, settings.bChannelNameColor)) & 0x0F);
 
   // Work mode and GPS settings (0x40-0x45)
   data[0x40] = settings.workModeFlags & 0xFF;
@@ -1397,6 +1419,16 @@ export function encodeRadioSettings(settings: RadioSettings): Uint8Array {
   if (settings.languageOtherSettings && settings.languageOtherSettings.length >= 8) {
     data.set(settings.languageOtherSettings.slice(0, 8), 0xA0);
   }
+
+  // Button Functions (0x87-0x90)
+  data[0x87] = Math.max(0, Math.min(42, settings.sk1Short)) & 0xFF;      // Offset 0x87 - SK1 Short
+  data[0x88] = Math.max(0, Math.min(42, settings.sk1Long)) & 0xFF;      // Offset 0x88 - SK1 Long
+  data[0x89] = Math.max(0, Math.min(42, settings.sk2Short)) & 0xFF;     // Offset 0x89 - SK2 Short
+  data[0x8A] = Math.max(0, Math.min(42, settings.sk2Long)) & 0xFF;      // Offset 0x8A - SK2 Long
+  data[0x8D] = Math.max(0, Math.min(42, settings.p1Short)) & 0xFF;      // Offset 0x8D - P1 Short
+  data[0x8E] = Math.max(0, Math.min(42, settings.p1Long)) & 0xFF;       // Offset 0x8E - P1 Long
+  data[0x8F] = Math.max(0, Math.min(42, settings.p2Short)) & 0xFF;      // Offset 0x8F - P2 Short
+  data[0x90] = Math.max(0, Math.min(42, settings.p2Long)) & 0xFF;        // Offset 0x90 - P2 Long
 
   // Legacy fields (0x301+)
   data[0x301] = settings.unknownRadioSetting;
