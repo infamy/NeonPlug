@@ -51,6 +51,16 @@ export interface RadioSettings {
   // Language/Other settings (0xA0-0xA7)
   languageOtherSettings: Uint8Array; // Offset 0xA0-0xA7 (8 bytes)
 
+  // Button Functions (0x87-0x90)
+  sk1Short: number;                   // Offset 0x87 (0-42)
+  sk1Long: number;                    // Offset 0x88 (0-42)
+  sk2Short: number;                   // Offset 0x89 (0-42)
+  sk2Long: number;                    // Offset 0x8A (0-42)
+  p1Short: number;                    // Offset 0x8D (0-42)
+  p1Long: number;                     // Offset 0x8E (0-42)
+  p2Short: number;                    // Offset 0x8F (0-42)
+  p2Long: number;                     // Offset 0x90 (0-42)
+
   // Menu Enable/Disable Flags (0x500-0x507)
   menuEnableFlags: {
     // Offset 0x500
