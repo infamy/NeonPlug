@@ -54,7 +54,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-    const { setConnected, setRadioInfo, setSettings, setBlockMetadata, setBlockData } = useRadioStore();
+    const { setConnected, setRadioInfo, setSettings, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
     const { setChannels, setRawChannelData } = useChannelsStore();
     const { setZones, setRawZoneData } = useZonesStore();
     const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -341,6 +341,10 @@ export function useRadioConnection() {
       // Step 4: Write channels, zones, and scan lists
       onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
       await protocol.writeAllData(channels, zones, scanLists);
+      
+      // Store write block data and zone comparison data for debug export
+      setWriteBlockData((protocol as any).writeBlockData);
+      setZoneComparisonData((protocol as any).zoneComparisonData);
       
       // Step 5: Disconnect
       await protocol.disconnect();

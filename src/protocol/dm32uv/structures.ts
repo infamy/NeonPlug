@@ -8,50 +8,21 @@ import { decodeBCDFrequency, decodeCTCSSDCS, encodeBCDFrequency, encodeCTCSSDCS 
 import { OFFSET, BLOCK_SIZE, LIMITS } from './constants';
 
 /**
- * Calculate the byte offset for a channel's flag byte based on channel number
- * This is used for flags like Forbid TX that are stored at variable offsets
- * 
- * @param channelNumber - Channel number (1-indexed)
- * @returns The byte offset relative to the channel buffer start
- */
-export function getChannelFlagByteOffset(channelNumber: number): number {
-  if (channelNumber < 85) {
-    // For channels 1-84: channel_num * 0x30 - 8 (8 bytes before channel entry)
-    return (channelNumber * 0x30) - 8;
-  } else {
-    // For channels >= 85: ((channel_num % 0x55) * 0x30) + 0x18 + ((channel_num / 0x55) * 0x1000)
-    const channelNumMod = channelNumber % 0x55;
-    const channelNumDiv = Math.floor(channelNumber / 0x55);
-    return (channelNumMod * 0x30) + 0x18 + (channelNumDiv * 0x1000);
-  }
-}
-
-/**
  * Calculate the block offset for a channel's flag byte
  * 
- * @param channelNumber - Channel number (1-indexed)
- * @param channelOffsetInBlock - Offset of channel entry within block
- * @param blockIndex - Block index (0 for first block, 1 for second, etc.)
+ * The forbid TX flag is stored 8 bytes before the channel entry.
+ * The offset is always relative to the base channel position (channelOffsetInBlock),
+ * not the channel number.
+ * 
+ * @param channelOffsetInBlock - Offset of channel entry within block (base channel position)
  * @returns The byte offset within the block, or undefined if out of bounds
  */
 export function getChannelFlagByteBlockOffset(
-  channelNumber: number,
-  channelOffsetInBlock: number,
-  blockIndex: number
+  channelOffsetInBlock: number
 ): number | undefined {
-  const isFirstBlock = blockIndex === 0;
-  const blockStartAdjustment = isFirstBlock ? 0x10 : 0x00; // First block has 0x10 header
-  
-  let flagByteOffsetInBlock: number;
-  if (channelNumber < 85) {
-    // For channels 1-84: 8 bytes before channel entry
-    flagByteOffsetInBlock = channelOffsetInBlock - 8;
-  } else {
-    // For channels >= 85: Calculate offset within current block
-    const flagByteOffsetInBuffer = getChannelFlagByteOffset(channelNumber);
-    const blockContribution = blockIndex * 0x1000;
-    flagByteOffsetInBlock = flagByteOffsetInBuffer - blockContribution + blockStartAdjustment;
-  }
+  // Forbid TX flag is always 8 bytes before the channel entry
+  // Offset is relative to the base channel position, not channel number
+  const flagByteOffsetInBlock = channelOffsetInBlock - 8;
   
   return flagByteOffsetInBlock;
 }
@@ -59,19 +30,15 @@ export function getChannelFlagByteBlockOffset(
 /**
  * Read a flag byte for a channel from block data
  * 
- * @param channelNumber - Channel number (1-indexed)
  * @param blockData - Full block data (4096 bytes)
- * @param channelOffsetInBlock - Offset of channel entry within block
- * @param blockIndex - Block index (0 for first block, 1 for second, etc.)
+ * @param channelOffsetInBlock - Offset of channel entry within block (base channel position)
  * @returns The flag byte value, or undefined if offset is out of bounds
  */
 export function readChannelFlagByte(
-  channelNumber: number,
   blockData: Uint8Array,
-  channelOffsetInBlock: number,
-  blockIndex: number
+  channelOffsetInBlock: number
 ): number | undefined {
-  const flagByteOffsetInBlock = getChannelFlagByteBlockOffset(channelNumber, channelOffsetInBlock, blockIndex);
+  const flagByteOffsetInBlock = getChannelFlagByteBlockOffset(channelOffsetInBlock);
   
   if (flagByteOffsetInBlock === undefined) {
     return undefined;
@@ -88,23 +55,19 @@ export function readChannelFlagByte(
 /**
  * Write a flag bit to a channel's flag byte in block data
  * 
- * @param channelNumber - Channel number (1-indexed)
  * @param blockData - Full block data (4096 bytes) - will be modified
- * @param channelOffsetInBlock - Offset of channel entry within block
- * @param blockIndex - Block index (0 for first block, 1 for second, etc.)
+ * @param channelOffsetInBlock - Offset of channel entry within block (base channel position)
  * @param bitMask - Bit mask for the flag (e.g., 0x08 for bit 3)
  * @param value - Whether to set (true) or clear (false) the bit
  * @returns true if the flag was written, false if offset is out of bounds
  */
 export function writeChannelFlagBit(
-  channelNumber: number,
   blockData: Uint8Array,
   channelOffsetInBlock: number,
-  blockIndex: number,
   bitMask: number,
   value: boolean
 ): boolean {
-  const flagByteOffsetInBlock = getChannelFlagByteBlockOffset(channelNumber, channelOffsetInBlock, blockIndex);
+  const flagByteOffsetInBlock = getChannelFlagByteBlockOffset(channelOffsetInBlock);
   
   if (flagByteOffsetInBlock === undefined) {
     return false;
@@ -127,11 +90,8 @@ export function writeChannelFlagBit(
  * Parse a single channel from 48-byte data
  * @param data - 48-byte channel data
  * @param channelNumber - Channel number (1-indexed)
- * @param blockData - Optional full block data (4096 bytes) to access bytes before channel entry for forbid TX
- * @param channelOffsetInBlock - Optional offset of channel entry within block (for forbid TX calculation)
- * @param blockIndex - Optional block index (0 for first block, 1 for second, etc.) for forbid TX calculation
  */
-export function parseChannel(data: Uint8Array, channelNumber: number, blockData?: Uint8Array, channelOffsetInBlock?: number, blockIndex?: number): Channel {
+export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   if (data.length < 48) {
     throw new Error('Channel data must be 48 bytes');
   }
@@ -145,33 +105,35 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
     .trim();
 
   // RX Frequency (0x10-0x13, 4 bytes BCD)
-  const rxFreq = decodeBCDFrequency(data.slice(0x10, 0x14));
+  let rxFreq: number;
+  try {
+    rxFreq = decodeBCDFrequency(data.slice(0x10, 0x14));
+  } catch (error) {
+    console.warn(`Failed to decode RX frequency for channel ${channelNumber}:`, error);
+    rxFreq = 0;
+  }
 
   // TX Frequency (0x14-0x17, 4 bytes BCD)
-  const txFreq = decodeBCDFrequency(data.slice(0x14, 0x18));
+  let txFreq: number;
+  try {
+    txFreq = decodeBCDFrequency(data.slice(0x14, 0x18));
+  } catch (error) {
+    console.warn(`Failed to decode TX frequency for channel ${channelNumber}:`, error);
+    txFreq = 0;
+  }
 
   // Mode flags (0x18)
+  // Bits 7-4 (mask 0xF0): Channel Mode (0=Analog, 1=Digital, 2=Fixed Analog, 3=Fixed Digital)
+  // Bit 3 (mask 0x08): Forbid TX (0=Allow, 1=Forbid)
+  // Bits 2-1 (mask 0x06): Busy Lock (0=Off, 1=Carrier, 2=Repeater)
+  // Bit 0 (mask 0x01): Lone Worker (0=Off, 1=On)
   const modeFlags = data[0x18];
   const channelMode = (modeFlags >> 4) & 0x0F;
   const modeMap: Channel['mode'][] = ['Analog', 'Digital', 'Fixed Analog', 'Fixed Digital'];
   const mode = modeMap[channelMode] || 'Analog';
 
-  // Forbid TX is stored at a variable offset depending on channel number
-  // Use the reusable helper function to read the flag byte
-  let forbidTx = false;
-  if (blockData && channelOffsetInBlock !== undefined && blockIndex !== undefined) {
-    const forbidTxByte = readChannelFlagByte(channelNumber, blockData, channelOffsetInBlock, blockIndex);
-    if (forbidTxByte !== undefined) {
-      forbidTx = (forbidTxByte & 0x08) !== 0;
-    } else {
-      // Fallback to reading from channel data if offset is out of bounds
-      console.warn(`Forbid TX byte out of bounds for channel ${channelNumber} (block ${blockIndex}), using channel data byte 0x18`);
-      forbidTx = (modeFlags & 0x08) !== 0;
-    }
-  } else {
-    // Fallback: read from channel data byte 0x18 (may be incorrect for some channels)
-    forbidTx = (modeFlags & 0x08) !== 0;
-  }
+  // Forbid TX is stored at byte 0x18, bit 3 (mask 0x08)
+  const forbidTx = (modeFlags & 0x08) !== 0;
   
   const busyLockValue = (modeFlags >> 1) & 0x03;
   const busyLock: Channel['busyLock'] = 
@@ -188,21 +150,21 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
   }
 
   // Scan & Bandwidth (0x19)
-  // Bit 7: Bandwidth (0=12.5kHz/Narrow, 1=25kHz/Wide) - NOTE: Spec appears inverted!
-  // Bit 6: Scan Add (0=Off, 1=On)
-  // Bits 5-2: Scan List ID (0-15)
-  // Bits 1-0: Reserved
+  // Bit 7 (mask 0x80): Bandwidth (0=12.5kHz/Narrow, 1=25kHz/Wide) - NOTE: Spec appears inverted!
+  // Bit 6 (mask 0x40): Scan Add (0=Off, 1=On)
+  // Bits 5-2 (mask 0x3C): Scan List ID (0-15)
+  // Bits 1-0 (mask 0x03): Reserved
   const scanBw = data[0x19];
   const bandwidth: Channel['bandwidth'] = (scanBw & 0x80) !== 0 ? '25kHz' : '12.5kHz';
   const scanAdd = (scanBw & 0x40) !== 0;
   const scanListId = (scanBw >> 2) & 0x0F;
 
   // Talkaround & APRS (0x1A)
-  // Bit 7: Forbid Talkaround (0=Allow, 1=Forbid)
-  // Bits 6-4: Unknown Setting (0-3, values ≥4 reset to 0)
-  // Bit 3: Unknown
-  // Bit 2: APRS Receive (0=Off, 1=On)
-  // Bits 1-0: Reverse Frequency (0-2)
+  // Bit 7 (mask 0x80): Forbid Talkaround (0=Allow, 1=Forbid)
+  // Bits 6-4 (mask 0x70): Unknown Setting (0-3, values ≥4 reset to 0)
+  // Bit 3 (mask 0x08): Unknown
+  // Bit 2 (mask 0x04): APRS Receive (0=Off, 1=On)
+  // Bits 1-0 (mask 0x03): Reverse Frequency (0-2)
   const talkaroundAprs = data[0x1A];
   const forbidTalkaround = (talkaroundAprs & 0x80) !== 0;
   const unknown1A_6_4 = (talkaroundAprs >> 4) & 0x07;
@@ -211,18 +173,29 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
   const reverseFreq = talkaroundAprs & 0x03;
 
   // Emergency (0x1B)
+  // Bit 7: Emergency Indicator (0=Off, 1=On)
+  // Bit 6: Emergency Acknowledgment (0=Off, 1=On)
+  // Bits 0-5 (mask 0x1F): Emergency System ID (0-31, values >31 reset to 0)
   const emergency = data[0x1B];
   const emergencyIndicator = (emergency & 0x80) !== 0;
   const emergencyAck = (emergency & 0x40) !== 0;
-  const emergencySystemId = emergency & 0x1F;
+  let emergencySystemId = emergency & 0x1F;
+  // Validate: 0-31, reset >31 to 0
+  if (emergencySystemId > 31) {
+    emergencySystemId = 0;
+  }
 
   // Power & APRS & SQL (0x1C)
-  // Bits 7-4: SQL Level (0-9)
-  // Bits 3-2: Power Level (0=Low, 1=Medium, 2=High) - moved from upper bits
-  // Bits 1-0: APRS Report Mode (0=Off, 1=Digital, 2=Analog)
+  // Bits 7-4 (mask 0xF0): SQL Level (0-9, values >9 reset to 0)
+  // Bits 3-2 (mask 0x0C): Power Level (0=Low, 1=Medium, 2=High, 3=Low)
+  // Bits 1-0 (mask 0x03): APRS Report Mode (0=Off, 1=Digital, 2=Analog, values >2 reset to 0)
   const powerAprsSql = data[0x1C];
   // SQL Level: Upper 4 bits (bits 4-7), value range 0-9
-  const squelchLevel = (powerAprsSql >> 4) & 0x0F;
+  let squelchLevel = (powerAprsSql >> 4) & 0x0F;
+  // Validate: 0-9, reset >9 to 0
+  if (squelchLevel > 9) {
+    squelchLevel = 0;
+  }
   // Power: Bits 2-3
   const powerValue = (powerAprsSql >> 2) & 0x03;
   const power: Channel['power'] = 
@@ -230,7 +203,11 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
     powerValue === 1 ? 'Medium' : 
     powerValue === 2 ? 'High' : 'Low';
   // APRS: Bits 0-1
-  const aprsReportValue = powerAprsSql & 0x03;
+  let aprsReportValue = powerAprsSql & 0x03;
+  // Validate: 0-2, reset >2 to 0
+  if (aprsReportValue > 2) {
+    aprsReportValue = 0;
+  }
   const aprsReportMode: Channel['aprsReportMode'] = 
     aprsReportValue === 0 ? 'Off' : 
     aprsReportValue === 1 ? 'Digital' : 
@@ -238,11 +215,11 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
   const unknown1C_1_0 = 0; // No longer used
 
   // Analog features (0x1D)
-  // Bit 7: VOX Function (0=Off, 1=On)
-  // Bit 6: Scramble (0=Off, 1=On)
-  // Bit 5: Compander (0=Off, 1=On)
-  // Bit 4: Talkback (0=Off, 1=On)
-  // Bits 3-0: Unknown Setting (0-15)
+  // Bit 7 (mask 0x80): VOX Function (0=Off, 1=On)
+  // Bit 6 (mask 0x40): Scramble (0=Off, 1=On)
+  // Bit 5 (mask 0x20): Compander (0=Off, 1=On)
+  // Bit 4 (mask 0x10): Talkback (0=Off, 1=On)
+  // Bits 3-0 (mask 0x0F): Unknown Setting (0-15)
   const analogFeatures = data[0x1D];
   const voxFunction = (analogFeatures & 0x80) !== 0;
   const scramble = (analogFeatures & 0x40) !== 0;
@@ -253,9 +230,17 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
   // Digital Emergency System ID/Index (0x1E)
   // 0 = None (no emergency system)
   // 1-77 = Index into the Digital Emergency Systems list (1-based)
-  const digitalEmergencySystemId = data[0x1E];
+  // Values >77 reset to 0
+  let digitalEmergencySystemId = data[0x1E];
+  // Validate: 0-77, reset >77 to 0
+  if (digitalEmergencySystemId > 77) {
+    digitalEmergencySystemId = 0;
+  }
 
   // PTT ID (0x1F)
+  // Bit 6 (mask 0x40): PTT ID Display (0=Off, 1=On)
+  // NOTE: This is duplicated at 0x26 bit 7 - both locations control the same setting
+  // Bits 0-5 (mask 0x3F): PTT ID value (0-63)
   const pttIdSettings = data[0x1F];
   const pttIdDisplay = (pttIdSettings & 0x40) !== 0;
   const pttId = pttIdSettings & 0x3F;
@@ -280,10 +265,10 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
   };
 
   // Additional flags (0x25)
-  // Bits 7-6: Unknown
-  // Bit 5: Compander (duplicate) (0=Off, 1=On)
-  // Bit 4: VOX-Related Flag (0=Off, 1=On)
-  // Bits 3-0: Unknown Setting (0-15, possibly VOX or analog related)
+  // Bits 7-6 (mask 0xC0): Unknown
+  // Bit 5 (mask 0x20): Compander (duplicate) (0=Off, 1=On)
+  // Bit 4 (mask 0x10): VOX-Related Flag (0=Off, 1=On)
+  // Bits 3-0 (mask 0x0F): Unknown Setting (0-15, possibly VOX or analog related)
   const additionalFlags = data[0x25];
   const unknown25_7_6 = (additionalFlags >> 6) & 0x03;
   const companderDup = (additionalFlags & 0x20) !== 0;
@@ -291,10 +276,12 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
   const unknown25_3_0 = additionalFlags & 0x0F;
 
   // RX Squelch & PTT ID (0x26)
-  // Bit 7: PTT ID Display (0=Off, 1=On) - duplicate of 0x1F bit 6?
-  // Bits 6-4: RX Squelch Mode (0=Carrier/CTC, 1=Optional, 2=CTC&Opt, 3=CTC|Opt)
-  // Bits 3-1: Unknown (0-7)
-  // Bit 0: Unknown
+  // Bit 7 (mask 0x80): PTT ID Display (0=Off, 1=On) - DUPLICATE of 0x1F bit 6
+  //   Both 0x1F bit 6 and 0x26 bit 7 control the same PTT ID Display setting
+  //   The radio firmware may read from either location, so both should be kept in sync
+  // Bits 6-4 (mask 0x70): RX Squelch Mode (0=Carrier/CTC, 1=Optional, 2=CTC&Opt, 3=CTC|Opt)
+  // Bits 3-1 (mask 0x0E): Unknown (0-7)
+  // Bit 0 (mask 0x01): Unknown
   const rxSquelchPtt = data[0x26];
   const pttIdDisplay2 = (rxSquelchPtt & 0x80) !== 0;
   const rxSquelchValue = (rxSquelchPtt >> 4) & 0x07;
@@ -309,11 +296,19 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
   const unknown26_0 = (rxSquelchPtt & 0x01) !== 0;
 
   // Signaling (0x27)
-  // Bits 7-4: Step Frequency (0=2.5K, 1=5K, 2=6.25K, 3=10K, 4=12.5K, 5=25K, 6=50K, 7=100K, 8-15=Reserved)
-  // Bits 3-0: Signaling Type (0=None, 1=DTMF, 2=Two Tone, 3=Five Tone, 4=MDC1200, 5-15=Reserved)
+  // Bits 7-4 (mask 0xF0): Step Frequency (0=2.5K, 1=5K, 2=6.25K, 3=10K, 4=12.5K, 5=25K, 6=50K, 7=100K, values >7 reset to 0)
+  // Bits 3-0 (mask 0x0F): Signaling Type (0=None, 1=DTMF, 2=Two Tone, 3=Five Tone, 4=MDC1200, values >4 reset to 0)
   const signaling = data[0x27];
-  const stepFrequency = (signaling >> 4) & 0x0F;
-  const signalingValue = signaling & 0x0F;
+  let stepFrequency = (signaling >> 4) & 0x0F;
+  // Validate: 0-7, reset >7 to 0
+  if (stepFrequency > 7) {
+    stepFrequency = 0;
+  }
+  let signalingValue = signaling & 0x0F;
+  // Validate: 0-4, reset >4 to 0
+  if (signalingValue > 4) {
+    signalingValue = 0;
+  }
   const signalingTypeMap: Channel['signalingType'][] = [
     'None',
     'DTMF',
@@ -327,11 +322,15 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
   // const reserved28 = data[0x28];
 
   // PTT ID Type (0x29)
-  // Bits 7-4: PTT ID Type (0=Off, 1=BOT, 2=EOT, 3=Both, 4-15=Reserved)
-  // Bits 3-2: Unknown Setting (0-3)
-  // Bits 1-0: Unknown
+  // Bits 7-4 (mask 0xF0): PTT ID Type (0=Off, 1=BOT, 2=EOT, 3=Both, values >3 reset to 0)
+  // Bits 3-2 (mask 0x0C): Unknown Setting (0-3)
+  // Bits 1-0 (mask 0x03): Unknown
   const pttIdTypeByte = data[0x29];
-  const pttIdTypeValue = (pttIdTypeByte >> 4) & 0x0F;
+  let pttIdTypeValue = (pttIdTypeByte >> 4) & 0x0F;
+  // Validate: 0-3, reset >3 to 0
+  if (pttIdTypeValue > 3) {
+    pttIdTypeValue = 0;
+  }
   const pttIdTypeMap: Channel['pttIdType'][] = ['Off', 'BOT', 'EOT', 'Both'];
   const pttIdType = pttIdTypeMap[pttIdTypeValue] || 'Off';
   const unknown29_3_2 = (pttIdTypeByte >> 2) & 0x03;
@@ -343,7 +342,12 @@ export function parseChannel(data: Uint8Array, channelNumber: number, blockData?
 
   // Contact ID (0x2B)
   // 0-249 (displayed as 1-250 in radio UI)
-  const contactId = data[0x2B];
+  // Values >249 reset to 0
+  let contactId = data[0x2B];
+  // Validate: 0-249, reset >249 to 0
+  if (contactId > 249) {
+    contactId = 0;
+  }
 
   // Reserved (0x2C-0x2F) - Padding/reserved bytes, likely unused
   // const reserved2C_2F = data.slice(0x2C, 0x30);
@@ -435,7 +439,12 @@ export function encodeChannel(channel: Channel): Uint8Array {
   };
   const channelMode = modeMap[channel.mode] || 0;
   let modeFlags = (channelMode << 4) & 0xF0;
-  if (channel.forbidTx) modeFlags |= 0x08;
+  // Forbid TX: Set bit 3 (mask 0x08) if true, clear if false
+  if (channel.forbidTx) {
+    modeFlags |= 0x08;  // Set bit 3
+  } else {
+    modeFlags &= 0xF7;  // Clear bit 3 (0xF7 = ~0x08)
+  }
   const busyLockValue = channel.busyLock === 'Off' ? 0 : channel.busyLock === 'Carrier' ? 1 : 2;
   modeFlags |= (busyLockValue << 1) & 0x06;
   if (channel.loneWorker) modeFlags |= 0x01;
@@ -726,10 +735,19 @@ export function encodeZone(zone: Zone, _zoneIndex: number): Uint8Array {
   data.fill(0xFF);
   
   // Name (bytes 0-10, 11 bytes, null-terminated)
-  const nameBytes = new TextEncoder().encode(zone.name.slice(0, 11));
-  data.set(nameBytes, 0);
-  if (nameBytes.length < 11) {
-    data[nameBytes.length] = 0; // Null terminator
+  // The name field is 11 bytes total, with the name null-terminated and the rest padded with 0xFF
+  const nameBytes = new TextEncoder().encode(zone.name.slice(0, 10)); // Max 10 chars to leave room for null terminator
+  const nameLength = Math.min(nameBytes.length, 10);
+  
+  // Write name bytes
+  data.set(nameBytes.slice(0, nameLength), 0);
+  
+  // Always null-terminate the name
+  data[nameLength] = 0;
+  
+  // Fill remaining bytes in name field (bytes nameLength+1 to 10) with 0xFF padding
+  for (let i = nameLength + 1; i < 11; i++) {
+    data[i] = 0xFF;
   }
   
   // Padding (bytes 11-15, 5 bytes of 0xFF)

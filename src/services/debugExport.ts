@@ -96,7 +96,8 @@ export interface LogEntry {
  * Export write blocks for debug confirmation
  */
 export function exportWriteBlocks(
-  writeBlockData: Map<number, { address: number; data: Uint8Array; metadata: number }>
+  writeBlockData: Map<number, { address: number; data: Uint8Array; metadata: number }>,
+  originalBlockData?: Map<number, Uint8Array>
 ): string {
   const writeBlocksArray: Array<{ 
     address: string; 
@@ -107,30 +108,99 @@ export function exportWriteBlocks(
     ascii: string;
     size: number;
   }> = [];
+  const writtenMetadataBlocks: Array<{
+    metadata: number;
+    metadataHex: string;
+    address: string;
+    type: string;
+  }> = [];
   
   for (const [, block] of writeBlockData.entries()) {
     const ascii = Array.from(block.data)
       .map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.')
       .join('');
     
+    const addressHex = `0x${block.address.toString(16).padStart(6, '0')}`;
+    const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`;
+    
+    // Get original block data if available for comparison
+    const originalData = originalBlockData?.get(block.address);
+    let originalHex: string | undefined;
+    let originalBytes: number[] | undefined;
+    let originalAscii: string | undefined;
+    let isIdentical: boolean | undefined;
+    let differences: number | undefined;
+    
+    if (originalData) {
+      originalHex = Array.from(originalData).map(b => b.toString(16).padStart(2, '0')).join(' ');
+      originalBytes = Array.from(originalData);
+      originalAscii = Array.from(originalData)
+        .map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.')
+        .join('');
+      
+      // Compare byte by byte
+      differences = 0;
+      for (let i = 0; i < Math.min(block.data.length, originalData.length); i++) {
+        if (block.data[i] !== originalData[i]) {
+          differences++;
+        }
+      }
+      if (block.data.length !== originalData.length) {
+        differences = -1; // Different sizes
+      }
+      isIdentical = differences === 0;
+    }
+    
     writeBlocksArray.push({
-      address: `0x${block.address.toString(16).padStart(6, '0')}`,
+      address: addressHex,
       metadata: block.metadata,
-      metadataHex: `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`,
+      metadataHex: metadataHex,
       hex: Array.from(block.data).map(b => b.toString(16).padStart(2, '0')).join(' '),
       bytes: Array.from(block.data),
       ascii: ascii,
       size: block.data.length,
+      ...(originalData ? {
+        originalHex: originalHex,
+        originalBytes: originalBytes,
+        originalAscii: originalAscii,
+        isIdentical: isIdentical,
+        differences: differences,
+      } : {}),
     });
+    
+    // Add to metadata blocks list (deduplicate by metadata value)
+    const existing = writtenMetadataBlocks.find(m => m.metadata === block.metadata);
+    if (!existing) {
+      // Try to determine type from metadata
+      let type = 'Unknown';
+      if (block.metadata >= 0x12 && block.metadata <= 0x41) {
+        type = 'Channel';
+      } else if (block.metadata === 0x5c) {
+        type = 'Zone';
+      } else if (block.metadata === 0x11) {
+        type = 'Scan List';
+      }
+      
+      writtenMetadataBlocks.push({
+        metadata: block.metadata,
+        metadataHex: metadataHex,
+        address: addressHex,
+        type: type,
+      });
+    }
   }
   
   // Sort by address
   writeBlocksArray.sort((a, b) => parseInt(a.address, 16) - parseInt(b.address, 16));
+  // Sort metadata blocks by metadata value
+  writtenMetadataBlocks.sort((a, b) => a.metadata - b.metadata);
   
   const debugData = {
     writeBlocks: writeBlocksArray,
+    writtenMetadataBlocks: writtenMetadataBlocks,
     summary: {
       blockCount: writeBlocksArray.length,
+      writtenMetadataBlockCount: writtenMetadataBlocks.length,
       totalBytes: writeBlocksArray.reduce((sum, b) => sum + b.size, 0),
       exportDate: new Date().toISOString(),
     },
@@ -150,7 +220,28 @@ export function exportFullDebug(
   consoleLogs?: LogEntry[],
   allBlockMetadata?: Map<number, { metadata: number; type: string }>,
   allBlockData?: Map<number, Uint8Array>,
-  writeBlockData?: Map<number, { address: number; data: Uint8Array; metadata: number }>
+  writeBlockData?: Map<number, { address: number; data: Uint8Array; metadata: number }>,
+  zoneComparisonData?: Array<{
+    blockIndex: number;
+    address: string;
+    isIdentical: boolean;
+    differences: number;
+    differencePositions: number[];
+    zoneComparisons: Array<{
+      zoneNumber: number;
+      offset: number;
+      originalName: string;
+      newName: string;
+      originalChannelCount: number;
+      newChannelCount: number;
+      matches: boolean;
+      originalHex: string;
+      newHex: string;
+    }>;
+    metadataMatch: boolean;
+    originalMetadata: number;
+    newMetadata: number;
+  }>
 ): string {
   const channelDebug = JSON.parse(exportChannelDebug(channels, rawChannelData));
   const zoneDebug = JSON.parse(exportZoneDebug(zones, rawZoneData));
@@ -209,24 +300,56 @@ export function exportFullDebug(
     ascii: string;
     size: number;
   }> = [];
+  const writtenMetadataBlocks: Array<{
+    metadata: number;
+    metadataHex: string;
+    address: string;
+    type: string;
+  }> = [];
   if (writeBlockData) {
     for (const [, block] of writeBlockData.entries()) {
       const ascii = Array.from(block.data)
         .map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : '.')
         .join('');
       
+      const addressHex = `0x${block.address.toString(16).padStart(6, '0')}`;
+      const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`;
+      
       writeBlocksArray.push({
-        address: `0x${block.address.toString(16).padStart(6, '0')}`,
+        address: addressHex,
         metadata: block.metadata,
-        metadataHex: `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`,
+        metadataHex: metadataHex,
         hex: Array.from(block.data).map(b => b.toString(16).padStart(2, '0')).join(' '),
         bytes: Array.from(block.data),
         ascii: ascii,
         size: block.data.length,
       });
+      
+      // Add to metadata blocks list (deduplicate by metadata value)
+      const existing = writtenMetadataBlocks.find(m => m.metadata === block.metadata);
+      if (!existing) {
+        // Try to determine type from metadata
+        let type = 'Unknown';
+        if (block.metadata >= 0x12 && block.metadata <= 0x41) {
+          type = 'Channel';
+        } else if (block.metadata === 0x5c) {
+          type = 'Zone';
+        } else if (block.metadata === 0x11) {
+          type = 'Scan List';
+        }
+        
+        writtenMetadataBlocks.push({
+          metadata: block.metadata,
+          metadataHex: metadataHex,
+          address: addressHex,
+          type: type,
+        });
+      }
     }
     // Sort by address
     writeBlocksArray.sort((a, b) => parseInt(a.address, 16) - parseInt(b.address, 16));
+    // Sort metadata blocks by metadata value
+    writtenMetadataBlocks.sort((a, b) => a.metadata - b.metadata);
   }
 
   const debugData = {
@@ -236,6 +359,8 @@ export function exportFullDebug(
     blockMetadata: blockMetadataArray,
     blockData: blockDataArray,
     writeBlocks: writeBlocksArray,
+    writtenMetadataBlocks: writtenMetadataBlocks,
+    zoneComparison: zoneComparisonData || [],
     metadataAnalysis: metadataAnalysis ? JSON.parse(exportMetadataAnalysis(metadataAnalysis)) : null,
     metadata: {
       channelCount: channels.length,
@@ -244,6 +369,8 @@ export function exportFullDebug(
       blockCount: blockMetadataArray.length,
       nonEmptyBlockCount: blockDataArray.length,
       writeBlockCount: writeBlocksArray.length,
+      writtenMetadataBlockCount: writtenMetadataBlocks.length,
+      zoneComparisonCount: zoneComparisonData?.length || 0,
       exportDate: new Date().toISOString(),
     },
   };
