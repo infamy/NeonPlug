@@ -221,12 +221,13 @@ export function exportCodeplug(data: CodeplugData): void {
   if (data.radioSettings) {
     const radioSettingsRows = [
       ['Field', 'Value'],
-      ['Radio Boot Text Line 1', data.radioSettings.radioNameA],
-      ['Radio Boot Text Line 2', data.radioSettings.radioNameB],
+      ['Power On Display Line 1', data.radioSettings.powerOnDisplayLine1],
+      ['Power On Display Line 2', data.radioSettings.powerOnDisplayLine2],
       ['Unknown Flag (0x00)', data.radioSettings.unknownFlag],
-      ['Bit Flags 1 (0x1D)', data.radioSettings.bitFlags1],
-      ['Value (0x1E)', data.radioSettings.value],
-      ['Bit Flags 2 (0x20)', data.radioSettings.bitFlags2],
+      ['Allow Reset (0x1D)', data.radioSettings.allowReset ? 'Yes' : 'No'],
+      ['Power On Interface (0x1E)', data.radioSettings.powerOnInterface],
+      ['Alert Tone Flags (0x20)', data.radioSettings.alertToneFlags],
+      ['Alert Tone Flags Cont (0x21)', data.radioSettings.alertToneFlagsCont],
       ['Unknown Radio Setting (0x301)', data.radioSettings.unknownRadioSetting],
       ['Radio Enabled (0x302)', data.radioSettings.radioEnabled ? 'Yes' : 'No'],
       ['Latitude', data.radioSettings.latitude],
@@ -498,12 +499,13 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
               const [field, value] = rows[i];
               if (field && value !== undefined && value !== '') {
                 // Map field names to settings properties
-                if (field.includes('Radio Boot Text Line 1')) settingsData.radioNameA = String(value);
-                else if (field.includes('Radio Boot Text Line 2')) settingsData.radioNameB = String(value);
+                if (field.includes('Power On Display Line 1')) settingsData.powerOnDisplayLine1 = String(value);
+                else if (field.includes('Power On Display Line 2')) settingsData.powerOnDisplayLine2 = String(value);
                 else if (field.includes('Unknown Flag')) settingsData.unknownFlag = parseInt(String(value)) || 0;
-                else if (field.includes('Bit Flags 1')) settingsData.bitFlags1 = parseInt(String(value)) || 0;
-                else if (field.includes('Value (0x1E)') || field === 'Value') settingsData.value = parseInt(String(value)) || 0;
-                else if (field.includes('Bit Flags 2')) settingsData.bitFlags2 = parseInt(String(value)) || 0;
+                else if (field.includes('Allow Reset')) settingsData.allowReset = String(value).toLowerCase() === 'yes';
+                else if (field.includes('Power On Interface')) settingsData.powerOnInterface = parseInt(String(value)) || 0;
+                else if (field.includes('Alert Tone Flags') && !field.includes('Cont')) settingsData.alertToneFlags = parseInt(String(value)) || 0;
+                else if (field.includes('Alert Tone Flags Cont')) settingsData.alertToneFlagsCont = parseInt(String(value)) || 0;
                 else if (field.includes('Unknown Radio Setting')) settingsData.unknownRadioSetting = parseInt(String(value)) || 0;
                 else if (field.includes('Radio Enabled')) settingsData.radioEnabled = String(value).toLowerCase() === 'yes';
                 else if (field === 'Latitude') settingsData.latitude = String(value);
@@ -523,28 +525,44 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
                 else if (field.includes('Unknown Value')) settingsData.unknownValue = String(value);
               }
             }
-          } else {
-            // Old column layout: try to parse as JSON object (backward compatibility)
-            const rows = XLSX.utils.sheet_to_json(sheet) as any[];
-            if (rows.length > 0) {
-              const row = rows[0];
-              settingsData.unknownFlag = parseInt(row['Unknown Flag']) || 0;
-              settingsData.radioNameA = row['Radio Boot Text Line 1'] || '';
-              settingsData.radioNameB = row['Radio Boot Text Line 2'] || '';
-              settingsData.bitFlags1 = parseInt(row['Bit Flags 1']) || 0;
-              settingsData.value = parseInt(row['Value']) || 0;
-              settingsData.bitFlags2 = parseInt(row['Bit Flags 2']) || 0;
-            }
           }
           
           // Merge with defaults
           result.radioSettings = {
             unknownFlag: settingsData.unknownFlag ?? 0,
-            radioNameA: settingsData.radioNameA ?? '',
-            radioNameB: settingsData.radioNameB ?? '',
-            bitFlags1: settingsData.bitFlags1 ?? 0,
-            value: settingsData.value ?? 0,
-            bitFlags2: settingsData.bitFlags2 ?? 0,
+            powerOnDisplayLine1: settingsData.powerOnDisplayLine1 ?? '',
+            powerOnDisplayLine2: settingsData.powerOnDisplayLine2 ?? '',
+            allowReset: settingsData.allowReset ?? false,
+            powerOnInterface: settingsData.powerOnInterface ?? 0,
+            alertToneFlags: settingsData.alertToneFlags ?? 0,
+            alertToneFlagsCont: settingsData.alertToneFlagsCont ?? 0,
+            zoneAColor: settingsData.zoneAColor ?? 0,
+            zoneBColor: settingsData.zoneBColor ?? 0,
+            unknownDisplay: settingsData.unknownDisplay ?? 0,
+            displayFlags: settingsData.displayFlags ?? 0,
+            backlightBrightness: settingsData.backlightBrightness ?? 3,
+            autoBacklightDuration: settingsData.autoBacklightDuration ?? 10,
+            menuExitTime: settingsData.menuExitTime ?? 5,
+            standbyCharacterColor1: settingsData.standbyCharacterColor1 ?? 0,
+            callDisplayColor: settingsData.callDisplayColor ?? 0,
+            standbyCharacterColor2: settingsData.standbyCharacterColor2 ?? 0,
+            aChannelNameColor: settingsData.aChannelNameColor ?? 0,
+            bChannelNameColor: settingsData.bChannelNameColor ?? 0,
+            workModeFlags: settingsData.workModeFlags ?? 0,
+            utcZone: settingsData.utcZone ?? 0,
+            measurePeriodInterval: settingsData.measurePeriodInterval ?? 5,
+            unknownFlags: settingsData.unknownFlags ?? 0,
+            gpsAprsFlags: settingsData.gpsAprsFlags ?? 0,
+            callHoldTime: settingsData.callHoldTime ?? 0,
+            activeWaitTime: settingsData.activeWaitTime ?? 1,
+            activeRetriesTime: settingsData.activeRetriesTime ?? 1,
+            preCarrierTime: settingsData.preCarrierTime ?? 0,
+            digitalSettingsFlags: settingsData.digitalSettingsFlags ?? 0,
+            remoteMonitorTime: settingsData.remoteMonitorTime ?? 0,
+            digitalSettingsCont: settingsData.digitalSettingsCont ?? 0,
+            vfoEmbeddedFlags: settingsData.vfoEmbeddedFlags ?? 0,
+            txDwellTime: settingsData.txDwellTime ?? 0,
+            languageOtherSettings: settingsData.languageOtherSettings ?? new Uint8Array(8),
             unknownRadioSetting: settingsData.unknownRadioSetting ?? 0,
             radioEnabled: settingsData.radioEnabled ?? false,
             latitude: settingsData.latitude ?? '',

@@ -1041,108 +1041,82 @@ export function parseContacts(data: Uint8Array): Contact[] {
 }
 
 /**
-<<<<<<< HEAD
- * Decode a chunked radio name string
- * Radio names are stored as 14-byte strings split into chunks:
- * - 4 bytes at offset +0
- * - 4 bytes at offset +4
- * - 4 bytes at offset +8
- * - 2 bytes at offset +12
- * Total: 14 bytes
- * 
- * @param data Buffer containing the name data
- * @param baseOffset Base offset where chunks start
- * @returns Decoded string (empty if 0xffffffff marker found)
- */
-function decodeChunkedRadioName(data: Uint8Array, baseOffset: number): string {
-  // Check for empty marker (0xffffffff in first 4 bytes)
-  const firstChunk = data.slice(baseOffset, baseOffset + 4);
-  if (firstChunk[0] === 0xFF && firstChunk[1] === 0xFF && 
-      firstChunk[2] === 0xFF && firstChunk[3] === 0xFF) {
-    return '';
-  }
-
-  // Read chunks: 4+4+4+2 = 14 bytes
-  const chunk1 = data.slice(baseOffset, baseOffset + 4);
-  const chunk2 = data.slice(baseOffset + 4, baseOffset + 8);
-  const chunk3 = data.slice(baseOffset + 8, baseOffset + 12);
-  const chunk4 = data.slice(baseOffset + 12, baseOffset + 14);
-
-  // Concatenate chunks to form 14-byte string
-  const nameBytes = new Uint8Array(14);
-  nameBytes.set(chunk1, 0);
-  nameBytes.set(chunk2, 4);
-  nameBytes.set(chunk3, 8);
-  nameBytes.set(chunk4, 12);
-
-  // Decode as ASCII, null-terminated
-  const nullIndex = nameBytes.indexOf(0);
-  const decoded = new TextDecoder('ascii', { fatal: false })
-    .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : 14))
-    .replace(/\x00/g, '')
-    .trim();
-
-  return decoded;
-}
-
-/**
- * Encode a radio name into chunked format
- * @param name String to encode (max 14 chars)
- * @param data Buffer to write to
- * @param baseOffset Base offset where chunks start
- */
-function encodeChunkedRadioName(name: string, data: Uint8Array, baseOffset: number): void {
-  if (name.length === 0) {
-    // Write empty marker (0xffffffff)
-    data[baseOffset] = 0xFF;
-    data[baseOffset + 1] = 0xFF;
-    data[baseOffset + 2] = 0xFF;
-    data[baseOffset + 3] = 0xFF;
-    // Fill rest with 0xFF
-    for (let i = 4; i < 14; i++) {
-      data[baseOffset + i] = 0xFF;
-    }
-    return;
-  }
-
-  // Encode name as ASCII, truncate to 14 bytes (storage limit)
-  const nameBytes = new Uint8Array(14);
-  const encoded = new TextEncoder().encode(name.substring(0, 14));
-  nameBytes.set(encoded.slice(0, 14), 0);
-  // If encoded length is less than 14, pad with null terminator
-  if (encoded.length < 14) {
-    nameBytes[encoded.length] = 0; // Null terminator
-  }
-
-  // Write as chunks: 4+4+4+2
-  data.set(nameBytes.slice(0, 4), baseOffset);
-  data.set(nameBytes.slice(4, 8), baseOffset + 4);
-  data.set(nameBytes.slice(8, 12), baseOffset + 8);
-  data.set(nameBytes.slice(12, 14), baseOffset + 12);
-}
-
-/**
- * Parse VFO Settings from metadata 0x04 block (4KB)
+ * Parse Radio Settings from metadata 0x04 block (4KB)
  */
 export function parseRadioSettings(data: Uint8Array): RadioSettings {
   if (data.length < 0x335) {
-    throw new Error('VFO Settings data must be at least 821 bytes (0x335)');
+    throw new Error('Radio Settings data must be at least 821 bytes (0x335)');
   }
 
   // Header fields (0x00-0x20)
   const unknownFlag = data[0x00];
   
-  // Radio Name A: chunks at +1, +5, +9, +0xd (14 bytes total)
-  const radioNameA = decodeChunkedRadioName(data, 0x01);
+  // Power On Display Line 1: 0x01-0x0D (14 bytes, null-terminated)
+  const powerOnLine1Bytes = data.slice(0x01, 0x01 + 14);
+  const powerOnLine1NullIndex = powerOnLine1Bytes.indexOf(0);
+  const powerOnDisplayLine1 = new TextDecoder('ascii', { fatal: false })
+    .decode(powerOnLine1Bytes.slice(0, powerOnLine1NullIndex >= 0 ? powerOnLine1NullIndex : 14))
+    .replace(/\x00/g, '')
+    .trim();
   
-  // Radio Name B: chunks at +0xf, +0x13, +0x17, +0x1b (14 bytes total)
-  const radioNameB = decodeChunkedRadioName(data, 0x0F);
+  // Power On Display Line 2: 0x0F-0x1B (14 bytes, null-terminated)
+  const powerOnLine2Bytes = data.slice(0x0F, 0x0F + 14);
+  const powerOnLine2NullIndex = powerOnLine2Bytes.indexOf(0);
+  const powerOnDisplayLine2 = new TextDecoder('ascii', { fatal: false })
+    .decode(powerOnLine2Bytes.slice(0, powerOnLine2NullIndex >= 0 ? powerOnLine2NullIndex : 14))
+    .replace(/\x00/g, '')
+    .trim();
   
-  const bitFlags1 = data[0x1D];
-  const value = data[0x1E];
-  const bitFlags2 = data[0x20];
+  // Allow Reset: 0x1D (bit 0)
+  const allowReset = (data[0x1D] & 0x01) !== 0;
+  
+  // Power On Interface: 0x1E (0-5)
+  const powerOnInterface = data[0x1E] & 0xFF;
+  
+  // Alert Tone Flags: 0x20 (8 bits, bit flags)
+  const alertToneFlags = data[0x20];
+  
+  // Alert Tone Flags (cont): 0x21 (8 bits, bit flags + 2-bit field)
+  const alertToneFlagsCont = data[0x21];
 
-  // Radio Settings (0x301+)
+  // Display and UI settings (0x30-0x3B)
+  const zoneAColor = data[0x30] & 0x0F; // 0-15
+  const zoneBColor = data[0x31] & 0x0F; // 0-15
+  const unknownDisplay = data[0x32];
+  const displayFlags = data[0x33];
+  const backlightBrightness = Math.max(1, Math.min(6, data[0x34] & 0xFF)); // 1-6
+  const autoBacklightDuration = Math.max(5, Math.min(30, data[0x35] & 0xFF)); // 5-30, step 5
+  const menuExitTime = Math.max(1, Math.min(30, data[0x36] & 0xFF)); // 1-30
+  const standbyCharacterColor1 = Math.max(0, Math.min(30, data[0x37] & 0xFF)); // 0-30
+  const callDisplayColor = data[0x38] & 0x0F; // 0-15
+  const standbyCharacterColor2 = data[0x39] & 0x0F; // 0-15
+  const aChannelNameColor = data[0x3A] & 0x0F; // 0-15
+  const bChannelNameColor = data[0x3B] & 0x0F; // 0-15
+
+  // Work mode and GPS settings (0x40-0x45)
+  const workModeFlags = data[0x40];
+  const utcZone = Math.max(0, Math.min(25, data[0x41] & 0xFF)); // 0-25
+  const measurePeriodInterval = (data[0x42] & 0xFF) + 5; // value+5
+  const unknownFlags = data[0x45];
+
+  // GPS/APRS and Digital settings (0x60-0x67)
+  const gpsAprsFlags = data[0x60];
+  const callHoldTime = Math.max(0, Math.min(61, data[0x61] & 0xFF)); // 0-61
+  const activeWaitTime = (data[0x62] & 0xFF) + 1; // value+1
+  const activeRetriesTime = (data[0x63] & 0xFF) + 1; // value+1
+  const preCarrierTime = data[0x64] & 0xFF; // direct value
+  const digitalSettingsFlags = data[0x65];
+  const remoteMonitorTime = data[0x66] & 0xFF; // direct value
+  const digitalSettingsCont = data[0x67];
+
+  // VFO/Embedded settings (0x80-0x81)
+  const vfoEmbeddedFlags = data[0x80];
+  const txDwellTime = data[0x81] & 0xFF; // direct value
+
+  // Language/Other settings (0xA0-0xA7)
+  const languageOtherSettings = data.slice(0xA0, 0xA0 + 8);
+
+  // Legacy fields (0x301+) - keeping for backward compatibility
   const unknownRadioSetting = data[0x301];
   const radioFlag = data[0x302];
   const radioEnabled = (radioFlag & 0x01) !== 0;
@@ -1203,11 +1177,39 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
 
   return {
     unknownFlag,
-    radioNameA,
-    radioNameB,
-    bitFlags1,
-    value,
-    bitFlags2,
+    powerOnDisplayLine1,
+    powerOnDisplayLine2,
+    allowReset,
+    powerOnInterface,
+    alertToneFlags,
+    alertToneFlagsCont,
+    zoneAColor,
+    zoneBColor,
+    unknownDisplay,
+    displayFlags,
+    backlightBrightness,
+    autoBacklightDuration,
+    menuExitTime,
+    standbyCharacterColor1,
+    callDisplayColor,
+    standbyCharacterColor2,
+    aChannelNameColor,
+    bChannelNameColor,
+    workModeFlags,
+    utcZone,
+    measurePeriodInterval,
+    unknownFlags,
+    gpsAprsFlags,
+    callHoldTime,
+    activeWaitTime,
+    activeRetriesTime,
+    preCarrierTime,
+    digitalSettingsFlags,
+    remoteMonitorTime,
+    digitalSettingsCont,
+    vfoEmbeddedFlags,
+    txDwellTime,
+    languageOtherSettings,
     unknownRadioSetting,
     radioEnabled,
     latitude,
@@ -1238,17 +1240,76 @@ export function encodeRadioSettings(settings: RadioSettings): Uint8Array {
   // Header fields (0x00-0x20)
   data[0x00] = settings.unknownFlag;
   
-  // Radio Name A: chunks at +1, +5, +9, +0xd
-  encodeChunkedRadioName(settings.radioNameA, data, 0x01);
+  // Power On Display Line 1: 0x01-0x0D (14 bytes, null-terminated)
+  const powerOnLine1Bytes = new Uint8Array(14);
+  const powerOnLine1Encoded = new TextEncoder().encode(settings.powerOnDisplayLine1.substring(0, 13));
+  powerOnLine1Bytes.set(powerOnLine1Encoded, 0);
+  if (powerOnLine1Encoded.length < 14) {
+    powerOnLine1Bytes[powerOnLine1Encoded.length] = 0; // Null terminator
+  }
+  data.set(powerOnLine1Bytes, 0x01);
   
-  // Radio Name B: chunks at +0xf, +0x13, +0x17, +0x1b
-  encodeChunkedRadioName(settings.radioNameB, data, 0x0F);
+  // Power On Display Line 2: 0x0F-0x1B (14 bytes, null-terminated)
+  const powerOnLine2Bytes = new Uint8Array(14);
+  const powerOnLine2Encoded = new TextEncoder().encode(settings.powerOnDisplayLine2.substring(0, 13));
+  powerOnLine2Bytes.set(powerOnLine2Encoded, 0);
+  if (powerOnLine2Encoded.length < 14) {
+    powerOnLine2Bytes[powerOnLine2Encoded.length] = 0; // Null terminator
+  }
+  data.set(powerOnLine2Bytes, 0x0F);
   
-  data[0x1D] = settings.bitFlags1;
-  data[0x1E] = settings.value;
-  data[0x20] = settings.bitFlags2;
+  // Allow Reset: 0x1D (bit 0)
+  data[0x1D] = settings.allowReset ? (data[0x1D] | 0x01) : (data[0x1D] & ~0x01);
+  
+  // Power On Interface: 0x1E (0-5)
+  data[0x1E] = Math.max(0, Math.min(5, settings.powerOnInterface)) & 0xFF;
+  
+  // Alert Tone Flags: 0x20 (8 bits, bit flags)
+  data[0x20] = settings.alertToneFlags & 0xFF;
+  
+  // Alert Tone Flags (cont): 0x21 (8 bits, bit flags + 2-bit field)
+  data[0x21] = settings.alertToneFlagsCont & 0xFF;
 
-  // Radio Settings (0x301+)
+  // Display and UI settings (0x30-0x3B)
+  data[0x30] = Math.max(0, Math.min(15, settings.zoneAColor)) & 0x0F;
+  data[0x31] = Math.max(0, Math.min(15, settings.zoneBColor)) & 0x0F;
+  data[0x32] = settings.unknownDisplay & 0xFF;
+  data[0x33] = settings.displayFlags & 0xFF;
+  data[0x34] = Math.max(1, Math.min(6, settings.backlightBrightness)) & 0xFF;
+  data[0x35] = Math.max(5, Math.min(30, settings.autoBacklightDuration)) & 0xFF;
+  data[0x36] = Math.max(1, Math.min(30, settings.menuExitTime)) & 0xFF;
+  data[0x37] = Math.max(0, Math.min(30, settings.standbyCharacterColor1)) & 0xFF;
+  data[0x38] = Math.max(0, Math.min(15, settings.callDisplayColor)) & 0x0F;
+  data[0x39] = Math.max(0, Math.min(15, settings.standbyCharacterColor2)) & 0x0F;
+  data[0x3A] = Math.max(0, Math.min(15, settings.aChannelNameColor)) & 0x0F;
+  data[0x3B] = Math.max(0, Math.min(15, settings.bChannelNameColor)) & 0x0F;
+
+  // Work mode and GPS settings (0x40-0x45)
+  data[0x40] = settings.workModeFlags & 0xFF;
+  data[0x41] = Math.max(0, Math.min(25, settings.utcZone)) & 0xFF;
+  data[0x42] = Math.max(0, Math.min(255, settings.measurePeriodInterval - 5)) & 0xFF; // value+5, so subtract 5
+  data[0x45] = settings.unknownFlags & 0xFF;
+
+  // GPS/APRS and Digital settings (0x60-0x67)
+  data[0x60] = settings.gpsAprsFlags & 0xFF;
+  data[0x61] = Math.max(0, Math.min(61, settings.callHoldTime)) & 0xFF;
+  data[0x62] = Math.max(0, Math.min(255, settings.activeWaitTime - 1)) & 0xFF; // value+1, so subtract 1
+  data[0x63] = Math.max(0, Math.min(255, settings.activeRetriesTime - 1)) & 0xFF; // value+1, so subtract 1
+  data[0x64] = settings.preCarrierTime & 0xFF;
+  data[0x65] = settings.digitalSettingsFlags & 0xFF;
+  data[0x66] = settings.remoteMonitorTime & 0xFF;
+  data[0x67] = settings.digitalSettingsCont & 0xFF;
+
+  // VFO/Embedded settings (0x80-0x81)
+  data[0x80] = settings.vfoEmbeddedFlags & 0xFF;
+  data[0x81] = settings.txDwellTime & 0xFF;
+
+  // Language/Other settings (0xA0-0xA7)
+  if (settings.languageOtherSettings && settings.languageOtherSettings.length >= 8) {
+    data.set(settings.languageOtherSettings.slice(0, 8), 0xA0);
+  }
+
+  // Legacy fields (0x301+)
   data[0x301] = settings.unknownRadioSetting;
   data[0x302] = settings.radioEnabled ? 0x01 : 0x00;
 
