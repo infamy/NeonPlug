@@ -19,7 +19,6 @@ import {
   readAndConcatenateBlocks,
   storeRawData,
 } from './helpers';
-import { writeChannelFlagBit } from './structures';
 
 /**
  * DM-32UV Protocol Implementation
@@ -60,6 +59,28 @@ export class DM32UVProtocol implements RadioProtocol {
   public blockData: Map<number, Uint8Array> = new Map();
   // Write blocks: stores blocks that will be written to radio (for debug confirmation)
   public writeBlockData: Map<number, { address: number; data: Uint8Array; metadata: number }> = new Map();
+  // Zone comparison data: stores comparison results for debug export
+  public zoneComparisonData: Array<{
+    blockIndex: number;
+    address: string;
+    isIdentical: boolean;
+    differences: number;
+    differencePositions: number[];
+    zoneComparisons: Array<{
+      zoneNumber: number;
+      offset: number;
+      originalName: string;
+      newName: string;
+      originalChannelCount: number;
+      newChannelCount: number;
+      matches: boolean;
+      originalHex: string;
+      newHex: string;
+    }>;
+    metadataMatch: boolean;
+    originalMetadata: number;
+    newMetadata: number;
+  }> = [];
   private discoveredBlocks: MemoryBlock[] = []; // Store discovered blocks for reuse
   // Cached block data: array of [metadata, address, 4k block data] for efficient access
   public cachedBlockData: Array<{ metadata: number; address: number; data: Uint8Array }> = [];
@@ -722,8 +743,8 @@ export class DM32UVProtocol implements RadioProtocol {
             offset: offset,
           });
 
-          // Pass block data, offset, and block index for correct forbid TX parsing
-          const channel = parseChannel(channelData, channelIndex, blockDataBytes, offset, currentBlockIndex);
+          // Parse channel (forbid TX is at byte 0x18, bit 3)
+          const channel = parseChannel(channelData, channelIndex);
           channels.push(channel);
           channelIndex++;
 
@@ -926,8 +947,8 @@ export class DM32UVProtocol implements RadioProtocol {
         const encodedChannel = encodedChannels[channelIndex];
         blockData.set(encodedChannel, offset);
         
-        // Write forbid TX flag to the correct offset (not in the 48-byte channel data)
-        writeChannelFlagBit(channel.number, blockData, offset, blockIdx, 0x08, channel.forbidTx);
+        // Forbid TX is now written at fixed position 0x08 within the 48-byte channel data
+        // No need to write separately - it's already in the encoded channel data
         
         channelsInThisBlock.push(channel.number);
         channelIndex++;
@@ -1929,6 +1950,8 @@ export class DM32UVProtocol implements RadioProtocol {
    * @param scanLists Scan lists to write
    */
   async writeAllData(channels: Channel[], zones: Zone[], scanLists: ScanList[]): Promise<void> {
+    // Clear previous zone comparison data
+    this.zoneComparisonData = [];
     requireConnection(this.connection, this.radioInfo);
     
     this.onProgress?.(0, 'Preparing to write data to radio...');
@@ -2016,11 +2039,10 @@ export class DM32UVProtocol implements RadioProtocol {
         
         // Write channels to this block
         for (let offset = startOffset; offset < maxOffset && channelIndex < channels.length; offset += BLOCK_SIZE.CHANNEL) {
-          const channel = channels[channelIndex];
           blockData.set(encodedChannels[channelIndex], offset);
           
-          // Write forbid TX flag to the correct offset
-          writeChannelFlagBit(channel.number, blockData, offset, blockIdx, 0x08, channel.forbidTx);
+          // Forbid TX is already written in the encoded channel data at byte 0x18, bit 3
+          // No need to write separately - it's part of the mode flags byte
           
           channelIndex++;
         }
@@ -2044,69 +2066,267 @@ export class DM32UVProtocol implements RadioProtocol {
       }
     }
 
-    // Generate zone blocks
+    // Generate zone blocks - ALWAYS write zones when writing channels
     const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE);
-    if (zones.length > 0) {
-      if (zoneBlocks.length === 0) {
-        throw new Error('No zone blocks found');
-      }
+    if (zoneBlocks.length === 0) {
+      throw new Error('No zone blocks found');
+    }
 
-      // Encode zones
-      const encodedZones = zones.map((zone, idx) => encodeZone(zone, idx + 1));
+    // Read existing zone blocks from cache ONLY (no radio communication)
+    let originalZoneData: Uint8Array | null = null;
+    const cachedZoneBlocks = zoneBlocks.map(block => 
+      this.cachedBlockData.find(cached => cached.address === block.address)
+    );
+    
+    if (cachedZoneBlocks.every(cached => cached !== undefined)) {
+      // Use cached data - concatenate all zone blocks
+      const zoneBlockDataArrays = cachedZoneBlocks.map(cached => cached!.data);
+      const totalSize = zoneBlockDataArrays.reduce((sum, arr) => sum + arr.length, 0);
+      originalZoneData = new Uint8Array(totalSize);
+      let offset = 0;
+      for (const blockData of zoneBlockDataArrays) {
+        originalZoneData.set(blockData, offset);
+        offset += blockData.length;
+      }
+      console.log(`[ZONE DEBUG] Using cached zone data, total size: ${originalZoneData.length} bytes`);
+    } else {
+      console.warn(`[ZONE DEBUG] Zone blocks not in cache - skipping comparison`);
+    }
+
+    // Calculate total size needed for all zone blocks
+    const totalZoneBlocksSize = zoneBlocks.length * BLOCK_SIZE.STANDARD;
+    
+    // Generate fresh zone data from scratch (filled with 0xFF)
+    const allZoneData = new Uint8Array(totalZoneBlocksSize);
+    allZoneData.fill(0xFF);
+
+    // Encode all zones and write them to the fresh data
+    const zonesToWrite = zones.length > 0 ? zones : [];
+    console.log(`[ZONE DEBUG] Writing ${zonesToWrite.length} zones to ${zoneBlocks.length} block(s)`);
+    
+    if (zonesToWrite.length === 0) {
+      console.warn('[ZONE DEBUG] No zones provided - writing empty zone blocks');
+    } else {
+      const encodedZones = zonesToWrite.map((zone, idx) => encodeZone(zone, idx + 1));
+      console.log(`[ZONE DEBUG] Encoded ${encodedZones.length} zones`);
       
-      // Calculate total size needed
-      const totalZoneSize = zones.length * BLOCK_SIZE.ZONE + OFFSET.ZONE_START;
-      const totalBlocksNeeded = Math.ceil(totalZoneSize / BLOCK_SIZE.STANDARD);
-      
-      // Generate concatenated zone data
-      const allZoneData = new Uint8Array(totalBlocksNeeded * BLOCK_SIZE.STANDARD);
-      allZoneData.fill(0xFF);
-      
-      // Write zones to the concatenated data
+      // Write all zones to the fresh data
+      // Zones are 145 bytes each, starting at offset 16
+      // Zone N is at: 16 + (N - 1) * 145
       for (let i = 0; i < encodedZones.length; i++) {
         const zoneOffset = OFFSET.ZONE_START + (i * BLOCK_SIZE.ZONE);
         if (zoneOffset + BLOCK_SIZE.ZONE > allZoneData.length) {
+          console.error(`[ZONE DEBUG] Zone ${i + 1} would exceed block size: offset ${zoneOffset}, data length ${allZoneData.length}`);
           throw new Error(`Zone ${i + 1} would exceed block size`);
         }
+        
         allZoneData.set(encodedZones[i], zoneOffset);
       }
       
-      // Split into blocks and set metadata
-      let dataOffset = 0;
-      for (let blockIdx = 0; blockIdx < zoneBlocks.length; blockIdx++) {
-        const block = zoneBlocks[blockIdx];
-        const blockData = allZoneData.slice(dataOffset, dataOffset + BLOCK_SIZE.STANDARD);
-        blockData[0xFFF] = block.metadata; // Preserve metadata
-        
-        blocksToWrite.push({
-          address: block.address,
-          data: blockData,
-          metadata: block.metadata,
-        });
-        
-        // Update cache with new block data
-        const cacheIndex = this.cachedBlockData.findIndex(b => b.address === block.address);
-        if (cacheIndex >= 0) {
-          this.cachedBlockData[cacheIndex].data = blockData;
-        }
-        
-        dataOffset += BLOCK_SIZE.STANDARD;
+      // Write 0x0000 terminator after the last zone to indicate end of zones
+      const lastZoneOffset = OFFSET.ZONE_START + (encodedZones.length * BLOCK_SIZE.ZONE);
+      if (lastZoneOffset + 2 <= allZoneData.length) {
+        allZoneData[lastZoneOffset] = 0x00;
+        allZoneData[lastZoneOffset + 1] = 0x00;
+        console.log(`[ZONE DEBUG] Wrote zone terminator (0x0000) at offset ${lastZoneOffset} after ${encodedZones.length} zones`);
+      } else {
+        console.warn(`[ZONE DEBUG] Cannot write zone terminator: offset ${lastZoneOffset} would exceed block size (${allZoneData.length})`);
       }
     }
-
-    // Generate scan list blocks
-    const scanBlocks = this.discoveredBlocks.filter(b => b.type === 'scan' && b.metadata === METADATA.SCAN_LIST);
-    if (scanLists.length > 0) {
-      if (scanBlocks.length === 0) {
-        throw new Error('No scan list blocks found');
+    
+    // Split into blocks and set metadata
+    let zoneDataOffset = 0;
+    for (let blockIdx = 0; blockIdx < zoneBlocks.length; blockIdx++) {
+      const block = zoneBlocks[blockIdx];
+      
+      // Get original block data for comparison (only if we have cached data)
+      const originalBlockData = originalZoneData ? originalZoneData.slice(zoneDataOffset, zoneDataOffset + BLOCK_SIZE.STANDARD) : null;
+      
+      // Calculate how many zones are in this block
+      // Zones are 145 bytes each, starting at offset 16
+      // Max zones per block: (4096 - 16) / 145 ≈ 28 zones
+      const maxZonesPerBlock = Math.floor((BLOCK_SIZE.STANDARD - OFFSET.ZONE_START) / BLOCK_SIZE.ZONE);
+      const zonesWrittenSoFar = Math.floor(zoneDataOffset / BLOCK_SIZE.STANDARD) * maxZonesPerBlock;
+      const zonesInBlock = Math.min(zonesToWrite.length - zonesWrittenSoFar, maxZonesPerBlock);
+      
+      console.log(`[ZONE DEBUG] Block ${blockIdx}: zonesWrittenSoFar=${zonesWrittenSoFar}, zonesInBlock=${zonesInBlock}, totalZones=${zonesToWrite.length}, maxZonesPerBlock=${maxZonesPerBlock}`);
+      
+      // Create a new block data array (don't use slice as it creates a view)
+      const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
+      blockData.fill(0xFF); // Fill with 0xFF first
+      
+      // Set zone count in byte 0 (range: 1-28)
+      // Byte 0: Zone count for this block (FUN_0047b800 writes this)
+      // Bytes 1-15: Reserved/padding (0xFF)
+      if (zonesInBlock > 0) {
+        const zoneCount = Math.min(Math.max(zonesInBlock, 1), 28); // Clamp to 1-28
+        blockData[0] = zoneCount;
+        console.log(`[ZONE DEBUG] Set zone count in byte 0: ${zoneCount} zones for block ${blockIdx}`);
+      } else {
+        blockData[0] = 0; // No zones in this block
+        console.log(`[ZONE DEBUG] Block ${blockIdx} has no zones, setting byte 0 to 0`);
       }
+      
+      // Bytes 1-15: Reserved/padding (already filled with 0xFF)
+      
+      // Preserve the original bytes 1-15 if available (to match original structure)
+      if (originalBlockData) {
+        blockData.set(originalBlockData.slice(1, 16), 1);
+        console.log(`[ZONE DEBUG] Preserved original bytes 1-15 for block ${blockIdx}:`, 
+          Array.from(originalBlockData.slice(1, 16)).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' '));
+      }
+      
+      // Copy the zone data for this block (this will overwrite bytes 16+ with zone data)
+      const sourceData = allZoneData.slice(zoneDataOffset, zoneDataOffset + BLOCK_SIZE.STANDARD);
+      // Copy starting at offset 16 to preserve the header we just set
+      blockData.set(sourceData.slice(16), 16);
+      
+      // Set metadata byte
+      blockData[0xFFF] = block.metadata;
+      
+      // DEBUG: Compare original vs new block data (only if we have cached data)
+      const blockComparison: {
+        blockIndex: number;
+        address: string;
+        isIdentical: boolean;
+        differences: number;
+        differencePositions: number[];
+        zoneComparisons: Array<{
+          zoneNumber: number;
+          offset: number;
+          originalName: string;
+          newName: string;
+          originalChannelCount: number;
+          newChannelCount: number;
+          matches: boolean;
+          originalHex: string;
+          newHex: string;
+        }>;
+        metadataMatch: boolean;
+        originalMetadata: number;
+        newMetadata: number;
+      } = {
+        blockIndex: blockIdx,
+        address: `0x${block.address.toString(16).padStart(6, '0')}`,
+        isIdentical: false,
+        differences: 0,
+        differencePositions: [],
+        zoneComparisons: [],
+        metadataMatch: false,
+        originalMetadata: 0,
+        newMetadata: 0,
+      };
+      
+      if (originalBlockData) {
+        console.log(`\n[ZONE DEBUG] ===== Zone Block ${blockIdx} Comparison (Address: ${blockComparison.address}) =====`);
+        
+        // Compare byte by byte for the ENTIRE block (4096 bytes)
+        for (let i = 0; i < BLOCK_SIZE.STANDARD; i++) {
+          if (originalBlockData[i] !== blockData[i]) {
+            blockComparison.differences++;
+            if (blockComparison.differencePositions.length < 100) { // Store up to 100 differences
+              blockComparison.differencePositions.push(i);
+            }
+          }
+        }
+        
+        blockComparison.isIdentical = blockComparison.differences === 0;
+        
+        if (blockComparison.isIdentical) {
+          console.log(`[ZONE DEBUG] ✓ Block ${blockIdx} is IDENTICAL to original (all ${BLOCK_SIZE.STANDARD} bytes match)`);
+        } else {
+          console.log(`[ZONE DEBUG] ✗ Block ${blockIdx} has ${blockComparison.differences} differences out of ${BLOCK_SIZE.STANDARD} bytes`);
+          console.log(`[ZONE DEBUG] First ${Math.min(50, blockComparison.differencePositions.length)} difference positions:`, blockComparison.differencePositions.slice(0, 50));
+          
+          // Show detailed comparison for first few zones
+          for (let zoneNum = 1; zoneNum <= 10; zoneNum++) { // Compare up to 10 zones
+            const zoneOffset = OFFSET.ZONE_START + (zoneNum - 1) * BLOCK_SIZE.ZONE;
+            if (zoneOffset + BLOCK_SIZE.ZONE <= BLOCK_SIZE.STANDARD) {
+              const origZone = originalBlockData.slice(zoneOffset, zoneOffset + BLOCK_SIZE.ZONE);
+              const newZone = blockData.slice(zoneOffset, zoneOffset + BLOCK_SIZE.ZONE);
+              
+              const origName = new TextDecoder('ascii', { fatal: false }).decode(origZone.slice(0, 11)).replace(/\x00/g, '').trim();
+              const newName = new TextDecoder('ascii', { fatal: false }).decode(newZone.slice(0, 11)).replace(/\x00/g, '').trim();
+              const origChCount = origZone[16];
+              const newChCount = newZone[16];
+              
+              const zoneComp = {
+                zoneNumber: zoneNum,
+                offset: zoneOffset,
+                originalName: origName,
+                newName: newName,
+                originalChannelCount: origChCount,
+                newChannelCount: newChCount,
+                matches: origName === newName && origChCount === newChCount,
+                originalHex: Array.from(origZone).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
+                newHex: Array.from(newZone).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
+              };
+              
+              blockComparison.zoneComparisons.push(zoneComp);
+              
+              console.log(`[ZONE DEBUG] Zone ${zoneNum} (offset ${zoneOffset}):`);
+              console.log(`  Original: name="${origName}", channels=${origChCount}`);
+              console.log(`  New:      name="${newName}", channels=${newChCount}`);
+              
+              if (!zoneComp.matches) {
+                console.log(`  ✗ MISMATCH!`);
+                // Show hex comparison for first 32 bytes
+                const origHex = Array.from(origZone.slice(0, 32)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+                const newHex = Array.from(newZone.slice(0, 32)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+                console.log(`  Original hex (first 32): ${origHex}`);
+                console.log(`  New hex (first 32):       ${newHex}`);
+              } else {
+                console.log(`  ✓ Zone ${zoneNum} matches`);
+              }
+            }
+          }
+        }
+        
+        // Show metadata byte comparison
+        blockComparison.originalMetadata = originalBlockData[0xFFF];
+        blockComparison.newMetadata = blockData[0xFFF];
+        blockComparison.metadataMatch = blockComparison.originalMetadata === blockComparison.newMetadata;
+        
+        if (!blockComparison.metadataMatch) {
+          console.log(`[ZONE DEBUG] ✗ Metadata byte mismatch: original=0x${blockComparison.originalMetadata.toString(16)}, new=0x${blockComparison.newMetadata.toString(16)}`);
+        } else {
+          console.log(`[ZONE DEBUG] ✓ Metadata byte matches: 0x${blockComparison.originalMetadata.toString(16)}`);
+        }
+        
+        console.log(`[ZONE DEBUG] ===== End Block ${blockIdx} Comparison =====\n`);
+      }
+      
+      // Store comparison data for debug export
+      this.zoneComparisonData.push(blockComparison);
+        
+      blocksToWrite.push({
+        address: block.address,
+        data: blockData,
+        metadata: block.metadata,
+      });
+        
+      // Update cache with new block data
+      const cacheIndex = this.cachedBlockData.findIndex(b => b.address === block.address);
+      if (cacheIndex >= 0) {
+        this.cachedBlockData[cacheIndex].data = blockData;
+      }
+        
+      zoneDataOffset += BLOCK_SIZE.STANDARD;
+    }
 
-      // Encode scan lists
-      const encodedScanLists = scanLists.map((scanList, idx) => encodeScanList(scanList, idx + 1));
+    // Generate scan list blocks - ALWAYS write scan lists when writing channels
+    const scanBlocks = this.discoveredBlocks.filter(b => b.type === 'scan' && b.metadata === METADATA.SCAN_LIST);
+    if (scanBlocks.length === 0) {
+      throw new Error('No scan list blocks found');
+    }
+
+    // Encode scan lists (use provided scanLists or empty array)
+    const scanListsToWrite = scanLists.length > 0 ? scanLists : [];
+    const encodedScanLists = scanListsToWrite.map((scanList, idx) => encodeScanList(scanList, idx + 1));
       
       // Calculate total size needed
       let totalScanListSize = 0;
-      for (let i = 0; i < scanLists.length; i++) {
+      for (let i = 0; i < scanListsToWrite.length; i++) {
         if (i < 44) {
           totalScanListSize = Math.max(totalScanListSize, OFFSET.SCAN_LIST_START + ((i + 1) * BLOCK_SIZE.SCAN_LIST));
         } else {
@@ -2116,10 +2336,10 @@ export class DM32UVProtocol implements RadioProtocol {
           totalScanListSize = Math.max(totalScanListSize, offset);
         }
       }
-      const totalBlocksNeeded = Math.ceil(totalScanListSize / BLOCK_SIZE.STANDARD);
+      const totalScanListBlocksNeeded = Math.ceil(totalScanListSize / BLOCK_SIZE.STANDARD);
       
       // Generate concatenated scan list data
-      const allScanListData = new Uint8Array(totalBlocksNeeded * BLOCK_SIZE.STANDARD);
+      const allScanListData = new Uint8Array(totalScanListBlocksNeeded * BLOCK_SIZE.STANDARD);
       allScanListData.fill(0xFF);
       
       // Write scan lists to the concatenated data
@@ -2141,10 +2361,10 @@ export class DM32UVProtocol implements RadioProtocol {
       }
       
       // Split into blocks and set metadata
-      let dataOffset = 0;
+      let scanListDataOffset = 0;
       for (let blockIdx = 0; blockIdx < scanBlocks.length; blockIdx++) {
         const block = scanBlocks[blockIdx];
-        const blockData = allScanListData.slice(dataOffset, dataOffset + BLOCK_SIZE.STANDARD);
+        const blockData = allScanListData.slice(scanListDataOffset, scanListDataOffset + BLOCK_SIZE.STANDARD);
         blockData[0xFFF] = block.metadata; // Preserve metadata
         
         blocksToWrite.push({
@@ -2159,9 +2379,8 @@ export class DM32UVProtocol implements RadioProtocol {
           this.cachedBlockData[cacheIndex].data = blockData;
         }
         
-        dataOffset += BLOCK_SIZE.STANDARD;
+        scanListDataOffset += BLOCK_SIZE.STANDARD;
       }
-    }
 
     // Step 3: Prepare blocks to write - ONLY channels, zones, and scan lists
     // We should NOT write other configuration blocks (they remain unchanged)
