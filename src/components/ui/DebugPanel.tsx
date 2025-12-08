@@ -19,7 +19,7 @@ export const DebugPanel: React.FC = () => {
         const logEndRef = useRef<HTMLDivElement>(null);
         const { channels, rawChannelData } = useChannelsStore();
         const { zones, rawZoneData } = useZonesStore();
-        const { blockMetadata, blockData, writeBlockData } = useRadioStore();
+        const { blockMetadata, blockData, writeBlockData, zoneComparisonData } = useRadioStore();
 
   useEffect(() => {
     // Capture console.log, console.warn, console.error
@@ -107,7 +107,8 @@ export const DebugPanel: React.FC = () => {
       exportLogs,
       blockMetadata,
       blockData,
-      writeBlockData
+      writeBlockData,
+      zoneComparisonData
     );
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
     downloadDebug(debugData, `neonplug-debug-${timestamp}.json`);
@@ -119,7 +120,7 @@ export const DebugPanel: React.FC = () => {
       return;
     }
 
-    const writeBlocksData = exportWriteBlocks(writeBlockData);
+    const writeBlocksData = exportWriteBlocks(writeBlockData, blockData);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
     downloadDebug(writeBlocksData, `neonplug-write-blocks-${timestamp}.json`);
   };
