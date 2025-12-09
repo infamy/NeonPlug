@@ -2,7 +2,7 @@
 
 WEB Based CPS for Baofeng DM-32UV.
 
-** CURRENTLY READONLY SUPPORT **
+**Not feature complete, work in progress**
 
 **Try it live:** [https://www.meshmeld.com/NeonPlug/](https://www.meshmeld.com/NeonPlug/)
 
