@@ -352,7 +352,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
               bandwidth: row['Bandwidth'] || '12.5kHz',
               rxCtcssDcs: rxCTCSSDCS,
               txCtcssDcs: txCTCSSDCS,
-              power: row['Power'] || 'Low',
+              power: row['Power'] || 'High',
               busyLock: row['Busy Lock'] || 'Off',
               scanAdd: row['Scan Add'] === 'Yes',
               scanListId: parseInt(row['Scan List'] || row['Scan List ID']) || 0,
@@ -363,7 +363,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
               aprsReportMode: row['APRS Report'] || row['APRS Report Mode'] || 'Off',
               contactId: parseInt(row['Contact ID']) || 0,
               colorCode: parseInt(row['Color Code']) || 0,
-              squelchLevel: parseInt(row['Squelch'] || row['Squelch Level']) || 0,
+              squelchLevel: parseInt(row['Squelch'] || row['Squelch Level']) || 3,
               emergencySystemId: parseInt(row['Emergency ID'] || row['Emergency System ID']) || 0,
               // Import additional fields if present
               reverseFreq: parseInt(row['Reverse Freq']) || 0,
