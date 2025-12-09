@@ -14,7 +14,7 @@ const tabs = [
   { id: 'emergency', label: 'Emergency' },
   { id: 'messages', label: 'Messages & Groups' },
   { id: 'settings', label: 'Settings' },
-  { id: 'import', label: 'Smart Import' },
+  { id: 'import', label: 'Channel Wizard' },
   { id: 'about', label: 'About' },
 ];
 

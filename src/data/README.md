@@ -25,7 +25,7 @@ All fixed channel sets (FRS, GMRS, MURS, etc.) are defined in **JSON format** fo
 }
 ```
 
-That's it! The new channel set will automatically appear in the Smart Import tab.
+That's it! The new channel set will automatically appear in the Channel Wizard tab.
 
 **Note:** The JSON file is loaded automatically - no code changes needed!
 
@@ -87,7 +87,7 @@ Each airport entry contains:
 
 ### Usage
 
-Airports are location-based and require a location to be set. The Smart Import tab will:
+Airports are location-based and require a location to be set. The Channel Wizard tab will:
 1. Filter airports by proximity to your location (configurable radius)
 2. Combine airports using the same frequency into single channels
 3. Generate channels with appropriate names (airport name or combined names)

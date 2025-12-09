@@ -30,6 +30,7 @@ export const Toolbar: React.FC = () => {
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isWriting, setIsWriting] = useState(false);
+  const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
 
   const handleImport = () => {
     fileInputRef.current?.click();
@@ -99,6 +100,7 @@ export const Toolbar: React.FC = () => {
     try {
       // Clear any previous error immediately
       setConnectionError(null);
+      setLastOperationMode('read');
       // Show progress modal immediately with initial state
       setProgress(0);
       setProgressMessage('Selecting port...');
@@ -114,6 +116,7 @@ export const Toolbar: React.FC = () => {
       
       // Success - clear error and close modal after a moment
       setConnectionError(null);
+      setLastOperationMode(null);
       setTimeout(() => {
         setProgress(0);
         setProgressMessage('');
@@ -140,12 +143,20 @@ export const Toolbar: React.FC = () => {
   };
 
   const handleRetry = () => {
-    // Force page refresh to reset everything
-    window.location.reload();
+    // For write operations, restart the write process
+    // For read operations, refresh the page to reset everything
+    if (lastOperationMode === 'write') {
+      // Restart write process
+      handleWrite();
+    } else {
+      // Read operation - refresh page to reset everything
+      window.location.reload();
+    }
   };
 
   const handleCloseModal = () => {
     setConnectionError(null);
+    setLastOperationMode(null);
     setProgress(0);
     setProgressMessage('');
     setCurrentStep('');
@@ -176,6 +187,7 @@ export const Toolbar: React.FC = () => {
     }
 
     setIsWriting(true);
+    setLastOperationMode('write');
     try {
       // Clear any previous error immediately
       setConnectionError(null);
@@ -195,6 +207,7 @@ export const Toolbar: React.FC = () => {
       
       // Success - clear error and close modal after a moment
       setConnectionError(null);
+      setLastOperationMode(null);
       setTimeout(() => {
         setIsWriting(false);
         setProgress(0);
@@ -267,7 +280,7 @@ export const Toolbar: React.FC = () => {
             disabled={isConnecting || isWriting || (channels.length === 0 && zones.length === 0 && scanLists.length === 0)}
             glow
           >
-            {isWriting ? 'Writing...' : 'Write'}
+            {isWriting ? 'Writing...' : 'Write to Radio'}
           </Button>
           {error && (
             <span className="text-red-400 text-xs ml-2">{error}</span>

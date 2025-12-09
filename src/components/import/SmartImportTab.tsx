@@ -643,7 +643,7 @@ export const SmartImportTab: React.FC = () => {
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-neon-cyan mb-2">Smart Import</h2>
+        <h2 className="text-2xl font-bold text-neon-cyan mb-2">Channel Wizard</h2>
         <p className="text-cool-gray">
           Find nearby repeaters and automatically generate channels and zones based on your location
         </p>

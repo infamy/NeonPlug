@@ -11,7 +11,7 @@ WEB Based CPS for Baofeng DM-32UV.
 - Cyberpunk neon-themed UI
 - Full DM-32UV protocol support
 - Editable tables with ReactGrid
-- Location-based smart channel import
+- Location-based channel wizard
 - CSV import/export
 - Comprehensive validation
 
@@ -66,7 +66,7 @@ src/
 
 - Complete data read and parse
 - Complete export/import
-- Smart import (create codeplug based on location)
+- Channel wizard (create codeplug based on location)
 - Write to radio (channels, then full)
 - Support for encrypted channels
 
