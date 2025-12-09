@@ -51,6 +51,13 @@ export interface RadioSettings {
   // Language/Other settings (0xA0-0xA7)
   languageOtherSettings: Uint8Array; // Offset 0xA0-0xA7 (8 bytes)
 
+  // Key Lock Settings (0x85-0x86, 0x93)
+  lockKey: 'Manual' | 'Auto';          // Offset 0x85 (bit 0: 0=Manual, 1=Auto)
+  knobLock: boolean;                  // Offset 0x85 (bit 1: 0=Off, 1=On)
+  sideKeyLock: boolean;               // Offset 0x85 (bit 2: 0=Off, 1=On)
+  autoKeypadLockDelayTime: number;    // Offset 0x86 (5-60, seconds)
+  longPressTime: number;              // Offset 0x93 (1-5, 1=shortest, 5=longest)
+
   // Button Functions (0x87-0x90)
   sk1Short: number;                   // Offset 0x87 (0-42)
   sk1Long: number;                    // Offset 0x88 (0-42)
