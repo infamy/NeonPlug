@@ -1123,7 +1123,7 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const knobLock = (lockKeyByte & 0x02) !== 0;  // Bit 1: 0=Off, 1=On
   const sideKeyLock = (lockKeyByte & 0x04) !== 0;  // Bit 2: 0=Off, 1=On
   const autoKeypadLockDelayTime = Math.max(5, Math.min(60, data[0x86] & 0xFF));  // Offset 0x86 (5-60, seconds)
-  const longPressTime = Math.max(1, Math.min(5, data[0x93] & 0xFF));  // Offset 0x93 (1-5, 1=shortest, 5=longest)
+  const longPressTime = Math.max(1, Math.min(5, (data[0x93] & 0xFF) + 1));  // Offset 0x93 (stored as 0-4, displayed as 1-5, 1=shortest, 5=longest)
 
   // Button Functions (0x87-0x90)
   const sk1Short = Math.max(0, Math.min(42, data[0x87] & 0xFF));     // Offset 0x87 (0-42)
@@ -1443,7 +1443,7 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   lockKeyByte = settings.sideKeyLock ? (lockKeyByte | 0x04) : (lockKeyByte & ~0x04);  // Bit 2
   data[0x85] = lockKeyByte & 0xFF;
   data[0x86] = Math.max(5, Math.min(60, settings.autoKeypadLockDelayTime)) & 0xFF;  // Auto Keypad Lock Delay Time (5-60 seconds)
-  data[0x93] = Math.max(1, Math.min(5, settings.longPressTime)) & 0xFF;  // Long Press Time (1-5, 1=shortest, 5=longest)
+  data[0x93] = Math.max(0, Math.min(4, settings.longPressTime - 1)) & 0xFF;  // Long Press Time (stored as 0-4, displayed as 1-5, 1=shortest, 5=longest)
 
   // Button Functions (0x87-0x90)
   data[0x87] = Math.max(0, Math.min(42, settings.sk1Short)) & 0xFF;      // Offset 0x87 - SK1 Short

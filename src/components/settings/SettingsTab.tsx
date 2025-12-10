@@ -1592,81 +1592,77 @@ export const SettingsTab: React.FC = () => {
             </div>
           )}
 
-          {/* Key Lock Settings Section */}
+          {/* Keys & Buttons Section */}
           {radioSettings && (
             <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6 mt-6">
               <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
-                Key Lock Settings
+                Button Settings
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div>
-                  <label className="block text-cool-gray text-sm mb-2">Lock Key</label>
-                  <select
-                    value={radioSettings.lockKey || 'Manual'}
-                    onChange={(e) => updateRadioSettings({ lockKey: e.target.value as 'Manual' | 'Auto' })}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                  >
-                    <option value="Manual">Manual</option>
-                    <option value="Auto">Auto</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-cool-gray text-sm mb-2">Knob Lock</label>
-                  <select
-                    value={radioSettings.knobLock ? 'On' : 'Off'}
-                    onChange={(e) => updateRadioSettings({ knobLock: e.target.value === 'On' })}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                  >
-                    <option value="Off">Off</option>
-                    <option value="On">On</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-cool-gray text-sm mb-2">Side Key Lock</label>
-                  <select
-                    value={radioSettings.sideKeyLock ? 'On' : 'Off'}
-                    onChange={(e) => updateRadioSettings({ sideKeyLock: e.target.value === 'On' })}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                  >
-                    <option value="Off">Off</option>
-                    <option value="On">On</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-cool-gray text-sm mb-2">Auto Keypad Lock Delay Time (s)</label>
-                  <input
-                    type="number"
-                    min="5"
-                    max="60"
-                    value={radioSettings.autoKeypadLockDelayTime ?? 5}
-                    onChange={(e) => updateRadioSettings({ autoKeypadLockDelayTime: parseInt(e.target.value) || 5 })}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                  />
-                </div>
-                <div>
-                  <label className="block text-cool-gray text-sm mb-2">Long Press Time</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="5"
-                    value={radioSettings.longPressTime ?? 3}
-                    onChange={(e) => updateRadioSettings({ longPressTime: parseInt(e.target.value) || 1 })}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                  />
-                  <p className="text-xs text-cool-gray mt-1">1 = shortest, 5 = longest</p>
+              
+              {/* Key Lock Settings */}
+              <div className="mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div>
+                    <label className="block text-cool-gray text-sm mb-2">Lock Key</label>
+                    <select
+                      value={radioSettings.lockKey || 'Manual'}
+                      onChange={(e) => updateRadioSettings({ lockKey: e.target.value as 'Manual' | 'Auto' })}
+                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    >
+                      <option value="Manual">Manual</option>
+                      <option value="Auto">Auto</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-cool-gray text-sm mb-2">Knob Lock</label>
+                    <select
+                      value={radioSettings.knobLock ? 'On' : 'Off'}
+                      onChange={(e) => updateRadioSettings({ knobLock: e.target.value === 'On' })}
+                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    >
+                      <option value="Off">Off</option>
+                      <option value="On">On</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-cool-gray text-sm mb-2">Side Key Lock</label>
+                    <select
+                      value={radioSettings.sideKeyLock ? 'On' : 'Off'}
+                      onChange={(e) => updateRadioSettings({ sideKeyLock: e.target.value === 'On' })}
+                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    >
+                      <option value="Off">Off</option>
+                      <option value="On">On</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-cool-gray text-sm mb-2">Auto Keypad Lock Delay Time (s)</label>
+                    <input
+                      type="number"
+                      min="5"
+                      max="60"
+                      value={radioSettings.autoKeypadLockDelayTime ?? 5}
+                      onChange={(e) => updateRadioSettings({ autoKeypadLockDelayTime: parseInt(e.target.value) || 5 })}
+                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-cool-gray text-sm mb-2">Long Press Time</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="5"
+                      value={radioSettings.longPressTime ?? 3}
+                      onChange={(e) => updateRadioSettings({ longPressTime: parseInt(e.target.value) || 1 })}
+                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    />
+                    <p className="text-xs text-cool-gray mt-1">1 = shortest, 5 = longest</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* Button Functions Section */}
-          {radioSettings && (
-            <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6 mt-6">
-              <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
-                Button Functions
-              </h3>
-              <p className="text-cool-gray text-sm mb-4">Configure functions for SK1, SK2, P1, and P2 buttons (Short and Long press)</p>
-              
+              {/* Button Functions */}
+              <div className="mt-6 pt-6 border-t border-neon-cyan border-opacity-20">              
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {/* SK1 Button Functions */}
                 <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
@@ -1831,6 +1827,7 @@ export const SettingsTab: React.FC = () => {
                     </div>
                   </div>
                 </div>
+              </div>
               </div>
             </div>
           )}
