@@ -1117,6 +1117,14 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   // Language/Other settings (0xA0-0xA7)
   const languageOtherSettings = data.slice(0xA0, 0xA0 + 8);
 
+  // Key Lock Settings (0x85-0x86, 0x93)
+  const lockKeyByte = data[0x85] & 0xFF;
+  const lockKey: 'Manual' | 'Auto' = (lockKeyByte & 0x01) === 0 ? 'Manual' : 'Auto';  // Bit 0: 0=Manual, 1=Auto
+  const knobLock = (lockKeyByte & 0x02) !== 0;  // Bit 1: 0=Off, 1=On
+  const sideKeyLock = (lockKeyByte & 0x04) !== 0;  // Bit 2: 0=Off, 1=On
+  const autoKeypadLockDelayTime = Math.max(5, Math.min(60, data[0x86] & 0xFF));  // Offset 0x86 (5-60, seconds)
+  const longPressTime = Math.max(1, Math.min(5, (data[0x93] & 0xFF) + 1));  // Offset 0x93 (stored as 0-4, displayed as 1-5, 1=shortest, 5=longest)
+
   // Button Functions (0x87-0x90)
   const sk1Short = Math.max(0, Math.min(42, data[0x87] & 0xFF));     // Offset 0x87 (0-42)
   const sk1Long = Math.max(0, Math.min(42, data[0x88] & 0xFF));     // Offset 0x88 (0-42)
@@ -1299,6 +1307,11 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     vfoEmbeddedFlags,
     txDwellTime,
     languageOtherSettings,
+    lockKey,
+    knobLock,
+    sideKeyLock,
+    autoKeypadLockDelayTime,
+    longPressTime,
     sk1Short,
     sk1Long,
     sk2Short,
@@ -1419,6 +1432,18 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   if (settings.languageOtherSettings && settings.languageOtherSettings.length >= 8) {
     data.set(settings.languageOtherSettings.slice(0, 8), 0xA0);
   }
+
+  // Key Lock Settings (0x85-0x86, 0x93)
+  // Lock Key: bit 0 of 0x85 (0=Manual, 1=Auto)
+  // Knob Lock: bit 1 of 0x85 (0=Off, 1=On)
+  // Side Key Lock: bit 2 of 0x85 (0=Off, 1=On)
+  let lockKeyByte = data[0x85] & 0xFF;
+  lockKeyByte = settings.lockKey === 'Auto' ? (lockKeyByte | 0x01) : (lockKeyByte & ~0x01);  // Bit 0
+  lockKeyByte = settings.knobLock ? (lockKeyByte | 0x02) : (lockKeyByte & ~0x02);  // Bit 1
+  lockKeyByte = settings.sideKeyLock ? (lockKeyByte | 0x04) : (lockKeyByte & ~0x04);  // Bit 2
+  data[0x85] = lockKeyByte & 0xFF;
+  data[0x86] = Math.max(5, Math.min(60, settings.autoKeypadLockDelayTime)) & 0xFF;  // Auto Keypad Lock Delay Time (5-60 seconds)
+  data[0x93] = Math.max(0, Math.min(4, settings.longPressTime - 1)) & 0xFF;  // Long Press Time (stored as 0-4, displayed as 1-5, 1=shortest, 5=longest)
 
   // Button Functions (0x87-0x90)
   data[0x87] = Math.max(0, Math.min(42, settings.sk1Short)) & 0xFF;      // Offset 0x87 - SK1 Short
