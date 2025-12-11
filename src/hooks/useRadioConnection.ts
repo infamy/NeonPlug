@@ -38,7 +38,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-    const { setConnected, setRadioInfo, setSettings, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
+    const { setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
     const { setChannels, setRawChannelData } = useChannelsStore();
     const { setZones, setRawZoneData } = useZonesStore();
     const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -205,6 +205,10 @@ export function useRadioConnection() {
           if (radioSettings) {
             setRadioSettings(radioSettings);
           }
+          // Store raw radio settings data for diagnostics
+          if ((protocol as any).rawRadioSettingsData) {
+            setRawRadioSettingsData((protocol as any).rawRadioSettingsData);
+          }
         } catch (err) {
           // Radio settings are optional - don't fail the entire read if they're missing or cause errors
           console.warn('Could not read Radio Settings:', err);
@@ -274,7 +278,7 @@ export function useRadioConnection() {
         setIsConnecting(false);
       }
     }
-  }, [setConnected, setRadioInfo, setSettings, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setRadioIds, setRawRadioIdData, setCalibration, setRXGroups, setRawGroupData]);
+  }, [setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setRadioIds, setRawRadioIdData, setCalibration, setRXGroups, setRawGroupData]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void

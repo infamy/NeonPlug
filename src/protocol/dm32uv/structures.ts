@@ -1081,18 +1081,20 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const alertToneFlagsCont = data[0x21];
 
   // Display and UI settings (0x30-0x3B)
-  const zoneAColor = data[0x30] & 0x0F; // 0-15 (mask to lower 4 bits)
-  const zoneBColor = data[0x31] & 0x0F; // 0-15 (mask to lower 4 bits)
+  // Backlight Brightness: 0x30 (stored as 0-5, displayed as 1-6, so add +1)
+  const backlightBrightness = Math.max(1, Math.min(6, (data[0x30] & 0xFF) + 1)); // 1-6 (stored 0-5, displayed 1-6)
   const unknownDisplay = data[0x32];
   const displayFlags = data[0x33];
-  const backlightBrightness = Math.max(1, Math.min(6, data[0x34] & 0xFF)); // 1-6
-  const autoBacklightDuration = Math.max(5, Math.min(30, data[0x35] & 0xFF)); // 5-30, step 5
+  const callsignColor = data[0x34] & 0x0F; // 0-15 - Callsign Color
+  const standbyTextColor = data[0x35] & 0x0F; // 0-15 - Standby Text Color
   const menuExitTime = Math.max(1, Math.min(30, data[0x36] & 0xFF)); // 1-30
+  const autoBacklightDuration = 0; // TODO: Find correct offset for Auto Backlight Duration
   const standbyCharacterColor1 = Math.max(0, Math.min(30, data[0x37] & 0xFF)); // 0-30
-  const callDisplayColor = data[0x38] & 0x0F; // 0-15
-  const standbyCharacterColor2 = data[0x39] & 0x0F; // 0-15
-  const aChannelNameColor = data[0x3A] & 0x0F; // 0-15
-  const bChannelNameColor = data[0x3B] & 0x0F; // 0-15
+  const channelAColor = data[0x38] & 0x0F; // 0-15 - Channel A Color
+  const channelBColor = data[0x39] & 0x0F; // 0-15 - Channel B Color
+  const standbyCharacterColor2 = 0; // TODO: Find correct offset for Standby Character Color 2
+  const zoneAColor = data[0x3A] & 0x0F; // 0-15 - Zone A Color
+  const zoneBColor = data[0x3B] & 0x0F; // 0-15 - Zone B Color
 
   // Work mode and GPS settings (0x40-0x45)
   const workModeFlags = data[0x40];
@@ -1134,6 +1136,44 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const p1Long = Math.max(0, Math.min(42, data[0x8E] & 0xFF));      // Offset 0x8E (0-42)
   const p2Short = Math.max(0, Math.min(42, data[0x8F] & 0xFF));     // Offset 0x8F (0-42)
   const p2Long = Math.max(0, Math.min(42, data[0x90] & 0xFF));      // Offset 0x90 (0-42)
+
+  // One Key Operation
+  // Analog Call (4 entries, 2 bytes each, starting at 0x120)
+  const analogCall: Array<{ callType: number; callId: number }> = [];
+  for (let i = 0; i < 4; i++) {
+    const offset = 0x120 + i * 2;
+    analogCall.push({
+      callType: data[offset] & 0xFF,      // 0=No., 1=Call Type, 2=Call ID
+      callId: data[offset + 1] & 0xFF,    // Contact number or ID
+    });
+  }
+
+  // One Touch Call (5 entries, 5 bytes each, starting at 0x200)
+  const oneTouchCall: Array<{ callType: number; callObject: number; digitalCallType: number; sms: number }> = [];
+  for (let i = 0; i < 5; i++) {
+    const baseOffset = 0x200 + i * 5;
+    oneTouchCall.push({
+      callType: data[baseOffset] & 0xFF,                    // 0=Off, 1=Analog, 2=Digital
+      callObject: data[baseOffset + 1] | (data[baseOffset + 2] << 8),  // uint16, little-endian
+      digitalCallType: data[baseOffset + 3] & 0xFF,          // 0=Off, 1=Private, 2=Group, etc.
+      sms: data[baseOffset + 4] & 0xFF,                     // SMS number/index
+    });
+  }
+
+  // Fun+ (10 entries, 7 bytes each, starting at 0x230)
+  const funPlus: Array<{ funNumber: number; operateMode: number; menuSelect: number; callWay: number; callObject: number; digitalCallType: number; sms: number }> = [];
+  for (let i = 0; i < 10; i++) {
+    const baseOffset = 0x230 + i * 7;  // Base offset 0x230, 7 bytes per entry
+    funPlus.push({
+      funNumber: data[baseOffset] & 0xFF,                    // Number key (0-9)
+      operateMode: data[baseOffset + 1] & 0xFF,              // 0=Call, 1=Menu
+      menuSelect: data[baseOffset + 2] & 0xFF,               // Menu item (when Operate Mode = 1)
+      callWay: data[baseOffset + 3] & 0xFF,                   // 0=Off, 1=Analog, 2=Digital
+      callObject: data[baseOffset + 4] & 0xFF,               // Contact/ID
+      digitalCallType: data[baseOffset + 5] & 0xFF,           // Digital call type
+      sms: data[baseOffset + 6] & 0xFF,                      // SMS number/index
+    });
+  }
 
   // Legacy fields (0x301+) - keeping for backward compatibility
   const unknownRadioSetting = data[0x301];
@@ -1280,18 +1320,19 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     powerOnInterface,
     alertToneFlags,
     alertToneFlagsCont,
-    zoneAColor,
-    zoneBColor,
+    channelAColor,
+    channelBColor,
     unknownDisplay,
     displayFlags,
+    callsignColor,
+    standbyTextColor,
     backlightBrightness,
     autoBacklightDuration,
     menuExitTime,
     standbyCharacterColor1,
-    callDisplayColor,
     standbyCharacterColor2,
-    aChannelNameColor,
-    bChannelNameColor,
+    zoneAColor,
+    zoneBColor,
     workModeFlags,
     utcZone,
     measurePeriodInterval,
@@ -1320,6 +1361,9 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     p1Long,
     p2Short,
     p2Long,
+    analogCall,
+    oneTouchCall,
+    funPlus,
     unknownRadioSetting,
     radioEnabled,
     latitude,
@@ -1393,20 +1437,26 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   data[0x21] = settings.alertToneFlagsCont & 0xFF;
 
   // Display and UI settings (0x30-0x3B)
-  // Preserve upper 4 bits, only modify lower 4 bits
-  data[0x30] = (data[0x30] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneAColor)) & 0x0F);
-  data[0x31] = (data[0x31] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneBColor)) & 0x0F);
+  // Backlight Brightness: 0x30 (stored as 0-5, displayed as 1-6, so subtract 1)
+  data[0x30] = Math.max(0, Math.min(5, settings.backlightBrightness - 1)) & 0xFF;
   data[0x32] = settings.unknownDisplay & 0xFF;
   data[0x33] = settings.displayFlags & 0xFF;
-  data[0x34] = Math.max(1, Math.min(6, settings.backlightBrightness)) & 0xFF;
-  data[0x35] = Math.max(5, Math.min(30, settings.autoBacklightDuration)) & 0xFF;
+  // Preserve upper 4 bits, only modify lower 4 bits
+  // Callsign Color at 0x34
+  data[0x34] = (data[0x34] & 0xF0) | (Math.max(0, Math.min(15, settings.callsignColor)) & 0x0F);
+  // Standby Text Color at 0x35
+  data[0x35] = (data[0x35] & 0xF0) | (Math.max(0, Math.min(15, settings.standbyTextColor)) & 0x0F);
   data[0x36] = Math.max(1, Math.min(30, settings.menuExitTime)) & 0xFF;
+  // TODO: Auto Backlight Duration - offset unknown
   data[0x37] = Math.max(0, Math.min(30, settings.standbyCharacterColor1)) & 0xFF;
   // Preserve upper 4 bits, only modify lower 4 bits
-  data[0x38] = (data[0x38] & 0xF0) | (Math.max(0, Math.min(15, settings.callDisplayColor)) & 0x0F);
-  data[0x39] = (data[0x39] & 0xF0) | (Math.max(0, Math.min(15, settings.standbyCharacterColor2)) & 0x0F);
-  data[0x3A] = (data[0x3A] & 0xF0) | (Math.max(0, Math.min(15, settings.aChannelNameColor)) & 0x0F);
-  data[0x3B] = (data[0x3B] & 0xF0) | (Math.max(0, Math.min(15, settings.bChannelNameColor)) & 0x0F);
+  // Channel A Color at 0x38
+  data[0x38] = (data[0x38] & 0xF0) | (Math.max(0, Math.min(15, settings.channelAColor)) & 0x0F);
+  // Channel B Color at 0x39
+  data[0x39] = (data[0x39] & 0xF0) | (Math.max(0, Math.min(15, settings.channelBColor)) & 0x0F);
+  // TODO: Standby Character Color 2 - offset unknown
+  data[0x3A] = (data[0x3A] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneAColor)) & 0x0F);
+  data[0x3B] = (data[0x3B] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneBColor)) & 0x0F);
 
   // Work mode and GPS settings (0x40-0x45)
   data[0x40] = settings.workModeFlags & 0xFF;
@@ -1454,6 +1504,52 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   data[0x8E] = Math.max(0, Math.min(42, settings.p1Long)) & 0xFF;       // Offset 0x8E - P1 Long
   data[0x8F] = Math.max(0, Math.min(42, settings.p2Short)) & 0xFF;      // Offset 0x8F - P2 Short
   data[0x90] = Math.max(0, Math.min(42, settings.p2Long)) & 0xFF;        // Offset 0x90 - P2 Long
+
+  // One Key Operation
+  // Analog Call (4 entries, 2 bytes each, starting at 0x120)
+  if (settings.analogCall && settings.analogCall.length >= 4) {
+    for (let i = 0; i < 4; i++) {
+      const offset = 0x120 + i * 2;
+      const entry = settings.analogCall[i];
+      if (entry) {
+        data[offset] = Math.max(0, Math.min(2, entry.callType)) & 0xFF;
+        data[offset + 1] = Math.max(0, Math.min(255, entry.callId)) & 0xFF;
+      }
+    }
+  }
+
+  // One Touch Call (5 entries, 5 bytes each, starting at 0x200)
+  if (settings.oneTouchCall && settings.oneTouchCall.length >= 5) {
+    for (let i = 0; i < 5; i++) {
+      const baseOffset = 0x200 + i * 5;
+      const entry = settings.oneTouchCall[i];
+      if (entry) {
+        data[baseOffset] = Math.max(0, Math.min(2, entry.callType)) & 0xFF;
+        // Call Object as little-endian uint16
+        data[baseOffset + 1] = (entry.callObject & 0xFF);
+        data[baseOffset + 2] = ((entry.callObject >> 8) & 0xFF);
+        data[baseOffset + 3] = Math.max(0, Math.min(8, entry.digitalCallType)) & 0xFF;
+        data[baseOffset + 4] = Math.max(0, Math.min(255, entry.sms)) & 0xFF;
+      }
+    }
+  }
+
+  // Fun+ (10 entries, 7 bytes each, starting at 0x230)
+  if (settings.funPlus && settings.funPlus.length >= 10) {
+    for (let i = 0; i < 10; i++) {
+      const baseOffset = 0x230 + i * 7;  // Base offset 0x230, 7 bytes per entry
+      const entry = settings.funPlus[i];
+      if (entry) {
+        data[baseOffset] = Math.max(0, Math.min(9, entry.funNumber)) & 0xFF;
+        data[baseOffset + 1] = Math.max(0, Math.min(1, entry.operateMode)) & 0xFF;
+        data[baseOffset + 2] = Math.max(0, Math.min(13, entry.menuSelect)) & 0xFF;
+        data[baseOffset + 3] = Math.max(0, Math.min(2, entry.callWay)) & 0xFF;
+        data[baseOffset + 4] = Math.max(0, Math.min(255, entry.callObject)) & 0xFF;
+        data[baseOffset + 5] = Math.max(0, Math.min(8, entry.digitalCallType)) & 0xFF;
+        data[baseOffset + 6] = Math.max(0, Math.min(255, entry.sms)) & 0xFF;
+      }
+    }
+  }
 
   // Legacy fields (0x301+)
   data[0x301] = settings.unknownRadioSetting;

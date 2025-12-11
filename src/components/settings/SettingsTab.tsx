@@ -109,6 +109,58 @@ const BUTTON_FUNCTION_OPTIONS = [
   { value: 42, label: 'Man Down Alarm' },
 ];
 
+const ANALOG_CALL_TYPE_OPTIONS = [
+  { value: 0, label: 'No. (Contact number)' },
+  { value: 1, label: 'Call Type' },
+  { value: 2, label: 'Call ID' },
+];
+
+const ONE_TOUCH_CALL_TYPE_OPTIONS = [
+  { value: 0, label: 'Off' },
+  { value: 1, label: 'Analog' },
+  { value: 2, label: 'Digital' },
+];
+
+const DIGITAL_CALL_TYPE_OPTIONS = [
+  { value: 0, label: 'Off' },
+  { value: 1, label: 'Private' },
+  { value: 2, label: 'Group' },
+  { value: 3, label: 'Message' },
+  { value: 4, label: 'Call Alert' },
+  { value: 5, label: 'Radio Check' },
+  { value: 6, label: 'Remote Monitor' },
+  { value: 7, label: 'Active' },
+  { value: 8, label: 'Kill' },
+];
+
+const FUN_PLUS_OPERATE_MODE_OPTIONS = [
+  { value: 0, label: 'Call' },
+  { value: 1, label: 'Menu' },
+];
+
+const FUN_PLUS_MENU_SELECT_OPTIONS = [
+  { value: 0, label: 'Off' },
+  { value: 1, label: 'SMS' },
+  { value: 2, label: 'New SMS' },
+  { value: 3, label: 'Shortcut Text' },
+  { value: 4, label: 'Inbox' },
+  { value: 5, label: 'Outbox' },
+  { value: 6, label: 'Contact List' },
+  { value: 7, label: 'Manual Dial' },
+  { value: 8, label: 'Call Log' },
+  { value: 9, label: 'Sent Call' },
+  { value: 10, label: 'Answered Call' },
+  { value: 11, label: 'Missed Call' },
+  { value: 12, label: 'Zone' },
+  { value: 13, label: 'Radio Setting' },
+];
+
+const FUN_PLUS_CALL_WAY_OPTIONS = [
+  { value: 0, label: 'Off' },
+  { value: 1, label: 'Analog' },
+  { value: 2, label: 'Digital' },
+];
+
 const getColorHex = (colorValue: number): string => {
   const color = COLOR_OPTIONS.find(c => c.value === colorValue);
   return color?.hex || '#FFFFFF';
@@ -352,6 +404,78 @@ export const SettingsTab: React.FC = () => {
                   <h4 className="text-md font-semibold text-neon-cyan mb-3">Display Settings</h4>
                   <div className="space-y-3">
                     <div>
+                      <label className="block text-cool-gray text-sm mb-2">Callsign Color</label>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={radioSettings.callsignColor}
+                          onChange={(e) => updateRadioSettings({ callsignColor: parseInt(e.target.value) || 0 })}
+                          className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        >
+                          {COLOR_OPTIONS.map(color => (
+                            <option key={color.value} value={color.value}>{color.label}</option>
+                          ))}
+                        </select>
+                        <div
+                          className="w-9 h-9 rounded border border-neon-cyan border-opacity-30 flex-shrink-0"
+                          style={{ backgroundColor: getColorHex(radioSettings.callsignColor) }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-cool-gray text-sm mb-2">Standby Text Color</label>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={radioSettings.standbyTextColor}
+                          onChange={(e) => updateRadioSettings({ standbyTextColor: parseInt(e.target.value) || 0 })}
+                          className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        >
+                          {COLOR_OPTIONS.map(color => (
+                            <option key={color.value} value={color.value}>{color.label}</option>
+                          ))}
+                        </select>
+                        <div
+                          className="w-9 h-9 rounded border border-neon-cyan border-opacity-30 flex-shrink-0"
+                          style={{ backgroundColor: getColorHex(radioSettings.standbyTextColor) }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-cool-gray text-sm mb-2">Channel A Color</label>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={radioSettings.channelAColor}
+                          onChange={(e) => updateRadioSettings({ channelAColor: parseInt(e.target.value) || 0 })}
+                          className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        >
+                          {COLOR_OPTIONS.map(color => (
+                            <option key={color.value} value={color.value}>{color.label}</option>
+                          ))}
+                        </select>
+                        <div
+                          className="w-9 h-9 rounded border border-neon-cyan border-opacity-30 flex-shrink-0"
+                          style={{ backgroundColor: getColorHex(radioSettings.channelAColor) }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-cool-gray text-sm mb-2">Channel B Color</label>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={radioSettings.channelBColor}
+                          onChange={(e) => updateRadioSettings({ channelBColor: parseInt(e.target.value) || 0 })}
+                          className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        >
+                          {COLOR_OPTIONS.map(color => (
+                            <option key={color.value} value={color.value}>{color.label}</option>
+                          ))}
+                        </select>
+                        <div
+                          className="w-10 h-10 rounded border border-neon-cyan border-opacity-30 flex-shrink-0"
+                          style={{ backgroundColor: getColorHex(radioSettings.channelBColor) }}
+                        />
+                      </div>
+                    </div>
+                    <div>
                       <label className="block text-cool-gray text-sm mb-2">Zone A Color</label>
                       <div className="flex items-center gap-2">
                         <select
@@ -364,7 +488,7 @@ export const SettingsTab: React.FC = () => {
                           ))}
                         </select>
                         <div
-                          className="w-9 h-9 rounded border border-neon-cyan border-opacity-30 flex-shrink-0"
+                          className="w-10 h-10 rounded border border-neon-cyan border-opacity-30 flex-shrink-0"
                           style={{ backgroundColor: getColorHex(radioSettings.zoneAColor) }}
                         />
                       </div>
@@ -384,60 +508,6 @@ export const SettingsTab: React.FC = () => {
                         <div
                           className="w-10 h-10 rounded border border-neon-cyan border-opacity-30 flex-shrink-0"
                           style={{ backgroundColor: getColorHex(radioSettings.zoneBColor) }}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-cool-gray text-sm mb-2">A Channel Name Color</label>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={radioSettings.aChannelNameColor}
-                          onChange={(e) => updateRadioSettings({ aChannelNameColor: parseInt(e.target.value) || 0 })}
-                          className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                        >
-                          {COLOR_OPTIONS.map(color => (
-                            <option key={color.value} value={color.value}>{color.label}</option>
-                          ))}
-                        </select>
-                        <div
-                          className="w-10 h-10 rounded border border-neon-cyan border-opacity-30 flex-shrink-0"
-                          style={{ backgroundColor: getColorHex(radioSettings.aChannelNameColor) }}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-cool-gray text-sm mb-2">B Channel Name Color</label>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={radioSettings.bChannelNameColor}
-                          onChange={(e) => updateRadioSettings({ bChannelNameColor: parseInt(e.target.value) || 0 })}
-                          className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                        >
-                          {COLOR_OPTIONS.map(color => (
-                            <option key={color.value} value={color.value}>{color.label}</option>
-                          ))}
-                        </select>
-                        <div
-                          className="w-10 h-10 rounded border border-neon-cyan border-opacity-30 flex-shrink-0"
-                          style={{ backgroundColor: getColorHex(radioSettings.bChannelNameColor) }}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-cool-gray text-sm mb-2">Call Display Color</label>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={radioSettings.callDisplayColor}
-                          onChange={(e) => updateRadioSettings({ callDisplayColor: parseInt(e.target.value) || 0 })}
-                          className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                        >
-                          {COLOR_OPTIONS.map(color => (
-                            <option key={color.value} value={color.value}>{color.label}</option>
-                          ))}
-                        </select>
-                        <div
-                          className="w-10 h-10 rounded border border-neon-cyan border-opacity-30 flex-shrink-0"
-                          style={{ backgroundColor: getColorHex(radioSettings.callDisplayColor) }}
                         />
                       </div>
                     </div>
@@ -1830,6 +1900,296 @@ export const SettingsTab: React.FC = () => {
               </div>
               </div>
             </div>
+          )}
+
+          {/* One Key Operation */}
+          {radioSettings && (
+            <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6 mt-6">
+              <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
+                One Key Operation
+              </h3>
+
+              {/* Analog Call */}
+              <div className="mb-6">
+                <h4 className="text-md font-semibold text-neon-cyan mb-3">Analog Call</h4>
+                <p className="text-cool-gray text-sm mb-4">Configure 4 analog call shortcuts</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-neon-cyan border-opacity-30">
+                        <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Entry</th>
+                        <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Call Type</th>
+                        <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Call ID/No</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[0, 1, 2, 3].map((index) => {
+                        const entry = radioSettings.analogCall?.[index] || { callType: 0, callId: 0 };
+                        return (
+                          <tr key={index} className="border-b border-neon-cyan border-opacity-10 hover:bg-dark-charcoal">
+                            <td className="py-2 px-3 text-cool-gray">Analog Call {index + 1}</td>
+                            <td className="py-2 px-3">
+                              <select
+                                value={entry.callType ?? 0}
+                                onChange={(e) => {
+                                  const newAnalogCall = [...(radioSettings.analogCall || Array(4).fill({ callType: 0, callId: 0 }))];
+                                  newAnalogCall[index] = { ...entry, callType: parseInt(e.target.value) || 0 };
+                                  updateRadioSettings({ analogCall: newAnalogCall });
+                                }}
+                                className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                              >
+                                {ANALOG_CALL_TYPE_OPTIONS.map(option => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="py-2 px-3">
+                              <input
+                                type="number"
+                                min="0"
+                                max="255"
+                                value={entry.callId ?? 0}
+                                onChange={(e) => {
+                                  const newAnalogCall = [...(radioSettings.analogCall || Array(4).fill({ callType: 0, callId: 0 }))];
+                                  newAnalogCall[index] = { ...entry, callId: parseInt(e.target.value) || 0 };
+                                  updateRadioSettings({ analogCall: newAnalogCall });
+                                }}
+                                className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* One Touch Call */}
+              <div className="mb-6 pt-6 border-t border-neon-cyan border-opacity-20">
+              <h4 className="text-md font-semibold text-neon-cyan mb-3">One Touch Call</h4>
+              <p className="text-cool-gray text-sm mb-4">Configure 5 one-touch call shortcuts</p>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-neon-cyan border-opacity-30">
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Entry</th>
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Call Type</th>
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Call Object (Contact ID)</th>
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Digital Call Type</th>
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">SMS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[0, 1, 2, 3, 4].map((index) => {
+                      const entry = radioSettings.oneTouchCall?.[index] || { callType: 0, callObject: 0, digitalCallType: 0, sms: 0 };
+                      return (
+                        <tr key={index} className="border-b border-neon-cyan border-opacity-10 hover:bg-dark-charcoal">
+                          <td className="py-2 px-3 text-cool-gray">One Touch Call {index + 1}</td>
+                          <td className="py-2 px-3">
+                            <select
+                              value={entry.callType ?? 0}
+                              onChange={(e) => {
+                                const newOneTouchCall = [...(radioSettings.oneTouchCall || Array(5).fill({ callType: 0, callObject: 0, digitalCallType: 0, sms: 0 }))];
+                                newOneTouchCall[index] = { ...entry, callType: parseInt(e.target.value) || 0 };
+                                updateRadioSettings({ oneTouchCall: newOneTouchCall });
+                              }}
+                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                            >
+                              {ONE_TOUCH_CALL_TYPE_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2 px-3">
+                            <input
+                              type="number"
+                              min="0"
+                              max="65535"
+                              value={entry.callObject ?? 0}
+                              onChange={(e) => {
+                                const newOneTouchCall = [...(radioSettings.oneTouchCall || Array(5).fill({ callType: 0, callObject: 0, digitalCallType: 0, sms: 0 }))];
+                                newOneTouchCall[index] = { ...entry, callObject: parseInt(e.target.value) || 0 };
+                                updateRadioSettings({ oneTouchCall: newOneTouchCall });
+                              }}
+                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                            />
+                          </td>
+                          <td className="py-2 px-3">
+                            <select
+                              value={entry.digitalCallType ?? 0}
+                              onChange={(e) => {
+                                const newOneTouchCall = [...(radioSettings.oneTouchCall || Array(5).fill({ callType: 0, callObject: 0, digitalCallType: 0, sms: 0 }))];
+                                newOneTouchCall[index] = { ...entry, digitalCallType: parseInt(e.target.value) || 0 };
+                                updateRadioSettings({ oneTouchCall: newOneTouchCall });
+                              }}
+                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                            >
+                              {DIGITAL_CALL_TYPE_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2 px-3">
+                            <input
+                              type="number"
+                              min="0"
+                              max="255"
+                              value={entry.sms ?? 0}
+                              onChange={(e) => {
+                                const newOneTouchCall = [...(radioSettings.oneTouchCall || Array(5).fill({ callType: 0, callObject: 0, digitalCallType: 0, sms: 0 }))];
+                                newOneTouchCall[index] = { ...entry, sms: parseInt(e.target.value) || 0 };
+                                updateRadioSettings({ oneTouchCall: newOneTouchCall });
+                              }}
+                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    </tbody>
+                </table>
+              </div>
+              </div>
+
+              {/* Fun+ */}
+              <div className="pt-6 border-t border-neon-cyan border-opacity-20">
+              <h4 className="text-md font-semibold text-neon-cyan mb-3">Fun+ (Function Key Shortcuts)</h4>
+              <p className="text-cool-gray text-sm mb-4">Configure 10 function key shortcuts (Fun+0 through Fun+9)</p>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-neon-cyan border-opacity-30">
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Entry</th>
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Number Key</th>
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Operate Mode</th>
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Menu Select</th>
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Call Way</th>
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Call Object</th>
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Digital Call Type</th>
+                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">SMS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((index) => {
+                      const entry = radioSettings.funPlus?.[index] || { funNumber: index, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 };
+                      return (
+                        <tr key={index} className="border-b border-neon-cyan border-opacity-10 hover:bg-dark-charcoal">
+                          <td className="py-2 px-3 text-cool-gray">Fun+{index}</td>
+                          <td className="py-2 px-3">
+                            <input
+                              type="number"
+                              min="0"
+                              max="9"
+                              value={entry.funNumber ?? index}
+                              onChange={(e) => {
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                newFunPlus[index] = { ...entry, funNumber: parseInt(e.target.value) || index };
+                                updateRadioSettings({ funPlus: newFunPlus });
+                              }}
+                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                            />
+                          </td>
+                          <td className="py-2 px-3">
+                            <select
+                              value={entry.operateMode ?? 0}
+                              onChange={(e) => {
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                newFunPlus[index] = { ...entry, operateMode: parseInt(e.target.value) || 0 };
+                                updateRadioSettings({ funPlus: newFunPlus });
+                              }}
+                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                            >
+                              {FUN_PLUS_OPERATE_MODE_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2 px-3">
+                            <select
+                              value={entry.menuSelect ?? 0}
+                              onChange={(e) => {
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                newFunPlus[index] = { ...entry, menuSelect: parseInt(e.target.value) || 0 };
+                                updateRadioSettings({ funPlus: newFunPlus });
+                              }}
+                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={entry.operateMode !== 1}
+                            >
+                              {FUN_PLUS_MENU_SELECT_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2 px-3">
+                            <select
+                              value={entry.callWay ?? 0}
+                              onChange={(e) => {
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                newFunPlus[index] = { ...entry, callWay: parseInt(e.target.value) || 0 };
+                                updateRadioSettings({ funPlus: newFunPlus });
+                              }}
+                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={entry.operateMode !== 0}
+                            >
+                              {FUN_PLUS_CALL_WAY_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2 px-3">
+                            <input
+                              type="number"
+                              min="0"
+                              max="255"
+                              value={entry.callObject ?? 0}
+                              onChange={(e) => {
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                newFunPlus[index] = { ...entry, callObject: parseInt(e.target.value) || 0 };
+                                updateRadioSettings({ funPlus: newFunPlus });
+                              }}
+                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={entry.operateMode !== 0}
+                            />
+                          </td>
+                          <td className="py-2 px-3">
+                            <select
+                              value={entry.digitalCallType ?? 0}
+                              onChange={(e) => {
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                newFunPlus[index] = { ...entry, digitalCallType: parseInt(e.target.value) || 0 };
+                                updateRadioSettings({ funPlus: newFunPlus });
+                              }}
+                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={entry.operateMode !== 0 || entry.callWay !== 2}
+                            >
+                              {DIGITAL_CALL_TYPE_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2 px-3">
+                            <input
+                              type="number"
+                              min="0"
+                              max="255"
+                              value={entry.sms ?? 0}
+                              onChange={(e) => {
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                newFunPlus[index] = { ...entry, sms: parseInt(e.target.value) || 0 };
+                                updateRadioSettings({ funPlus: newFunPlus });
+                              }}
+                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
           )}
         </div>
       )}
