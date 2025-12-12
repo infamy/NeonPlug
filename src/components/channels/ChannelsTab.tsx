@@ -1,10 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
+import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { ChannelsTable } from './ChannelsTable';
 import { createDefaultChannel } from '../../utils/channelHelpers';
+import type { Channel } from '../../models/Channel';
 
 export const ChannelsTab: React.FC = () => {
   const { channels, addChannel } = useChannelsStore();
+  const { settings: radioSettings } = useRadioSettingsStore();
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleAddChannel = () => {
@@ -24,13 +27,27 @@ export const ChannelsTab: React.FC = () => {
     addChannel(newChannel);
   };
 
+  // Create VFO channels with channel numbers 4001 and 4002
+  const vfoChannels = useMemo(() => {
+    const vfos: Channel[] = [];
+    if (radioSettings?.vfoA) {
+      vfos.push({ ...radioSettings.vfoA, number: 4001 }); // VFO A is channel 4001
+    }
+    if (radioSettings?.vfoB) {
+      vfos.push({ ...radioSettings.vfoB, number: 4002 }); // VFO B is channel 4002
+    }
+    return vfos;
+  }, [radioSettings?.vfoA, radioSettings?.vfoB]);
+
   const filteredChannels = useMemo(() => {
+    const allChannels = [...vfoChannels, ...channels];
+    
     if (!searchQuery.trim()) {
-      return channels;
+      return allChannels;
     }
 
     const query = searchQuery.toLowerCase().trim();
-    return channels.filter(channel => {
+    return allChannels.filter(channel => {
       // Search in name
       if (channel.name.toLowerCase().includes(query)) return true;
       
@@ -59,7 +76,7 @@ export const ChannelsTab: React.FC = () => {
       
       return false;
     });
-  }, [channels, searchQuery]);
+  }, [channels, vfoChannels, searchQuery]);
 
   return (
     <div className="h-full">
@@ -67,7 +84,7 @@ export const ChannelsTab: React.FC = () => {
         <h2 className="text-2xl font-bold text-neon-cyan">Channels</h2>
         <div className="flex items-center gap-4">
           <div className="text-cool-gray">
-            {filteredChannels.length} of {channels.length} channel{channels.length !== 1 ? 's' : ''}
+            {filteredChannels.length - vfoChannels.length} channel{(filteredChannels.length - vfoChannels.length) !== 1 ? 's' : ''} {vfoChannels.length > 0 && `(${vfoChannels.length} VFO${vfoChannels.length !== 1 ? 's' : ''})`}
           </div>
           <button
             onClick={handleAddChannel}

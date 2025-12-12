@@ -1,5 +1,6 @@
 import React from 'react';
 import { useContactsStore } from '../../store/contactsStore';
+import { useDebugStore } from '../../store/debugStore';
 
 interface TabNavigationProps {
   activeTab: string;
@@ -11,11 +12,12 @@ const tabs = [
   { id: 'zones', label: 'Zones' },
   { id: 'scanlists', label: 'Scan Lists' },
   { id: 'contacts', label: 'Contacts' },
-  { id: 'emergency', label: 'Emergency' },
   { id: 'messages', label: 'Messages & Groups' },
+  { id: 'digital', label: 'Digital' },
   { id: 'settings', label: 'Settings' },
   { id: 'import', label: 'Channel Wizard' },
   { id: 'about', label: 'About' },
+  { id: 'diagnostics', label: '🐛', title: 'Diagnostics' },
 ];
 
 export const TabNavigation: React.FC<TabNavigationProps> = ({
@@ -23,6 +25,7 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
   onTabChange,
 }) => {
   const { contactsLoaded } = useContactsStore();
+  const { debugMode } = useDebugStore();
   const isContactsDisabled = !contactsLoaded;
 
   return (
@@ -30,6 +33,8 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
       <div className="flex space-x-1 px-4">
         {tabs.map((tab) => {
           const isDisabled = tab.id === 'contacts' && isContactsDisabled;
+          const isHidden = tab.id === 'diagnostics' && !debugMode;
+          if (isHidden) return null;
           return (
             <button
               key={tab.id}
@@ -45,7 +50,7 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
                     : 'text-cool-gray hover:text-white'
                 }
               `}
-              title={isDisabled ? 'Contacts not loaded. Read from radio first.' : undefined}
+              title={tab.title || (isDisabled ? 'Contacts not loaded. Read from radio first.' : undefined)}
             >
               {tab.label}
             </button>

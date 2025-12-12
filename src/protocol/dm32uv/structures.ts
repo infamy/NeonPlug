@@ -3,9 +3,10 @@
  * Parses channel, zone, and contact structures from radio memory
  */
 
-import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, CalibrationData, RXGroup } from '../../models';
+import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, CalibrationData, RXGroup, EncryptionKey } from '../../models';
 import { decodeBCDFrequency, decodeCTCSSDCS, encodeBCDFrequency, encodeCTCSSDCS } from './encoding';
 import { OFFSET, BLOCK_SIZE, LIMITS } from './constants';
+import { createDefaultChannel } from '../../utils/channelHelpers';
 
 /**
  * Calculate the block offset for a channel's flag byte
@@ -1081,18 +1082,24 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const alertToneFlagsCont = data[0x21];
 
   // Display and UI settings (0x30-0x3B)
-  const zoneAColor = data[0x30] & 0x0F; // 0-15 (mask to lower 4 bits)
-  const zoneBColor = data[0x31] & 0x0F; // 0-15 (mask to lower 4 bits)
+  // Backlight Brightness: 0x30 (stored as 0-5, displayed as 1-6, so add +1)
+  const backlightBrightness = Math.max(1, Math.min(6, (data[0x30] & 0xFF) + 1)); // 1-6 (stored 0-5, displayed 1-6)
   const unknownDisplay = data[0x32];
   const displayFlags = data[0x33];
-  const backlightBrightness = Math.max(1, Math.min(6, data[0x34] & 0xFF)); // 1-6
-  const autoBacklightDuration = Math.max(5, Math.min(30, data[0x35] & 0xFF)); // 5-30, step 5
+  // Data Display Format: bit 3 of 0x33 (0x08 mask)
+  // Bit 3 = 0: yyy/m/d (format 0)
+  // Bit 3 = 1: d/m/yyy (format 1)
+  const dataDisplayFormat = (data[0x33] & 0x08) !== 0 ? 1 : 0;
+  const callsignColor = data[0x34] & 0x0F; // 0-15 - Callsign Color
+  const standbyTextColor = data[0x35] & 0x0F; // 0-15 - Standby Text Color
   const menuExitTime = Math.max(1, Math.min(30, data[0x36] & 0xFF)); // 1-30
+  const autoBacklightDuration = 0; // TODO: Find correct offset for Auto Backlight Duration
   const standbyCharacterColor1 = Math.max(0, Math.min(30, data[0x37] & 0xFF)); // 0-30
-  const callDisplayColor = data[0x38] & 0x0F; // 0-15
-  const standbyCharacterColor2 = data[0x39] & 0x0F; // 0-15
-  const aChannelNameColor = data[0x3A] & 0x0F; // 0-15
-  const bChannelNameColor = data[0x3B] & 0x0F; // 0-15
+  const channelAColor = data[0x38] & 0x0F; // 0-15 - Channel A Color
+  const channelBColor = data[0x39] & 0x0F; // 0-15 - Channel B Color
+  const standbyCharacterColor2 = 0; // TODO: Find correct offset for Standby Character Color 2
+  const zoneAColor = data[0x3A] & 0x0F; // 0-15 - Zone A Color
+  const zoneBColor = data[0x3B] & 0x0F; // 0-15 - Zone B Color
 
   // Work mode and GPS settings (0x40-0x45)
   const workModeFlags = data[0x40];
@@ -1134,6 +1141,45 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const p1Long = Math.max(0, Math.min(42, data[0x8E] & 0xFF));      // Offset 0x8E (0-42)
   const p2Short = Math.max(0, Math.min(42, data[0x8F] & 0xFF));     // Offset 0x8F (0-42)
   const p2Long = Math.max(0, Math.min(42, data[0x90] & 0xFF));      // Offset 0x90 (0-42)
+
+  // One Key Operation
+  // Analog Call (4 entries, 2 bytes each, starting at 0x120)
+  const analogCall: Array<{ callType: number; callId: number }> = [];
+  for (let i = 0; i < 4; i++) {
+    const offset = 0x120 + i * 2;
+    analogCall.push({
+      callType: data[offset] & 0xFF,      // 0=No., 1=Call Type, 2=Call ID
+      callId: data[offset + 1] & 0xFF,    // Contact number or ID
+    });
+  }
+
+  // One Touch Call (5 entries, 5 bytes each, starting at 0x200)
+  const oneTouchCall: Array<{ callType: number; callObject: number; digitalCallType: number; sms: number }> = [];
+  for (let i = 0; i < 5; i++) {
+    const baseOffset = 0x200 + i * 5;
+    oneTouchCall.push({
+      callType: data[baseOffset] & 0xFF,                    // 0=Off, 1=Analog, 2=Digital
+      callObject: data[baseOffset + 1] | (data[baseOffset + 2] << 8),  // uint16, little-endian
+      digitalCallType: data[baseOffset + 3] & 0xFF,          // 0=Off, 1=Private, 2=Group, etc.
+      sms: data[baseOffset + 4] & 0xFF,                     // SMS number/index
+    });
+  }
+
+  // Fun+ (10 entries, 7 bytes each, starting at 0x230)
+  // Fun+Number is determined by entry index (0-9), not stored in data
+  const funPlus: Array<{ operateMode: number; menuSelect: number; callWay: number; callObject: number; digitalCallType: number; sms: number }> = [];
+  for (let i = 0; i < 10; i++) {
+    const baseOffset = 0x230 + i * 7;  // Base offset 0x230, 7 bytes per entry
+    funPlus.push({
+      operateMode: data[baseOffset + 0x00] & 0xFF,              // +0x00: 0=Call, 1=Menu
+      menuSelect: data[baseOffset + 0x01] & 0xFF,               // +0x01: Menu item (0-13)
+      // +0x02: Reserved/Padding (not used)
+      callWay: data[baseOffset + 0x03] & 0xFF,                   // +0x03: 0=Off, 1=Analog, 2=Digital
+      callObject: data[baseOffset + 0x04] & 0xFF,               // +0x04: Contact/ID
+      digitalCallType: data[baseOffset + 0x05] & 0xFF,           // +0x05: Digital call type (0-8)
+      sms: data[baseOffset + 0x06] & 0xFF,                      // +0x06: SMS number/index
+    });
+  }
 
   // Legacy fields (0x301+) - keeping for backward compatibility
   const unknownRadioSetting = data[0x301];
@@ -1185,6 +1231,13 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const unknownValue = Array.from(unknownValueBytes)
     .map(b => b.toString(16).padStart(2, '0'))
     .join(' ');
+
+  // VFO Channel Information
+  // Note: VFO A and VFO B are now parsed from block 0x41 as channels 4001 and 4002
+  // They are set in readRadioSettings() after parsing block 0x41
+  // Create default empty channels here - will be overridden if block 0x41 is available
+  const vfoA = createDefaultChannel({ number: 4001, name: '', rxFrequency: 0, txFrequency: 0 });
+  const vfoB = createDefaultChannel({ number: 4002, name: '', rxFrequency: 0, txFrequency: 0 });
 
   // Menu Enable/Disable Flags (0x500-0x507)
   /**
@@ -1280,18 +1333,20 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     powerOnInterface,
     alertToneFlags,
     alertToneFlagsCont,
-    zoneAColor,
-    zoneBColor,
+    channelAColor,
+    channelBColor,
     unknownDisplay,
     displayFlags,
+    dataDisplayFormat,
+    callsignColor,
+    standbyTextColor,
     backlightBrightness,
     autoBacklightDuration,
     menuExitTime,
     standbyCharacterColor1,
-    callDisplayColor,
     standbyCharacterColor2,
-    aChannelNameColor,
-    bChannelNameColor,
+    zoneAColor,
+    zoneBColor,
     workModeFlags,
     utcZone,
     measurePeriodInterval,
@@ -1320,6 +1375,9 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     p1Long,
     p2Short,
     p2Long,
+    analogCall,
+    oneTouchCall,
+    funPlus,
     unknownRadioSetting,
     radioEnabled,
     latitude,
@@ -1337,6 +1395,8 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     currentZone,
     zoneEnabled,
     unknownValue,
+    vfoA,
+    vfoB,
     menuEnableFlags,
   };
 }
@@ -1393,20 +1453,35 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   data[0x21] = settings.alertToneFlagsCont & 0xFF;
 
   // Display and UI settings (0x30-0x3B)
-  // Preserve upper 4 bits, only modify lower 4 bits
-  data[0x30] = (data[0x30] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneAColor)) & 0x0F);
-  data[0x31] = (data[0x31] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneBColor)) & 0x0F);
+  // Backlight Brightness: 0x30 (stored as 0-5, displayed as 1-6, so subtract 1)
+  data[0x30] = Math.max(0, Math.min(5, settings.backlightBrightness - 1)) & 0xFF;
   data[0x32] = settings.unknownDisplay & 0xFF;
-  data[0x33] = settings.displayFlags & 0xFF;
-  data[0x34] = Math.max(1, Math.min(6, settings.backlightBrightness)) & 0xFF;
-  data[0x35] = Math.max(5, Math.min(30, settings.autoBacklightDuration)) & 0xFF;
+  // Display Flags: 0x33
+  // Preserve existing bits, only modify bit 3 (0x08) based on dataDisplayFormat
+  const currentDisplayFlags = originalData ? originalData[0x33] : settings.displayFlags;
+  let displayFlagsValue = currentDisplayFlags & 0xFF;
+  if (settings.dataDisplayFormat === 1) {
+    displayFlagsValue |= 0x08; // Set bit 3
+  } else {
+    displayFlagsValue &= ~0x08; // Clear bit 3
+  }
+  data[0x33] = displayFlagsValue;
+  // Preserve upper 4 bits, only modify lower 4 bits
+  // Callsign Color at 0x34
+  data[0x34] = (data[0x34] & 0xF0) | (Math.max(0, Math.min(15, settings.callsignColor)) & 0x0F);
+  // Standby Text Color at 0x35
+  data[0x35] = (data[0x35] & 0xF0) | (Math.max(0, Math.min(15, settings.standbyTextColor)) & 0x0F);
   data[0x36] = Math.max(1, Math.min(30, settings.menuExitTime)) & 0xFF;
+  // TODO: Auto Backlight Duration - offset unknown
   data[0x37] = Math.max(0, Math.min(30, settings.standbyCharacterColor1)) & 0xFF;
   // Preserve upper 4 bits, only modify lower 4 bits
-  data[0x38] = (data[0x38] & 0xF0) | (Math.max(0, Math.min(15, settings.callDisplayColor)) & 0x0F);
-  data[0x39] = (data[0x39] & 0xF0) | (Math.max(0, Math.min(15, settings.standbyCharacterColor2)) & 0x0F);
-  data[0x3A] = (data[0x3A] & 0xF0) | (Math.max(0, Math.min(15, settings.aChannelNameColor)) & 0x0F);
-  data[0x3B] = (data[0x3B] & 0xF0) | (Math.max(0, Math.min(15, settings.bChannelNameColor)) & 0x0F);
+  // Channel A Color at 0x38
+  data[0x38] = (data[0x38] & 0xF0) | (Math.max(0, Math.min(15, settings.channelAColor)) & 0x0F);
+  // Channel B Color at 0x39
+  data[0x39] = (data[0x39] & 0xF0) | (Math.max(0, Math.min(15, settings.channelBColor)) & 0x0F);
+  // TODO: Standby Character Color 2 - offset unknown
+  data[0x3A] = (data[0x3A] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneAColor)) & 0x0F);
+  data[0x3B] = (data[0x3B] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneBColor)) & 0x0F);
 
   // Work mode and GPS settings (0x40-0x45)
   data[0x40] = settings.workModeFlags & 0xFF;
@@ -1454,6 +1529,53 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   data[0x8E] = Math.max(0, Math.min(42, settings.p1Long)) & 0xFF;       // Offset 0x8E - P1 Long
   data[0x8F] = Math.max(0, Math.min(42, settings.p2Short)) & 0xFF;      // Offset 0x8F - P2 Short
   data[0x90] = Math.max(0, Math.min(42, settings.p2Long)) & 0xFF;        // Offset 0x90 - P2 Long
+
+  // One Key Operation
+  // Analog Call (4 entries, 2 bytes each, starting at 0x120)
+  if (settings.analogCall && settings.analogCall.length >= 4) {
+    for (let i = 0; i < 4; i++) {
+      const offset = 0x120 + i * 2;
+      const entry = settings.analogCall[i];
+      if (entry) {
+        data[offset] = Math.max(0, Math.min(2, entry.callType)) & 0xFF;
+        data[offset + 1] = Math.max(0, Math.min(255, entry.callId)) & 0xFF;
+      }
+    }
+  }
+
+  // One Touch Call (5 entries, 5 bytes each, starting at 0x200)
+  if (settings.oneTouchCall && settings.oneTouchCall.length >= 5) {
+    for (let i = 0; i < 5; i++) {
+      const baseOffset = 0x200 + i * 5;
+      const entry = settings.oneTouchCall[i];
+      if (entry) {
+        data[baseOffset] = Math.max(0, Math.min(2, entry.callType)) & 0xFF;
+        // Call Object as little-endian uint16
+        data[baseOffset + 1] = (entry.callObject & 0xFF);
+        data[baseOffset + 2] = ((entry.callObject >> 8) & 0xFF);
+        data[baseOffset + 3] = Math.max(0, Math.min(8, entry.digitalCallType)) & 0xFF;
+        data[baseOffset + 4] = Math.max(0, Math.min(255, entry.sms)) & 0xFF;
+      }
+    }
+  }
+
+  // Fun+ (10 entries, 7 bytes each, starting at 0x230)
+  // Fun+Number is determined by entry index (0-9), not stored in data
+  if (settings.funPlus && settings.funPlus.length >= 10) {
+    for (let i = 0; i < 10; i++) {
+      const baseOffset = 0x230 + i * 7;  // Base offset 0x230, 7 bytes per entry
+      const entry = settings.funPlus[i];
+      if (entry) {
+        data[baseOffset + 0x00] = Math.max(0, Math.min(1, entry.operateMode)) & 0xFF;  // +0x00: Operate Mode
+        data[baseOffset + 0x01] = Math.max(0, Math.min(13, entry.menuSelect)) & 0xFF;  // +0x01: Menu Select
+        data[baseOffset + 0x02] = 0x00;  // +0x02: Reserved/Padding
+        data[baseOffset + 0x03] = Math.max(0, Math.min(2, entry.callWay)) & 0xFF;  // +0x03: Call Way
+        data[baseOffset + 0x04] = Math.max(0, Math.min(255, entry.callObject)) & 0xFF;  // +0x04: Call Object
+        data[baseOffset + 0x05] = Math.max(0, Math.min(8, entry.digitalCallType)) & 0xFF;  // +0x05: Digital Call Type
+        data[baseOffset + 0x06] = Math.max(0, Math.min(255, entry.sms)) & 0xFF;  // +0x06: SMS
+      }
+    }
+  }
 
   // Legacy fields (0x301+)
   data[0x301] = settings.unknownRadioSetting;
@@ -1509,6 +1631,10 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
       data[0x332 + i] = byte;
     }
   }
+
+  // VFO Channel Information
+  // Note: VFO A and VFO B are now written to block 0x41 as channels 4001 and 4002
+  // They are written in writeRadioSettings() to block 0x41
 
   // Menu Enable/Disable Flags (0x500-0x507)
   /**
@@ -1755,233 +1881,210 @@ export function encodeQuickMessage(message: QuickTextMessage): Uint8Array {
   return data;
 }
 
-/**
- * Decode Unicode WCHAR string (16 bytes = 8 DWORDs, little-endian)
- * Each DWORD is a 16-bit Unicode character
- */
-function decodeWCHAR(data: Uint8Array, offset: number, length: number): string {
-  const chars: string[] = [];
-  for (let i = 0; i < length; i += 2) {
-    if (offset + i + 1 >= data.length) break;
-    const charCode = data[offset + i] | (data[offset + i + 1] << 8);
-    if (charCode === 0) break; // Null terminator
-    chars.push(String.fromCharCode(charCode));
-  }
-  return chars.join('');
-}
 
 /**
- * Encode Unicode WCHAR string (16 bytes = 8 DWORDs, little-endian)
- */
-function encodeWCHAR(str: string, data: Uint8Array, offset: number, length: number): void {
-  const encoded = new Uint8Array(length);
-  encoded.fill(0);
-  
-  for (let i = 0; i < Math.min(str.length, length / 2); i++) {
-    const charCode = str.charCodeAt(i);
-    encoded[i * 2] = charCode & 0xFF;
-    encoded[i * 2 + 1] = (charCode >> 8) & 0xFF;
-  }
-  
-  data.set(encoded, offset);
-}
-
-/**
- * Parse Digital Emergency Systems from metadata 0x03 block
+ * Parse Digital Emergency Systems from metadata 0x10 block
+ * Entry structure: 20 bytes (0x14) starting at offset 0x000
+ * Entry Calculation: entry_base = 0x000 + entry_num * 0x14
+ * Max entries: 8
  */
 export function parseDigitalEmergencies(data: Uint8Array): { systems: DigitalEmergency[]; config: DigitalEmergencyConfig } {
-  if (data.length < 0x7F0) {
-    throw new Error('Digital Emergency data must be at least 2032 bytes (0x7F0)');
-  }
+  const initialOffset = 0x000;
+  const entrySize = 0x14; // 20 bytes per entry
+  const maxEntries = 8; // 8 total entries
 
   const systems: DigitalEmergency[] = [];
-  const entryBaseOffset = 0x218; // Entry base offset
-  const entrySize = 40; // 40 bytes per entry
-  const maxEntries = Math.floor((data.length - entryBaseOffset) / entrySize);
 
-  // Parse global configuration
-  const countIndex = data[0x01];
-  const unknown = data[0x30];
-  const numericFields: [number, number, number] = [
-    data[0x31] - 5, // Stored as actual_value + 5
-    data[0x32] - 5,
-    data[0x33] - 5,
-  ];
-  const byteFields: [number, number] = [
-    data[0x34],
-    data[0x36],
-  ];
-  const values16bit: [number, number, number, number] = [
-    data[0x37] | (data[0x38] << 8),
-    data[0x39] | (data[0x3A] << 8),
-    data[0x3B] | (data[0x3C] << 8),
-    data[0x3D] | (data[0x3E] << 8),
-  ];
-  const bitFlags = data[0x3F] & 0x03; // Bits 0 and 1
-  const indexCount = data[0x40] - 1; // Stored as actual_value + 1
-
-  // Parse entry array (16 entries × 4 bytes)
-  const entryArray: number[] = [];
-  for (let i = 0; i < 16; i++) {
-    const offset = 0x41 + (i * 4);
-    const value = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
-    entryArray.push(value);
-  }
-
-  // Additional config (192 bytes)
-  const additionalConfig = data.slice(0x730, 0x7F0);
-
-  const config: DigitalEmergencyConfig = {
-    countIndex,
-    unknown,
-    numericFields,
-    byteFields,
-    values16bit,
-    bitFlags,
-    indexCount,
-    entryArray,
-    additionalConfig,
-  };
-
-  // Parse emergency system entries
-  // NOTE: Structure parsing is experimental and may be incorrect
-  // The name location is ambiguous in the spec (offset +0x1F8 could be relative to block or entry)
   for (let i = 0; i < maxEntries; i++) {
-    const entryOffset = entryBaseOffset + (i * entrySize);
+    const entryOffset = initialOffset + (i * entrySize); // Entry 0 → 0x000, Entry 1 → 0x014, etc.
     if (entryOffset + entrySize > data.length) break;
 
     // Check if entry is empty (all zeros or all 0xFF)
     const entryData = data.slice(entryOffset, entryOffset + entrySize);
-    if (entryData.every(b => b === 0 || b === 0xFF)) {
+    if (entryData.every(b => b === 0x00 || b === 0xFF)) {
       continue;
     }
 
-    // Flag (1 byte, bit 0: enabled/disabled)
-    const flag = data[entryOffset];
-    const enabled = (flag & 0x01) !== 0;
+    // Name (10 bytes at +0x00-0x09, ASCII string)
+    const nameBytes = data.slice(entryOffset + 0x00, entryOffset + 0x0A);
+    const nullIndex = nameBytes.indexOf(0);
+    const name = new TextDecoder('ascii', { fatal: false })
+      .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : nameBytes.length))
+      .replace(/\x00/g, '')
+      .trim();
 
-    // Unknown (2 bytes)
-    const unknown = data[entryOffset + 1] | (data[entryOffset + 2] << 8);
-
-    // Value 1 (2 bytes, little-endian)
-    const value1 = data[entryOffset + 3] | (data[entryOffset + 4] << 8);
-
-    // Value 2 (2 bytes, little-endian)
-    const value2 = data[entryOffset + 5] | (data[entryOffset + 6] << 8);
-
-    // Name (16 bytes, Unicode WCHAR)
-    // The spec says "at offset +0x1F8" which is ambiguous - could be relative to block start or entry
-    // Try multiple locations as the structure may not match the spec
-    let name = '';
-    
-    // Try 1: Within entry after header (7 bytes)
-    const nameOffsetInEntry = entryOffset + 7;
-    if (nameOffsetInEntry + 16 <= data.length) {
-      const nameAtEntry = decodeWCHAR(data, nameOffsetInEntry, 16);
-      if (nameAtEntry.length > 0 && /^[\x20-\x7E]+$/.test(nameAtEntry)) {
-        name = nameAtEntry;
-      }
-    }
-    
-    // Try 2: At block offset 0x1F8 (relative to block start, separate name table)
-    if (!name) {
-      const nameOffsetBlock = 0x1F8 + (i * 16);
-      if (nameOffsetBlock + 16 <= data.length) {
-        const nameAtBlock = decodeWCHAR(data, nameOffsetBlock, 16);
-        if (nameAtBlock.length > 0 && /^[\x20-\x7E]+$/.test(nameAtBlock)) {
-          name = nameAtBlock;
-        }
-      }
-    }
-    
-    // If no valid name found, mark as unreadable
-    if (!name) {
-      name = `[unreadable-${i}]`;
-    }
+    // Fields (10 bytes at +0x0A-0x13, structure TBD)
+    const fields = data.slice(entryOffset + 0x0A, entryOffset + 0x14);
 
     systems.push({
       index: i,
-      enabled,
-      unknown,
-      value1,
-      value2,
-      name,
+      name: name || `[Entry ${i}]`,
+      fields: new Uint8Array(fields),
     });
   }
 
-  return { systems, config };
+  return { systems, config: {} };
 }
 
 /**
- * Encode Digital Emergency Systems to metadata 0x03 block format
+ * Encode Digital Emergency Systems to metadata 0x10 block format
+ * Entry structure: 20 bytes (0x14) starting at offset 0x000
+ * Entry Calculation: entry_base = 0x000 + entry_num * 0x14
  */
-export function encodeDigitalEmergencies(systems: DigitalEmergency[], config: DigitalEmergencyConfig): Uint8Array {
+export function encodeDigitalEmergencies(systems: DigitalEmergency[], _config: DigitalEmergencyConfig): Uint8Array {
   const data = new Uint8Array(0x1000); // 4KB block
   data.fill(0xFF);
 
-  // Write global configuration
-  data[0x01] = config.countIndex;
-  data[0x30] = config.unknown;
-  data[0x31] = config.numericFields[0] + 5;
-  data[0x32] = config.numericFields[1] + 5;
-  data[0x33] = config.numericFields[2] + 5;
-  data[0x34] = config.byteFields[0];
-  data[0x36] = config.byteFields[1];
-  data[0x37] = config.values16bit[0] & 0xFF;
-  data[0x38] = (config.values16bit[0] >> 8) & 0xFF;
-  data[0x39] = config.values16bit[1] & 0xFF;
-  data[0x3A] = (config.values16bit[1] >> 8) & 0xFF;
-  data[0x3B] = config.values16bit[2] & 0xFF;
-  data[0x3C] = (config.values16bit[2] >> 8) & 0xFF;
-  data[0x3D] = config.values16bit[3] & 0xFF;
-  data[0x3E] = (config.values16bit[3] >> 8) & 0xFF;
-  data[0x3F] = config.bitFlags & 0x03;
-  data[0x40] = config.indexCount + 1;
-
-  // Write entry array
-  for (let i = 0; i < Math.min(16, config.entryArray.length); i++) {
-    const offset = 0x41 + (i * 4);
-    const value = config.entryArray[i];
-    data[offset] = value & 0xFF;
-    data[offset + 1] = (value >> 8) & 0xFF;
-    data[offset + 2] = (value >> 16) & 0xFF;
-    data[offset + 3] = (value >> 24) & 0xFF;
-  }
-
-  // Write additional config
-  data.set(config.additionalConfig.slice(0, 192), 0x730);
+  const initialOffset = 0x000;
+  const entrySize = 0x14; // 20 bytes per entry
+  const maxEntries = 8; // 8 total entries
 
   // Write emergency system entries
-  const entryBaseOffset = 0x218;
-  for (let i = 0; i < systems.length; i++) {
+  for (let i = 0; i < Math.min(systems.length, maxEntries); i++) {
     const system = systems[i];
-    const entryOffset = entryBaseOffset + (i * 40);
-    if (entryOffset + 40 > data.length) break;
+    const entryOffset = initialOffset + (i * entrySize);
+    
+    if (entryOffset + entrySize > data.length) break;
 
-    data[entryOffset] = system.enabled ? 0x01 : 0x00;
-    data[entryOffset + 1] = system.unknown & 0xFF;
-    data[entryOffset + 2] = (system.unknown >> 8) & 0xFF;
-    data[entryOffset + 3] = system.value1 & 0xFF;
-    data[entryOffset + 4] = (system.value1 >> 8) & 0xFF;
-    data[entryOffset + 5] = system.value2 & 0xFF;
-    data[entryOffset + 6] = (system.value2 >> 8) & 0xFF;
-    
-    // Name (16 bytes, Unicode WCHAR)
-    // Try encoding at both locations - within entry and at block offset 0x1F8
-    const nameOffsetInEntry = entryOffset + 7;
-    encodeWCHAR(system.name, data, nameOffsetInEntry, 16);
-    
-    // Also encode at block offset 0x1F8 (assuming names are in a separate table)
-    const nameOffsetBlock = 0x1F8 + (i * 16);
-    if (nameOffsetBlock + 16 <= data.length) {
-      encodeWCHAR(system.name, data, nameOffsetBlock, 16);
+    // Name (10 bytes at +0x00-0x09, ASCII string)
+    const nameBytes = new Uint8Array(10);
+    nameBytes.fill(0);
+    if (system.name) {
+      const encoded = new TextEncoder().encode(system.name.slice(0, 10));
+      nameBytes.set(encoded, 0);
+    }
+    data.set(nameBytes, entryOffset + 0x00);
+
+    // Fields (10 bytes at +0x0A-0x13)
+    if (system.fields && system.fields.length >= 10) {
+      data.set(system.fields.slice(0, 10), entryOffset + 0x0A);
     }
   }
 
   // Set metadata byte at offset 0xFFF
-  data[0xFFF] = 0x03;
+  data[0xFFF] = 0x10;
 
   return data;
+}
+
+/**
+ * Parse Encryption Keys from metadata 0x10 block
+ * Entry structure: 44 bytes (0x2C) starting at offset 0x300
+ * Max entries: 8
+ * Entry Calculation: entry_base = 0x300 + (entry_num - 1) * 0x2C
+ */
+export function parseEncryptionKeys(data: Uint8Array): EncryptionKey[] {
+  const initialOffset = 0x300;
+  const entrySize = 0x2C; // 44 bytes per entry
+  const maxEntries = 8;
+  const requiredLength = initialOffset + (maxEntries * entrySize);
+
+  if (data.length < requiredLength) {
+    throw new Error(`Encryption Keys data must be at least ${requiredLength} bytes (0x${requiredLength.toString(16)}) for 8 entries`);
+  }
+
+  const keys: EncryptionKey[] = [];
+
+  for (let i = 0; i < maxEntries; i++) {
+    const entryOffset = initialOffset + (i * entrySize); // Entry 1 → 0x300, Entry 2 → 0x32C, etc.
+    if (entryOffset + entrySize > data.length) break;
+
+    // Check if entry is empty (all 0x00 or 0xFF)
+    const entryData = data.slice(entryOffset, entryOffset + entrySize);
+    if (entryData.every(b => b === 0x00 || b === 0xFF)) {
+      // Create empty entry
+      keys.push({
+        entryNumber: i + 1, // 1-based for UI
+        id: 0,
+        name: '',
+        encryptionType: 0,
+        key: '',
+      });
+      continue;
+    }
+
+    // ID (1 byte at +0x00, 0x01-0x08)
+    const entryId = data[entryOffset + 0x00] & 0xFF;
+
+    // Name (10 bytes at +0x01-0x0A, ASCII string)
+    const nameBytes = data.slice(entryOffset + 0x01, entryOffset + 0x0B);
+    const nullIndex = nameBytes.indexOf(0);
+    const name = new TextDecoder('ascii', { fatal: false })
+      .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : nameBytes.length))
+      .replace(/\x00/g, '')
+      .trim();
+
+    // Encryption Type (1 byte at +0x0B, 0-4)
+    const encryptionType = data[entryOffset + 0x0B] & 0xFF;
+
+    // Key (32 bytes at +0x0C-0x2B, 64 hex chars)
+    const keyBytes = data.slice(entryOffset + 0x0C, entryOffset + 0x2C); // 32 bytes total
+    
+    // Convert bytes to hex string, drop trailing zeros
+    let key = Array.from(keyBytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+      .toUpperCase();
+    
+    // Remove trailing zeros
+    key = key.replace(/0+$/, '');
+
+    keys.push({
+      entryNumber: i + 1, // 1-based for UI
+      id: entryId,
+      name,
+      encryptionType,
+      key,
+    });
+  }
+
+  return keys;
+}
+
+/**
+ * Encode Encryption Keys to metadata 0x10 block format
+ * Entry structure: 44 bytes (0x2C) starting at offset 0x300
+ * Entry Calculation: entry_base = 0x300 + (entry_num - 1) * 0x2C
+ */
+export function encodeEncryptionKey(key: EncryptionKey, data: Uint8Array): void {
+  const initialOffset = 0x300;
+  const entrySize = 0x2C; // 44 bytes per entry
+  const entryNumber = key.entryNumber; // 1-based
+  const entryOffset = initialOffset + ((entryNumber - 1) * entrySize);
+
+  if (entryOffset + entrySize > data.length) {
+    throw new Error(`Encryption key entry ${entryNumber} offset ${entryOffset} (0x${entryOffset.toString(16)}) exceeds data length`);
+  }
+
+  // ID (1 byte at +0x00, 0x01-0x08)
+  data[entryOffset + 0x00] = Math.max(0x01, Math.min(0x08, key.id || entryNumber)) & 0xFF;
+
+  // Name (10 bytes at +0x01-0x0A, ASCII string)
+  const nameBytes = new Uint8Array(10);
+  nameBytes.fill(0);
+  if (key.name) {
+    const encoded = new TextEncoder().encode(key.name.slice(0, 10));
+    nameBytes.set(encoded, 0);
+  }
+  data.set(nameBytes, entryOffset + 0x01);
+
+  // Encryption Type (1 byte at +0x0B, 0-4: 0=None, 1=Custom, 2=ARC4, 3=AES128, 4=AES256)
+  data[entryOffset + 0x0B] = Math.max(0, Math.min(4, key.encryptionType ?? 0)) & 0xFF;
+
+  // Key (32 bytes at +0x0C-0x2B, 64 hex chars)
+  const keyBytes = new Uint8Array(32);
+  keyBytes.fill(0);
+  if (key.key) {
+    // Convert hex string to bytes (pad with zeros if needed)
+    const hexString = key.key.replace(/[^0-9A-Fa-f]/g, '').slice(0, 64); // Max 64 hex chars = 32 bytes
+    for (let i = 0; i < hexString.length && i < 64; i += 2) {
+      const hexByte = hexString.slice(i, i + 2);
+      if (hexByte.length === 2) {
+        keyBytes[i / 2] = parseInt(hexByte, 16);
+      }
+    }
+  }
+  data.set(keyBytes, entryOffset + 0x0C);
 }
 
 /**

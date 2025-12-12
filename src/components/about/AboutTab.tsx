@@ -1,6 +1,9 @@
 import React from 'react';
+import { useDebugStore } from '../../store/debugStore';
 
 export const AboutTab: React.FC = () => {
+  const { debugMode, setDebugMode } = useDebugStore();
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mb-6">
@@ -193,6 +196,32 @@ npm run build:single</code>
             This software is provided "as is" without warranty. Use at your own risk. 
             Ensure compliance with local radio regulations and manufacturer warranties.
           </p>
+        </div>
+
+        {/* Debug Mode */}
+        <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
+          <h3 className="text-lg font-semibold text-yellow-400 mb-4">Debug Mode</h3>
+          <div className="space-y-3">
+            <p className="text-cool-gray text-sm">
+              Enable debug mode to access diagnostic tools for inspecting raw memory blocks and verifying field parsing.
+            </p>
+            <button
+              type="button"
+              onClick={() => setDebugMode(!debugMode)}
+              className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
+                debugMode
+                  ? 'bg-yellow-900/30 text-yellow-400 border border-yellow-600/30 hover:bg-yellow-900/50'
+                  : 'bg-yellow-900/20 text-yellow-500 border border-yellow-600/20 hover:bg-yellow-900/30'
+              }`}
+            >
+              {debugMode ? '✓ Debug Mode Enabled' : 'Enable Debug Mode'}
+            </button>
+            {debugMode && (
+              <p className="text-xs text-yellow-400">
+                Debug mode is enabled. The Diagnostics tab (🐛) is now visible in the navigation bar.
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>

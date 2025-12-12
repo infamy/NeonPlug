@@ -3,6 +3,8 @@
  * Contains radio names, boot screen text, and other radio configuration
  */
 
+import type { Channel } from './Channel';
+
 export interface RadioSettings {
   // Header fields (0x00-0x20)
   unknownFlag: number;              // Legacy field (no longer used)
@@ -15,18 +17,20 @@ export interface RadioSettings {
   alertToneFlagsCont: number;       // Offset 0x21 (8 bits, bit flags + 2-bit field)
 
   // Display and UI settings (0x30-0x3B)
-  zoneAColor: number;               // Offset 0x30 (0-15)
-  zoneBColor: number;                // Offset 0x31 (0-15)
+  backlightBrightness: number;      // Offset 0x30 (1-6, stored as 0-5, displayed as 1-6)
   unknownDisplay: number;           // Offset 0x32
   displayFlags: number;             // Offset 0x33 (8 bits, bit flags + 2-bit field)
-  backlightBrightness: number;      // Offset 0x34 (1-6)
-  autoBacklightDuration: number;    // Offset 0x35 (5-30, step 5)
+  dataDisplayFormat: number;         // Offset 0x33, bit 3: 0=yyy/m/d (format 0), 1=d/m/yyy (format 1)
+  callsignColor: number;            // Offset 0x34 (0-15) - Callsign Color
+  standbyTextColor: number;         // Offset 0x35 (0-15) - Standby Text Color
   menuExitTime: number;             // Offset 0x36 (1-30)
+  autoBacklightDuration: number;    // TODO: Offset unknown - Auto Backlight Duration
   standbyCharacterColor1: number;   // Offset 0x37 (0-30)
-  callDisplayColor: number;          // Offset 0x38 (0-15)
-  standbyCharacterColor2: number;   // Offset 0x39 (0-15)
-  aChannelNameColor: number;         // Offset 0x3A (0-15)
-  bChannelNameColor: number;        // Offset 0x3B (0-15)
+  channelAColor: number;               // Offset 0x38 (0-15) - Channel A Color
+  channelBColor: number;                // Offset 0x39 (0-15) - Channel B Color
+  standbyCharacterColor2: number;   // TODO: Offset unknown - Standby Character Color 2
+  zoneAColor: number;         // Offset 0x3A (0-15) - Zone A Color
+  zoneBColor: number;        // Offset 0x3B (0-15) - Zone B Color
 
   // Work mode and GPS settings (0x40-0x45)
   workModeFlags: number;             // Offset 0x40 (8 bits, bit flags + 2-bit fields)
@@ -67,6 +71,28 @@ export interface RadioSettings {
   p1Long: number;                     // Offset 0x8E (0-42)
   p2Short: number;                    // Offset 0x8F (0-42)
   p2Long: number;                     // Offset 0x90 (0-42)
+
+  // One Key Operation (0x11E-0x125, 0x1FB-0x213, 0x1F5-0x23B)
+  analogCall: Array<{
+    callType: number;                 // 0=No., 1=Call Type, 2=Call ID
+    callId: number;                   // Contact number or ID
+  }>;                                 // 4 entries, 2 bytes each, starting at 0x11E
+  
+  oneTouchCall: Array<{
+    callType: number;                 // 0=Off, 1=Analog, 2=Digital
+    callObject: number;               // Contact ID (uint16, little-endian)
+    digitalCallType: number;          // 0=Off, 1=Private, 2=Group, etc.
+    sms: number;                      // SMS number/index
+  }>;                                 // 5 entries, 5 bytes each, starting at 0x1FB
+  
+  funPlus: Array<{
+    operateMode: number;              // +0x00: 0=Call, 1=Menu
+    menuSelect: number;                // +0x01: Menu item (0-13)
+    callWay: number;                  // +0x03: 0=Off, 1=Analog, 2=Digital
+    callObject: number;                // +0x04: Contact/ID
+    digitalCallType: number;           // +0x05: Digital call type (0-8)
+    sms: number;                      // +0x06: SMS number/index
+  }>;                                 // 10 entries, 7 bytes each, starting at 0x230
 
   // Menu Enable/Disable Flags (0x500-0x507)
   menuEnableFlags: {
@@ -152,4 +178,8 @@ export interface RadioSettings {
   currentZone: number;               // Offset 0x330 (1-based, 0 = none)
   zoneEnabled: boolean;              // Offset 0x331 (bit 0)
   unknownValue: string;              // Offset 0x332 (3 bytes, formatted as hex string)
+
+  // VFO Channel Information
+  vfoA: Channel;                     // Offset 0x276-0x2A5 (48 bytes) - VFO A Channel
+  vfoB: Channel;                     // Offset 0x2A6-0x2D5 (48 bytes) - VFO B Channel
 }

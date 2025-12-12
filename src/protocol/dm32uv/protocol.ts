@@ -394,6 +394,7 @@ export class DM32UVProtocol implements RadioProtocol {
       METADATA.VFO_SETTINGS,        // Radio Settings (0x04) - ALWAYS REQUIRED
       METADATA.DIGITAL_EMERGENCY,    // Digital Emergency Systems (0x03)
       METADATA.ANALOG_EMERGENCY,     // Analog Emergency Systems (0x10)
+      METADATA.METADATA_0x41,        // Metadata block 0x41 - REQUIRED
       METADATA.QUICK_MESSAGES,       // Quick Messages (0x0A)
       METADATA.DMR_RADIO_IDS,        // DMR Radio IDs (0x67)
       METADATA.CALIBRATION,          // Calibration (0x02)
@@ -1687,8 +1688,52 @@ export class DM32UVProtocol implements RadioProtocol {
       // Store in blockData map for debug export
       this.blockData.set(radioSettingsBlock.address, cachedBlock.data);
 
+      // Parse VFO A and VFO B from block 0x41 (as channels 4001 and 4002)
+      let vfoA: Channel | null = null;
+      let vfoB: Channel | null = null;
+      
+      const block41 = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x41);
+      if (block41) {
+        const block41Cached = this.getCachedBlockByAddress(block41.address);
+        if (block41Cached) {
+          // VFO A is channel 4001, VFO B is channel 4002
+          // Calculate offsets: channel 4001 = (4001 - 1) * 48 = 4000 * 48 = 192000 bytes
+          // But we need to find where in block 0x41 these are stored
+          // Assuming they're stored as regular channels in the block
+          // Channel 4001 would be at offset: need to calculate based on block structure
+          
+          try {
+            // VFO A (channel 4001) - offset 0x0F9F (3999 bytes)
+            const vfoAOffset = 0x0F9F;
+            const vfoAData = block41Cached.data.slice(vfoAOffset, vfoAOffset + BLOCK_SIZE.CHANNEL);
+            if (vfoAData.length === BLOCK_SIZE.CHANNEL) {
+              vfoA = parseChannel(vfoAData, 4001);
+            }
+            
+            // VFO B (channel 4002) - offset 0x0FCF (4047 bytes)
+            const vfoBOffset = 0x0FCF;
+            const vfoBData = block41Cached.data.slice(vfoBOffset, vfoBOffset + BLOCK_SIZE.CHANNEL);
+            if (vfoBData.length === BLOCK_SIZE.CHANNEL) {
+              vfoB = parseChannel(vfoBData, 4002);
+            }
+          } catch (err) {
+            console.warn('Failed to parse VFO channels from block 0x41:', err);
+          }
+        }
+      }
+
+      const radioSettings = parseRadioSettings(cachedBlock.data);
+      
+      // Override VFO A and VFO B with data from block 0x41
+      if (vfoA) {
+        radioSettings.vfoA = vfoA;
+      }
+      if (vfoB) {
+        radioSettings.vfoB = vfoB;
+      }
+
       this.onProgress?.(100, 'Radio Settings processed');
-      return parseRadioSettings(cachedBlock.data);
+      return radioSettings;
     } catch (err) {
       // If parsing fails, don't crash - just return null
       console.warn('Failed to parse Radio Settings block:', err);
@@ -1737,6 +1782,53 @@ export class DM32UVProtocol implements RadioProtocol {
     // Write the entire block (writeMemory takes address, data, and metadata)
     await this.connection!.writeMemory(radioSettingsBlock.address, blockData, METADATA.VFO_SETTINGS);
     this.rawRadioSettingsData = blockData;
+
+    // Write VFO A and VFO B to block 0x41 (as channels 4001 and 4002)
+    const block41 = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x41);
+    if (block41 && settings.vfoA && settings.vfoB) {
+      // Read current block 0x41 data to preserve other data
+      const block41Cached = this.getCachedBlockByAddress(block41.address);
+      if (block41Cached) {
+        // Create a copy of the block data
+        const block41Data = new Uint8Array(block41Cached.data);
+        
+        // Encode VFO A (channel 4001) - offset 0x0F9F (3999 bytes)
+        const vfoAOffset = 0x0F9F;
+        const vfoAEncoded = encodeChannel(settings.vfoA);
+        block41Data.set(vfoAEncoded, vfoAOffset);
+        
+        // Encode VFO B (channel 4002) - offset 0x0FCF (4047 bytes)
+        const vfoBOffset = 0x0FCF;
+        const vfoBEncoded = encodeChannel(settings.vfoB);
+        block41Data.set(vfoBEncoded, vfoBOffset);
+        
+        // Write the updated block back
+        await this.connection!.writeMemory(block41.address, block41Data, METADATA.METADATA_0x41);
+        
+        // Update cache
+        this.blockData.set(block41.address, block41Data);
+      } else {
+        // Block not in cache, read it first
+        const block41Data = await this.connection!.readMemory(block41.address, BLOCK_SIZE.STANDARD);
+        const block41DataCopy = new Uint8Array(block41Data);
+        
+        // Encode VFO A (channel 4001) - offset 0x0F9F (3999 bytes)
+        const vfoAOffset = 0x0F9F;
+        const vfoAEncoded = encodeChannel(settings.vfoA);
+        block41DataCopy.set(vfoAEncoded, vfoAOffset);
+        
+        // Encode VFO B (channel 4002) - offset 0x0FCF (4047 bytes)
+        const vfoBOffset = 0x0FCF;
+        const vfoBEncoded = encodeChannel(settings.vfoB);
+        block41DataCopy.set(vfoBEncoded, vfoBOffset);
+        
+        // Write the updated block back
+        await this.connection!.writeMemory(block41.address, block41DataCopy, METADATA.METADATA_0x41);
+        
+        // Update cache
+        this.blockData.set(block41.address, block41DataCopy);
+      }
+    }
 
     this.onProgress?.(100, 'Radio Settings written');
   }

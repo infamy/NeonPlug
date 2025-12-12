@@ -168,10 +168,7 @@ export function exportCodeplug(data: CodeplugData): void {
     const digitalEmergencyRows = data.digitalEmergencies.map(de => ({
       'Index': de.index,
       'Name': de.name,
-      'Enabled': de.enabled ? 'Yes' : 'No',
-      'Value 1': de.value1,
-      'Value 2': de.value2,
-      'Unknown': de.unknown,
+      'Fields (Hex)': Array.from(de.fields).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase(),
     }));
     const digitalEmergencySheet = XLSX.utils.json_to_sheet(digitalEmergencyRows);
     XLSX.utils.book_append_sheet(workbook, digitalEmergencySheet, 'Digital Emergency');
@@ -423,14 +420,22 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
         if (workbook.SheetNames.includes('Digital Emergency')) {
           const sheet = workbook.Sheets['Digital Emergency'];
           const rows = XLSX.utils.sheet_to_json(sheet) as any[];
-          result.digitalEmergencies = rows.map(row => ({
-            index: parseInt(row['Index']) || 0,
-            name: row['Name'] || '',
-            enabled: row['Enabled'] === 'Yes',
-            value1: parseInt(row['Value 1']) || 0,
-            value2: parseInt(row['Value 2']) || 0,
-            unknown: parseInt(row['Unknown']) || 0,
-          } as DigitalEmergency));
+          result.digitalEmergencies = rows.map(row => {
+            // Parse hex fields string back to bytes
+            const fieldsHex = (row['Fields (Hex)'] || '').toString().replace(/[^0-9A-Fa-f]/g, '').slice(0, 20);
+            const fields = new Uint8Array(10);
+            for (let i = 0; i < fieldsHex.length && i < 20; i += 2) {
+              const hexByte = fieldsHex.slice(i, i + 2);
+              if (hexByte.length === 2) {
+                fields[i / 2] = parseInt(hexByte, 16);
+              }
+            }
+            return {
+              index: parseInt(row['Index']) || 0,
+              name: row['Name'] || '',
+              fields,
+            };
+          });
         }
 
         // Import Digital Emergency Config
@@ -536,18 +541,17 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
             powerOnInterface: settingsData.powerOnInterface ?? 0,
             alertToneFlags: settingsData.alertToneFlags ?? 0,
             alertToneFlagsCont: settingsData.alertToneFlagsCont ?? 0,
-            zoneAColor: settingsData.zoneAColor ?? 0,
-            zoneBColor: settingsData.zoneBColor ?? 0,
+            channelAColor: settingsData.channelAColor ?? 0,
+            channelBColor: settingsData.channelBColor ?? 0,
             unknownDisplay: settingsData.unknownDisplay ?? 0,
             displayFlags: settingsData.displayFlags ?? 0,
             backlightBrightness: settingsData.backlightBrightness ?? 3,
             autoBacklightDuration: settingsData.autoBacklightDuration ?? 10,
             menuExitTime: settingsData.menuExitTime ?? 5,
             standbyCharacterColor1: settingsData.standbyCharacterColor1 ?? 0,
-            callDisplayColor: settingsData.callDisplayColor ?? 0,
             standbyCharacterColor2: settingsData.standbyCharacterColor2 ?? 0,
-            aChannelNameColor: settingsData.aChannelNameColor ?? 0,
-            bChannelNameColor: settingsData.bChannelNameColor ?? 0,
+            zoneAColor: settingsData.zoneAColor ?? 0,
+            zoneBColor: settingsData.zoneBColor ?? 0,
             workModeFlags: settingsData.workModeFlags ?? 0,
             utcZone: settingsData.utcZone ?? 0,
             measurePeriodInterval: settingsData.measurePeriodInterval ?? 5,

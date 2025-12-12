@@ -12,6 +12,7 @@ export const METADATA = {
   DIGITAL_EMERGENCY: 0x03,  // Digital Emergency Systems
   VFO_SETTINGS: 0x04,       // Radio Settings / Radio Names / Embedded Information
   ANALOG_EMERGENCY: 0x10,   // Analog Emergency Systems
+  METADATA_0x41: 0x41,      // Metadata block 0x41
   QUICK_MESSAGES: 0x0A,     // Quick text messages block
   RX_GROUPS: 0x0F,          // DMR RX Groups (DMR Receive Groups) - separate from V-frame 0x0F
   CALIBRATION: 0x02,        // Frequency adjustment/calibration data

@@ -4,11 +4,12 @@ import { ChannelsTab } from './components/channels/ChannelsTab';
 import { ZonesTab } from './components/zones/ZonesTab';
 import { ScanListsTab } from './components/scanlists/ScanListsTab';
 import { ContactsTab } from './components/contacts/ContactsTab';
-import { EmergencyTab } from './components/emergency/EmergencyTab';
+import { DigitalTab } from './components/digital/DigitalTab';
 import { SettingsTab } from './components/settings/SettingsTab';
 import { SmartImportTab } from './components/import/SmartImportTab';
 import { AboutTab } from './components/about/AboutTab';
 import { MessagesAndGroupsTab } from './components/messages/MessagesAndGroupsTab';
+import { DiagnosticsTab } from './components/diagnostics/DiagnosticsTab';
 import { DebugPanel } from './components/ui/DebugPanel';
 import { StartupModal } from './components/ui/StartupModal';
 import { useChannelsStore } from './store/channelsStore';
@@ -166,16 +167,18 @@ function App() {
         return <ScanListsTab />;
       case 'contacts':
         return <ContactsTab />;
-      case 'emergency':
-        return <EmergencyTab />;
+      case 'messages':
+        return <MessagesAndGroupsTab />;
+      case 'digital':
+        return <DigitalTab />;
       case 'settings':
         return <SettingsTab />;
       case 'import':
         return <SmartImportTab />;
+      case 'diagnostics':
+        return <DiagnosticsTab />;
       case 'about':
         return <AboutTab />;
-      case 'messages':
-        return <MessagesAndGroupsTab />;
       default:
         return <ChannelsTab />;
     }
