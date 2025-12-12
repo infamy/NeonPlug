@@ -17,7 +17,10 @@ export const useContactsStore = create<ContactsState>((set) => ({
   contacts: [],
   selectedContact: null,
   contactsLoaded: false,
-  setContacts: (contacts) => set({ contacts, contactsLoaded: true }),
+  setContacts: (contacts) => {
+    // Direct assignment to avoid any potential deep cloning issues with large arrays
+    set({ contacts, contactsLoaded: true });
+  },
   addContact: (contact) => set((state) => ({
     contacts: [...state.contacts, contact]
   })),
