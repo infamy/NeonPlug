@@ -554,7 +554,17 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
           onClose={() => setEditingChannel(null)}
           channel={editingChannel}
           onSave={(updatedChannel) => {
-            updateChannel(updatedChannel.number, updatedChannel);
+            // Handle VFO channels (4001 and 4002) - update via radioSettings
+            if (isVFOChannel(updatedChannel.number)) {
+              if (updatedChannel.number === 4001 && radioSettings?.vfoA) {
+                updateSettings({ vfoA: updatedChannel });
+              } else if (updatedChannel.number === 4002 && radioSettings?.vfoB) {
+                updateSettings({ vfoB: updatedChannel });
+              }
+            } else {
+              // Regular channels - update via channels store
+              updateChannel(updatedChannel.number, updatedChannel);
+            }
             setEditingChannel(null);
           }}
         />
