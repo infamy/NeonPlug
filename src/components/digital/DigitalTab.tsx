@@ -172,7 +172,6 @@ export const DigitalTab: React.FC = () => {
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">ID</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Encryption Type</th>
-                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Encryption ID</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[300px]">Key (Hex)</th>
                     </tr>
                   </thead>
@@ -220,23 +219,15 @@ export const DigitalTab: React.FC = () => {
                         </td>
                         <td className="px-2 py-2">
                           <input
-                            type="number"
-                            min="1"
-                            max="255"
-                            value={key.encryptionId || 1}
-                            onChange={(e) => handleKeyChange(key.entryNumber, 'encryptionId', parseInt(e.target.value) || 1)}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
                             type="text"
                             value={key.key}
                             onChange={(e) => {
-                              const hexValue = e.target.value.replace(/[^0-9A-Fa-f]/g, '').slice(0, 62).toUpperCase();
+                              // Only allow hex characters, max 64 chars (32 bytes)
+                              // Trailing zeros will be dropped on display
+                              const hexValue = e.target.value.replace(/[^0-9A-Fa-f]/g, '').slice(0, 64).toUpperCase();
                               handleKeyChange(key.entryNumber, 'key', hexValue);
                             }}
-                            maxLength={62}
+                            maxLength={64}
                             className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono"
                             placeholder="Enter hex key"
                           />

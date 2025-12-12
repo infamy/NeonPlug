@@ -18,10 +18,7 @@ export interface EncryptionKey {
   /** Encryption Type (1 byte, 0-4: 0=None, 1=Custom, 2=ARC4, 3=AES128, 4=AES256) */
   encryptionType: number;
   
-  /** Encryption ID (1 byte, 1-255) */
-  encryptionId: number;
-  
-  /** Key (31 bytes, 62 hex chars) */
+  /** Key (32 bytes, 64 hex chars) */
   key: string;
 }
 

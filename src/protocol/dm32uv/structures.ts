@@ -1996,7 +1996,6 @@ export function parseEncryptionKeys(data: Uint8Array): EncryptionKey[] {
         id: 0,
         name: '',
         encryptionType: 0,
-        encryptionId: 0,
         key: '',
       });
       continue;
@@ -2013,26 +2012,26 @@ export function parseEncryptionKeys(data: Uint8Array): EncryptionKey[] {
       .replace(/\x00/g, '')
       .trim();
 
-    // Encryption Type (1 byte at +0x0B, 1-255)
+    // Encryption Type (1 byte at +0x0B, 0-4)
     const encryptionType = data[entryOffset + 0x0B] & 0xFF;
 
-    // Encryption ID (1 byte at +0x0C, 1-255)
-    const encryptionId = data[entryOffset + 0x0C] & 0xFF;
-
-    // Key (31 bytes at +0x0D-0x2B, 62 hex chars)
-    const keyBytes = data.slice(entryOffset + 0x0D, entryOffset + 0x2C);
-    // Convert bytes to hex string
-    const key = Array.from(keyBytes)
+    // Key (32 bytes at +0x0C-0x2B, 64 hex chars)
+    const keyBytes = data.slice(entryOffset + 0x0C, entryOffset + 0x2C); // 32 bytes total
+    
+    // Convert bytes to hex string, drop trailing zeros
+    let key = Array.from(keyBytes)
       .map(b => b.toString(16).padStart(2, '0'))
       .join('')
       .toUpperCase();
+    
+    // Remove trailing zeros
+    key = key.replace(/0+$/, '');
 
     keys.push({
       entryNumber: i + 1, // 1-based for UI
       id: entryId,
       name,
       encryptionType,
-      encryptionId,
       key,
     });
   }
@@ -2070,23 +2069,20 @@ export function encodeEncryptionKey(key: EncryptionKey, data: Uint8Array): void 
   // Encryption Type (1 byte at +0x0B, 0-4: 0=None, 1=Custom, 2=ARC4, 3=AES128, 4=AES256)
   data[entryOffset + 0x0B] = Math.max(0, Math.min(4, key.encryptionType ?? 0)) & 0xFF;
 
-  // Encryption ID (1 byte at +0x0C, 1-255)
-  data[entryOffset + 0x0C] = Math.max(1, Math.min(255, key.encryptionId || 1)) & 0xFF;
-
-  // Key (31 bytes at +0x0D-0x2B, 62 hex chars)
-  const keyBytes = new Uint8Array(31);
+  // Key (32 bytes at +0x0C-0x2B, 64 hex chars)
+  const keyBytes = new Uint8Array(32);
   keyBytes.fill(0);
   if (key.key) {
-    // Convert hex string to bytes
-    const hexString = key.key.replace(/[^0-9A-Fa-f]/g, '').slice(0, 62); // Max 62 hex chars = 31 bytes
-    for (let i = 0; i < hexString.length && i < 62; i += 2) {
+    // Convert hex string to bytes (pad with zeros if needed)
+    const hexString = key.key.replace(/[^0-9A-Fa-f]/g, '').slice(0, 64); // Max 64 hex chars = 32 bytes
+    for (let i = 0; i < hexString.length && i < 64; i += 2) {
       const hexByte = hexString.slice(i, i + 2);
       if (hexByte.length === 2) {
         keyBytes[i / 2] = parseInt(hexByte, 16);
       }
     }
   }
-  data.set(keyBytes, entryOffset + 0x0D);
+  data.set(keyBytes, entryOffset + 0x0C);
 }
 
 /**
