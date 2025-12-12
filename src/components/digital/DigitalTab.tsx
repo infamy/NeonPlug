@@ -21,17 +21,7 @@ export const DigitalTab: React.FC = () => {
 
   const block10Data = block10Address !== null ? blockData.get(block10Address) : null;
 
-  // Find block with metadata 0x03 (Digital Emergency)
-  const block03Address = useMemo(() => {
-    for (const [address, metadata] of blockMetadata.entries()) {
-      if (metadata.metadata === 0x03) {
-        return address;
-      }
-    }
-    return null;
-  }, [blockMetadata]);
-
-  const block03Data = block03Address !== null ? blockData.get(block03Address) : null;
+  // Digital Emergency is also in block 0x10 (same block as encryption keys, different offset)
 
   // Parse encryption keys when block data is available
   useEffect(() => {
@@ -45,18 +35,18 @@ export const DigitalTab: React.FC = () => {
     }
   }, [block10Data, setKeys]);
 
-  // Parse digital emergency systems when block data is available
+  // Parse digital emergency systems when block data is available (same block as encryption keys)
   useEffect(() => {
-    if (block03Data) {
+    if (block10Data) {
       try {
-        const { systems, config } = parseDigitalEmergencies(block03Data);
+        const { systems, config } = parseDigitalEmergencies(block10Data);
         setDigitalEmergencies(systems);
         setDigitalEmergencyConfig(config);
       } catch (error) {
         console.error('Error parsing digital emergency systems:', error);
       }
     }
-  }, [block03Data, setDigitalEmergencies, setDigitalEmergencyConfig]);
+  }, [block10Data, setDigitalEmergencies, setDigitalEmergencyConfig]);
 
   const handleKeyChange = (entryNumber: number, field: keyof typeof keys[0], value: any) => {
     updateKey(entryNumber, { [field]: value });
@@ -95,19 +85,19 @@ export const DigitalTab: React.FC = () => {
         <div className="mb-4">
           <h3 className="text-xl font-semibold text-neon-cyan mb-2">Digital Emergency Systems</h3>
           <p className="text-cool-gray text-sm">
-            Manage digital emergency systems from metadata block 0x03.
+            Manage digital emergency systems from metadata block 0x10 (offset 0x000).
           </p>
-          {block03Address !== null && (
+          {block10Address !== null && (
             <p className="text-cool-gray text-xs mt-1">
-              Block Address: 0x{block03Address.toString(16).toUpperCase()}
+              Block Address: 0x{block10Address.toString(16).toUpperCase()}
             </p>
           )}
         </div>
 
-        {!block03Data ? (
+        {!block10Data ? (
           <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
             <p className="text-cool-gray text-sm">
-              Block 0x03 not found. Read from radio to view digital emergency systems.
+              Block 0x10 not found. Read from radio to view digital emergency systems.
             </p>
           </div>
         ) : (
@@ -122,67 +112,49 @@ export const DigitalTab: React.FC = () => {
                   key={system.index}
                   className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-4"
                 >
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="mb-4">
                     <h4 className="text-lg font-semibold text-neon-cyan">
-                      System {system.index + 1}: {system.name || `[Unnamed ${system.index}]`}
+                      Entry {system.index}: {system.name || `[Unnamed ${system.index}]`}
                     </h4>
-                    <label className="flex items-center gap-2 text-cool-gray text-sm">
-                      <input
-                        type="checkbox"
-                        checked={system.enabled}
-                        onChange={(e) => updateSystem(system.index, { enabled: e.target.checked })}
-                        className="w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan rounded focus:ring-neon-cyan"
-                      />
-                      Enabled
-                    </label>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-cool-gray text-sm mb-2">Name</label>
+                      <label className="block text-cool-gray text-sm mb-2">Name (10 bytes, ASCII)</label>
                       <input
                         type="text"
                         value={system.name}
-                        onChange={(e) => updateSystem(system.index, { name: e.target.value })}
-                        maxLength={15}
+                        onChange={(e) => updateSystem(system.index, { name: e.target.value.slice(0, 10) })}
+                        maxLength={10}
                         className="w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        placeholder="Enter name (max 10 chars)"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-cool-gray text-sm mb-2">Value 1</label>
+                      <label className="block text-cool-gray text-sm mb-2">Fields (10 bytes, hex)</label>
                       <input
-                        type="number"
-                        min="0"
-                        max="65535"
-                        value={system.value1}
-                        onChange={(e) => updateSystem(system.index, { value1: parseInt(e.target.value) || 0 })}
-                        className="w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        type="text"
+                        value={Array.from(system.fields).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase()}
+                        onChange={(e) => {
+                          // Parse hex string back to bytes
+                          const hexString = e.target.value.replace(/[^0-9A-Fa-f]/g, '').slice(0, 20); // Max 10 bytes = 20 hex chars
+                          const newFields = new Uint8Array(10);
+                          for (let i = 0; i < hexString.length && i < 20; i += 2) {
+                            const hexByte = hexString.slice(i, i + 2);
+                            if (hexByte.length === 2) {
+                              newFields[i / 2] = parseInt(hexByte, 16);
+                            }
+                          }
+                          updateSystem(system.index, { fields: newFields });
+                        }}
+                        maxLength={29} // 10 bytes * 2 hex chars + 9 spaces = 29 chars
+                        className="w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white font-mono focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        placeholder="00 00 00 00 00 00 00 00 00 00"
                       />
-                    </div>
-
-                    <div>
-                      <label className="block text-cool-gray text-sm mb-2">Value 2</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="65535"
-                        value={system.value2}
-                        onChange={(e) => updateSystem(system.index, { value2: parseInt(e.target.value) || 0 })}
-                        className="w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-cool-gray text-sm mb-2">Unknown</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="65535"
-                        value={system.unknown}
-                        onChange={(e) => updateSystem(system.index, { unknown: parseInt(e.target.value) || 0 })}
-                        className="w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                      />
+                      <p className="text-xs text-cool-gray mt-1">
+                        Structure TBD - showing raw hex
+                      </p>
                     </div>
                   </div>
                 </div>

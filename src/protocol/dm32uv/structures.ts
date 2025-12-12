@@ -1879,231 +1879,90 @@ export function encodeQuickMessage(message: QuickTextMessage): Uint8Array {
   return data;
 }
 
-/**
- * Decode Unicode WCHAR string (16 bytes = 8 DWORDs, little-endian)
- * Each DWORD is a 16-bit Unicode character
- */
-function decodeWCHAR(data: Uint8Array, offset: number, length: number): string {
-  const chars: string[] = [];
-  for (let i = 0; i < length; i += 2) {
-    if (offset + i + 1 >= data.length) break;
-    const charCode = data[offset + i] | (data[offset + i + 1] << 8);
-    if (charCode === 0) break; // Null terminator
-    chars.push(String.fromCharCode(charCode));
-  }
-  return chars.join('');
-}
 
 /**
- * Encode Unicode WCHAR string (16 bytes = 8 DWORDs, little-endian)
- */
-function encodeWCHAR(str: string, data: Uint8Array, offset: number, length: number): void {
-  const encoded = new Uint8Array(length);
-  encoded.fill(0);
-  
-  for (let i = 0; i < Math.min(str.length, length / 2); i++) {
-    const charCode = str.charCodeAt(i);
-    encoded[i * 2] = charCode & 0xFF;
-    encoded[i * 2 + 1] = (charCode >> 8) & 0xFF;
-  }
-  
-  data.set(encoded, offset);
-}
-
-/**
- * Parse Digital Emergency Systems from metadata 0x03 block
+ * Parse Digital Emergency Systems from metadata 0x10 block
+ * Entry structure: 20 bytes (0x14) starting at offset 0x000
+ * Entry Calculation: entry_base = 0x000 + entry_num * 0x14
+ * Max entries: ~204 (but we'll parse up to encryption keys start at 0x300)
  */
 export function parseDigitalEmergencies(data: Uint8Array): { systems: DigitalEmergency[]; config: DigitalEmergencyConfig } {
-  if (data.length < 0x7F0) {
-    throw new Error('Digital Emergency data must be at least 2032 bytes (0x7F0)');
-  }
+  const initialOffset = 0x000;
+  const entrySize = 0x14; // 20 bytes per entry
+  const encryptionKeysOffset = 0x300; // Encryption keys start here
+  const maxEntries = Math.floor((encryptionKeysOffset - initialOffset) / entrySize); // ~192 entries before encryption keys
 
   const systems: DigitalEmergency[] = [];
-  const entryBaseOffset = 0x218; // Entry base offset
-  const entrySize = 40; // 40 bytes per entry
-  const maxEntries = Math.floor((data.length - entryBaseOffset) / entrySize);
 
-  // Parse global configuration
-  const countIndex = data[0x01];
-  const unknown = data[0x30];
-  const numericFields: [number, number, number] = [
-    data[0x31] - 5, // Stored as actual_value + 5
-    data[0x32] - 5,
-    data[0x33] - 5,
-  ];
-  const byteFields: [number, number] = [
-    data[0x34],
-    data[0x36],
-  ];
-  const values16bit: [number, number, number, number] = [
-    data[0x37] | (data[0x38] << 8),
-    data[0x39] | (data[0x3A] << 8),
-    data[0x3B] | (data[0x3C] << 8),
-    data[0x3D] | (data[0x3E] << 8),
-  ];
-  const bitFlags = data[0x3F] & 0x03; // Bits 0 and 1
-  const indexCount = data[0x40] - 1; // Stored as actual_value + 1
-
-  // Parse entry array (16 entries × 4 bytes)
-  const entryArray: number[] = [];
-  for (let i = 0; i < 16; i++) {
-    const offset = 0x41 + (i * 4);
-    const value = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
-    entryArray.push(value);
-  }
-
-  // Additional config (192 bytes)
-  const additionalConfig = data.slice(0x730, 0x7F0);
-
-  const config: DigitalEmergencyConfig = {
-    countIndex,
-    unknown,
-    numericFields,
-    byteFields,
-    values16bit,
-    bitFlags,
-    indexCount,
-    entryArray,
-    additionalConfig,
-  };
-
-  // Parse emergency system entries
-  // NOTE: Structure parsing is experimental and may be incorrect
-  // The name location is ambiguous in the spec (offset +0x1F8 could be relative to block or entry)
   for (let i = 0; i < maxEntries; i++) {
-    const entryOffset = entryBaseOffset + (i * entrySize);
-    if (entryOffset + entrySize > data.length) break;
+    const entryOffset = initialOffset + (i * entrySize); // Entry 0 → 0x000, Entry 1 → 0x014, etc.
+    if (entryOffset + entrySize > data.length || entryOffset >= encryptionKeysOffset) break;
 
     // Check if entry is empty (all zeros or all 0xFF)
     const entryData = data.slice(entryOffset, entryOffset + entrySize);
-    if (entryData.every(b => b === 0 || b === 0xFF)) {
+    if (entryData.every(b => b === 0x00 || b === 0xFF)) {
       continue;
     }
 
-    // Flag (1 byte, bit 0: enabled/disabled)
-    const flag = data[entryOffset];
-    const enabled = (flag & 0x01) !== 0;
+    // Name (10 bytes at +0x00-0x09, ASCII string)
+    const nameBytes = data.slice(entryOffset + 0x00, entryOffset + 0x0A);
+    const nullIndex = nameBytes.indexOf(0);
+    const name = new TextDecoder('ascii', { fatal: false })
+      .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : nameBytes.length))
+      .replace(/\x00/g, '')
+      .trim();
 
-    // Unknown (2 bytes)
-    const unknown = data[entryOffset + 1] | (data[entryOffset + 2] << 8);
-
-    // Value 1 (2 bytes, little-endian)
-    const value1 = data[entryOffset + 3] | (data[entryOffset + 4] << 8);
-
-    // Value 2 (2 bytes, little-endian)
-    const value2 = data[entryOffset + 5] | (data[entryOffset + 6] << 8);
-
-    // Name (16 bytes, Unicode WCHAR)
-    // The spec says "at offset +0x1F8" which is ambiguous - could be relative to block start or entry
-    // Try multiple locations as the structure may not match the spec
-    let name = '';
-    
-    // Try 1: Within entry after header (7 bytes)
-    const nameOffsetInEntry = entryOffset + 7;
-    if (nameOffsetInEntry + 16 <= data.length) {
-      const nameAtEntry = decodeWCHAR(data, nameOffsetInEntry, 16);
-      if (nameAtEntry.length > 0 && /^[\x20-\x7E]+$/.test(nameAtEntry)) {
-        name = nameAtEntry;
-      }
-    }
-    
-    // Try 2: At block offset 0x1F8 (relative to block start, separate name table)
-    if (!name) {
-      const nameOffsetBlock = 0x1F8 + (i * 16);
-      if (nameOffsetBlock + 16 <= data.length) {
-        const nameAtBlock = decodeWCHAR(data, nameOffsetBlock, 16);
-        if (nameAtBlock.length > 0 && /^[\x20-\x7E]+$/.test(nameAtBlock)) {
-          name = nameAtBlock;
-        }
-      }
-    }
-    
-    // If no valid name found, mark as unreadable
-    if (!name) {
-      name = `[unreadable-${i}]`;
-    }
+    // Fields (10 bytes at +0x0A-0x13, structure TBD)
+    const fields = data.slice(entryOffset + 0x0A, entryOffset + 0x14);
 
     systems.push({
       index: i,
-      enabled,
-      unknown,
-      value1,
-      value2,
-      name,
+      name: name || `[Entry ${i}]`,
+      fields: new Uint8Array(fields),
     });
   }
 
-  return { systems, config };
+  return { systems, config: {} };
 }
 
 /**
- * Encode Digital Emergency Systems to metadata 0x03 block format
+ * Encode Digital Emergency Systems to metadata 0x10 block format
+ * Entry structure: 20 bytes (0x14) starting at offset 0x000
+ * Entry Calculation: entry_base = 0x000 + entry_num * 0x14
  */
-export function encodeDigitalEmergencies(systems: DigitalEmergency[], config: DigitalEmergencyConfig): Uint8Array {
+export function encodeDigitalEmergencies(systems: DigitalEmergency[], _config: DigitalEmergencyConfig): Uint8Array {
   const data = new Uint8Array(0x1000); // 4KB block
   data.fill(0xFF);
 
-  // Write global configuration
-  data[0x01] = config.countIndex;
-  data[0x30] = config.unknown;
-  data[0x31] = config.numericFields[0] + 5;
-  data[0x32] = config.numericFields[1] + 5;
-  data[0x33] = config.numericFields[2] + 5;
-  data[0x34] = config.byteFields[0];
-  data[0x36] = config.byteFields[1];
-  data[0x37] = config.values16bit[0] & 0xFF;
-  data[0x38] = (config.values16bit[0] >> 8) & 0xFF;
-  data[0x39] = config.values16bit[1] & 0xFF;
-  data[0x3A] = (config.values16bit[1] >> 8) & 0xFF;
-  data[0x3B] = config.values16bit[2] & 0xFF;
-  data[0x3C] = (config.values16bit[2] >> 8) & 0xFF;
-  data[0x3D] = config.values16bit[3] & 0xFF;
-  data[0x3E] = (config.values16bit[3] >> 8) & 0xFF;
-  data[0x3F] = config.bitFlags & 0x03;
-  data[0x40] = config.indexCount + 1;
-
-  // Write entry array
-  for (let i = 0; i < Math.min(16, config.entryArray.length); i++) {
-    const offset = 0x41 + (i * 4);
-    const value = config.entryArray[i];
-    data[offset] = value & 0xFF;
-    data[offset + 1] = (value >> 8) & 0xFF;
-    data[offset + 2] = (value >> 16) & 0xFF;
-    data[offset + 3] = (value >> 24) & 0xFF;
-  }
-
-  // Write additional config
-  data.set(config.additionalConfig.slice(0, 192), 0x730);
+  const initialOffset = 0x000;
+  const entrySize = 0x14; // 20 bytes per entry
+  const encryptionKeysOffset = 0x300; // Encryption keys start here
 
   // Write emergency system entries
-  const entryBaseOffset = 0x218;
   for (let i = 0; i < systems.length; i++) {
     const system = systems[i];
-    const entryOffset = entryBaseOffset + (i * 40);
-    if (entryOffset + 40 > data.length) break;
+    const entryOffset = initialOffset + (i * entrySize);
+    
+    // Don't write past encryption keys offset
+    if (entryOffset + entrySize > data.length || entryOffset >= encryptionKeysOffset) break;
 
-    data[entryOffset] = system.enabled ? 0x01 : 0x00;
-    data[entryOffset + 1] = system.unknown & 0xFF;
-    data[entryOffset + 2] = (system.unknown >> 8) & 0xFF;
-    data[entryOffset + 3] = system.value1 & 0xFF;
-    data[entryOffset + 4] = (system.value1 >> 8) & 0xFF;
-    data[entryOffset + 5] = system.value2 & 0xFF;
-    data[entryOffset + 6] = (system.value2 >> 8) & 0xFF;
-    
-    // Name (16 bytes, Unicode WCHAR)
-    // Try encoding at both locations - within entry and at block offset 0x1F8
-    const nameOffsetInEntry = entryOffset + 7;
-    encodeWCHAR(system.name, data, nameOffsetInEntry, 16);
-    
-    // Also encode at block offset 0x1F8 (assuming names are in a separate table)
-    const nameOffsetBlock = 0x1F8 + (i * 16);
-    if (nameOffsetBlock + 16 <= data.length) {
-      encodeWCHAR(system.name, data, nameOffsetBlock, 16);
+    // Name (10 bytes at +0x00-0x09, ASCII string)
+    const nameBytes = new Uint8Array(10);
+    nameBytes.fill(0);
+    if (system.name) {
+      const encoded = new TextEncoder().encode(system.name.slice(0, 10));
+      nameBytes.set(encoded, 0);
+    }
+    data.set(nameBytes, entryOffset + 0x00);
+
+    // Fields (10 bytes at +0x0A-0x13)
+    if (system.fields && system.fields.length >= 10) {
+      data.set(system.fields.slice(0, 10), entryOffset + 0x0A);
     }
   }
 
   // Set metadata byte at offset 0xFFF
-  data[0xFFF] = 0x03;
+  data[0xFFF] = 0x10;
 
   return data;
 }
