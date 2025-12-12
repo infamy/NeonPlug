@@ -14,6 +14,7 @@ const tabs = [
   { id: 'contacts', label: 'Contacts' },
   { id: 'emergency', label: 'Emergency' },
   { id: 'messages', label: 'Messages & Groups' },
+  { id: 'digital', label: 'Digital' },
   { id: 'settings', label: 'Settings' },
   { id: 'import', label: 'Channel Wizard' },
   { id: 'about', label: 'About' },

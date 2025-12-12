@@ -527,17 +527,17 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                       ✎
                     </button>
                     {!isVFOChannel(channel.number) && (
-                      <button
-                        onClick={() => {
-                          if (confirm(`Delete channel ${channel.number}: "${channel.name}"?`)) {
-                            deleteChannel(channel.number);
-                          }
-                        }}
-                        className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-red-400 border border-red-600 border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
-                        title={`Delete channel ${channel.number}`}
-                      >
-                        ×
-                      </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(`Delete channel ${channel.number}: "${channel.name}"?`)) {
+                          deleteChannel(channel.number);
+                        }
+                      }}
+                      className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-red-400 border border-red-600 border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+                      title={`Delete channel ${channel.number}`}
+                    >
+                      ×
+                    </button>
                     )}
                   </div>
                 </td>

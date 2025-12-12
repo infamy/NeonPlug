@@ -84,7 +84,7 @@ export const ChannelsTab: React.FC = () => {
         <h2 className="text-2xl font-bold text-neon-cyan">Channels</h2>
         <div className="flex items-center gap-4">
           <div className="text-cool-gray">
-            {filteredChannels.length} channel{filteredChannels.length !== 1 ? 's' : ''} {vfoChannels.length > 0 && `(${vfoChannels.length} VFO${vfoChannels.length !== 1 ? 's' : ''})`}
+            {filteredChannels.length - vfoChannels.length} channel{(filteredChannels.length - vfoChannels.length) !== 1 ? 's' : ''} {vfoChannels.length > 0 && `(${vfoChannels.length} VFO${vfoChannels.length !== 1 ? 's' : ''})`}
           </div>
           <button
             onClick={handleAddChannel}

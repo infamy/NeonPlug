@@ -20,6 +20,7 @@ export interface RadioSettings {
   backlightBrightness: number;      // Offset 0x30 (1-6, stored as 0-5, displayed as 1-6)
   unknownDisplay: number;           // Offset 0x32
   displayFlags: number;             // Offset 0x33 (8 bits, bit flags + 2-bit field)
+  dataDisplayFormat: number;         // Offset 0x33, bit 3: 0=yyy/m/d (format 0), 1=d/m/yyy (format 1)
   callsignColor: number;            // Offset 0x34 (0-15) - Callsign Color
   standbyTextColor: number;         // Offset 0x35 (0-15) - Standby Text Color
   menuExitTime: number;             // Offset 0x36 (1-30)

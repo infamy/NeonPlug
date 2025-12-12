@@ -5,6 +5,7 @@ import { ZonesTab } from './components/zones/ZonesTab';
 import { ScanListsTab } from './components/scanlists/ScanListsTab';
 import { ContactsTab } from './components/contacts/ContactsTab';
 import { EmergencyTab } from './components/emergency/EmergencyTab';
+import { DigitalTab } from './components/digital/DigitalTab';
 import { SettingsTab } from './components/settings/SettingsTab';
 import { SmartImportTab } from './components/import/SmartImportTab';
 import { AboutTab } from './components/about/AboutTab';
@@ -169,6 +170,10 @@ function App() {
         return <ContactsTab />;
       case 'emergency':
         return <EmergencyTab />;
+      case 'messages':
+        return <MessagesAndGroupsTab />;
+      case 'digital':
+        return <DigitalTab />;
       case 'settings':
         return <SettingsTab />;
       case 'import':
@@ -177,8 +182,6 @@ function App() {
         return <DiagnosticsTab />;
       case 'about':
         return <AboutTab />;
-      case 'messages':
-        return <MessagesAndGroupsTab />;
       default:
         return <ChannelsTab />;
     }

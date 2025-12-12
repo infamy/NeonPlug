@@ -163,17 +163,17 @@ export const DiagnosticsTab: React.FC = () => {
             >
               📥 Bin
             </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setShowMetadataBlock(!showMetadataBlock);
-              }}
-              className="text-sm text-yellow-400 hover:text-yellow-300"
-            >
-              {showMetadataBlock ? '▼ Hide' : '▶ Show'}
-            </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setShowMetadataBlock(!showMetadataBlock);
+            }}
+            className="text-sm text-yellow-400 hover:text-yellow-300"
+          >
+            {showMetadataBlock ? '▼ Hide' : '▶ Show'}
+          </button>
           </div>
         </div>
         <p className="text-cool-gray text-sm mb-4">4KB block containing radio configuration settings</p>

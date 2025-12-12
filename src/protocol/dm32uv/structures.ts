@@ -3,7 +3,7 @@
  * Parses channel, zone, and contact structures from radio memory
  */
 
-import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, CalibrationData, RXGroup } from '../../models';
+import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, CalibrationData, RXGroup, EncryptionKey } from '../../models';
 import { decodeBCDFrequency, decodeCTCSSDCS, encodeBCDFrequency, encodeCTCSSDCS } from './encoding';
 import { OFFSET, BLOCK_SIZE, LIMITS } from './constants';
 import { createDefaultChannel } from '../../utils/channelHelpers';
@@ -1086,6 +1086,10 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const backlightBrightness = Math.max(1, Math.min(6, (data[0x30] & 0xFF) + 1)); // 1-6 (stored 0-5, displayed 1-6)
   const unknownDisplay = data[0x32];
   const displayFlags = data[0x33];
+  // Data Display Format: bit 3 of 0x33 (0x08 mask)
+  // Bit 3 = 0: yyy/m/d (format 0)
+  // Bit 3 = 1: d/m/yyy (format 1)
+  const dataDisplayFormat = (data[0x33] & 0x08) !== 0 ? 1 : 0;
   const callsignColor = data[0x34] & 0x0F; // 0-15 - Callsign Color
   const standbyTextColor = data[0x35] & 0x0F; // 0-15 - Standby Text Color
   const menuExitTime = Math.max(1, Math.min(30, data[0x36] & 0xFF)); // 1-30
@@ -1332,6 +1336,7 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     channelBColor,
     unknownDisplay,
     displayFlags,
+    dataDisplayFormat,
     callsignColor,
     standbyTextColor,
     backlightBrightness,
@@ -1450,7 +1455,16 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   // Backlight Brightness: 0x30 (stored as 0-5, displayed as 1-6, so subtract 1)
   data[0x30] = Math.max(0, Math.min(5, settings.backlightBrightness - 1)) & 0xFF;
   data[0x32] = settings.unknownDisplay & 0xFF;
-  data[0x33] = settings.displayFlags & 0xFF;
+  // Display Flags: 0x33
+  // Preserve existing bits, only modify bit 3 (0x08) based on dataDisplayFormat
+  const currentDisplayFlags = originalData ? originalData[0x33] : settings.displayFlags;
+  let displayFlagsValue = currentDisplayFlags & 0xFF;
+  if (settings.dataDisplayFormat === 1) {
+    displayFlagsValue |= 0x08; // Set bit 3
+  } else {
+    displayFlagsValue &= ~0x08; // Clear bit 3
+  }
+  data[0x33] = displayFlagsValue;
   // Preserve upper 4 bits, only modify lower 4 bits
   // Callsign Color at 0x34
   data[0x34] = (data[0x34] & 0xF0) | (Math.max(0, Math.min(15, settings.callsignColor)) & 0x0F);
@@ -2092,6 +2106,130 @@ export function encodeDigitalEmergencies(systems: DigitalEmergency[], config: Di
   data[0xFFF] = 0x03;
 
   return data;
+}
+
+/**
+ * Parse Encryption Keys from metadata 0x10 block
+ * Entry structure: 44 bytes (0x2C) starting at offset 0x300
+ * Max entries: 8
+ * Entry Calculation: entry_base = 0x300 + (entry_num - 1) * 0x2C
+ */
+export function parseEncryptionKeys(data: Uint8Array): EncryptionKey[] {
+  const initialOffset = 0x300;
+  const entrySize = 0x2C; // 44 bytes per entry
+  const maxEntries = 8;
+  const requiredLength = initialOffset + (maxEntries * entrySize);
+
+  if (data.length < requiredLength) {
+    throw new Error(`Encryption Keys data must be at least ${requiredLength} bytes (0x${requiredLength.toString(16)}) for 8 entries`);
+  }
+
+  const keys: EncryptionKey[] = [];
+
+  for (let i = 0; i < maxEntries; i++) {
+    const entryOffset = initialOffset + (i * entrySize); // Entry 1 → 0x300, Entry 2 → 0x32C, etc.
+    if (entryOffset + entrySize > data.length) break;
+
+    // Check if entry is empty (all 0x00 or 0xFF)
+    const entryData = data.slice(entryOffset, entryOffset + entrySize);
+    if (entryData.every(b => b === 0x00 || b === 0xFF)) {
+      // Create empty entry
+      keys.push({
+        entryNumber: i + 1, // 1-based for UI
+        type: 0,
+        name: '',
+        encryptionType: 0,
+        encryptionId: 0,
+        key: '',
+      });
+      continue;
+    }
+
+    // Type (1 byte at +0x00, 0x01-0x08)
+    const type = data[entryOffset + 0x00] & 0xFF;
+
+    // Name (10 bytes at +0x01-0x0A, ASCII string)
+    const nameBytes = data.slice(entryOffset + 0x01, entryOffset + 0x0B);
+    const nullIndex = nameBytes.indexOf(0);
+    const name = new TextDecoder('ascii', { fatal: false })
+      .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : nameBytes.length))
+      .replace(/\x00/g, '')
+      .trim();
+
+    // Encryption Type (1 byte at +0x0B, 1-255)
+    const encryptionType = data[entryOffset + 0x0B] & 0xFF;
+
+    // Encryption ID (1 byte at +0x0C, 1-255)
+    const encryptionId = data[entryOffset + 0x0C] & 0xFF;
+
+    // Key (31 bytes at +0x0D-0x2B, 62 hex chars)
+    const keyBytes = data.slice(entryOffset + 0x0D, entryOffset + 0x2C);
+    // Convert bytes to hex string
+    const key = Array.from(keyBytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+      .toUpperCase();
+
+    keys.push({
+      entryNumber: i + 1, // 1-based for UI
+      type,
+      name,
+      encryptionType,
+      encryptionId,
+      key,
+    });
+  }
+
+  return keys;
+}
+
+/**
+ * Encode Encryption Keys to metadata 0x10 block format
+ * Entry structure: 44 bytes (0x2C) starting at offset 0x300
+ * Entry Calculation: entry_base = 0x300 + (entry_num - 1) * 0x2C
+ */
+export function encodeEncryptionKey(key: EncryptionKey, data: Uint8Array): void {
+  const initialOffset = 0x300;
+  const entrySize = 0x2C; // 44 bytes per entry
+  const entryNumber = key.entryNumber; // 1-based
+  const entryOffset = initialOffset + ((entryNumber - 1) * entrySize);
+
+  if (entryOffset + entrySize > data.length) {
+    throw new Error(`Encryption key entry ${entryNumber} offset ${entryOffset} (0x${entryOffset.toString(16)}) exceeds data length`);
+  }
+
+  // Type (1 byte at +0x00, 0x01-0x08)
+  data[entryOffset + 0x00] = Math.max(0x01, Math.min(0x08, key.type || entryNumber)) & 0xFF;
+
+  // Name (10 bytes at +0x01-0x0A, ASCII string)
+  const nameBytes = new Uint8Array(10);
+  nameBytes.fill(0);
+  if (key.name) {
+    const encoded = new TextEncoder().encode(key.name.slice(0, 10));
+    nameBytes.set(encoded, 0);
+  }
+  data.set(nameBytes, entryOffset + 0x01);
+
+  // Encryption Type (1 byte at +0x0B, 1-255)
+  data[entryOffset + 0x0B] = Math.max(1, Math.min(255, key.encryptionType || 1)) & 0xFF;
+
+  // Encryption ID (1 byte at +0x0C, 1-255)
+  data[entryOffset + 0x0C] = Math.max(1, Math.min(255, key.encryptionId || 1)) & 0xFF;
+
+  // Key (31 bytes at +0x0D-0x2B, 62 hex chars)
+  const keyBytes = new Uint8Array(31);
+  keyBytes.fill(0);
+  if (key.key) {
+    // Convert hex string to bytes
+    const hexString = key.key.replace(/[^0-9A-Fa-f]/g, '').slice(0, 62); // Max 62 hex chars = 31 bytes
+    for (let i = 0; i < hexString.length && i < 62; i += 2) {
+      const hexByte = hexString.slice(i, i + 2);
+      if (hexByte.length === 2) {
+        keyBytes[i / 2] = parseInt(hexByte, 16);
+      }
+    }
+  }
+  data.set(keyBytes, entryOffset + 0x0D);
 }
 
 /**

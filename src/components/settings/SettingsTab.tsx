@@ -180,11 +180,12 @@ export const SettingsTab: React.FC = () => {
     return `0x${addr.toString(16).padStart(6, '0').toUpperCase()}`;
   };
 
-  // Calculate usage statistics
+  // Calculate usage statistics (exclude VFO channels)
+  const vfoCount = (radioSettings?.vfoA ? 1 : 0) + (radioSettings?.vfoB ? 1 : 0);
   const channelUsage = {
-    used: channels.length,
+    used: channels.length - vfoCount,
     total: 4000,
-    percent: Math.round((channels.length / 4000) * 100),
+    percent: Math.round(((channels.length - vfoCount) / 4000) * 100),
   };
 
   const zoneUsage = {
@@ -512,33 +513,6 @@ export const SettingsTab: React.FC = () => {
                       </div>
                     </div>
                     <div>
-                      <h4 className="text-md font-semibold text-neon-cyan mb-3 mt-4">VFO Channels</h4>
-                      <div className="space-y-4 mb-4">
-                        <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
-                          <h5 className="text-sm font-semibold text-neon-cyan mb-2">VFO A</h5>
-                          <div className="text-cool-gray text-xs space-y-1">
-                            <div>Name: <span className="text-white">{radioSettings.vfoA?.name || 'N/A'}</span></div>
-                            <div>RX Frequency: <span className="text-white">{radioSettings.vfoA?.rxFrequency?.toFixed(4) || 'N/A'} MHz</span></div>
-                            <div>TX Frequency: <span className="text-white">{radioSettings.vfoA?.txFrequency?.toFixed(4) || 'N/A'} MHz</span></div>
-                            <div>Mode: <span className="text-white">{radioSettings.vfoA?.mode || 'N/A'}</span></div>
-                            <div>Squelch: <span className="text-white">{radioSettings.vfoA?.squelchLevel ?? 'N/A'}</span></div>
-                            <div className="text-xs text-cool-gray mt-2">Edit in Channels tab</div>
-                          </div>
-                        </div>
-                        <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
-                          <h5 className="text-sm font-semibold text-neon-cyan mb-2">VFO B</h5>
-                          <div className="text-cool-gray text-xs space-y-1">
-                            <div>Name: <span className="text-white">{radioSettings.vfoB?.name || 'N/A'}</span></div>
-                            <div>RX Frequency: <span className="text-white">{radioSettings.vfoB?.rxFrequency?.toFixed(4) || 'N/A'} MHz</span></div>
-                            <div>TX Frequency: <span className="text-white">{radioSettings.vfoB?.txFrequency?.toFixed(4) || 'N/A'} MHz</span></div>
-                            <div>Mode: <span className="text-white">{radioSettings.vfoB?.mode || 'N/A'}</span></div>
-                            <div>Squelch: <span className="text-white">{radioSettings.vfoB?.squelchLevel ?? 'N/A'}</span></div>
-                            <div className="text-xs text-cool-gray mt-2">Edit in Channels tab</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div>
                       <label className="block text-cool-gray text-sm mb-2">
                         Backlight Brightness: {radioSettings.backlightBrightness}
                       </label>
@@ -754,7 +728,6 @@ export const SettingsTab: React.FC = () => {
                     {[
                       { bit: 0, label: 'Volume Change Prompt' },
                       { bit: 1, label: 'Time Display' },
-                      { bit: 2, label: 'Date Display Format' },
                     ].map(({ bit, label }) => (
                       <div key={bit} className="flex items-center gap-2">
                         <input
@@ -772,6 +745,17 @@ export const SettingsTab: React.FC = () => {
                         <label htmlFor={`displayFlag${bit}`} className="text-cool-gray text-sm">{label}</label>
                       </div>
                     ))}
+                    <div className="mt-3 pt-3 border-t border-neon-cyan border-opacity-20">
+                      <label className="block text-cool-gray text-sm mb-2">Data Display Format</label>
+                      <select
+                        value={radioSettings.dataDisplayFormat}
+                        onChange={(e) => updateRadioSettings({ dataDisplayFormat: parseInt(e.target.value) || 0 })}
+                        className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      >
+                        <option value={0}>yyy/m/d (Format 0)</option>
+                        <option value={1}>d/m/yyy (Format 1)</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
