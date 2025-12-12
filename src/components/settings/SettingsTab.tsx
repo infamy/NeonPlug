@@ -2072,7 +2072,6 @@ export const SettingsTab: React.FC = () => {
                   <thead>
                     <tr className="border-b border-neon-cyan border-opacity-30">
                       <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Entry</th>
-                      <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Number Key</th>
                       <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Operate Mode</th>
                       <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Menu Select</th>
                       <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Call Way</th>
@@ -2083,29 +2082,15 @@ export const SettingsTab: React.FC = () => {
                   </thead>
                   <tbody>
                     {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((index) => {
-                      const entry = radioSettings.funPlus?.[index] || { funNumber: index, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 };
+                      const entry = radioSettings.funPlus?.[index] || { operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 };
                       return (
                         <tr key={index} className="border-b border-neon-cyan border-opacity-10 hover:bg-dark-charcoal">
                           <td className="py-2 px-3 text-cool-gray">Fun+{index}</td>
                           <td className="py-2 px-3">
-                            <input
-                              type="number"
-                              min="0"
-                              max="9"
-                              value={entry.funNumber ?? index}
-                              onChange={(e) => {
-                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
-                                newFunPlus[index] = { ...entry, funNumber: parseInt(e.target.value) || index };
-                                updateRadioSettings({ funPlus: newFunPlus });
-                              }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                            />
-                          </td>
-                          <td className="py-2 px-3">
                             <select
                               value={entry.operateMode ?? 0}
                               onChange={(e) => {
-                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map(() => ({ operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
                                 newFunPlus[index] = { ...entry, operateMode: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
@@ -2120,7 +2105,7 @@ export const SettingsTab: React.FC = () => {
                             <select
                               value={entry.menuSelect ?? 0}
                               onChange={(e) => {
-                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map(() => ({ operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
                                 newFunPlus[index] = { ...entry, menuSelect: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
@@ -2136,7 +2121,7 @@ export const SettingsTab: React.FC = () => {
                             <select
                               value={entry.callWay ?? 0}
                               onChange={(e) => {
-                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map(() => ({ operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
                                 newFunPlus[index] = { ...entry, callWay: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
@@ -2155,7 +2140,7 @@ export const SettingsTab: React.FC = () => {
                               max="255"
                               value={entry.callObject ?? 0}
                               onChange={(e) => {
-                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map(() => ({ operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
                                 newFunPlus[index] = { ...entry, callObject: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
@@ -2167,7 +2152,7 @@ export const SettingsTab: React.FC = () => {
                             <select
                               value={entry.digitalCallType ?? 0}
                               onChange={(e) => {
-                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map(() => ({ operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
                                 newFunPlus[index] = { ...entry, digitalCallType: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
@@ -2186,7 +2171,7 @@ export const SettingsTab: React.FC = () => {
                               max="255"
                               value={entry.sms ?? 0}
                               onChange={(e) => {
-                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map((_, i) => ({ funNumber: i, operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
+                                const newFunPlus = [...(radioSettings.funPlus || Array(10).fill(null).map(() => ({ operateMode: 0, menuSelect: 0, callWay: 0, callObject: 0, digitalCallType: 0, sms: 0 })))];
                                 newFunPlus[index] = { ...entry, sms: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}

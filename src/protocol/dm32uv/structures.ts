@@ -1166,17 +1166,18 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   }
 
   // Fun+ (10 entries, 7 bytes each, starting at 0x230)
-  const funPlus: Array<{ funNumber: number; operateMode: number; menuSelect: number; callWay: number; callObject: number; digitalCallType: number; sms: number }> = [];
+  // Fun+Number is determined by entry index (0-9), not stored in data
+  const funPlus: Array<{ operateMode: number; menuSelect: number; callWay: number; callObject: number; digitalCallType: number; sms: number }> = [];
   for (let i = 0; i < 10; i++) {
     const baseOffset = 0x230 + i * 7;  // Base offset 0x230, 7 bytes per entry
     funPlus.push({
-      funNumber: data[baseOffset] & 0xFF,                    // Number key (0-9)
-      operateMode: data[baseOffset + 1] & 0xFF,              // 0=Call, 1=Menu
-      menuSelect: data[baseOffset + 2] & 0xFF,               // Menu item (when Operate Mode = 1)
-      callWay: data[baseOffset + 3] & 0xFF,                   // 0=Off, 1=Analog, 2=Digital
-      callObject: data[baseOffset + 4] & 0xFF,               // Contact/ID
-      digitalCallType: data[baseOffset + 5] & 0xFF,           // Digital call type
-      sms: data[baseOffset + 6] & 0xFF,                      // SMS number/index
+      operateMode: data[baseOffset + 0x00] & 0xFF,              // +0x00: 0=Call, 1=Menu
+      menuSelect: data[baseOffset + 0x01] & 0xFF,               // +0x01: Menu item (0-13)
+      // +0x02: Reserved/Padding (not used)
+      callWay: data[baseOffset + 0x03] & 0xFF,                   // +0x03: 0=Off, 1=Analog, 2=Digital
+      callObject: data[baseOffset + 0x04] & 0xFF,               // +0x04: Contact/ID
+      digitalCallType: data[baseOffset + 0x05] & 0xFF,           // +0x05: Digital call type (0-8)
+      sms: data[baseOffset + 0x06] & 0xFF,                      // +0x06: SMS number/index
     });
   }
 
@@ -1559,18 +1560,19 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   }
 
   // Fun+ (10 entries, 7 bytes each, starting at 0x230)
+  // Fun+Number is determined by entry index (0-9), not stored in data
   if (settings.funPlus && settings.funPlus.length >= 10) {
     for (let i = 0; i < 10; i++) {
       const baseOffset = 0x230 + i * 7;  // Base offset 0x230, 7 bytes per entry
       const entry = settings.funPlus[i];
       if (entry) {
-        data[baseOffset] = Math.max(0, Math.min(9, entry.funNumber)) & 0xFF;
-        data[baseOffset + 1] = Math.max(0, Math.min(1, entry.operateMode)) & 0xFF;
-        data[baseOffset + 2] = Math.max(0, Math.min(13, entry.menuSelect)) & 0xFF;
-        data[baseOffset + 3] = Math.max(0, Math.min(2, entry.callWay)) & 0xFF;
-        data[baseOffset + 4] = Math.max(0, Math.min(255, entry.callObject)) & 0xFF;
-        data[baseOffset + 5] = Math.max(0, Math.min(8, entry.digitalCallType)) & 0xFF;
-        data[baseOffset + 6] = Math.max(0, Math.min(255, entry.sms)) & 0xFF;
+        data[baseOffset + 0x00] = Math.max(0, Math.min(1, entry.operateMode)) & 0xFF;  // +0x00: Operate Mode
+        data[baseOffset + 0x01] = Math.max(0, Math.min(13, entry.menuSelect)) & 0xFF;  // +0x01: Menu Select
+        data[baseOffset + 0x02] = 0x00;  // +0x02: Reserved/Padding
+        data[baseOffset + 0x03] = Math.max(0, Math.min(2, entry.callWay)) & 0xFF;  // +0x03: Call Way
+        data[baseOffset + 0x04] = Math.max(0, Math.min(255, entry.callObject)) & 0xFF;  // +0x04: Call Object
+        data[baseOffset + 0x05] = Math.max(0, Math.min(8, entry.digitalCallType)) & 0xFF;  // +0x05: Digital Call Type
+        data[baseOffset + 0x06] = Math.max(0, Math.min(255, entry.sms)) & 0xFF;  // +0x06: SMS
       }
     }
   }

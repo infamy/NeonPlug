@@ -86,14 +86,13 @@ export interface RadioSettings {
   }>;                                 // 5 entries, 5 bytes each, starting at 0x1FB
   
   funPlus: Array<{
-    funNumber: number;                // Number key (0-9)
-    operateMode: number;              // 0=Call, 1=Menu
-    menuSelect: number;                // Menu item (when Operate Mode = 1)
-    callWay: number;                  // 0=Off, 1=Analog, 2=Digital
-    callObject: number;                // Contact/ID
-    digitalCallType: number;           // Digital call type
-    sms: number;                      // SMS number/index
-  }>;                                 // 10 entries, 7 bytes each, starting at 0x1F5
+    operateMode: number;              // +0x00: 0=Call, 1=Menu
+    menuSelect: number;                // +0x01: Menu item (0-13)
+    callWay: number;                  // +0x03: 0=Off, 1=Analog, 2=Digital
+    callObject: number;                // +0x04: Contact/ID
+    digitalCallType: number;           // +0x05: Digital call type (0-8)
+    sms: number;                      // +0x06: SMS number/index
+  }>;                                 // 10 entries, 7 bytes each, starting at 0x230
 
   // Menu Enable/Disable Flags (0x500-0x507)
   menuEnableFlags: {
