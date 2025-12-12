@@ -9,13 +9,13 @@ export interface EncryptionKey {
   /** Entry number (1-8, 1-based for UI) */
   entryNumber: number;
   
-  /** Type (1 byte, 0x01-0x08) */
-  type: number;
+  /** ID (1 byte, 0x01-0x08) */
+  id: number;
   
   /** Name (10 bytes, ASCII string) */
   name: string;
   
-  /** Encryption Type (1 byte, 1-255) */
+  /** Encryption Type (1 byte, 0-4: 0=None, 1=Custom, 2=ARC4, 3=AES128, 4=AES256) */
   encryptionType: number;
   
   /** Encryption ID (1 byte, 1-255) */

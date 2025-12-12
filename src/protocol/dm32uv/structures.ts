@@ -1884,19 +1884,18 @@ export function encodeQuickMessage(message: QuickTextMessage): Uint8Array {
  * Parse Digital Emergency Systems from metadata 0x10 block
  * Entry structure: 20 bytes (0x14) starting at offset 0x000
  * Entry Calculation: entry_base = 0x000 + entry_num * 0x14
- * Max entries: ~204 (but we'll parse up to encryption keys start at 0x300)
+ * Max entries: 8
  */
 export function parseDigitalEmergencies(data: Uint8Array): { systems: DigitalEmergency[]; config: DigitalEmergencyConfig } {
   const initialOffset = 0x000;
   const entrySize = 0x14; // 20 bytes per entry
-  const encryptionKeysOffset = 0x300; // Encryption keys start here
-  const maxEntries = Math.floor((encryptionKeysOffset - initialOffset) / entrySize); // ~192 entries before encryption keys
+  const maxEntries = 8; // 8 total entries
 
   const systems: DigitalEmergency[] = [];
 
   for (let i = 0; i < maxEntries; i++) {
     const entryOffset = initialOffset + (i * entrySize); // Entry 0 → 0x000, Entry 1 → 0x014, etc.
-    if (entryOffset + entrySize > data.length || entryOffset >= encryptionKeysOffset) break;
+    if (entryOffset + entrySize > data.length) break;
 
     // Check if entry is empty (all zeros or all 0xFF)
     const entryData = data.slice(entryOffset, entryOffset + entrySize);
@@ -1936,15 +1935,14 @@ export function encodeDigitalEmergencies(systems: DigitalEmergency[], _config: D
 
   const initialOffset = 0x000;
   const entrySize = 0x14; // 20 bytes per entry
-  const encryptionKeysOffset = 0x300; // Encryption keys start here
+  const maxEntries = 8; // 8 total entries
 
   // Write emergency system entries
-  for (let i = 0; i < systems.length; i++) {
+  for (let i = 0; i < Math.min(systems.length, maxEntries); i++) {
     const system = systems[i];
     const entryOffset = initialOffset + (i * entrySize);
     
-    // Don't write past encryption keys offset
-    if (entryOffset + entrySize > data.length || entryOffset >= encryptionKeysOffset) break;
+    if (entryOffset + entrySize > data.length) break;
 
     // Name (10 bytes at +0x00-0x09, ASCII string)
     const nameBytes = new Uint8Array(10);
@@ -1995,7 +1993,7 @@ export function parseEncryptionKeys(data: Uint8Array): EncryptionKey[] {
       // Create empty entry
       keys.push({
         entryNumber: i + 1, // 1-based for UI
-        type: 0,
+        id: 0,
         name: '',
         encryptionType: 0,
         encryptionId: 0,
@@ -2004,8 +2002,8 @@ export function parseEncryptionKeys(data: Uint8Array): EncryptionKey[] {
       continue;
     }
 
-    // Type (1 byte at +0x00, 0x01-0x08)
-    const type = data[entryOffset + 0x00] & 0xFF;
+    // ID (1 byte at +0x00, 0x01-0x08)
+    const entryId = data[entryOffset + 0x00] & 0xFF;
 
     // Name (10 bytes at +0x01-0x0A, ASCII string)
     const nameBytes = data.slice(entryOffset + 0x01, entryOffset + 0x0B);
@@ -2031,7 +2029,7 @@ export function parseEncryptionKeys(data: Uint8Array): EncryptionKey[] {
 
     keys.push({
       entryNumber: i + 1, // 1-based for UI
-      type,
+      id: entryId,
       name,
       encryptionType,
       encryptionId,
@@ -2057,8 +2055,8 @@ export function encodeEncryptionKey(key: EncryptionKey, data: Uint8Array): void 
     throw new Error(`Encryption key entry ${entryNumber} offset ${entryOffset} (0x${entryOffset.toString(16)}) exceeds data length`);
   }
 
-  // Type (1 byte at +0x00, 0x01-0x08)
-  data[entryOffset + 0x00] = Math.max(0x01, Math.min(0x08, key.type || entryNumber)) & 0xFF;
+  // ID (1 byte at +0x00, 0x01-0x08)
+  data[entryOffset + 0x00] = Math.max(0x01, Math.min(0x08, key.id || entryNumber)) & 0xFF;
 
   // Name (10 bytes at +0x01-0x0A, ASCII string)
   const nameBytes = new Uint8Array(10);
@@ -2069,8 +2067,8 @@ export function encodeEncryptionKey(key: EncryptionKey, data: Uint8Array): void 
   }
   data.set(nameBytes, entryOffset + 0x01);
 
-  // Encryption Type (1 byte at +0x0B, 1-255)
-  data[entryOffset + 0x0B] = Math.max(1, Math.min(255, key.encryptionType || 1)) & 0xFF;
+  // Encryption Type (1 byte at +0x0B, 0-4: 0=None, 1=Custom, 2=ARC4, 3=AES128, 4=AES256)
+  data[entryOffset + 0x0B] = Math.max(0, Math.min(4, key.encryptionType ?? 0)) & 0xFF;
 
   // Encryption ID (1 byte at +0x0C, 1-255)
   data[entryOffset + 0x0C] = Math.max(1, Math.min(255, key.encryptionId || 1)) & 0xFF;
