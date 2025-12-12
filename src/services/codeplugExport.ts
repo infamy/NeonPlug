@@ -173,26 +173,7 @@ export function exportCodeplug(data: CodeplugData): void {
     const digitalEmergencySheet = XLSX.utils.json_to_sheet(digitalEmergencyRows);
     XLSX.utils.book_append_sheet(workbook, digitalEmergencySheet, 'Digital Emergency');
     
-    // Add config as a separate sheet if available
-    if (data.digitalEmergencyConfig) {
-      const configRows = [{
-        'Count/Index': data.digitalEmergencyConfig.countIndex,
-        'Unknown': data.digitalEmergencyConfig.unknown,
-        'Numeric Field 1': data.digitalEmergencyConfig.numericFields[0],
-        'Numeric Field 2': data.digitalEmergencyConfig.numericFields[1],
-        'Numeric Field 3': data.digitalEmergencyConfig.numericFields[2],
-        'Byte Field 1': data.digitalEmergencyConfig.byteFields[0],
-        'Byte Field 2': data.digitalEmergencyConfig.byteFields[1],
-        '16-bit Value 1': data.digitalEmergencyConfig.values16bit[0],
-        '16-bit Value 2': data.digitalEmergencyConfig.values16bit[1],
-        '16-bit Value 3': data.digitalEmergencyConfig.values16bit[2],
-        '16-bit Value 4': data.digitalEmergencyConfig.values16bit[3],
-        'Bit Flags': data.digitalEmergencyConfig.bitFlags,
-        'Index/Count': data.digitalEmergencyConfig.indexCount,
-      }];
-      const configSheet = XLSX.utils.json_to_sheet(configRows);
-      XLSX.utils.book_append_sheet(workbook, configSheet, 'Digital Emergency Config');
-    }
+    // Note: DigitalEmergencyConfig is now a simplified generic object, so we don't export it
   }
 
   // Sheet 6: Analog Emergency Systems
@@ -439,35 +420,12 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
         }
 
         // Import Digital Emergency Config
+        // Note: DigitalEmergencyConfig is now a simplified generic object
+        // If the old config sheet exists, we ignore it and set config to empty object
+        // (The config is not used in encoding anyway)
         if (workbook.SheetNames.includes('Digital Emergency Config')) {
-          const sheet = workbook.Sheets['Digital Emergency Config'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
-          if (rows.length > 0) {
-            const row = rows[0];
-            result.digitalEmergencyConfig = {
-              countIndex: parseInt(row['Count/Index']) || 0,
-              unknown: parseInt(row['Unknown']) || 0,
-              numericFields: [
-                parseInt(row['Numeric Field 1']) || 0,
-                parseInt(row['Numeric Field 2']) || 0,
-                parseInt(row['Numeric Field 3']) || 0,
-              ] as [number, number, number],
-              byteFields: [
-                parseInt(row['Byte Field 1']) || 0,
-                parseInt(row['Byte Field 2']) || 0,
-              ] as [number, number],
-              values16bit: [
-                parseInt(row['16-bit Value 1']) || 0,
-                parseInt(row['16-bit Value 2']) || 0,
-                parseInt(row['16-bit Value 3']) || 0,
-                parseInt(row['16-bit Value 4']) || 0,
-              ] as [number, number, number, number],
-              bitFlags: parseInt(row['Bit Flags']) || 0,
-              indexCount: parseInt(row['Index/Count']) || 0,
-              entryArray: [],
-              additionalConfig: new Uint8Array(192),
-            };
-          }
+          // Legacy sheet exists but we don't parse it - config is now simplified
+          result.digitalEmergencyConfig = {};
         }
 
         // Import Analog Emergency Systems
