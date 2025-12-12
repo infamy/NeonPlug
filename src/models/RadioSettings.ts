@@ -3,6 +3,8 @@
  * Contains radio names, boot screen text, and other radio configuration
  */
 
+import type { Channel } from './Channel';
+
 export interface RadioSettings {
   // Header fields (0x00-0x20)
   unknownFlag: number;              // Legacy field (no longer used)
@@ -176,4 +178,8 @@ export interface RadioSettings {
   currentZone: number;               // Offset 0x330 (1-based, 0 = none)
   zoneEnabled: boolean;              // Offset 0x331 (bit 0)
   unknownValue: string;              // Offset 0x332 (3 bytes, formatted as hex string)
+
+  // VFO Channel Information
+  vfoA: Channel;                     // Offset 0x276-0x2A5 (48 bytes) - VFO A Channel
+  vfoB: Channel;                     // Offset 0x2A6-0x2D5 (48 bytes) - VFO B Channel
 }

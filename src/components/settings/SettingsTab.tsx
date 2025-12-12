@@ -512,6 +512,33 @@ export const SettingsTab: React.FC = () => {
                       </div>
                     </div>
                     <div>
+                      <h4 className="text-md font-semibold text-neon-cyan mb-3 mt-4">VFO Channels</h4>
+                      <div className="space-y-4 mb-4">
+                        <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                          <h5 className="text-sm font-semibold text-neon-cyan mb-2">VFO A</h5>
+                          <div className="text-cool-gray text-xs space-y-1">
+                            <div>Name: <span className="text-white">{radioSettings.vfoA?.name || 'N/A'}</span></div>
+                            <div>RX Frequency: <span className="text-white">{radioSettings.vfoA?.rxFrequency?.toFixed(4) || 'N/A'} MHz</span></div>
+                            <div>TX Frequency: <span className="text-white">{radioSettings.vfoA?.txFrequency?.toFixed(4) || 'N/A'} MHz</span></div>
+                            <div>Mode: <span className="text-white">{radioSettings.vfoA?.mode || 'N/A'}</span></div>
+                            <div>Squelch: <span className="text-white">{radioSettings.vfoA?.squelchLevel ?? 'N/A'}</span></div>
+                            <div className="text-xs text-cool-gray mt-2">Edit in Channels tab</div>
+                          </div>
+                        </div>
+                        <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
+                          <h5 className="text-sm font-semibold text-neon-cyan mb-2">VFO B</h5>
+                          <div className="text-cool-gray text-xs space-y-1">
+                            <div>Name: <span className="text-white">{radioSettings.vfoB?.name || 'N/A'}</span></div>
+                            <div>RX Frequency: <span className="text-white">{radioSettings.vfoB?.rxFrequency?.toFixed(4) || 'N/A'} MHz</span></div>
+                            <div>TX Frequency: <span className="text-white">{radioSettings.vfoB?.txFrequency?.toFixed(4) || 'N/A'} MHz</span></div>
+                            <div>Mode: <span className="text-white">{radioSettings.vfoB?.mode || 'N/A'}</span></div>
+                            <div>Squelch: <span className="text-white">{radioSettings.vfoB?.squelchLevel ?? 'N/A'}</span></div>
+                            <div className="text-xs text-cool-gray mt-2">Edit in Channels tab</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
                       <label className="block text-cool-gray text-sm mb-2">
                         Backlight Brightness: {radioSettings.backlightBrightness}
                       </label>

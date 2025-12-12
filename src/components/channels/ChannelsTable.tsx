@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
+import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import type { Channel } from '../../models/Channel';
 import { ChannelEditModal } from './ChannelEditModal';
 
@@ -9,6 +10,7 @@ interface ChannelsTableProps {
 
 export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channelsProp }) => {
   const { channels: channelsFromStore, updateChannel, deleteChannel } = useChannelsStore();
+  const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
   const channels = channelsProp ?? channelsFromStore;
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
 
@@ -17,7 +19,29 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
     field: keyof Channel,
     value: string | number | boolean | Channel['rxCtcssDcs']
   ) => {
+    // Handle VFO channels (4001 and 4002)
+    if (channelNumber === 4001 && radioSettings?.vfoA) {
+      // VFO A
+      updateSettings({ vfoA: { ...radioSettings.vfoA, [field]: value } });
+      return;
+    }
+    if (channelNumber === 4002 && radioSettings?.vfoB) {
+      // VFO B
+      updateSettings({ vfoB: { ...radioSettings.vfoB, [field]: value } });
+      return;
+    }
+    // Regular channels
     updateChannel(channelNumber, { [field]: value });
+  };
+
+  const isVFOChannel = (channelNumber: number): boolean => {
+    return channelNumber === 4001 || channelNumber === 4002;
+  };
+
+  const getVFOIdentifier = (channelNumber: number): string => {
+    if (channelNumber === 4001) return 'A';
+    if (channelNumber === 4002) return 'B';
+    return channelNumber.toString();
   };
 
   const formatFrequency = (freq: number): string => {
@@ -94,14 +118,22 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                 key={channel.number}
                 className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
               >
-                <td className="px-2 py-2 text-white sticky left-0 bg-deep-gray z-10 text-sm font-medium">{channel.number}</td>
+                <td className="px-2 py-2 text-white sticky left-0 bg-deep-gray z-10 text-sm font-medium">
+                  {isVFOChannel(channel.number) ? getVFOIdentifier(channel.number) : channel.number}
+                </td>
                 <td className="px-2 py-2 sticky left-[40px] bg-deep-gray z-10">
                   <input
                     type="text"
-                    value={channel.name}
+                    value={isVFOChannel(channel.number) ? '' : channel.name}
                     onChange={(e) => handleCellChange(channel.number, 'name', e.target.value)}
-                    className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+                    disabled={isVFOChannel(channel.number)}
+                    className={`bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs ${
+                      isVFOChannel(channel.number) 
+                        ? 'text-cool-gray cursor-not-allowed' 
+                        : 'text-white'
+                    }`}
                     maxLength={16}
+                    placeholder={isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : ''}
                   />
                 </td>
                 <td className="px-2 py-2">
@@ -490,21 +522,23 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                     <button
                       onClick={() => setEditingChannel(channel)}
                       className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
-                      title={`Edit channel ${channel.number}`}
+                      title={`Edit ${isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : `channel ${channel.number}`}`}
                     >
                       ✎
                     </button>
-                    <button
-                      onClick={() => {
-                        if (confirm(`Delete channel ${channel.number}: "${channel.name}"?`)) {
-                          deleteChannel(channel.number);
-                        }
-                      }}
-                      className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-red-400 border border-red-600 border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
-                      title={`Delete channel ${channel.number}`}
-                    >
-                      ×
-                    </button>
+                    {!isVFOChannel(channel.number) && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete channel ${channel.number}: "${channel.name}"?`)) {
+                            deleteChannel(channel.number);
+                          }
+                        }}
+                        className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-red-400 border border-red-600 border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+                        title={`Delete channel ${channel.number}`}
+                      >
+                        ×
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

@@ -6,6 +6,7 @@
 import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, CalibrationData, RXGroup } from '../../models';
 import { decodeBCDFrequency, decodeCTCSSDCS, encodeBCDFrequency, encodeCTCSSDCS } from './encoding';
 import { OFFSET, BLOCK_SIZE, LIMITS } from './constants';
+import { createDefaultChannel } from '../../utils/channelHelpers';
 
 /**
  * Calculate the block offset for a channel's flag byte
@@ -1226,6 +1227,13 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     .map(b => b.toString(16).padStart(2, '0'))
     .join(' ');
 
+  // VFO Channel Information
+  // Note: VFO A and VFO B are now parsed from block 0x41 as channels 4001 and 4002
+  // They are set in readRadioSettings() after parsing block 0x41
+  // Create default empty channels here - will be overridden if block 0x41 is available
+  const vfoA = createDefaultChannel({ number: 4001, name: '', rxFrequency: 0, txFrequency: 0 });
+  const vfoB = createDefaultChannel({ number: 4002, name: '', rxFrequency: 0, txFrequency: 0 });
+
   // Menu Enable/Disable Flags (0x500-0x507)
   /**
    * Read a menu bit from the 4KB memory block
@@ -1381,6 +1389,8 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     currentZone,
     zoneEnabled,
     unknownValue,
+    vfoA,
+    vfoB,
     menuEnableFlags,
   };
 }
@@ -1605,6 +1615,10 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
       data[0x332 + i] = byte;
     }
   }
+
+  // VFO Channel Information
+  // Note: VFO A and VFO B are now written to block 0x41 as channels 4001 and 4002
+  // They are written in writeRadioSettings() to block 0x41
 
   // Menu Enable/Disable Flags (0x500-0x507)
   /**
