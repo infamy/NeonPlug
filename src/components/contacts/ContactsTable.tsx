@@ -84,7 +84,6 @@ export const ContactsTable: React.FC = () => {
           <table className="w-full border-collapse text-xs">
             <thead className="sticky top-0 bg-dark-charcoal z-10">
               <tr className="bg-dark-charcoal border-b border-neon-cyan">
-                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">ID</th>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[150px]">Name</th>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">DMR ID</th>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Call Sign</th>
@@ -97,7 +96,6 @@ export const ContactsTable: React.FC = () => {
                   key={contact.id}
                   className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
                 >
-                  <td className="px-2 py-2 text-white text-sm font-medium">{contact.id}</td>
                   <td className="px-2 py-2 text-white">{contact.name}</td>
                   <td className="px-2 py-2 text-white text-center">{contact.dmrId}</td>
                   <td className="px-2 py-2 text-white">{contact.callSign || '-'}</td>
