@@ -1009,127 +1009,70 @@ export function parseContactEntry(entryData: Uint8Array, contactIndex: number): 
     return null;
   }
 
-  // Based on hex dump analysis of first 4 contacts:
-  // Contact 0 (0x0000): count at 0x0000, name "Test Contact 1" at 0x0010, ID 1 at 0x0020
-  // Contact 1 (0x005C): name "Short" at 0x006C (0x10 from start), ID 2 at 0x0074 (0x18 from start)
-  // Contact 2 (0x00B8): name "Contact5" at 0x00C8 (0x10 from start), ID needs to be found
-  // Contact 3 (0x0114): name "Contact6" at 0x0124 (0x10 from start), ID 200 at 0x0130 (0x1C from start)
+  // Fixed structure for Contact 1+:
+  // +0x00-0x0F: Name (16 bytes, null-terminated)
+  // +0x10-0x13: ID (4 bytes, uint32 LE)
+  // +0x14-0x1B: Padding (8 bytes, 0xFF)
+  // +0x1C-0x2B: City (16 bytes, null-terminated)
+  // +0x2C-0x3B: Province (16 bytes, null-terminated)
+  // +0x3C-0x4B: Country (16 bytes, null-terminated)
+  // +0x4C-0x5B: Remark (16 bytes, null-terminated)
   //
-  // Pattern: ALL contacts (including Contact 0) have name at offset 0x10 from entry start
-  // ID position varies: 0x18, 0x1C, or 0x20 depending on name length and padding
-  // We need to find ID dynamically after name + padding
+  // Contact 0 is special: has count header at 0x00-0x0F, but name is still at 0x10
+  // For Contact 1+, name is at 0x00 within the entry
   
   const decoder = new TextDecoder('ascii', { fatal: false });
   
-  // ALL contacts have name at offset 0x10 from entry start
-  const NAME_START_OFFSET = 0x10;
+  // Contact 0: written at baseAddr, has count header at 0x00-0x0F, name at 0x10-0x1F
+  // Contact 1+: written at baseAddr + 0x10 + (index * 0x5C), name at 0x00-0x0F
+  // So within the entry:
+  // - Contact 0: name at 0x10, ID at 0x20 (but wait, that doesn't match the table...)
+  // - Contact 1+: name at 0x00, ID at 0x10
+  //
+  // Actually, based on the user's table, Contact 1+ have:
+  // - Name at 0x00-0x0F
+  // - ID at 0x10-0x13
+  // So Contact 0 must also follow this structure when written at baseAddr + 0x10
+  // But Contact 0 is written at baseAddr (not baseAddr + 0x10), so it has count header
   
-  if (contactIndex === 0) {
-    // Contact 0: First 4 bytes are count, skip them, name is still at 0x10
-    // But we need to check if the count area is valid
-    const count = entryData[0] | (entryData[1] << 8) | (entryData[2] << 16) | (entryData[3] << 24);
-    if (count === 0 || count > 200000) {
-      // Invalid count, might be empty entry
-      return null;
-    }
-  }
+  // For Contact 0: name is at 0x10 (after count header at 0x00-0x0F)
+  // For Contact 1+: name is at 0x00 (no count header)
+  // ALL contacts have the same structure within their entry
+  // The count header is at baseAddr (0x00-0x0F), separate from contact entries
+  // Contact 0 starts at baseAddr + 0x10, same structure as all other contacts
+  const NAME_START_OFFSET = 0x00; // Name at 0x00-0x0F within entry
+  const ID_OFFSET = 0x10; // ID at 0x10-0x13 within entry
 
-  // Empty entry detection (from C code): name field at 0x10 starts with 0xFF or 0x00
+  // Empty entry detection: name field starts with 0xFF or 0x00
   if (entryData[NAME_START_OFFSET] === 0xFF || entryData[NAME_START_OFFSET] === 0x00) {
     return null; // Empty entry
   }
 
-  // 1. Name (variable length, null-terminated, starts at 0x10)
-  let nameEnd = NAME_START_OFFSET;
-  const maxNameLength = 72; // Leave room for ID and padding
-  for (let i = NAME_START_OFFSET; i < Math.min(NAME_START_OFFSET + maxNameLength, entryData.length); i++) {
-    if (entryData[i] === 0x00) {
-      nameEnd = i;
-      break;
-    }
-  }
-  
-  if (nameEnd === NAME_START_OFFSET) {
-    // No null terminator found, this is invalid
-    return null;
-  }
-  
-  // Decode name
-  const nameBytes = entryData.slice(NAME_START_OFFSET, nameEnd);
-  const name = decoder.decode(nameBytes).replace(/\x00/g, '').trim();
+  // 1. Name (16 bytes fixed, null-terminated, starts at NAME_START_OFFSET)
+  const nameBytes = entryData.slice(NAME_START_OFFSET, NAME_START_OFFSET + 16);
+  const nullIndex = nameBytes.indexOf(0x00);
+  const name = nullIndex >= 0 
+    ? decoder.decode(nameBytes.slice(0, nullIndex)).trim()
+    : decoder.decode(nameBytes.filter(b => b !== 0xFF && b !== 0x00)).trim();
   
   if (name.length === 0) {
     return null; // Empty contact
   }
 
-  // 2. Find ID - it can be at 0x18, 0x1C, or 0x20 from entry start depending on name length
-  // Pattern from first 4 contacts:
-  // - Contact 0: name "Test Contact 1" (14 bytes), ID at 0x20
-  // - Contact 1: name "Short" (5 bytes), ID at 0x18  
-  // - Contact 2: name "Contact5" (8 bytes), ID position TBD
-  // - Contact 3: name "Contact6" (8 bytes), ID at 0x1C
-  //
-  // Strategy: Try standard offsets first, then search after name + padding
-  let idOffset = -1;
-  let id = 0;
+  // 2. ID (4 bytes, uint32 little-endian, at offset 0x10-0x13 within entry)
+  const id = entryData[ID_OFFSET] | 
+             (entryData[ID_OFFSET + 1] << 8) | 
+             (entryData[ID_OFFSET + 2] << 16) | 
+             (entryData[ID_OFFSET + 3] << 24);
   
-  // Try offsets in order: 0x18, 0x1C, 0x20 (most common positions)
-  const tryOffsets = [0x18, 0x1C, 0x20];
-  for (const tryOffset of tryOffsets) {
-    if (tryOffset + 4 <= entryData.length) {
-      const candidateId = entryData[tryOffset] | (entryData[tryOffset + 1] << 8) | (entryData[tryOffset + 2] << 16) | (entryData[tryOffset + 3] << 24);
-      // Validate ID: must be > 0, <= 0xFFFFFF (24-bit DMR ID max), and not 0xFFFFFFFF
-      if (candidateId > 0 && candidateId <= 0xFFFFFF && candidateId !== 0xFFFFFFFF) {
-        idOffset = tryOffset;
-        id = candidateId;
-        break; // Use first valid ID found
-      }
+  // Validate ID
+  if (id === 0 || id === 0xFFFFFFFF || id > 0xFFFFFF) {
+    if (contactIndex === 0) {
+      // Contact 0 might not have a DMR ID - use 0 as placeholder
+      console.log(`Contact 0 "${name}" has invalid DMR ID (${id}), using placeholder ID 0`);
+    } else {
+      return null;
     }
-  }
-  
-  // If standard offsets didn't work, try dynamic search after name + padding
-  // Skip any non-padding bytes that might be garbage data
-  if (idOffset === -1) {
-    let searchOffset = nameEnd + 1;
-    // Skip padding (0x00 or 0xFF), but also skip any ASCII text that might be garbage
-    // Limit search to first 40 bytes to avoid reading into optional fields
-    while (searchOffset < Math.min(0x28, entryData.length - 4)) {
-      const byte = entryData[searchOffset];
-      // If it's padding, skip it
-      if (byte === 0x00 || byte === 0xFF) {
-        searchOffset++;
-        continue;
-      }
-      // If it looks like ASCII text (garbage data), skip it until we hit padding or find ID
-      // Check if next 4 bytes could be a valid ID
-      if (searchOffset + 4 <= entryData.length) {
-        const candidateId = entryData[searchOffset] | (entryData[searchOffset + 1] << 8) | (entryData[searchOffset + 2] << 16) | (entryData[searchOffset + 3] << 24);
-        if (candidateId > 0 && candidateId <= 0xFFFFFF && candidateId !== 0xFFFFFFFF) {
-          idOffset = searchOffset;
-          id = candidateId;
-          break;
-        }
-      }
-      // If it's ASCII text, skip to next null terminator or padding
-      if (byte >= 0x20 && byte <= 0x7E) {
-        // Skip ASCII text until we hit null or padding
-        while (searchOffset < Math.min(0x28, entryData.length - 4) && 
-               entryData[searchOffset] >= 0x20 && entryData[searchOffset] <= 0x7E) {
-          searchOffset++;
-        }
-        // Skip null terminator if present
-        if (searchOffset < entryData.length && entryData[searchOffset] === 0x00) {
-          searchOffset++;
-        }
-      } else {
-        searchOffset++;
-      }
-    }
-  }
-  
-  // 3. Validate we found a valid ID
-  if (idOffset === -1 || id === 0 || id === 0xFFFFFFFF) {
-    return null;
   }
   
   // 4. Big Contact fields (City, Province, Country, Remark) - FIXED WIDTH
@@ -1199,16 +1142,19 @@ export function parseContactEntry(entryData: Uint8Array, contactIndex: number): 
     return value.length > 0 ? value : undefined;
   };
 
-  // Fixed-width fields - ALL contacts use the same offsets
-  // City: 16 bytes fixed at offset 0x28
-  // Province: 16 bytes fixed at offset 0x38
-  // Country: 16 bytes fixed at offset 0x48
-  // Remark: 16 bytes fixed at offset 0x58
+  // Fixed-width fields - all contacts use fixed offsets:
+  // City: 16 bytes fixed at offset 0x1C
+  // Province: 16 bytes fixed at offset 0x2C
+  // Country: 16 bytes fixed at offset 0x3C
+  // Remark: 16 bytes fixed at offset 0x4C
+  // 
+  // For Contact 0: these offsets are relative to entry start (baseAddr)
+  // For Contact 1+: these offsets are relative to entry start (baseAddr + 0x10 + index * 0x5C)
   
-  const CITY_OFFSET = 0x28;
-  const PROVINCE_OFFSET = 0x38;
-  const COUNTRY_OFFSET = 0x48;
-  const REMARK_OFFSET = 0x58;
+  const CITY_OFFSET = 0x1C;
+  const PROVINCE_OFFSET = 0x2C;
+  const COUNTRY_OFFSET = 0x3C;
+  const REMARK_OFFSET = 0x4C;
 
   // Parse fixed-width fields
   const city = parseFixedField(CITY_OFFSET);
@@ -1255,79 +1201,66 @@ export function parseContacts(data: Uint8Array): Contact[] {
 /**
  * Encode a single contact to 92-byte entry data
  * Based on ContactReadWrite.md spec
- * Structure: Name (null-term) + Padding + ID (4 bytes LE) + Padding + City + Padding + Province + Padding + Country + Padding + Remark + Padding
+ * Structure: 
+ * - Contact 0: Count (4 bytes) + Padding (12 bytes) + Name at 0x10 + ID + fields
+ * - Contact 1+: Name at 0x10 + ID + fields
  */
 export function encodeContactEntry(contact: Contact): Uint8Array {
   const entryData = new Uint8Array(0x5C); // 92 bytes
   entryData.fill(0xFF); // Fill with 0xFF (padding)
 
   const encoder = new TextEncoder();
-  let offset = 0;
+  
+  // Fixed structure:
+  // Contact 0: count at 0x00-0x0F, name at 0x10-0x1F (but we encode name at 0x00-0x0F for Contact 0)
+  // Contact 1+: name at 0x00-0x0F, ID at 0x10-0x13, padding at 0x14-0x1B, fields at fixed offsets
+  // 
+  // Actually, Contact 0 is written at baseAddr + 0x10, so name should be at 0x00-0x0F within the entry
+  // Contact 1+ are also at baseAddr + 0x10 + (index * 0x5C), so name is also at 0x00-0x0F
+  
+  const NAME_START_OFFSET = 0x00; // Name starts at 0x00 for all contacts (Contact 0 is written at baseAddr + 0x10)
+  const ID_OFFSET = 0x10;
+  const CITY_OFFSET_ENCODE = 0x1C;
+  const PROVINCE_OFFSET_ENCODE = 0x2C;
+  const COUNTRY_OFFSET_ENCODE = 0x3C;
+  const REMARK_OFFSET_ENCODE = 0x4C;
 
-  // 1. Name (null-terminated ASCII, starts at 0x00)
+  // 1. Name (16 bytes fixed, null-terminated, at 0x00-0x0F)
   if (contact.name) {
     const nameBytes = encoder.encode(contact.name);
-    const nameLength = Math.min(nameBytes.length, 0x5C - 1); // Leave room for null terminator
-    entryData.set(nameBytes.slice(0, nameLength), offset);
-    offset += nameLength;
-  }
-  entryData[offset++] = 0x00; // Null terminator
-
-  // 2. Padding (0x00 or 0xFF) - skip until we have space for ID
-  // Find a good spot for ID (after name, with some padding)
-  while (offset < 0x5C - 4 && (entryData[offset] === 0xFF || entryData[offset] === 0x00)) {
-    offset++;
-  }
-  
-  // If we're too close to the end, place ID at a fixed offset
-  // Based on typical structure: name + padding, then ID at ~offset 16-20
-  if (offset > 0x5C - 4) {
-    offset = 0x10; // Place ID at offset 0x10 if name was too long
+    const nameLength = Math.min(nameBytes.length, 15); // Max 15 chars + null terminator
+    entryData.set(nameBytes.slice(0, nameLength), NAME_START_OFFSET);
+    entryData[NAME_START_OFFSET + nameLength] = 0x00; // Null terminator
+  } else {
+    entryData[NAME_START_OFFSET] = 0x00; // Empty name
   }
 
-  // 3. ID (4 bytes, little-endian uint32) - DMR ID
-  entryData[offset] = contact.dmrId & 0xFF;
-  entryData[offset + 1] = (contact.dmrId >> 8) & 0xFF;
-  entryData[offset + 2] = (contact.dmrId >> 16) & 0xFF;
-  entryData[offset + 3] = (contact.dmrId >> 24) & 0xFF;
-  offset += 4;
+  // 2. ID (4 bytes, little-endian uint32, at 0x10-0x13)
+  entryData[ID_OFFSET] = contact.dmrId & 0xFF;
+  entryData[ID_OFFSET + 1] = (contact.dmrId >> 8) & 0xFF;
+  entryData[ID_OFFSET + 2] = (contact.dmrId >> 16) & 0xFF;
+  entryData[ID_OFFSET + 3] = (contact.dmrId >> 24) & 0xFF;
 
-  // 4. Padding (typically 8 bytes of 0xFF)
-  const paddingAfterId = 8;
-  for (let i = 0; i < paddingAfterId && offset < 0x5C; i++) {
-    entryData[offset++] = 0xFF;
-  }
+  // 3. Padding (8 bytes of 0xFF, at 0x14-0x1B)
+  // Already filled with 0xFF by default
 
-  // 5-10. Big Contact fields (City, Province, Country, Remark) - all optional, null-terminated
+  // 4. Big Contact fields (16 bytes each, null-terminated)
   const fields = [
-    { value: contact.city },
-    { value: contact.province },
-    { value: contact.country },
-    { value: contact.remark },
+    { value: contact.city, offset: CITY_OFFSET_ENCODE },
+    { value: contact.province, offset: PROVINCE_OFFSET_ENCODE },
+    { value: contact.country, offset: COUNTRY_OFFSET_ENCODE },
+    { value: contact.remark, offset: REMARK_OFFSET_ENCODE },
   ];
 
   for (const field of fields) {
-    if (field.value && offset < 0x5C - 1) {
+    if (field.value) {
       const fieldBytes = encoder.encode(field.value);
-      const maxLength = 0x5C - offset - 1; // Leave room for null terminator
-      const length = Math.min(fieldBytes.length, maxLength);
-      
-      if (length > 0) {
-        entryData.set(fieldBytes.slice(0, length), offset);
-        offset += length;
-      }
-      entryData[offset++] = 0x00; // Null terminator
-      
-      // Skip existing padding
-      while (offset < 0x5C && entryData[offset] === 0xFF) {
-        offset++;
-      }
+      const fieldLength = Math.min(fieldBytes.length, 15); // Max 15 chars + null terminator
+      entryData.set(fieldBytes.slice(0, fieldLength), field.offset);
+      entryData[field.offset + fieldLength] = 0x00; // Null terminator
+      // Rest of the 16-byte field is already 0xFF (padding)
     }
-  }
-
-  // Fill remaining with 0xFF
-  while (offset < 0x5C) {
-    entryData[offset++] = 0xFF;
+    // If no value, field remains 0xFF (empty)
   }
 
   return entryData;
