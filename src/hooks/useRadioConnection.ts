@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { DM32UVProtocol } from '../protocol/dm32uv/protocol';
+import type { Contact } from '../models/Contact';
 import { useRadioStore } from '../store/radioStore';
 import { useChannelsStore } from '../store/channelsStore';
 import { useZonesStore } from '../store/zonesStore';
@@ -38,7 +39,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-    const { setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
+    const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
     const { setChannels, setRawChannelData } = useChannelsStore();
     const { setZones, setRawZoneData } = useZonesStore();
     const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -75,8 +76,10 @@ export function useRadioConnection() {
       // Step 1: Select port (this will show browser's native port picker)
       onProgress?.(5, 'Please select a serial port in the browser dialog...', steps[0]);
       
-      // Step 2: Connect to radio (this triggers the port selection dialog)
+      // Step 2: Connect to radio (force port selection for main read operation)
       onProgress?.(10, 'Connecting to radio...', steps[1]);
+      // Force port selection by clearing any existing port
+      (protocol as any).port = null;
       await protocol.connect();
       
       // Step 3: Get radio info
@@ -251,6 +254,176 @@ export function useRadioConnection() {
       onProgress?.(100, 'Read complete!', steps[5]);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Read failed';
+      const isPortSelectionCancelled = errorMessage.includes('cancelled') || errorMessage.includes('Port selection cancelled');
+      
+      // If it's not a port selection cancellation, try retrying with forced port selection
+      if (!isPortSelectionCancelled && protocol) {
+        console.warn('Read failed, will retry with port selection:', errorMessage);
+        
+        // Clear the stored port so we force port selection on retry
+        (protocol as any).port = null;
+        
+        // Try to disconnect the failed connection
+        try {
+          await protocol.disconnect();
+        } catch (disconnectErr) {
+          console.warn('Error during disconnect cleanup:', disconnectErr);
+        }
+        
+        // Retry the entire read operation with forced port selection
+        try {
+          onProgress?.(5, 'Retrying with port selection...', steps[0]);
+          // Create a new protocol instance to ensure clean state
+          protocol = new DM32UVProtocol();
+          protocol.onProgress = (progress, message) => {
+            onProgress?.(progress, message);
+          };
+          
+          // Force port selection for retry
+          (protocol as any).port = null;
+          await protocol.connect();
+          
+          // Continue with the read operation from the beginning
+          onProgress?.(10, 'Reading radio information...', steps[2]);
+          const radioInfo = await protocol.getRadioInfo();
+          setRadioInfo(radioInfo);
+          setConnected(true);
+          
+          onProgress?.(15, 'Reading all memory blocks...', steps[3]);
+          await protocol.bulkReadRequiredBlocks();
+          
+          onProgress?.(20, 'Parsing channels from cache...', steps[4]);
+          const channels = await protocol.readChannels();
+          setChannels(channels);
+          if ((protocol as any).rawChannelData) {
+            setRawChannelData((protocol as any).rawChannelData);
+          }
+          if ((protocol as any).allBlockMetadata) {
+            setBlockMetadata((protocol as any).allBlockMetadata);
+          }
+          if ((protocol as any).allBlockData) {
+            setBlockData((protocol as any).allBlockData);
+          }
+          
+          const originalConfigProgress = protocol.onProgress;
+          protocol.onProgress = (progress, _message) => {
+            const overallProgress = 70 + (progress * 0.25);
+            onProgress?.(overallProgress, 'Parsing configuration...', steps[5]);
+          };
+          
+          onProgress?.(70, 'Parsing configuration from cache...', steps[5]);
+          
+          const zones = await protocol.readZones();
+          setZones(zones);
+          if ((protocol as any).rawZoneData) {
+            setRawZoneData((protocol as any).rawZoneData);
+          }
+          
+          const scanLists = await protocol.readScanLists();
+          setScanLists(scanLists);
+          if ((protocol as any).rawScanListData) {
+            setRawScanListData((protocol as any).rawScanListData);
+          }
+          if ((protocol as any).blockData) {
+            setBlockData((protocol as any).blockData);
+          }
+          
+          try {
+            const messages = await protocol.readQuickMessages();
+            setMessages(messages);
+            const rawDataMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
+            for (const [index, rawData] of protocol.rawMessageData.entries()) {
+              rawDataMap.set(index, rawData);
+            }
+            setRawMessageData(rawDataMap);
+          } catch (msgErr) {
+            console.warn('Could not read Quick Messages:', msgErr);
+          }
+          
+          try {
+            const radioSettings = await protocol.readRadioSettings();
+            setRadioSettings(radioSettings);
+            if ((protocol as any).rawRadioSettingsData) {
+              setRawRadioSettingsData((protocol as any).rawRadioSettingsData);
+            }
+          } catch (settingsErr) {
+            console.warn('Could not read Radio Settings:', settingsErr);
+          }
+          
+          try {
+            const digitalEmergencies = await protocol.readDigitalEmergencies();
+            if (digitalEmergencies) {
+              setDigitalEmergencies(digitalEmergencies.systems);
+              setDigitalEmergencyConfig(digitalEmergencies.config);
+            }
+          } catch (err) {
+            console.warn('Could not read Digital Emergency Systems:', err);
+          }
+          
+          try {
+            const radioIds = await protocol.readDMRRadioIDs();
+            if (radioIds) {
+              setRadioIds(radioIds);
+            }
+          } catch (err) {
+            console.warn('Could not read DMR Radio IDs:', err);
+          }
+          
+          try {
+            const calibration = await protocol.readCalibration();
+            if (calibration) {
+              setCalibration(calibration);
+            }
+          } catch (err) {
+            console.warn('Could not read Calibration:', err);
+          }
+          
+          try {
+            const rxGroups = await protocol.readRXGroups();
+            if (rxGroups) {
+              setRXGroups(rxGroups);
+            }
+          } catch (err) {
+            console.warn('Could not read RX Groups:', err);
+          }
+          
+          try {
+            const analogEmergencies = await protocol.readAnalogEmergencies();
+            if (analogEmergencies) {
+              setAnalogEmergencies(analogEmergencies);
+            }
+          } catch (err) {
+            console.warn('Could not read Analog Emergency Systems:', err);
+          }
+          
+          if ((protocol as any).blockData) {
+            setBlockData((protocol as any).blockData);
+          }
+          
+          protocol.onProgress = originalConfigProgress;
+          
+          onProgress?.(100, 'Read complete!', steps[5]);
+          return; // Success - exit without throwing
+        } catch (retryErr) {
+          // Retry also failed, fall through to show error
+          console.error('Retry with port selection also failed:', retryErr);
+          const retryErrorMessage = retryErr instanceof Error ? retryErr.message : 'Read failed';
+          setError(retryErrorMessage);
+          onProgress?.(0, `Error: ${retryErrorMessage}`, 'Error');
+          setIsConnecting(false);
+          
+          if (protocol) {
+            try {
+              await protocol.disconnect();
+            } catch (disconnectErr) {
+              console.warn('Error during disconnect cleanup:', disconnectErr);
+            }
+          }
+          throw retryErr;
+        }
+      }
+      
+      // If port selection was cancelled or retry didn't happen, show error
       setError(errorMessage);
       onProgress?.(0, `Error: ${errorMessage}`, 'Error');
       
@@ -283,13 +456,114 @@ export function useRadioConnection() {
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
   ) => {
-    // TODO: Reimplement contacts reading from cached blocks
-    // Contacts need to be discovered and read from the cache array
-    // This is a stub until we reimplement the contact reading logic
-    onProgress?.(0, 'Contacts reading not yet implemented');
-    console.warn('readContacts is a stub - needs reimplementation');
-    throw new Error('Contacts reading is not yet implemented. It will be reimplemented to read from cached blocks.');
-  }, []);
+    setIsConnecting(true);
+    setError(null);
+    
+    let protocol: DM32UVProtocol | null = null;
+
+    try {
+      // Create protocol instance
+      protocol = new DM32UVProtocol();
+      
+      // Set up progress callback
+      protocol.onProgress = (progress, message) => {
+        onProgress?.(progress, message);
+      };
+      
+      // Connect to radio (reuse existing connection if available)
+      onProgress?.(0, 'Connecting to radio...');
+      await protocol.connect();
+      
+      // Get radio info if not already available
+      if (!radioInfo) {
+        onProgress?.(5, 'Reading radio information...');
+        const info = await protocol.getRadioInfo();
+        setRadioInfo(info);
+        setConnected(true);
+      }
+      
+      // Read contacts (this is slow - reads many 4KB blocks)
+      onProgress?.(10, 'Reading contacts from radio (this may take a while)...');
+      const contacts = await protocol.readContacts();
+      setContacts(contacts);
+      
+      // Store first contact block for debugging
+      if ((protocol as any).rawContactBlockData) {
+        setRawContactBlockData((protocol as any).rawContactBlockData, (protocol as any).rawContactBlockAddress || null);
+      }
+      
+      onProgress?.(100, `Successfully read ${contacts.length} contacts`);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMsg);
+      onProgress?.(0, `Error: ${errorMsg}`);
+      throw err;
+    } finally {
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (e) {
+          console.warn('Error disconnecting after reading contacts:', e);
+        }
+      }
+      setIsConnecting(false);
+    }
+  }, [setContacts, setRadioInfo, setConnected, radioInfo]);
+
+  const writeContacts = useCallback(async (
+    contacts: Contact[],
+    onProgress?: (progress: number, message: string) => void
+  ) => {
+    setIsConnecting(true);
+    setError(null);
+    
+    let protocol: DM32UVProtocol | null = null;
+
+    try {
+      // Create protocol instance
+      protocol = new DM32UVProtocol();
+      
+      // Set up progress callback
+      protocol.onProgress = (progress, message) => {
+        onProgress?.(progress, message);
+      };
+      
+      // Connect to radio
+      onProgress?.(0, 'Connecting to radio...');
+      await protocol.connect();
+      
+      // Get radio info if not already available
+      if (!radioInfo) {
+        onProgress?.(5, 'Reading radio information...');
+        const info = await protocol.getRadioInfo();
+        setRadioInfo(info);
+        setConnected(true);
+      }
+      
+      // Write contacts (this is slow - writes many 4KB blocks)
+      onProgress?.(10, `Writing ${contacts.length} contacts to radio (this may take a while)...`);
+      await protocol.writeContacts(contacts);
+      
+      // Update store with written contacts
+      setContacts(contacts);
+      
+      onProgress?.(100, `Successfully wrote ${contacts.length} contacts`);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMsg);
+      onProgress?.(0, `Error: ${errorMsg}`);
+      throw err;
+    } finally {
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (e) {
+          console.warn('Error disconnecting after writing contacts:', e);
+        }
+      }
+      setIsConnecting(false);
+    }
+  }, [setContacts, setRadioInfo, setConnected, radioInfo]);
 
   const writeChannelsToRadio = useCallback(async (
     channels: Channel[],
@@ -380,6 +654,7 @@ export function useRadioConnection() {
     error,
     readFromRadio,
     readContacts,
+    writeContacts,
     writeChannelsToRadio,
     readSteps: READ_STEPS,
     writeChannelsSteps: WRITE_CHANNELS_STEPS,

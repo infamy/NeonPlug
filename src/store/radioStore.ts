@@ -28,6 +28,8 @@ interface RadioState {
   radioInfo: RadioInfo | null;
   settings: RadioSettings | null;
   rawRadioSettingsData: Uint8Array | null;
+  rawContactBlockData: Uint8Array | null;
+  rawContactBlockAddress: number | null;
   blockMetadata: Map<number, { metadata: number; type: string }>;
   blockData: Map<number, Uint8Array>;
   writeBlockData: Map<number, { address: number; data: Uint8Array; metadata: number }>;
@@ -36,6 +38,7 @@ interface RadioState {
   setRadioInfo: (info: RadioInfo | null) => void;
   setSettings: (settings: RadioSettings | null) => void;
   setRawRadioSettingsData: (data: Uint8Array | null) => void;
+  setRawContactBlockData: (data: Uint8Array | null, address: number | null) => void;
   setBlockMetadata: (metadata: Map<number, { metadata: number; type: string }>) => void;
   setBlockData: (data: Map<number, Uint8Array>) => void;
   setWriteBlockData: (data: Map<number, { address: number; data: Uint8Array; metadata: number }>) => void;
@@ -47,6 +50,8 @@ export const useRadioStore = create<RadioState>((set) => ({
   radioInfo: null,
   settings: null,
   rawRadioSettingsData: null,
+  rawContactBlockData: null,
+  rawContactBlockAddress: null,
   blockMetadata: new Map(),
   blockData: new Map(),
   writeBlockData: new Map(),
@@ -55,6 +60,7 @@ export const useRadioStore = create<RadioState>((set) => ({
   setRadioInfo: (info) => set({ radioInfo: info }),
   setSettings: (settings) => set({ settings }),
   setRawRadioSettingsData: (data) => set({ rawRadioSettingsData: data }),
+  setRawContactBlockData: (data, address) => set({ rawContactBlockData: data, rawContactBlockAddress: address }),
   setBlockMetadata: (metadata) => set({ blockMetadata: metadata }),
   setBlockData: (data) => set({ blockData: data }),
   setWriteBlockData: (data) => set({ writeBlockData: data }),

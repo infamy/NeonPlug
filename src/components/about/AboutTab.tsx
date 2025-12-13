@@ -189,6 +189,82 @@ npm run build:single</code>
           </div>
         </div>
 
+        {/* Data Sources & Attribution */}
+        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
+          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Data Sources & Attribution</h3>
+          <div className="space-y-4 text-cool-gray">
+            <p className="text-sm">
+              NeonPlug uses data from the following sources. We are grateful to these organizations and projects for making their data available.
+            </p>
+            
+            <div className="space-y-3">
+              <div>
+                <h4 className="text-neon-cyan font-semibold mb-1">RadioID.net</h4>
+                <p className="text-sm mb-2">
+                  DMR contact database and API for downloading contacts by country.
+                </p>
+                <a
+                  href="https://radioid.net"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                >
+                  https://radioid.net
+                </a>
+              </div>
+
+              <div>
+                <h4 className="text-neon-cyan font-semibold mb-1">TAFL Database</h4>
+                <p className="text-sm mb-2">
+                  Canadian radio frequency license data from the Technical Acceptance and Frequency List (TAFL), 
+                  maintained by Innovation, Science and Economic Development Canada (ISED).
+                </p>
+                <a
+                  href="https://ised-isde.canada.ca/site/spectrum-management-telecommunications/en"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                >
+                  ISED Spectrum Management
+                </a>
+              </div>
+
+              <div>
+                <h4 className="text-neon-cyan font-semibold mb-1">Airport Frequency Data</h4>
+                <p className="text-sm mb-2">
+                  Airport communication frequencies and location data from open aviation databases, 
+                  including ICAO-compliant frequency information.
+                </p>
+                <div className="space-y-1">
+                  <a
+                    href="https://frequency.icao.int"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                  >
+                    ICAO Frequency Finder
+                  </a>
+                  <a
+                    href="https://airportmap.de/data"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                  >
+                    Airportmap Open Databases
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-neon-cyan border-opacity-20">
+              <p className="text-xs text-gray-500 italic">
+                Data accuracy and completeness may vary. Always verify critical frequency information 
+                with official sources before use.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* License */}
         <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
           <h3 className="text-lg font-semibold text-neon-cyan mb-4">License</h3>
