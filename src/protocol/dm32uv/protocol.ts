@@ -1471,27 +1471,12 @@ export class DM32UVProtocol implements RadioProtocol {
     }
     
     const ENTRY_SIZE = 0x5C; // 92 bytes per contact
+    const CONTACTS_PER_BLOCK = Math.floor(BLOCK_SIZE.STANDARD / ENTRY_SIZE);
     const contacts: Contact[] = [];
-    
-    // Calculate range info for logging
     const rangeSize = endAddr - baseAddr;
     const maxContactsInRange = Math.floor(rangeSize / ENTRY_SIZE);
     
-    console.log(`Contact database range:`);
-    console.log(`  Base address: 0x${baseAddr.toString(16).toUpperCase()} (${baseAddr})`);
-    console.log(`  End address: 0x${endAddr.toString(16).toUpperCase()} (${endAddr})`);
-    console.log(`  Range size: ${rangeSize.toLocaleString()} bytes (${(rangeSize / 1024 / 1024).toFixed(2)} MB)`);
-    console.log(`  Max contacts in range: ${maxContactsInRange.toLocaleString()}`);
-    console.log(`  Max contacts (firmware limit): ${maxContacts.toLocaleString()}`);
-    console.log(`  Reading sequentially until empty entry found...`);
-    
-    this.onProgress?.(5, `Reading contacts sequentially from 0x${baseAddr.toString(16).toUpperCase()}...`);
-    
-    // Read contacts in 4KB blocks
-    // Contact 0 is at baseAddr (has count in first 4 bytes, then padding, then name at 0x10)
-    // Contact 1+ are at baseAddr + (contactIndex * ENTRY_SIZE)
-    // Each 4KB block can hold: 4096 / 92 = ~44 contacts
-    const CONTACTS_PER_BLOCK = Math.floor(BLOCK_SIZE.STANDARD / ENTRY_SIZE);
+    this.onProgress?.(5, `Reading contacts from 0x${baseAddr.toString(16).toUpperCase()}...`);
     let contactIndex = 0;
     let blockIdx = 0;
     let foundEmptyEntry = false;
@@ -1502,53 +1487,33 @@ export class DM32UVProtocol implements RadioProtocol {
     const firstBlockAddr = Math.floor(baseAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD;
     const firstBlockData = await this.connection!.readMemory(firstBlockAddr, BLOCK_SIZE.STANDARD);
     const countOffset = baseAddr - firstBlockAddr;
-    countFromHeader = firstBlockData[countOffset] | 
-                      (firstBlockData[countOffset + 1] << 8) | 
-                      (firstBlockData[countOffset + 2] << 16) | 
-                      (firstBlockData[countOffset + 3] << 24);
-    
-    console.log(`Contact count from header: ${countFromHeader}`);
+    countFromHeader = this.readUint32LE(firstBlockData, countOffset);
     
     // Store first contact block for debugging
     this.rawContactBlockData = new Uint8Array(firstBlockData);
     this.rawContactBlockAddress = firstBlockAddr;
     
-    // Use count from header to determine how many contacts to read
-    // But respect firmware and range limits
+    // Determine contacts to read (respect firmware and range limits)
     const contactsToRead = countFromHeader > 0 && countFromHeader <= maxContacts && countFromHeader <= maxContactsInRange
       ? countFromHeader
       : Math.min(maxContacts, maxContactsInRange);
     
-    console.log(`Will read ${contactsToRead} contacts (count from header: ${countFromHeader}, max: ${maxContacts}, range max: ${maxContactsInRange})`);
-    
     // Read blocks until we've read all contacts or hit an empty entry
-    // ALL contacts start at baseAddr + 0x10 + (contactIndex * ENTRY_SIZE)
-    // The first 16 bytes at baseAddr are the count header (not part of Contact 0)
+    // All contacts start at baseAddr + 0x10 + (contactIndex * ENTRY_SIZE)
     while (!foundEmptyEntry && contactIndex < contactsToRead) {
-      // Calculate block address (4KB-aligned)
-      // Contact 0 is at baseAddr + 0x10, Contact 1 is at baseAddr + 0x10 + 0x5C, etc.
       const blockStartContact = blockIdx * CONTACTS_PER_BLOCK;
       const blockStartAddr = baseAddr + 0x10 + (blockStartContact * ENTRY_SIZE);
-      const blockAddr = Math.floor(blockStartAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD; // Align to 4KB
+      const blockAddr = Math.floor(blockStartAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD;
       
-      // Check if we've gone past the end address
-      if (blockAddr >= endAddr) {
-        break;
-      }
+      if (blockAddr >= endAddr) break;
       
       const progress = 5 + Math.floor((contactIndex / contactsToRead) * 90);
-      const currentBlockAddrHex = `0x${blockAddr.toString(16).toUpperCase()}`;
-      this.onProgress?.(progress, `Reading contact block at ${currentBlockAddrHex} (${contactIndex}/${contactsToRead} contacts)...`);
+      this.onProgress?.(progress, `Reading contact block ${blockIdx + 1} (${contactIndex}/${contactsToRead} contacts)...`);
       
-      // Read 4KB block (reuse first block if it's the same)
-      let blockData: Uint8Array;
-      if (blockIdx === 0 && blockAddr === firstBlockAddr) {
-        blockData = firstBlockData; // Reuse the first block we already read
-      } else {
-        blockData = await this.connection!.readMemory(blockAddr, BLOCK_SIZE.STANDARD);
-      }
+      const blockData = (blockIdx === 0 && blockAddr === firstBlockAddr) 
+        ? firstBlockData 
+        : await this.connection!.readMemory(blockAddr, BLOCK_SIZE.STANDARD);
       
-      // Calculate offset within block for first contact in this block
       const blockOffset = blockStartAddr - blockAddr;
       
       // Parse contacts in this block
@@ -1568,54 +1533,25 @@ export class DM32UVProtocol implements RadioProtocol {
         
         const entryData = blockData.slice(entryOffset, entryOffset + ENTRY_SIZE);
         
-        // Check for empty entry: name at 0x00-0x0F starts with 0xFF or 0x00
-        // ALL contacts have name at offset 0x00 within their entry
+        // Check for empty entry
         if (entryData[0x00] === 0xFF || entryData[0x00] === 0x00) {
-          if (contactIndex < countFromHeader) {
-            console.warn(`Found empty entry at contact index ${currentContactIndex}, but count says ${countFromHeader} contacts. Continuing to read count...`);
-            // Don't stop - continue reading up to the count
-          } else {
-            console.log(`Found empty entry at contact index ${currentContactIndex}, stopping read`);
+          if (contactIndex >= countFromHeader) {
             foundEmptyEntry = true;
             break;
           }
-        }
-        
-        // Debug: Log first few contacts to verify parsing
-        if (currentContactIndex < 4) {
-          const hexPreview = Array.from(entryData.slice(0, 48))
-            .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-            .join(' ');
-          const contactAddr = baseAddr + 0x10 + (currentContactIndex * ENTRY_SIZE);
-          console.log(`Contact ${currentContactIndex} at offset ${entryOffset} (block offset ${blockOffset}, i=${i}):`);
-          console.log(`  First 48 bytes: ${hexPreview}`);
-          console.log(`  Expected address: 0x${contactAddr.toString(16).toUpperCase()}`);
-          // All contacts have name at 0x00 from entry start
-          console.log(`  Name area (0x00-0x0F): ${Array.from(entryData.slice(0x00, 0x10)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
-          console.log(`  ID at 0x10-0x13: ${Array.from(entryData.slice(0x10, 0x14)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
         }
         
         const contact = parseContactEntry(entryData, currentContactIndex);
-        
         if (contact) {
-          if (currentContactIndex < 4) {
-            console.log(`  Parsed: name="${contact.name}", dmrId=${contact.dmrId}`);
-          }
           contacts.push(contact);
           contactIndex = currentContactIndex + 1;
-          
-          // Check if we've read all contacts - stop immediately
           if (contactIndex >= contactsToRead) {
-            foundEmptyEntry = true; // Signal to stop outer loop
-            break;
-          }
-        } else {
-          // If parsing failed, check if it's an empty entry (name at 0x00 is 0xFF or 0x00)
-          if (entryData[0x00] === 0xFF || entryData[0x00] === 0x00) {
-            console.log(`Found empty entry at contact index ${currentContactIndex} (parse failed), stopping read`);
             foundEmptyEntry = true;
             break;
           }
+        } else if (entryData[0x00] === 0xFF || entryData[0x00] === 0x00) {
+          foundEmptyEntry = true;
+          break;
         }
       }
       

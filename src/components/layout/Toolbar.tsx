@@ -8,7 +8,7 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import { useRadioStore } from '../../store/radioStore';
-import { exportCodeplug, importCodeplug } from '../../services/codeplugExport';
+// XLSX functions will be lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
 
@@ -44,6 +44,8 @@ export const Toolbar: React.FC = () => {
     setImportSuccess(null);
     
     try {
+      // Lazy load XLSX library only when needed
+      const { importCodeplug } = await import('../../services/codeplugExport');
       const codeplugData = await importCodeplug(file);
       
       // Populate all stores with imported data
@@ -79,7 +81,7 @@ export const Toolbar: React.FC = () => {
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const codeplugData = {
       channels,
       zones,
@@ -93,6 +95,8 @@ export const Toolbar: React.FC = () => {
       exportDate: new Date().toISOString(),
       version: '1.0.0',
     };
+    // Lazy load XLSX library only when needed
+    const { exportCodeplug } = await import('../../services/codeplugExport');
     exportCodeplug(codeplugData);
   };
 
