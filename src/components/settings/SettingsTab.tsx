@@ -7,6 +7,7 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useCalibrationStore } from '../../store/calibrationStore';
 import { getContactCapacityWithFallback } from '../../utils/firmware';
 import { CALIBRATION_PARAM_NAMES } from '../../models/Calibration';
+import { Modal } from '../ui/Modal';
 
 const COLOR_OPTIONS = [
   { value: 0, label: 'White', hex: '#FFFFFF' },
@@ -174,6 +175,10 @@ export const SettingsTab: React.FC = () => {
   const { settings: radioSettings, updateSettings: updateRadioSettings } = useRadioSettingsStore();
   const { calibration, calibrationLoaded } = useCalibrationStore();
   const [showCalibration, setShowCalibration] = useState(false);
+  const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
+
+  const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
+  const needsFirmwareUpdate = radioInfo?.firmware && radioInfo.firmware !== EXPECTED_FIRMWARE;
 
   const formatAddress = (addr?: number) => {
     if (addr === undefined) return 'N/A';
@@ -233,7 +238,18 @@ export const SettingsTab: React.FC = () => {
               </div>
               <div>
                 <span className="text-cool-gray text-sm block mb-1">Firmware</span>
-                <div className="text-white font-mono">{radioInfo.firmware}</div>
+                <div className="text-white font-mono flex items-center space-x-2">
+                  <span>{radioInfo.firmware}</span>
+                  {needsFirmwareUpdate && (
+                    <button
+                      onClick={() => setShowFirmwareWarning(true)}
+                      className="text-yellow-400 hover:text-yellow-300 transition-colors cursor-pointer"
+                      title="Firmware update recommended"
+                    >
+                      ⚠️
+                    </button>
+                  )}
+                </div>
               </div>
               {radioInfo.buildDate && (
                 <div>
@@ -2337,6 +2353,27 @@ export const SettingsTab: React.FC = () => {
           )}
         </div>
       )}
+      <Modal
+        isOpen={showFirmwareWarning}
+        onClose={() => setShowFirmwareWarning(false)}
+        title="Firmware Update Recommended"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start space-x-3">
+            <span className="text-yellow-400 text-2xl">⚠️</span>
+            <div className="flex-1">
+              <p className="text-white mb-2">
+                Your radio firmware version is <span className="font-mono text-neon-cyan">{radioInfo?.firmware}</span>, 
+                but the recommended version is <span className="font-mono text-neon-cyan">{EXPECTED_FIRMWARE}</span>.
+              </p>
+              <p className="text-cool-gray">
+                We recommend updating your firmware to ensure compatibility with all features and bug fixes. 
+                Please check the official Baofeng website or your radio's documentation for firmware update instructions.
+              </p>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
