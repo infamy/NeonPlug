@@ -12,15 +12,7 @@ import { findNearbyTaflEntries, groupTaflEntriesByName, type TaflData } from '..
 import type { Channel } from '../../models';
 import type { Zone } from '../../models';
 import { Button } from '../ui/Button';
-
-// Helper function to format bytes
-const formatBytes = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-};
+import { formatBytes } from '../../utils/formatHelpers';
 
 export const SmartImportTab: React.FC = () => {
   const { channels, setChannels } = useChannelsStore();

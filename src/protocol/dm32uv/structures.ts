@@ -1017,162 +1017,67 @@ export function parseContactEntry(entryData: Uint8Array, contactIndex: number): 
   // +0x2C-0x3B: Province (16 bytes, null-terminated)
   // +0x3C-0x4B: Country (16 bytes, null-terminated)
   // +0x4C-0x5B: Remark (16 bytes, null-terminated)
-  //
-  // Contact 0 is special: has count header at 0x00-0x0F, but name is still at 0x10
-  // For Contact 1+, name is at 0x00 within the entry
-  
   const decoder = new TextDecoder('ascii', { fatal: false });
-  
-  // Contact 0: written at baseAddr, has count header at 0x00-0x0F, name at 0x10-0x1F
-  // Contact 1+: written at baseAddr + 0x10 + (index * 0x5C), name at 0x00-0x0F
-  // So within the entry:
-  // - Contact 0: name at 0x10, ID at 0x20 (but wait, that doesn't match the table...)
-  // - Contact 1+: name at 0x00, ID at 0x10
-  //
-  // Actually, based on the user's table, Contact 1+ have:
-  // - Name at 0x00-0x0F
-  // - ID at 0x10-0x13
-  // So Contact 0 must also follow this structure when written at baseAddr + 0x10
-  // But Contact 0 is written at baseAddr (not baseAddr + 0x10), so it has count header
-  
-  // For Contact 0: name is at 0x10 (after count header at 0x00-0x0F)
-  // For Contact 1+: name is at 0x00 (no count header)
-  // ALL contacts have the same structure within their entry
-  // The count header is at baseAddr (0x00-0x0F), separate from contact entries
-  // Contact 0 starts at baseAddr + 0x10, same structure as all other contacts
-  const NAME_START_OFFSET = 0x00; // Name at 0x00-0x0F within entry
-  const ID_OFFSET = 0x10; // ID at 0x10-0x13 within entry
+  const NAME_OFFSET = 0x00;
+  const ID_OFFSET = 0x10;
+  const FIELD_SIZE = 16;
 
-  // Empty entry detection: name field starts with 0xFF or 0x00
-  if (entryData[NAME_START_OFFSET] === 0xFF || entryData[NAME_START_OFFSET] === 0x00) {
-    return null; // Empty entry
+  // Empty entry detection
+  if (entryData[NAME_OFFSET] === 0xFF || entryData[NAME_OFFSET] === 0x00) {
+    return null;
   }
 
-  // 1. Name (16 bytes fixed, null-terminated, starts at NAME_START_OFFSET)
-  const nameBytes = entryData.slice(NAME_START_OFFSET, NAME_START_OFFSET + 16);
+  // Parse name (16 bytes, null-terminated)
+  const nameBytes = entryData.slice(NAME_OFFSET, NAME_OFFSET + FIELD_SIZE);
   const nullIndex = nameBytes.indexOf(0x00);
-  const name = nullIndex >= 0 
-    ? decoder.decode(nameBytes.slice(0, nullIndex)).trim()
-    : decoder.decode(nameBytes.filter(b => b !== 0xFF && b !== 0x00)).trim();
+  const name = (nullIndex >= 0 
+    ? decoder.decode(nameBytes.slice(0, nullIndex))
+    : decoder.decode(nameBytes.filter(b => b !== 0xFF && b !== 0x00))
+  ).trim();
   
-  if (name.length === 0) {
-    return null; // Empty contact
-  }
+  if (!name) return null;
 
-  // 2. ID (4 bytes, uint32 little-endian, at offset 0x10-0x13 within entry)
+  // Parse DMR ID (4 bytes, little-endian uint32)
   const id = entryData[ID_OFFSET] | 
              (entryData[ID_OFFSET + 1] << 8) | 
              (entryData[ID_OFFSET + 2] << 16) | 
              (entryData[ID_OFFSET + 3] << 24);
   
-  // Validate ID
-  if (id === 0 || id === 0xFFFFFFFF || id > 0xFFFFFF) {
-    if (contactIndex === 0) {
-      // Contact 0 might not have a DMR ID - use 0 as placeholder
-      console.log(`Contact 0 "${name}" has invalid DMR ID (${id}), using placeholder ID 0`);
-    } else {
-      return null;
-    }
+  // Validate ID (allow 0 for Contact 0)
+  if ((id === 0 || id === 0xFFFFFFFF || id > 0xFFFFFF) && contactIndex !== 0) {
+    return null;
   }
   
-  // 4. Big Contact fields (City, Province, Country, Remark) - FIXED WIDTH
-  // Based on hex dump analysis:
-  // - ID position varies (0x18, 0x1C, or 0x20) depending on name length
-  // - For earlier contacts (Contact2-9): City at 0x28, Province at 0x38, Country at 0x48, Remark at 0x58
-  // - For later contacts (Contact10+): City at 0x30, Province at 0x40, Country at 0x50, Remark at 0x60
-  // 
-  // We'll try both offset sets and use whichever gives valid data
-  // The fields are always 16 bytes fixed width
-  
-  const FIELD_SIZE = 16; // Each field is 16 bytes fixed width
-
-  // Helper to parse a fixed-width field (16 bytes, null-terminated string)
-  // The field may have 0xFF padding at the start, then the string, then null terminator, then more padding
+  // Parse fixed-width fields (16 bytes each, null-terminated, may have 0xFF padding)
   const parseFixedField = (offset: number): string | undefined => {
-    if (offset + FIELD_SIZE > entryData.length) {
-      return undefined;
-    }
+    if (offset + FIELD_SIZE > entryData.length) return undefined;
     
     const fieldBytes = entryData.slice(offset, offset + FIELD_SIZE);
-    
-    // Find the start of actual data (skip leading 0xFF padding)
     let dataStart = 0;
-    while (dataStart < fieldBytes.length && fieldBytes[dataStart] === 0xFF) {
-      dataStart++;
-    }
+    while (dataStart < fieldBytes.length && fieldBytes[dataStart] === 0xFF) dataStart++;
+    if (dataStart >= fieldBytes.length || fieldBytes[dataStart] === 0x00) return undefined;
     
-    // If all bytes are 0xFF, field is empty
-    if (dataStart >= fieldBytes.length) {
-      return undefined;
-    }
+    const nullIdx = fieldBytes.indexOf(0x00, dataStart);
+    const valueBytes = nullIdx >= 0 
+      ? fieldBytes.slice(dataStart, nullIdx)
+      : fieldBytes.slice(dataStart).filter(b => b !== 0xFF && b !== 0x00);
     
-    // If we hit a null terminator immediately after padding, field is empty
-    if (fieldBytes[dataStart] === 0x00) {
-      return undefined;
-    }
-    
-    // Find null terminator - this marks the end of the string
-    let nullIndex = -1;
-    for (let i = dataStart; i < fieldBytes.length; i++) {
-      if (fieldBytes[i] === 0x00) {
-        nullIndex = i;
-        break;
-      }
-    }
-    
-    if (nullIndex === -1) {
-      // No null terminator found - decode everything from dataStart to end, filtering out 0xFF
-      const valueBytes = fieldBytes.slice(dataStart);
-      const cleanBytes = valueBytes.filter(b => b !== 0xFF && b !== 0x00);
-      if (cleanBytes.length === 0) {
-        return undefined;
-      }
-      const value = decoder.decode(cleanBytes).trim();
-      return value.length > 0 ? value : undefined;
-    }
-    
-    // Decode from dataStart to nullIndex (exclusive of null terminator)
-    // This should capture the full string including any spaces
-    const valueBytes = fieldBytes.slice(dataStart, nullIndex);
-    if (valueBytes.length === 0) {
-      return undefined;
-    }
-    
+    if (!valueBytes.length) return undefined;
     const value = decoder.decode(valueBytes).trim();
-    return value.length > 0 ? value : undefined;
+    return value || undefined;
   };
 
-  // Fixed-width fields - all contacts use fixed offsets:
-  // City: 16 bytes fixed at offset 0x1C
-  // Province: 16 bytes fixed at offset 0x2C
-  // Country: 16 bytes fixed at offset 0x3C
-  // Remark: 16 bytes fixed at offset 0x4C
-  // 
-  // For Contact 0: these offsets are relative to entry start (baseAddr)
-  // For Contact 1+: these offsets are relative to entry start (baseAddr + 0x10 + index * 0x5C)
-  
-  const CITY_OFFSET = 0x1C;
-  const PROVINCE_OFFSET = 0x2C;
-  const COUNTRY_OFFSET = 0x3C;
-  const REMARK_OFFSET = 0x4C;
-
-  // Parse fixed-width fields
-  const city = parseFixedField(CITY_OFFSET);
-  const province = parseFixedField(PROVINCE_OFFSET);
-  const country = parseFixedField(COUNTRY_OFFSET);
-  const remark = parseFixedField(REMARK_OFFSET);
-
   return {
-    id: contactIndex + 1, // 1-based for display
+    id: contactIndex + 1,
     name,
-    dmrId: id, // DMR ID is stored in the ID field
-    callSign: undefined, // Not stored in this database
-    callType: 'Private Call', // Only Private Call is supported per spec
-    repeater: undefined, // Not stored in this database
-    city,
-    province,
-    country,
-    remark,
+    dmrId: id,
+    callSign: undefined,
+    callType: 'Private Call',
+    repeater: undefined,
+    city: parseFixedField(0x1C),
+    province: parseFixedField(0x2C),
+    country: parseFixedField(0x3C),
+    remark: parseFixedField(0x4C),
   };
 }
 
@@ -1205,62 +1110,47 @@ export function parseContacts(data: Uint8Array): Contact[] {
  * - Contact 0: Count (4 bytes) + Padding (12 bytes) + Name at 0x10 + ID + fields
  * - Contact 1+: Name at 0x10 + ID + fields
  */
+/**
+ * Encode a single contact entry to 92-byte (0x5C) format
+ * All contacts use the same structure: Name (0x00-0x0F), ID (0x10-0x13), 
+ * Padding (0x14-0x1B), City (0x1C), Province (0x2C), Country (0x3C), Remark (0x4C)
+ */
 export function encodeContactEntry(contact: Contact): Uint8Array {
-  const entryData = new Uint8Array(0x5C); // 92 bytes
-  entryData.fill(0xFF); // Fill with 0xFF (padding)
-
+  const entryData = new Uint8Array(0x5C);
+  entryData.fill(0xFF);
   const encoder = new TextEncoder();
-  
-  // Fixed structure:
-  // Contact 0: count at 0x00-0x0F, name at 0x10-0x1F (but we encode name at 0x00-0x0F for Contact 0)
-  // Contact 1+: name at 0x00-0x0F, ID at 0x10-0x13, padding at 0x14-0x1B, fields at fixed offsets
-  // 
-  // Actually, Contact 0 is written at baseAddr + 0x10, so name should be at 0x00-0x0F within the entry
-  // Contact 1+ are also at baseAddr + 0x10 + (index * 0x5C), so name is also at 0x00-0x0F
-  
-  const NAME_START_OFFSET = 0x00; // Name starts at 0x00 for all contacts (Contact 0 is written at baseAddr + 0x10)
-  const ID_OFFSET = 0x10;
-  const CITY_OFFSET_ENCODE = 0x1C;
-  const PROVINCE_OFFSET_ENCODE = 0x2C;
-  const COUNTRY_OFFSET_ENCODE = 0x3C;
-  const REMARK_OFFSET_ENCODE = 0x4C;
 
-  // 1. Name (16 bytes fixed, null-terminated, at 0x00-0x0F)
+  // Name (0x00-0x0F, 16 bytes, null-terminated)
   if (contact.name) {
     const nameBytes = encoder.encode(contact.name);
-    const nameLength = Math.min(nameBytes.length, 15); // Max 15 chars + null terminator
-    entryData.set(nameBytes.slice(0, nameLength), NAME_START_OFFSET);
-    entryData[NAME_START_OFFSET + nameLength] = 0x00; // Null terminator
+    const len = Math.min(nameBytes.length, 15);
+    entryData.set(nameBytes.slice(0, len), 0x00);
+    entryData[len] = 0x00;
   } else {
-    entryData[NAME_START_OFFSET] = 0x00; // Empty name
+    entryData[0x00] = 0x00;
   }
 
-  // 2. ID (4 bytes, little-endian uint32, at 0x10-0x13)
-  entryData[ID_OFFSET] = contact.dmrId & 0xFF;
-  entryData[ID_OFFSET + 1] = (contact.dmrId >> 8) & 0xFF;
-  entryData[ID_OFFSET + 2] = (contact.dmrId >> 16) & 0xFF;
-  entryData[ID_OFFSET + 3] = (contact.dmrId >> 24) & 0xFF;
+  // DMR ID (0x10-0x13, 4 bytes, little-endian)
+  entryData[0x10] = contact.dmrId & 0xFF;
+  entryData[0x11] = (contact.dmrId >> 8) & 0xFF;
+  entryData[0x12] = (contact.dmrId >> 16) & 0xFF;
+  entryData[0x13] = (contact.dmrId >> 24) & 0xFF;
 
-  // 3. Padding (8 bytes of 0xFF, at 0x14-0x1B)
-  // Already filled with 0xFF by default
-
-  // 4. Big Contact fields (16 bytes each, null-terminated)
+  // Optional fields (16 bytes each, null-terminated)
   const fields = [
-    { value: contact.city, offset: CITY_OFFSET_ENCODE },
-    { value: contact.province, offset: PROVINCE_OFFSET_ENCODE },
-    { value: contact.country, offset: COUNTRY_OFFSET_ENCODE },
-    { value: contact.remark, offset: REMARK_OFFSET_ENCODE },
+    { value: contact.city, offset: 0x1C },
+    { value: contact.province, offset: 0x2C },
+    { value: contact.country, offset: 0x3C },
+    { value: contact.remark, offset: 0x4C },
   ];
 
   for (const field of fields) {
     if (field.value) {
-      const fieldBytes = encoder.encode(field.value);
-      const fieldLength = Math.min(fieldBytes.length, 15); // Max 15 chars + null terminator
-      entryData.set(fieldBytes.slice(0, fieldLength), field.offset);
-      entryData[field.offset + fieldLength] = 0x00; // Null terminator
-      // Rest of the 16-byte field is already 0xFF (padding)
+      const bytes = encoder.encode(field.value);
+      const len = Math.min(bytes.length, 15);
+      entryData.set(bytes.slice(0, len), field.offset);
+      entryData[field.offset + len] = 0x00;
     }
-    // If no value, field remains 0xFF (empty)
   }
 
   return entryData;
@@ -1274,25 +1164,20 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     throw new Error('Radio Settings data must be at least 1288 bytes (0x508)');
   }
 
+  // Helper to parse null-terminated string
+  const parseString = (offset: number, length: number): string => {
+    const bytes = data.slice(offset, offset + length);
+    const nullIdx = bytes.indexOf(0);
+    return new TextDecoder('ascii', { fatal: false })
+      .decode(bytes.slice(0, nullIdx >= 0 ? nullIdx : length))
+      .replace(/\x00/g, '')
+      .trim();
+  };
+
   // Header fields (0x00-0x20)
-  // Power On Interface: 0x00 (0-2)
   const powerOnInterface = data[0x00] & 0xFF;
-  
-  // Power On Display Line 1: 0x01-0x0D (14 bytes, null-terminated)
-  const powerOnLine1Bytes = data.slice(0x01, 0x01 + 14);
-  const powerOnLine1NullIndex = powerOnLine1Bytes.indexOf(0);
-  const powerOnDisplayLine1 = new TextDecoder('ascii', { fatal: false })
-    .decode(powerOnLine1Bytes.slice(0, powerOnLine1NullIndex >= 0 ? powerOnLine1NullIndex : 14))
-    .replace(/\x00/g, '')
-    .trim();
-  
-  // Power On Display Line 2: 0x0F-0x1B (14 bytes, null-terminated)
-  const powerOnLine2Bytes = data.slice(0x0F, 0x0F + 14);
-  const powerOnLine2NullIndex = powerOnLine2Bytes.indexOf(0);
-  const powerOnDisplayLine2 = new TextDecoder('ascii', { fatal: false })
-    .decode(powerOnLine2Bytes.slice(0, powerOnLine2NullIndex >= 0 ? powerOnLine2NullIndex : 14))
-    .replace(/\x00/g, '')
-    .trim();
+  const powerOnDisplayLine1 = parseString(0x01, 14);
+  const powerOnDisplayLine2 = parseString(0x0F, 14);
   
   // Allow Reset: 0x1D (bit 0)
   const allowReset = (data[0x1D] & 0x01) !== 0;
@@ -1319,15 +1204,16 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   // Bit 3 = 0: yyy/m/d (format 0)
   // Bit 3 = 1: d/m/yyy (format 1)
   const dataDisplayFormat = (data[0x33] & 0x08) !== 0 ? 1 : 0;
-  const callsignColor = data[0x34] & 0x0F; // 0-15 - Callsign Color
-  const standbyTextColor = data[0x35] & 0x0F; // 0-15 - Standby Text Color
-  const menuExitTime = Math.max(1, Math.min(30, data[0x36] & 0xFF)); // 1-30
-  const standbyCharacterColor1 = Math.max(0, Math.min(30, data[0x37] & 0xFF)); // 0-30
-  const channelAColor = data[0x38] & 0x0F; // 0-15 - Channel A Color
-  const channelBColor = data[0x39] & 0x0F; // 0-15 - Channel B Color
+  const getColorField = (offset: number) => data[offset] & 0x0F;
+  const callsignColor = getColorField(0x34);
+  const standbyTextColor = getColorField(0x35);
+  const menuExitTime = Math.max(1, Math.min(30, data[0x36] & 0xFF));
+  const standbyCharacterColor1 = Math.max(0, Math.min(30, data[0x37] & 0xFF));
+  const channelAColor = getColorField(0x38);
+  const channelBColor = getColorField(0x39);
   const standbyCharacterColor2 = 0; // TODO: Find correct offset for Standby Character Color 2
-  const zoneAColor = data[0x3A] & 0x0F; // 0-15 - Zone A Color
-  const zoneBColor = data[0x3B] & 0x0F; // 0-15 - Zone B Color
+  const zoneAColor = getColorField(0x3A);
+  const zoneBColor = getColorField(0x3B);
 
   // Work mode and GPS settings (0x40-0x45)
   const workModeFlags = data[0x40];
@@ -1361,14 +1247,15 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const longPressTime = Math.max(1, Math.min(5, (data[0x93] & 0xFF) + 1));  // Offset 0x93 (stored as 0-4, displayed as 1-5, 1=shortest, 5=longest)
 
   // Button Functions (0x87-0x90)
-  const sk1Short = Math.max(0, Math.min(42, data[0x87] & 0xFF));     // Offset 0x87 (0-42)
-  const sk1Long = Math.max(0, Math.min(42, data[0x88] & 0xFF));     // Offset 0x88 (0-42)
-  const sk2Short = Math.max(0, Math.min(42, data[0x89] & 0xFF));     // Offset 0x89 (0-42)
-  const sk2Long = Math.max(0, Math.min(42, data[0x8A] & 0xFF));     // Offset 0x8A (0-42)
-  const p1Short = Math.max(0, Math.min(42, data[0x8D] & 0xFF));     // Offset 0x8D (0-42)
-  const p1Long = Math.max(0, Math.min(42, data[0x8E] & 0xFF));      // Offset 0x8E (0-42)
-  const p2Short = Math.max(0, Math.min(42, data[0x8F] & 0xFF));     // Offset 0x8F (0-42)
-  const p2Long = Math.max(0, Math.min(42, data[0x90] & 0xFF));      // Offset 0x90 (0-42)
+  const clamp42 = (val: number) => Math.max(0, Math.min(42, val & 0xFF));
+  const sk1Short = clamp42(data[0x87]);
+  const sk1Long = clamp42(data[0x88]);
+  const sk2Short = clamp42(data[0x89]);
+  const sk2Long = clamp42(data[0x8A]);
+  const p1Short = clamp42(data[0x8D]);
+  const p1Long = clamp42(data[0x8E]);
+  const p2Short = clamp42(data[0x8F]);
+  const p2Long = clamp42(data[0x90]);
 
   // One Key Operation
   // Analog Call (4 entries, 2 bytes each, starting at 0x120)
@@ -1413,26 +1300,10 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const unknownRadioSetting = data[0x301];
   const radioFlag = data[0x302];
   const radioEnabled = (radioFlag & 0x01) !== 0;
-
-  // Latitude (0x306, 14 bytes)
-  const latBytes = data.slice(0x306, 0x306 + 14);
-  const latNullIndex = latBytes.indexOf(0);
-  const latitude = new TextDecoder('ascii', { fatal: false })
-    .decode(latBytes.slice(0, latNullIndex >= 0 ? latNullIndex : 14))
-    .replace(/\x00/g, '')
-    .trim();
-
-  // Latitude direction (0x30F)
-  const latDirByte = data[0x30F];
-  const latitudeDirection: 'N' | 'S' = latDirByte === 0x4E ? 'N' : 'S';
-
-  // Longitude (0x310, 14 bytes)
-  const lonBytes = data.slice(0x310, 0x310 + 14);
-  const lonNullIndex = lonBytes.indexOf(0);
-  const longitude = new TextDecoder('ascii', { fatal: false })
-    .decode(lonBytes.slice(0, lonNullIndex >= 0 ? lonNullIndex : 14))
-    .replace(/\x00/g, '')
-    .trim();
+  
+  const latitude = parseString(0x306, 14);
+  const latitudeDirection: 'N' | 'S' = data[0x30F] === 0x4E ? 'N' : 'S';
+  const longitude = parseString(0x310, 14);
 
   // Longitude direction (0x319)
   const lonDirByte = data[0x319];
@@ -1698,21 +1569,18 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
     displayFlagsValue &= ~0x08; // Clear bit 3
   }
   data[0x33] = displayFlagsValue;
-  // Preserve upper 4 bits, only modify lower 4 bits
-  // Callsign Color at 0x34
-  data[0x34] = (data[0x34] & 0xF0) | (Math.max(0, Math.min(15, settings.callsignColor)) & 0x0F);
-  // Standby Text Color at 0x35
-  data[0x35] = (data[0x35] & 0xF0) | (Math.max(0, Math.min(15, settings.standbyTextColor)) & 0x0F);
+  // Color fields (preserve upper 4 bits, modify lower 4 bits)
+  const setColorField = (offset: number, value: number) => {
+    data[offset] = (data[offset] & 0xF0) | (Math.max(0, Math.min(15, value)) & 0x0F);
+  };
+  setColorField(0x34, settings.callsignColor);
+  setColorField(0x35, settings.standbyTextColor);
   data[0x36] = Math.max(1, Math.min(30, settings.menuExitTime)) & 0xFF;
   data[0x37] = Math.max(0, Math.min(30, settings.standbyCharacterColor1)) & 0xFF;
-  // Preserve upper 4 bits, only modify lower 4 bits
-  // Channel A Color at 0x38
-  data[0x38] = (data[0x38] & 0xF0) | (Math.max(0, Math.min(15, settings.channelAColor)) & 0x0F);
-  // Channel B Color at 0x39
-  data[0x39] = (data[0x39] & 0xF0) | (Math.max(0, Math.min(15, settings.channelBColor)) & 0x0F);
-  // TODO: Standby Character Color 2 - offset unknown
-  data[0x3A] = (data[0x3A] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneAColor)) & 0x0F);
-  data[0x3B] = (data[0x3B] & 0xF0) | (Math.max(0, Math.min(15, settings.zoneBColor)) & 0x0F);
+  setColorField(0x38, settings.channelAColor);
+  setColorField(0x39, settings.channelBColor);
+  setColorField(0x3A, settings.zoneAColor);
+  setColorField(0x3B, settings.zoneBColor);
 
   // Work mode and GPS settings (0x40-0x45)
   data[0x40] = settings.workModeFlags & 0xFF;
@@ -1752,14 +1620,15 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   data[0x93] = Math.max(0, Math.min(4, settings.longPressTime - 1)) & 0xFF;  // Long Press Time (stored as 0-4, displayed as 1-5, 1=shortest, 5=longest)
 
   // Button Functions (0x87-0x90)
-  data[0x87] = Math.max(0, Math.min(42, settings.sk1Short)) & 0xFF;      // Offset 0x87 - SK1 Short
-  data[0x88] = Math.max(0, Math.min(42, settings.sk1Long)) & 0xFF;      // Offset 0x88 - SK1 Long
-  data[0x89] = Math.max(0, Math.min(42, settings.sk2Short)) & 0xFF;     // Offset 0x89 - SK2 Short
-  data[0x8A] = Math.max(0, Math.min(42, settings.sk2Long)) & 0xFF;      // Offset 0x8A - SK2 Long
-  data[0x8D] = Math.max(0, Math.min(42, settings.p1Short)) & 0xFF;      // Offset 0x8D - P1 Short
-  data[0x8E] = Math.max(0, Math.min(42, settings.p1Long)) & 0xFF;       // Offset 0x8E - P1 Long
-  data[0x8F] = Math.max(0, Math.min(42, settings.p2Short)) & 0xFF;      // Offset 0x8F - P2 Short
-  data[0x90] = Math.max(0, Math.min(42, settings.p2Long)) & 0xFF;        // Offset 0x90 - P2 Long
+  const clamp42 = (val: number) => Math.max(0, Math.min(42, val)) & 0xFF;
+  data[0x87] = clamp42(settings.sk1Short);
+  data[0x88] = clamp42(settings.sk1Long);
+  data[0x89] = clamp42(settings.sk2Short);
+  data[0x8A] = clamp42(settings.sk2Long);
+  data[0x8D] = clamp42(settings.p1Short);
+  data[0x8E] = clamp42(settings.p1Long);
+  data[0x8F] = clamp42(settings.p2Short);
+  data[0x90] = clamp42(settings.p2Long);
 
   // One Key Operation
   // Analog Call (4 entries, 2 bytes each, starting at 0x120)
@@ -1769,7 +1638,7 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
       const entry = settings.analogCall[i];
       if (entry) {
         data[offset] = Math.max(0, Math.min(2, entry.callType)) & 0xFF;
-        data[offset + 1] = Math.max(0, Math.min(255, entry.callId)) & 0xFF;
+        data[offset + 1] = (entry.callId & 0xFF);
       }
     }
   }
@@ -1781,11 +1650,10 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
       const entry = settings.oneTouchCall[i];
       if (entry) {
         data[baseOffset] = Math.max(0, Math.min(2, entry.callType)) & 0xFF;
-        // Call Object as little-endian uint16
-        data[baseOffset + 1] = (entry.callObject & 0xFF);
-        data[baseOffset + 2] = ((entry.callObject >> 8) & 0xFF);
+        data[baseOffset + 1] = entry.callObject & 0xFF;
+        data[baseOffset + 2] = (entry.callObject >> 8) & 0xFF;
         data[baseOffset + 3] = Math.max(0, Math.min(8, entry.digitalCallType)) & 0xFF;
-        data[baseOffset + 4] = Math.max(0, Math.min(255, entry.sms)) & 0xFF;
+        data[baseOffset + 4] = entry.sms & 0xFF;
       }
     }
   }
@@ -1797,13 +1665,13 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
       const baseOffset = 0x230 + i * 7;  // Base offset 0x230, 7 bytes per entry
       const entry = settings.funPlus[i];
       if (entry) {
-        data[baseOffset + 0x00] = Math.max(0, Math.min(1, entry.operateMode)) & 0xFF;  // +0x00: Operate Mode
-        data[baseOffset + 0x01] = Math.max(0, Math.min(13, entry.menuSelect)) & 0xFF;  // +0x01: Menu Select
-        data[baseOffset + 0x02] = 0x00;  // +0x02: Reserved/Padding
-        data[baseOffset + 0x03] = Math.max(0, Math.min(2, entry.callWay)) & 0xFF;  // +0x03: Call Way
-        data[baseOffset + 0x04] = Math.max(0, Math.min(255, entry.callObject)) & 0xFF;  // +0x04: Call Object
-        data[baseOffset + 0x05] = Math.max(0, Math.min(8, entry.digitalCallType)) & 0xFF;  // +0x05: Digital Call Type
-        data[baseOffset + 0x06] = Math.max(0, Math.min(255, entry.sms)) & 0xFF;  // +0x06: SMS
+        data[baseOffset + 0x00] = Math.max(0, Math.min(1, entry.operateMode)) & 0xFF;
+        data[baseOffset + 0x01] = Math.max(0, Math.min(13, entry.menuSelect)) & 0xFF;
+        data[baseOffset + 0x02] = 0x00;
+        data[baseOffset + 0x03] = Math.max(0, Math.min(2, entry.callWay)) & 0xFF;
+        data[baseOffset + 0x04] = entry.callObject & 0xFF;
+        data[baseOffset + 0x05] = Math.max(0, Math.min(8, entry.digitalCallType)) & 0xFF;
+        data[baseOffset + 0x06] = entry.sms & 0xFF;
       }
     }
   }

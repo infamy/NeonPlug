@@ -34,28 +34,57 @@ export default defineConfig(({ mode }) => {
       ...(isSingleFile ? [viteSingleFile()] : []),
     ],
     build: {
-      // Output to dist folder
       outDir: 'dist',
-      // Generate source maps for debugging (set to false for smaller build)
       sourcemap: false,
-      // Minify for production
       minify: 'esbuild',
-      // Chunk size warning limit (in kbs)
-      chunkSizeWarningLimit: isSingleFile ? 5000 : 1000, // Higher limit for single file
-      // Rollup options for better bundling
+      chunkSizeWarningLimit: isSingleFile ? 5000 : 1000,
       rollupOptions: isSingleFile ? undefined : {
         output: {
-          // Manual chunk splitting for better caching (only for multi-file build)
-          manualChunks: {
-            'react-vendor': ['react', 'react-dom'],
-            'zustand': ['zustand'],
+          manualChunks: (id) => {
+            // Split vendor libraries
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('react-dom')) {
+                return 'react-vendor';
+              }
+              if (id.includes('zustand')) {
+                return 'zustand';
+              }
+              if (id.includes('xlsx')) {
+                return 'xlsx';
+              }
+              if (id.includes('@silevis/reactgrid')) {
+                return 'reactgrid';
+              }
+              // Other node_modules go into vendor chunk
+              return 'vendor';
+            }
+            // Split large protocol files
+            if (id.includes('protocol/dm32uv/protocol')) {
+              return 'protocol';
+            }
+            if (id.includes('protocol/dm32uv/structures')) {
+              return 'structures';
+            }
           },
-          // Ensure consistent file names
           entryFileNames: 'assets/[name].[hash].js',
           chunkFileNames: 'assets/[name].[hash].js',
           assetFileNames: 'assets/[name].[hash].[ext]',
         },
       },
+      // Optimize chunk size
+      target: 'esnext',
+      cssCodeSplit: true,
+      // Reduce bundle size
+      reportCompressedSize: true,
+      // Improve tree shaking
+      modulePreload: {
+        polyfill: false,
+      },
+    },
+    // Optimize dependencies
+    optimizeDeps: {
+      include: ['react', 'react-dom', 'zustand'],
+      exclude: ['xlsx'], // Exclude xlsx from pre-bundling (lazy load when needed)
     },
     // Base path for deployment (empty for root)
     base: './',

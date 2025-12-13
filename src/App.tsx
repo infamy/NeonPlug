@@ -1,17 +1,19 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { MainLayout } from './components/layout/MainLayout';
-import { ChannelsTab } from './components/channels/ChannelsTab';
-import { ZonesTab } from './components/zones/ZonesTab';
-import { ScanListsTab } from './components/scanlists/ScanListsTab';
-import { ContactsTab } from './components/contacts/ContactsTab';
-import { DigitalTab } from './components/digital/DigitalTab';
-import { SettingsTab } from './components/settings/SettingsTab';
-import { SmartImportTab } from './components/import/SmartImportTab';
-import { AboutTab } from './components/about/AboutTab';
-import { MessagesAndGroupsTab } from './components/messages/MessagesAndGroupsTab';
-import { DiagnosticsTab } from './components/diagnostics/DiagnosticsTab';
 import { DebugPanel } from './components/ui/DebugPanel';
 import { StartupModal } from './components/ui/StartupModal';
+
+// Lazy load tabs for better code splitting - only load when tab is active
+const ChannelsTab = lazy(() => import('./components/channels/ChannelsTab').then(m => ({ default: m.ChannelsTab })));
+const ZonesTab = lazy(() => import('./components/zones/ZonesTab').then(m => ({ default: m.ZonesTab })));
+const ScanListsTab = lazy(() => import('./components/scanlists/ScanListsTab').then(m => ({ default: m.ScanListsTab })));
+const ContactsTab = lazy(() => import('./components/contacts/ContactsTab').then(m => ({ default: m.ContactsTab })));
+const DigitalTab = lazy(() => import('./components/digital/DigitalTab').then(m => ({ default: m.DigitalTab })));
+const SettingsTab = lazy(() => import('./components/settings/SettingsTab').then(m => ({ default: m.SettingsTab })));
+const SmartImportTab = lazy(() => import('./components/import/SmartImportTab').then(m => ({ default: m.SmartImportTab })));
+const AboutTab = lazy(() => import('./components/about/AboutTab').then(m => ({ default: m.AboutTab })));
+const MessagesAndGroupsTab = lazy(() => import('./components/messages/MessagesAndGroupsTab').then(m => ({ default: m.MessagesAndGroupsTab })));
+const DiagnosticsTab = lazy(() => import('./components/diagnostics/DiagnosticsTab').then(m => ({ default: m.DiagnosticsTab })));
 import { useChannelsStore } from './store/channelsStore';
 import { useContactsStore } from './store/contactsStore';
 import { useZonesStore } from './store/zonesStore';
@@ -21,7 +23,6 @@ import { useDigitalEmergencyStore } from './store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from './store/analogEmergencyStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
-import { importCodeplug } from './services/codeplugExport';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
 
 function App() {
@@ -75,6 +76,8 @@ function App() {
     // Check if it's a codeplug XLSX file
     if (fileExtension === 'xlsx' || fileExtension === 'xls') {
       try {
+        // Lazy load XLSX library only when needed
+        const { importCodeplug } = await import('./services/codeplugExport');
         const codeplugData = await importCodeplug(file);
         
         // Populate all stores with imported data
@@ -158,30 +161,27 @@ function App() {
   }, [isConnecting, radioError, channels.length]);
 
   const renderTabContent = () => {
-    switch (activeTab) {
-      case 'channels':
-        return <ChannelsTab />;
-      case 'zones':
-        return <ZonesTab />;
-      case 'scanlists':
-        return <ScanListsTab />;
-      case 'contacts':
-        return <ContactsTab />;
-      case 'messages':
-        return <MessagesAndGroupsTab />;
-      case 'digital':
-        return <DigitalTab />;
-      case 'settings':
-        return <SettingsTab />;
-      case 'import':
-        return <SmartImportTab />;
-      case 'diagnostics':
-        return <DiagnosticsTab />;
-      case 'about':
-        return <AboutTab />;
-      default:
-        return <ChannelsTab />;
-    }
+    const TabComponent = (() => {
+      switch (activeTab) {
+        case 'channels': return ChannelsTab;
+        case 'zones': return ZonesTab;
+        case 'scanlists': return ScanListsTab;
+        case 'contacts': return ContactsTab;
+        case 'messages': return MessagesAndGroupsTab;
+        case 'digital': return DigitalTab;
+        case 'settings': return SettingsTab;
+        case 'import': return SmartImportTab;
+        case 'diagnostics': return DiagnosticsTab;
+        case 'about': return AboutTab;
+        default: return ChannelsTab;
+      }
+    })();
+    
+    return (
+      <Suspense fallback={<div className="flex items-center justify-center h-full text-neon-cyan">Loading...</div>}>
+        <TabComponent />
+      </Suspense>
+    );
   };
 
   return (
