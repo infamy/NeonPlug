@@ -76,6 +76,34 @@ export const SmartImportTab: React.FC = () => {
     }
   };
 
+  const handleGeocodeCityState = async () => {
+    if (!city.trim()) {
+      setError('Please enter a city name');
+      return;
+    }
+    
+    setIsSearching(true);
+    setError(null);
+    
+    try {
+      const geocoded = await geocodeLocation(city, state);
+      if (!geocoded) {
+        throw new Error('Could not find location. Please check the city and state names.');
+      }
+      
+      // Populate coordinates
+      setLatitude(geocoded.latitude.toFixed(6));
+      setLongitude(geocoded.longitude.toFixed(6));
+      
+      // Switch to coordinates view so user can see/verify them
+      setLocationType('coordinates');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to geocode location');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   const handleSearch = async () => {
     setIsSearching(true);
     setError(null);
@@ -694,27 +722,49 @@ export const SmartImportTab: React.FC = () => {
         )}
 
         {locationType === 'city' && (
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm text-cool-gray mb-2">City</label>
-              <input
-                type="text"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="Boston"
-                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
-              />
+          <div className="mb-4">
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <label className="block text-sm text-cool-gray mb-2">City</label>
+                <input
+                  type="text"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="Boston"
+                  className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && city.trim()) {
+                      handleGeocodeCityState();
+                    }
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-cool-gray mb-2">State/Province</label>
+                <input
+                  type="text"
+                  value={state}
+                  onChange={(e) => setState(e.target.value)}
+                  placeholder="MA"
+                  className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && city.trim()) {
+                      handleGeocodeCityState();
+                    }
+                  }}
+                />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm text-cool-gray mb-2">State</label>
-              <input
-                type="text"
-                value={state}
-                onChange={(e) => setState(e.target.value)}
-                placeholder="MA"
-                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
-              />
-            </div>
+            <Button
+              onClick={handleGeocodeCityState}
+              disabled={isSearching || !city.trim()}
+              className="w-full mb-3"
+            >
+              {isSearching ? 'Getting Coordinates...' : 'Get Coordinates'}
+            </Button>
+            <p className="text-xs text-cool-gray">
+              Click to convert city/state to coordinates. The view will switch to coordinates after geocoding.
+            </p>
           </div>
         )}
 
