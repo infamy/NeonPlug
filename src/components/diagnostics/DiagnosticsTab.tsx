@@ -10,19 +10,21 @@ import {
 } from './diagnosticsConstants';
 
 export const DiagnosticsTab: React.FC = () => {
-  const { rawRadioSettingsData, blockMetadata, blockData } = useRadioStore();
+  const { rawRadioSettingsData, rawContactBlockData, rawContactBlockAddress, blockMetadata, blockData } = useRadioStore();
   const { settings: radioSettings } = useRadioSettingsStore();
-  const [showMetadataBlock, setShowMetadataBlock] = useState(true);
-  const [showMetadataBlock10, setShowMetadataBlock10] = useState(true);
-  const [showMetadataBlock41, setShowMetadataBlock41] = useState(true);
-  const [showOffsetInspector, setShowOffsetInspector] = useState(true);
-  const [showFieldVerification, setShowFieldVerification] = useState(true);
-  const [showHexDump, setShowHexDump] = useState(true);
-  const [showHexDump10, setShowHexDump10] = useState(true);
-  const [showHexDump41, setShowHexDump41] = useState(true);
+  const [showMetadataBlock, setShowMetadataBlock] = useState(false);
+  const [showMetadataBlock10, setShowMetadataBlock10] = useState(false);
+  const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
+  const [showOffsetInspector, setShowOffsetInspector] = useState(false);
+  const [showFieldVerification, setShowFieldVerification] = useState(false);
+  const [showHexDump, setShowHexDump] = useState(false);
+  const [showHexDump10, setShowHexDump10] = useState(false);
+  const [showHexDump41, setShowHexDump41] = useState(false);
+  const [showContactBlock, setShowContactBlock] = useState(false);
   const [inspectOffset, setInspectOffset] = useState<string>('');
   const [inspectOffset10, setInspectOffset10] = useState<string>('');
   const [inspectOffset41, setInspectOffset41] = useState<string>('');
+  const [inspectContactOffset, setInspectContactOffset] = useState<string>('');
 
   // Find block with metadata 0x10
   const block10Address = useMemo(() => {
@@ -1006,6 +1008,142 @@ export const DiagnosticsTab: React.FC = () => {
           <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
             <h3 className="text-lg font-semibold text-yellow-400 mb-2">Metadata Block 0x41</h3>
             <p className="text-cool-gray text-sm">Block 0x41 not found. Read from radio to view this block.</p>
+          </div>
+        </div>
+      )}
+
+      {/* First Contact Block */}
+      {rawContactBlockData && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-semibold text-yellow-400">DMR Contact Block</h3>
+              <span className="px-2 py-1 bg-yellow-900/30 text-yellow-400 text-xs rounded border border-yellow-600/30">
+                Contact Database
+              </span>
+              {rawContactBlockAddress !== null && (
+                <span className="px-2 py-1 bg-yellow-900/20 text-cool-gray text-xs rounded border border-yellow-600/20">
+                  Address: 0x{rawContactBlockAddress.toString(16).toUpperCase()}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (rawContactBlockData) {
+                    downloadHexDump(rawContactBlockData, 'contact-block-0-hexdump.txt');
+                  }
+                }}
+                className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+                title="Download hex dump"
+              >
+                📥 Hex
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (rawContactBlockData) {
+                    downloadBinary(rawContactBlockData, 'contact-block-0.bin');
+                  }
+                }}
+                className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+                title="Download binary"
+              >
+                📥 Bin
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowContactBlock(!showContactBlock);
+                }}
+                className="text-sm text-yellow-400 hover:text-yellow-300"
+              >
+                {showContactBlock ? '▼ Hide' : '▶ Show'}
+              </button>
+            </div>
+          </div>
+          <p className="text-cool-gray text-sm mb-4">
+            First 4KB block from contact database. Each contact is 92 bytes (0x5C). 
+            Use this to manually inspect the contact structure and fix parsing.
+          </p>
+
+          <div className={`space-y-6 ${showContactBlock ? '' : 'hidden'}`}>
+            {/* Hex Dump Viewer for Contact Block */}
+            <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-yellow-400">Hex Dump (Full Contact Block)</h3>
+              </div>
+              <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
+                <div className="mb-4">
+                  <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={inspectContactOffset}
+                      onChange={(e) => setInspectContactOffset(e.target.value)}
+                      placeholder="0x000"
+                      className="flex-1 px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm font-mono focus:outline-none focus:border-yellow-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const offset = parseInt(inspectContactOffset.replace(/^0x/i, ''), 16);
+                        if (!isNaN(offset) && offset >= 0 && offset < rawContactBlockData.length) {
+                          const element = document.getElementById(`contact-offset-${offset}`);
+                          element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                      }}
+                      className="px-4 py-2 bg-yellow-900/30 text-yellow-400 text-sm rounded border border-yellow-600/30 hover:bg-yellow-900/50"
+                    >
+                      Go
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto max-h-96 overflow-y-auto font-mono text-xs">
+                  {Array.from({ length: Math.ceil(rawContactBlockData.length / 16) }, (_, row) => {
+                    const offset = row * 16;
+                    const rowBytes = rawContactBlockData.slice(offset, offset + 16);
+                    const offsetHex = offset.toString(16).toUpperCase().padStart(4, '0');
+                    const hexBytes = Array.from(rowBytes)
+                      .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
+                      .join(' ');
+                    const hexPadding = '   '.repeat(16 - rowBytes.length);
+                    const ascii = Array.from(rowBytes)
+                      .map(b => {
+                        const char = String.fromCharCode(b);
+                        return (b >= 32 && b <= 126) ? char : '.';
+                      })
+                      .join('');
+                    
+                    // Highlight contact boundaries (every 92 bytes / 0x5C)
+                    const isContactBoundary = offset % 0x5C === 0;
+                    const contactNum = Math.floor(offset / 0x5C);
+                    
+                    return (
+                      <div
+                        key={offset}
+                        id={`contact-offset-${offset}`}
+                        className={`flex gap-4 py-1 ${isContactBoundary ? 'bg-yellow-900/20 border-t border-yellow-600/30' : ''} hover:bg-yellow-900/10`}
+                      >
+                        <span className="text-yellow-400 w-16">{offsetHex}</span>
+                        <span className="text-white flex-1">{hexBytes}{hexPadding}</span>
+                        <span className="text-cool-gray w-16">{ascii}</span>
+                        {isContactBoundary && (
+                          <span className="text-yellow-500 text-xs ml-2">Contact {contactNum}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

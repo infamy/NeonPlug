@@ -5,7 +5,7 @@
 
 import { DM32Connection } from './connection';
 import { discoverMemoryBlocks, readChannelCount, type MemoryBlock } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContacts, encodeChannel, encodeZone, encodeScanList, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup } from '../../models';
 import type { WebSerialPort } from './types';
@@ -48,6 +48,8 @@ export class DM32UVProtocol implements RadioProtocol {
   public onProgress?: (progress: number, message: string) => void;
   public rawChannelData: Map<number, { data: Uint8Array; blockAddr: number; offset: number }> = new Map();
   public rawZoneData: Map<string, { data: Uint8Array; zoneNum: number; offset: number }> = new Map();
+  public rawContactBlockData: Uint8Array | null = null;
+  public rawContactBlockAddress: number | null = null;
   public rawScanListData: Map<string, { data: Uint8Array; listNum: number; offset: number }> = new Map();
   public rawRadioSettingsData: Uint8Array | null = null;
   public rawDigitalEmergencyData: Uint8Array | null = null;
@@ -1320,9 +1322,11 @@ export class DM32UVProtocol implements RadioProtocol {
 
   /**
    * Read contacts from the radio
-   * 
-   * Uses V-frame 0x0F to get the contacts memory range, then discovers
-   * contact blocks and parses them.
+   * Based on ContactReadWrite.md spec:
+   * - Query V-frame 0x0F to get base address (start/end)
+   * - Query V-frame 0x10 to get max contact count
+   * - Address calculation: base_address + (contact_index * 0x5C)
+   * - Read 4KB blocks, parse 92-byte entries
    * 
    * @returns Array of contacts
    * @throws {Error} If not connected
@@ -1330,131 +1334,263 @@ export class DM32UVProtocol implements RadioProtocol {
   async readContacts(): Promise<Contact[]> {
     requireConnection(this.connection, this.radioInfo);
     
-    this.onProgress?.(0, 'Reading contacts...');
+    this.onProgress?.(0, 'Querying contact database info...');
     
-    // Get contacts memory range from V-frame 0x0F
-    const contactsVFrame = this.radioInfo!.vframes.get(VFRAME.CONTACTS);
+    // Query V-frame 0x0F to get contacts memory range
+    let contactsVFrame = this.radioInfo!.vframes.get(VFRAME.CONTACTS);
     if (!contactsVFrame || contactsVFrame.length < 8) {
-      console.warn('V-frame 0x0F (contacts) not available, trying to discover contacts in config range');
-      // Fall back to discovering in config range
-      return this.readContactsFromConfigRange();
+      // Query it if not cached
+      this.onProgress?.(1, 'Querying V-frame 0x0F (contact address range)...');
+      contactsVFrame = await this.connection!.queryVFrame(0x0F);
+    }
+    
+    if (!contactsVFrame || contactsVFrame.length < 8) {
+      throw new Error('Failed to get contact address range from V-frame 0x0F');
     }
     
     // Parse memory range (8 bytes: start_addr (4 bytes LE) + end_addr (4 bytes LE))
-    const startAddr = this.readUint32LE(contactsVFrame, 0);
+    const baseAddr = this.readUint32LE(contactsVFrame, 0);
     const endAddr = this.readUint32LE(contactsVFrame, 4);
     
-    console.log(`Contacts memory range: 0x${startAddr.toString(16)} - 0x${endAddr.toString(16)}`);
+    console.log(`Contacts memory range: 0x${baseAddr.toString(16)} - 0x${endAddr.toString(16)}`);
     
-    if (startAddr === 0 && endAddr === 0) {
+    if (baseAddr === 0 && endAddr === 0) {
       console.warn('Contacts range is 0x00000000-0x00000000, contacts may be disabled');
       return [];
     }
     
-    // Discover contact blocks in this range
-    this.onProgress?.(10, 'Discovering contact blocks...');
-    const blocks = await discoverMemoryBlocks(
-      this.connection!,
-      startAddr,
-      endAddr,
-      (current, total) => {
-        const progress = 10 + Math.floor((current / total) * 10); // 10-20%
-        this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+    // Query V-frame 0x10 to get max contact count
+    this.onProgress?.(2, 'Querying V-frame 0x10 (max contact count)...');
+    let maxContactsVFrame = this.radioInfo!.vframes.get(0x10);
+    if (!maxContactsVFrame || maxContactsVFrame.length < 4) {
+      maxContactsVFrame = await this.connection!.queryVFrame(0x10);
+    }
+    
+    let maxContacts = 50000; // Default for standard firmware
+    if (maxContactsVFrame && maxContactsVFrame.length >= 4) {
+      maxContacts = this.readUint32LE(maxContactsVFrame, 0);
+      console.log(`Max contacts: ${maxContacts}`);
+    }
+    
+    const ENTRY_SIZE = 0x5C; // 92 bytes per contact
+    const contacts: Contact[] = [];
+    
+    // Calculate range info for logging
+    const rangeSize = endAddr - baseAddr;
+    const maxContactsInRange = Math.floor(rangeSize / ENTRY_SIZE);
+    
+    console.log(`Contact database range:`);
+    console.log(`  Base address: 0x${baseAddr.toString(16).toUpperCase()} (${baseAddr})`);
+    console.log(`  End address: 0x${endAddr.toString(16).toUpperCase()} (${endAddr})`);
+    console.log(`  Range size: ${rangeSize.toLocaleString()} bytes (${(rangeSize / 1024 / 1024).toFixed(2)} MB)`);
+    console.log(`  Max contacts in range: ${maxContactsInRange.toLocaleString()}`);
+    console.log(`  Max contacts (firmware limit): ${maxContacts.toLocaleString()}`);
+    console.log(`  Reading sequentially until empty entry found...`);
+    
+    this.onProgress?.(5, `Reading contacts sequentially from 0x${baseAddr.toString(16).toUpperCase()}...`);
+    
+    // Read contacts in 4KB blocks, stopping when we hit an empty entry
+    // Each 4KB block can hold: 4096 / 92 = ~44 contacts
+    const CONTACTS_PER_BLOCK = Math.floor(BLOCK_SIZE.STANDARD / ENTRY_SIZE);
+    let contactIndex = 0;
+    let blockIdx = 0;
+    let foundEmptyEntry = false;
+    
+    // Read blocks until we find an empty entry or hit the limit
+    while (!foundEmptyEntry && contactIndex < maxContacts && contactIndex < maxContactsInRange) {
+      // Calculate block address (4KB-aligned)
+      const blockStartContact = blockIdx * CONTACTS_PER_BLOCK;
+      const blockStartAddr = baseAddr + (blockStartContact * ENTRY_SIZE);
+      const blockAddr = Math.floor(blockStartAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD; // Align to 4KB
+      
+      // Check if we've gone past the end address
+      if (blockAddr >= endAddr) {
+        break;
       }
-    );
-    
-    // Filter for contact blocks (we need to discover the metadata value)
-    // For now, look for non-empty blocks that aren't channels, zones, or scan lists
-    const contactBlocks = blocks.filter(b => 
-      b.type !== 'empty' && 
-      b.type !== 'channel' && 
-      b.type !== 'zone' && 
-      b.type !== 'scan' &&
-      b.metadata !== METADATA.EMPTY &&
-      b.metadata !== METADATA.EMPTY_ALT
-    );
-    
-    console.log(`Found ${contactBlocks.length} potential contact blocks`);
-    
-    if (contactBlocks.length === 0) {
-      console.warn('No contact blocks found');
-      return [];
-    }
-    
-    // Read all contact blocks
-    this.onProgress?.(20, `Reading ${contactBlocks.length} contact block(s)...`);
-    const allContactData = await readAndConcatenateBlocks(
-      this.connection!,
-      contactBlocks,
-      this.onProgress,
-      undefined
-    );
-    
-    // Parse contacts
-    this.onProgress?.(80, 'Parsing contacts...');
-    const contacts = parseContacts(allContactData);
-    
-    console.log(`Successfully parsed ${contacts.length} contacts`);
-    this.onProgress?.(100, `Successfully read ${contacts.length} contacts`);
-    
-    return contacts;
-  }
-  
-  /**
-   * Fallback: Try to discover contacts in the main config range
-   * This is used when V-frame 0x0F is not available
-   */
-  private async readContactsFromConfigRange(): Promise<Contact[]> {
-    this.onProgress?.(10, 'Discovering contacts in config range...');
-    
-    // Use discovered blocks if available, otherwise discover
-    if (this.discoveredBlocks.length === 0) {
-      const blocks = await discoverMemoryBlocks(
-        this.connection!,
-        this.radioInfo!.memoryLayout.configStart,
-        this.radioInfo!.memoryLayout.configEnd,
-        (current, total) => {
-          const progress = 10 + Math.floor((current / total) * 5); // 10-15%
-          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+      
+      const progress = 5 + Math.floor((blockIdx / 100) * 90); // Estimate progress (we don't know total blocks)
+      const currentBlockAddrHex = `0x${blockAddr.toString(16).toUpperCase()}`;
+      this.onProgress?.(progress, `Reading contact block at ${currentBlockAddrHex} (found ${contacts.length} contacts)...`);
+      
+      // Read 4KB block
+      const blockData = await this.connection!.readMemory(blockAddr, BLOCK_SIZE.STANDARD);
+      
+      // Store first contact block for debugging
+      if (blockIdx === 0) {
+        this.rawContactBlockData = new Uint8Array(blockData);
+        this.rawContactBlockAddress = blockAddr;
+      }
+      
+      // Calculate offset within block for first contact in this block
+      const blockOffset = blockStartAddr - blockAddr;
+      
+      // Parse contacts in this block, stopping at first empty entry
+      for (let i = 0; i < CONTACTS_PER_BLOCK; i++) {
+        const currentContactIndex = blockStartContact + i;
+        const entryOffset = blockOffset + (i * ENTRY_SIZE);
+        
+        // Check if we've exceeded the block or range
+        if (entryOffset + ENTRY_SIZE > blockData.length) break;
+        if (currentContactIndex >= maxContacts || currentContactIndex >= maxContactsInRange) break;
+        
+        const entryData = blockData.slice(entryOffset, entryOffset + ENTRY_SIZE);
+        
+        // Contact 0 is special: contains count in first 4 bytes, but also has a real contact
+        // We'll parse it as a contact, but also extract the count
+        if (currentContactIndex === 0) {
+          const count = entryData[0] | (entryData[1] << 8) | (entryData[2] << 16) | (entryData[3] << 24);
+          console.log(`Contact 0 (header): count = ${count}`);
+          // Use this count to limit how many contacts we read
+          if (count > 0 && count < maxContacts) {
+            // Update maxContacts to use the actual count from the radio
+            // But we'll still respect the firmware limit
+          }
+          // Continue to parse Contact 0 as a real contact
         }
-      );
-      this.discoveredBlocks = blocks;
+        
+        // Check for empty entry (C code pattern: name at 0x10 starts with 0xFF or 0x00)
+        // ALL contacts have name at offset 0x10 from entry start
+        if (entryData[0x10] === 0xFF || entryData[0x10] === 0x00) {
+          console.log(`Found empty entry at contact index ${currentContactIndex}, stopping read`);
+          foundEmptyEntry = true;
+          break;
+        }
+        
+        // Debug: Log first few contacts to verify parsing
+        if (currentContactIndex < 4) {
+          const hexPreview = Array.from(entryData.slice(0, 48))
+            .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+            .join(' ');
+          console.log(`Contact ${currentContactIndex} at offset ${entryOffset} (block offset ${blockOffset}, i=${i}):`);
+          console.log(`  First 48 bytes: ${hexPreview}`);
+          console.log(`  Expected address: 0x${(baseAddr + (currentContactIndex * ENTRY_SIZE)).toString(16).toUpperCase()}`);
+          // All contacts have name at 0x10 from entry start
+          console.log(`  Name area (0x10-0x1F): ${Array.from(entryData.slice(0x10, 0x20)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+          console.log(`  ID candidates: 0x18=${Array.from(entryData.slice(0x18, 0x1C)).map(b => b.toString(16).padStart(2, '0')).join(' ')}, 0x1C=${Array.from(entryData.slice(0x1C, 0x20)).map(b => b.toString(16).padStart(2, '0')).join(' ')}, 0x20=${Array.from(entryData.slice(0x20, 0x24)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+        }
+        
+        const contact = parseContactEntry(entryData, currentContactIndex);
+        
+        if (contact) {
+          if (currentContactIndex < 4) {
+            console.log(`  Parsed: name="${contact.name}", dmrId=${contact.dmrId}`);
+          }
+          contacts.push(contact);
+          contactIndex = currentContactIndex + 1;
+        } else {
+          // If parsing failed, check if it's an empty entry (name at 0x10 is 0xFF or 0x00)
+          if (entryData[0x10] === 0xFF || entryData[0x10] === 0x00) {
+            console.log(`Found empty entry at contact index ${currentContactIndex} (parse failed), stopping read`);
+            foundEmptyEntry = true;
+            break;
+          }
+        }
+      }
+      
+      blockIdx++;
+      
+      // Small delay between blocks
+      if (!foundEmptyEntry) {
+        await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+      }
     }
     
-    // Look for unknown blocks that might be contacts
-    const potentialContactBlocks = this.discoveredBlocks.filter(b => 
-      b.type === 'unknown' &&
-      b.metadata !== METADATA.EMPTY &&
-      b.metadata !== METADATA.EMPTY_ALT
-    );
-    
-    if (potentialContactBlocks.length === 0) {
-      console.warn('No potential contact blocks found in config range');
-      return [];
-    }
-    
-    console.log(`Found ${potentialContactBlocks.length} potential contact blocks in config range`);
-    
-    // Read and parse
-    const allContactData = await readAndConcatenateBlocks(
-      this.connection!,
-      potentialContactBlocks,
-      this.onProgress,
-      undefined
-    );
-    
-    this.onProgress?.(80, 'Parsing contacts...');
-    const contacts = parseContacts(allContactData);
-    
-    console.log(`Successfully parsed ${contacts.length} contacts from config range`);
+    console.log(`Successfully read ${contacts.length} contacts`);
     this.onProgress?.(100, `Successfully read ${contacts.length} contacts`);
     
     return contacts;
   }
 
-  async writeContacts(_contacts: Contact[]): Promise<void> {
-    // TODO: Implement contact writing
-    throw new Error('Contact writing not yet implemented');
+  /**
+   * Write contacts to the radio
+   * Based on ContactReadWrite.md spec:
+   * - Query V-frame 0x0F to get base address
+   * - Address calculation: base_address + (contact_index * 0x5C)
+   * - Write 4KB blocks with 92-byte entries
+   * 
+   * @param contacts Array of contacts to write
+   * @throws {Error} If not connected
+   */
+  async writeContacts(contacts: Contact[]): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    this.onProgress?.(0, 'Preparing to write contacts...');
+    
+    // Query V-frame 0x0F to get base address
+    let contactsVFrame = this.radioInfo!.vframes.get(VFRAME.CONTACTS);
+    if (!contactsVFrame || contactsVFrame.length < 8) {
+      this.onProgress?.(1, 'Querying V-frame 0x0F (contact address range)...');
+      contactsVFrame = await this.connection!.queryVFrame(0x0F);
+    }
+    
+    if (!contactsVFrame || contactsVFrame.length < 8) {
+      throw new Error('Failed to get contact address range from V-frame 0x0F');
+    }
+    
+    const baseAddr = this.readUint32LE(contactsVFrame, 0);
+    const endAddr = this.readUint32LE(contactsVFrame, 4);
+    
+    if (baseAddr === 0 && endAddr === 0) {
+      throw new Error('Contacts range is invalid (0x00000000-0x00000000)');
+    }
+    
+    const ENTRY_SIZE = 0x5C; // 92 bytes per contact
+    const CONTACTS_PER_BLOCK = Math.floor(BLOCK_SIZE.STANDARD / ENTRY_SIZE);
+    const totalBlocks = Math.ceil(contacts.length / CONTACTS_PER_BLOCK);
+    
+    this.onProgress?.(5, `Writing ${contacts.length} contacts in ${totalBlocks} block(s)...`);
+    
+    for (let blockIdx = 0; blockIdx < totalBlocks; blockIdx++) {
+      const blockStartContact = blockIdx * CONTACTS_PER_BLOCK;
+      const blockStartAddr = baseAddr + (blockStartContact * ENTRY_SIZE);
+      const blockAddr = Math.floor(blockStartAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD; // Align to 4KB
+      
+      const progress = 5 + Math.floor((blockIdx / totalBlocks) * 90); // 5-95%
+      this.onProgress?.(progress, `Writing contact block ${blockIdx + 1}/${totalBlocks}...`);
+      
+      // Read existing block to preserve other data
+      // Note: Contacts are in a raw data region (no metadata blocks), so we just preserve whatever is at 0xFFF
+      let blockData: Uint8Array;
+      let existingMetadata = 0xFF; // Default if we can't read
+      try {
+        blockData = await this.connection!.readMemory(blockAddr, BLOCK_SIZE.STANDARD);
+        // Preserve existing metadata byte (raw data region, not structured metadata blocks)
+        existingMetadata = blockData[0xFFF];
+      } catch (error) {
+        // If read fails, create empty block filled with 0xFF
+        blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
+        blockData.fill(0xFF);
+      }
+      
+      // Calculate offset within block
+      const blockOffset = blockStartAddr - blockAddr;
+      
+      // Encode contacts into block
+      for (let i = 0; i < CONTACTS_PER_BLOCK; i++) {
+        const contactIndex = blockStartContact + i;
+        if (contactIndex >= contacts.length) break;
+        
+        const entryOffset = blockOffset + (i * ENTRY_SIZE);
+        if (entryOffset + ENTRY_SIZE > blockData.length) break;
+        
+        const contact = contacts[contactIndex];
+        const entryData = encodeContactEntry(contact);
+        blockData.set(entryData, entryOffset);
+      }
+      
+      // Preserve existing metadata byte (raw data region - no structured metadata blocks)
+      blockData[0xFFF] = existingMetadata;
+      
+      // Write block (writeMemory requires metadata parameter, but this is just raw data)
+      await this.connection!.writeMemory(blockAddr, blockData, existingMetadata);
+      
+      // Delay between writes
+      if (blockIdx < totalBlocks - 1) {
+        await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+      }
+    }
+    
+    this.onProgress?.(100, `Successfully wrote ${contacts.length} contacts`);
   }
 
   /**

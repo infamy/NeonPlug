@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { DM32UVProtocol } from '../protocol/dm32uv/protocol';
+import type { Contact } from '../models/Contact';
 import { useRadioStore } from '../store/radioStore';
 import { useChannelsStore } from '../store/channelsStore';
 import { useZonesStore } from '../store/zonesStore';
@@ -38,7 +39,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-    const { setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
+    const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
     const { setChannels, setRawChannelData } = useChannelsStore();
     const { setZones, setRawZoneData } = useZonesStore();
     const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -283,13 +284,114 @@ export function useRadioConnection() {
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
   ) => {
-    // TODO: Reimplement contacts reading from cached blocks
-    // Contacts need to be discovered and read from the cache array
-    // This is a stub until we reimplement the contact reading logic
-    onProgress?.(0, 'Contacts reading not yet implemented');
-    console.warn('readContacts is a stub - needs reimplementation');
-    throw new Error('Contacts reading is not yet implemented. It will be reimplemented to read from cached blocks.');
-  }, []);
+    setIsConnecting(true);
+    setError(null);
+    
+    let protocol: DM32UVProtocol | null = null;
+
+    try {
+      // Create protocol instance
+      protocol = new DM32UVProtocol();
+      
+      // Set up progress callback
+      protocol.onProgress = (progress, message) => {
+        onProgress?.(progress, message);
+      };
+      
+      // Connect to radio (reuse existing connection if available)
+      onProgress?.(0, 'Connecting to radio...');
+      await protocol.connect();
+      
+      // Get radio info if not already available
+      if (!radioInfo) {
+        onProgress?.(5, 'Reading radio information...');
+        const info = await protocol.getRadioInfo();
+        setRadioInfo(info);
+        setConnected(true);
+      }
+      
+      // Read contacts (this is slow - reads many 4KB blocks)
+      onProgress?.(10, 'Reading contacts from radio (this may take a while)...');
+      const contacts = await protocol.readContacts();
+      setContacts(contacts);
+      
+      // Store first contact block for debugging
+      if ((protocol as any).rawContactBlockData) {
+        setRawContactBlockData((protocol as any).rawContactBlockData, (protocol as any).rawContactBlockAddress || null);
+      }
+      
+      onProgress?.(100, `Successfully read ${contacts.length} contacts`);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMsg);
+      onProgress?.(0, `Error: ${errorMsg}`);
+      throw err;
+    } finally {
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (e) {
+          console.warn('Error disconnecting after reading contacts:', e);
+        }
+      }
+      setIsConnecting(false);
+    }
+  }, [setContacts, setRadioInfo, setConnected, radioInfo]);
+
+  const writeContacts = useCallback(async (
+    contacts: Contact[],
+    onProgress?: (progress: number, message: string) => void
+  ) => {
+    setIsConnecting(true);
+    setError(null);
+    
+    let protocol: DM32UVProtocol | null = null;
+
+    try {
+      // Create protocol instance
+      protocol = new DM32UVProtocol();
+      
+      // Set up progress callback
+      protocol.onProgress = (progress, message) => {
+        onProgress?.(progress, message);
+      };
+      
+      // Connect to radio
+      onProgress?.(0, 'Connecting to radio...');
+      await protocol.connect();
+      
+      // Get radio info if not already available
+      if (!radioInfo) {
+        onProgress?.(5, 'Reading radio information...');
+        const info = await protocol.getRadioInfo();
+        setRadioInfo(info);
+        setConnected(true);
+      }
+      
+      // Write contacts (this is slow - writes many 4KB blocks)
+      onProgress?.(10, `Writing ${contacts.length} contacts to radio (this may take a while)...`);
+      await protocol.writeContacts(contacts);
+      
+      // Update store with written contacts
+      setContacts(contacts);
+      
+      onProgress?.(100, `Successfully wrote ${contacts.length} contacts`);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMsg);
+      onProgress?.(0, `Error: ${errorMsg}`);
+      throw err;
+    } finally {
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (e) {
+          console.warn('Error disconnecting after writing contacts:', e);
+        }
+      }
+      setIsConnecting(false);
+    }
+  }, [setContacts, setRadioInfo, setConnected, radioInfo]);
 
   const writeChannelsToRadio = useCallback(async (
     channels: Channel[],
@@ -380,6 +482,7 @@ export function useRadioConnection() {
     error,
     readFromRadio,
     readContacts,
+    writeContacts,
     writeChannelsToRadio,
     readSteps: READ_STEPS,
     writeChannelsSteps: WRITE_CHANNELS_STEPS,

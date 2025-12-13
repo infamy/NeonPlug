@@ -63,9 +63,9 @@ const RegionSelector: React.FC<{
 };
 
 export const ContactsTab: React.FC = () => {
-  const { contacts, contactsLoaded, setContacts } = useContactsStore();
+  const { contacts, setContacts } = useContactsStore();
   const { radioInfo } = useRadioStore();
-  const { readContacts, isConnecting } = useRadioConnection();
+  const { readContacts, writeContacts, isConnecting } = useRadioConnection();
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
   const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
@@ -73,6 +73,8 @@ export const ContactsTab: React.FC = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [truncationWarning, setTruncationWarning] = useState<string | null>(null);
+  const [isReading, setIsReading] = useState(false);
+  const [isWriting, setIsWriting] = useState(false);
   
   const contactCapacity = radioInfo 
     ? getContactCapacityWithFallback(
@@ -82,16 +84,97 @@ export const ContactsTab: React.FC = () => {
     : 50000;
 
   const handleReadContacts = async () => {
+    setIsReading(true);
     setProgress(0);
     setProgressMessage('');
+    setDownloadError(null);
+    const startTime = Date.now();
+    
     try {
       await readContacts((progress, message) => {
         setProgress(progress);
-        setProgressMessage(message);
+        
+        // Calculate ETA
+        const elapsed = (Date.now() - startTime) / 1000; // seconds
+        let etaMessage = message;
+        
+        if (progress > 0 && progress < 100) {
+          const estimatedTotal = elapsed / (progress / 100);
+          const remaining = estimatedTotal - elapsed;
+          
+          if (remaining > 0) {
+            const minutes = Math.floor(remaining / 60);
+            const seconds = Math.floor(remaining % 60);
+            
+            if (minutes > 0) {
+              etaMessage = `${message} - ETA: ${minutes}m ${seconds}s`;
+            } else {
+              etaMessage = `${message} - ETA: ${seconds}s`;
+            }
+          }
+        }
+        
+        setProgressMessage(etaMessage);
       });
     } catch (err) {
       console.error('Error reading contacts:', err);
+      setDownloadError(err instanceof Error ? err.message : 'Failed to read contacts from radio');
     } finally {
+      setIsReading(false);
+      setTimeout(() => {
+        setProgress(0);
+        setProgressMessage('');
+      }, 2000);
+    }
+  };
+
+  const handleWriteContacts = async () => {
+    if (contacts.length === 0) {
+      setDownloadError('No contacts to write. Please load contacts first.');
+      return;
+    }
+
+    if (!confirm(`This will write ${contacts.length.toLocaleString()} contacts to the radio. This operation is VERY SLOW and may take several minutes. Continue?`)) {
+      return;
+    }
+
+    setIsWriting(true);
+    setProgress(0);
+    setProgressMessage('');
+    setDownloadError(null);
+    const startTime = Date.now();
+    
+    try {
+      await writeContacts(contacts, (progress, message) => {
+        setProgress(progress);
+        
+        // Calculate ETA
+        const elapsed = (Date.now() - startTime) / 1000; // seconds
+        let etaMessage = message;
+        
+        if (progress > 0 && progress < 100) {
+          const estimatedTotal = elapsed / (progress / 100);
+          const remaining = estimatedTotal - elapsed;
+          
+          if (remaining > 0) {
+            const minutes = Math.floor(remaining / 60);
+            const seconds = Math.floor(remaining % 60);
+            
+            if (minutes > 0) {
+              etaMessage = `${message} - ETA: ${minutes}m ${seconds}s`;
+            } else {
+              etaMessage = `${message} - ETA: ${seconds}s`;
+            }
+          }
+        }
+        
+        setProgressMessage(etaMessage);
+      });
+    } catch (err) {
+      console.error('Error writing contacts:', err);
+      setDownloadError(err instanceof Error ? err.message : 'Failed to write contacts to radio');
+    } finally {
+      setIsWriting(false);
       setTimeout(() => {
         setProgress(0);
         setProgressMessage('');
@@ -144,6 +227,10 @@ export const ContactsTab: React.FC = () => {
               name: (user.name || user.callsign || `DMR ${user.id}`).substring(0, 16), // Max 16 chars
               dmrId: user.id,
               callSign: user.callsign || undefined,
+              city: user.city || undefined,
+              province: user.state || undefined, // RadioID uses "state" but we call it "province"
+              country: user.country || undefined,
+              // callType, repeater, and remark are not available from RadioID API, so they remain undefined
             });
           }
         }
@@ -256,39 +343,50 @@ export const ContactsTab: React.FC = () => {
     return handlers;
   }, [toggleRegion]);
 
-  if (!contactsLoaded) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <h2 className="text-2xl font-bold text-neon-cyan mb-4">Contacts Not Loaded</h2>
-          <p className="text-cool-gray mb-4">
-            Contacts have not been read from the radio yet. Reading contacts can take a long time
-            as it requires discovering and reading contact blocks from a large memory range.
-          </p>
-          {radioInfo && (
-            <p className="text-cool-gray mb-6 text-sm">
-              Firmware: {radioInfo.firmware} - Capacity: {contactCapacity.toLocaleString()} contacts
-            </p>
-          )}
-          <button
-            onClick={handleReadContacts}
-            disabled={isConnecting}
-            className="px-6 py-3 bg-neon-cyan text-dark-charcoal font-semibold rounded-lg hover:bg-neon-cyan-bright transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isConnecting ? 'Reading Contacts...' : 'Read Contacts from Radio'}
-          </button>
-          {isConnecting && (
-            <div className="mt-4">
-              <ProgressBar progress={progress} message={progressMessage} />
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+  // Always show the main UI - contacts can be loaded from RadioID.net, CSV, or radio
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col pb-12">
+      {/* Radio Read/Write Section */}
+      <div className="mb-6 bg-deep-gray rounded-lg border border-yellow-600 border-opacity-30 p-4">
+        <h3 className="text-lg font-semibold text-yellow-400 mb-3">⚠️ Radio Read/Write (Very Slow)</h3>
+        <p className="text-cool-gray text-sm mb-4">
+          Reading and writing contacts directly from/to the radio is VERY SLOW (can take 10+ minutes for large databases).
+          Use the RadioID.net download or CSV import for faster loading.
+        </p>
+
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleReadContacts}
+            disabled={isReading || isWriting || isConnecting}
+            className="px-4 py-2 bg-yellow-600 text-dark-charcoal font-semibold rounded hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isReading ? 'Reading from Radio...' : 'Read Contacts from Radio'}
+          </button>
+          
+          <button
+            onClick={handleWriteContacts}
+            disabled={isReading || isWriting || isConnecting || contacts.length === 0}
+            className="px-4 py-2 bg-yellow-600 text-dark-charcoal font-semibold rounded hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={contacts.length === 0 ? 'No contacts to write' : ''}
+          >
+            {isWriting ? 'Writing to Radio...' : 'Write Contacts to Radio'}
+          </button>
+        </div>
+
+        {(isReading || isWriting) && progressMessage && (
+          <div className="mt-3">
+            <ProgressBar progress={progress} message={progressMessage} />
+          </div>
+        )}
+
+        {downloadError && (
+          <div className="mt-3 p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-red-400 text-sm">
+            {downloadError}
+          </div>
+        )}
+      </div>
+
       {/* RadioID.net Download Section */}
       <div className="mb-6 bg-deep-gray rounded-lg border border-neon-cyan border-opacity-30 p-4">
         <h3 className="text-lg font-semibold text-neon-cyan mb-3">Download from RadioID.net</h3>

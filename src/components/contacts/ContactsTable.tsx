@@ -18,7 +18,11 @@ export const ContactsTable: React.FC = () => {
     return contacts.filter(contact => 
       contact.name.toLowerCase().includes(query) ||
       contact.dmrId.toString().includes(query) ||
-      (contact.callSign && contact.callSign.toLowerCase().includes(query))
+      (contact.callSign && contact.callSign.toLowerCase().includes(query)) ||
+      (contact.city && contact.city.toLowerCase().includes(query)) ||
+      (contact.province && contact.province.toLowerCase().includes(query)) ||
+      (contact.country && contact.country.toLowerCase().includes(query)) ||
+      (contact.remark && contact.remark.toLowerCase().includes(query))
     );
   }, [contacts, searchQuery]);
 
@@ -53,7 +57,7 @@ export const ContactsTable: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, DMR ID, or call sign..."
+            placeholder="Search by name, DMR ID, call sign, city, province, country, or remark..."
             className="flex-1 px-3 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
           />
           {searchQuery && (
@@ -85,9 +89,14 @@ export const ContactsTable: React.FC = () => {
             <thead className="sticky top-0 bg-dark-charcoal z-10">
               <tr className="bg-dark-charcoal border-b border-neon-cyan">
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[150px]">Name</th>
-                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">DMR ID</th>
-                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Call Sign</th>
-                <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px]">Actions</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">TG/DMR ID</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Call Type</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Repeater</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">City</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Province</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Country</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[150px]">Remark</th>
+                <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[80px]">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -98,7 +107,12 @@ export const ContactsTable: React.FC = () => {
                 >
                   <td className="px-2 py-2 text-white">{contact.name}</td>
                   <td className="px-2 py-2 text-white text-center">{contact.dmrId}</td>
-                  <td className="px-2 py-2 text-white">{contact.callSign || '-'}</td>
+                  <td className="px-2 py-2 text-white">{contact.callType || '-'}</td>
+                  <td className="px-2 py-2 text-white">{contact.repeater || '-'}</td>
+                  <td className="px-2 py-2 text-white">{contact.city || '-'}</td>
+                  <td className="px-2 py-2 text-white">{contact.province || '-'}</td>
+                  <td className="px-2 py-2 text-white">{contact.country || '-'}</td>
+                  <td className="px-2 py-2 text-white">{contact.remark || '-'}</td>
                   <td className="px-2 py-2 text-center">
                     <button
                       onClick={() => deleteContact(contact.id)}
