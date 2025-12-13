@@ -3,7 +3,7 @@ import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
 import { searchRepeaters, getCurrentLocation, geocodeLocation, type Repeater, type LocationInput } from '../../services/repeaterFinder';
 import { generateChannelsAndZones, type GenerationOptions } from '../../services/locationChannelGenerator';
-import { getAvailableFixedChannelSets, getFRSChannels, getGMRSChannels, getMURSChannels, getHamCallingFrequencies } from '../../services/fixedChannels';
+import { getAvailableFixedChannelSets, getChannelsForSet } from '../../services/fixedChannels';
 import { mergeOverlappingChannels } from '../../services/channelMerger';
 import { generateAirportChannels } from '../../services/airportChannels';
 import { findNearbyAirports, getAirportFrequenciesWithTypes, type AirportData } from '../../data/airportsData';
@@ -226,23 +226,8 @@ export const SmartImportTab: React.FC = () => {
       const setNames: string[] = [];
       
       for (const setName of selectedFixedSets) {
-        let setChannels: Channel[] = [];
-        let tempStartNumber = 1;
-        
-        switch (setName) {
-          case 'FRS':
-            setChannels = getFRSChannels(tempStartNumber);
-            break;
-          case 'GMRS':
-            setChannels = getGMRSChannels(tempStartNumber);
-            break;
-          case 'MURS':
-            setChannels = getMURSChannels(tempStartNumber);
-            break;
-          case 'Ham Calling':
-            setChannels = getHamCallingFrequencies(tempStartNumber);
-            break;
-        }
+        // Use generic function to get channels for any set
+        const setChannels = getChannelsForSet(setName, 1);
         
         if (setChannels.length > 0) {
           channelSets.push(setChannels);
