@@ -24,7 +24,7 @@ export interface RadioSettings {
   callsignColor: number;            // Offset 0x34 (0-15) - Callsign Color
   standbyTextColor: number;         // Offset 0x35 (0-15) - Standby Text Color
   menuExitTime: number;             // Offset 0x36 (1-30)
-  autoBacklightDuration: number;    // TODO: Offset unknown - Auto Backlight Duration
+  autoBacklightDuration: number;    // Offset 0x31 (5-30 seconds, step 5: 5, 10, 15, 20, 25, 30)
   standbyCharacterColor1: number;   // Offset 0x37 (0-30)
   channelAColor: number;               // Offset 0x38 (0-15) - Channel A Color
   channelBColor: number;                // Offset 0x39 (0-15) - Channel B Color
