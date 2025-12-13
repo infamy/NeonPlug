@@ -1309,6 +1309,10 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   // Display and UI settings (0x30-0x3B)
   // Backlight Brightness: 0x30 (stored as 0-5, displayed as 1-6, so add +1)
   const backlightBrightness = Math.max(1, Math.min(6, (data[0x30] & 0xFF) + 1)); // 1-6 (stored 0-5, displayed 1-6)
+  // Auto Backlight Duration: 0x31 (5-30 seconds, step 5: 5, 10, 15, 20, 25, 30)
+  // Stored as value/5 - 1 (0-5), so stored 0=5s, 1=10s, 2=15s, 3=20s, 4=25s, 5=30s
+  const autoBacklightDurationRaw = Math.max(0, Math.min(5, data[0x31] & 0xFF)); // Clamp to valid range 0-5
+  const autoBacklightDuration = (autoBacklightDurationRaw + 1) * 5; // Convert back: (raw+1)*5, always 5-30
   const unknownDisplay = data[0x32];
   const displayFlags = data[0x33];
   // Data Display Format: bit 3 of 0x33 (0x08 mask)
@@ -1318,7 +1322,6 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const callsignColor = data[0x34] & 0x0F; // 0-15 - Callsign Color
   const standbyTextColor = data[0x35] & 0x0F; // 0-15 - Standby Text Color
   const menuExitTime = Math.max(1, Math.min(30, data[0x36] & 0xFF)); // 1-30
-  const autoBacklightDuration = 0; // TODO: Find correct offset for Auto Backlight Duration
   const standbyCharacterColor1 = Math.max(0, Math.min(30, data[0x37] & 0xFF)); // 0-30
   const channelAColor = data[0x38] & 0x0F; // 0-15 - Channel A Color
   const channelBColor = data[0x39] & 0x0F; // 0-15 - Channel B Color
@@ -1680,6 +1683,10 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   // Display and UI settings (0x30-0x3B)
   // Backlight Brightness: 0x30 (stored as 0-5, displayed as 1-6, so subtract 1)
   data[0x30] = Math.max(0, Math.min(5, settings.backlightBrightness - 1)) & 0xFF;
+  // Auto Backlight Duration at 0x31 (5-30 seconds, step 5)
+  // Stored as value/5 - 1 (0-5), so 5s=0, 10s=1, 15s=2, 20s=3, 25s=4, 30s=5
+  const autoBacklightDurationValue = Math.max(5, Math.min(30, settings.autoBacklightDuration));
+  data[0x31] = Math.max(0, Math.min(5, Math.floor(autoBacklightDurationValue / 5) - 1)) & 0xFF;
   data[0x32] = settings.unknownDisplay & 0xFF;
   // Display Flags: 0x33
   // Preserve existing bits, only modify bit 3 (0x08) based on dataDisplayFormat
@@ -1697,7 +1704,6 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   // Standby Text Color at 0x35
   data[0x35] = (data[0x35] & 0xF0) | (Math.max(0, Math.min(15, settings.standbyTextColor)) & 0x0F);
   data[0x36] = Math.max(1, Math.min(30, settings.menuExitTime)) & 0xFF;
-  // TODO: Auto Backlight Duration - offset unknown
   data[0x37] = Math.max(0, Math.min(30, settings.standbyCharacterColor1)) & 0xFF;
   // Preserve upper 4 bits, only modify lower 4 bits
   // Channel A Color at 0x38
