@@ -100,169 +100,267 @@ export class DM32UVProtocol implements RadioProtocol {
   async connect(): Promise<void> {
     // Per-request timeouts handle each message/ack cycle (2s each, resets on response)
     // No overall connection timeout - each request/response has its own 2s timeout
-    try {
-      // Clear any previous cached data before starting a new connection
-      this.clearCache();
-      
-      // Request serial port
-      if (!('serial' in navigator)) {
-        throw new Error('Web Serial API not supported. Please use Chrome/Edge.');
-      }
+    
+    // Request serial port
+    if (!('serial' in navigator)) {
+      throw new Error('Web Serial API not supported. Please use Chrome/Edge.');
+    }
 
-      // Check if we already have a port that we can reuse
-      let port: WebSerialPort | null = this.port;
-      let needToPromptForPort = true;
-      
+    let port: WebSerialPort | null = null;
+    let usedPreviouslyGrantedPort = false;
+
+    // Check if we should force port selection (port is null means force selection)
+    const forcePortSelection = this.port === null;
+
+    // First attempt: try to get a port (reuse existing, previously granted, or prompt)
+    try {
+      port = await this.getOrSelectPort(forcePortSelection);
       if (port) {
-        // Check if port is still usable (open and streams not locked)
-        const isAlreadyOpen = port.readable !== null && port.writable !== null;
-        const streamsLocked = port.readable?.locked || port.writable?.locked;
-        
-        if (isAlreadyOpen && !streamsLocked) {
-          // Port is open and streams are available - we can reuse it
-          console.log('Reusing existing port connection');
-          needToPromptForPort = false;
-        } else if (!isAlreadyOpen) {
-          // Port was closed, try to reopen it
-          console.log('Port was closed, attempting to reopen...');
-          try {
-            await withTimeout(
-              port.open({ baudRate: CONNECTION.BAUD_RATE }),
-              CONNECTION.TIMEOUT.PORT_OPEN,
-              'Port reopen'
-            );
-            console.log('Successfully reopened existing port');
-            needToPromptForPort = false;
-          } catch (e: unknown) {
-            const error = e as Error;
-            // If reopen failed, we'll need to get a new port
-            console.warn('Failed to reopen existing port, will prompt for new port:', error.message);
-            port = null;
-            this.port = null;
+        // Check if we used a previously granted port (not from prompt)
+        const grantedPorts = await (navigator as any).serial.getPorts();
+        if (grantedPorts && grantedPorts.length > 0 && grantedPorts.includes(port)) {
+          usedPreviouslyGrantedPort = true;
+        }
+      }
+    } catch (e: unknown) {
+      // If port selection was cancelled, rethrow
+      const error = e as Error;
+      if (error.message && error.message.includes('cancelled')) {
+        throw error;
+      }
+      // Otherwise, we'll retry with port selection below
+    }
+
+    // Try to connect with the port
+    try {
+      await this.connectWithPort(port!);
+    } catch (connectError: unknown) {
+      // If connection failed and we used a previously granted port, retry with port selection
+      if (usedPreviouslyGrantedPort && port) {
+        console.warn('Connection failed with previously granted port, will prompt for port selection:', connectError);
+        // Clear the failed port
+        this.port = null;
+        // Close the port if it's open
+        try {
+          if (port.readable || port.writable) {
+            await port.close();
           }
-        } else {
-          // Streams are locked, can't reuse
-          console.warn('Port streams are locked, will prompt for new port');
+        } catch (closeError) {
+          console.warn('Error closing failed port:', closeError);
+        }
+        // Retry with port selection
+        port = await this.getOrSelectPort(true); // Force port selection
+        await this.connectWithPort(port);
+      } else {
+        // Re-throw the original connection error
+        throw connectError;
+      }
+    }
+  }
+
+  async getOrSelectPort(forceSelection: boolean = false): Promise<WebSerialPort> {
+    // Clear any previous cached data before starting a new connection
+    this.clearCache();
+
+    // If forcing selection, skip all reuse logic and go straight to prompt
+    if (forceSelection) {
+      console.log('Forcing port selection (port will be prompted)');
+      this.port = null; // Ensure port is cleared
+      // Skip to prompt section below
+    }
+
+    // Check if we already have a port that we can reuse
+    let port: WebSerialPort | null = this.port;
+    let needToPromptForPort = forceSelection;
+    
+    if (!forceSelection && port) {
+      // Check if port is still usable (open and streams not locked)
+      const isAlreadyOpen = port.readable !== null && port.writable !== null;
+      const streamsLocked = port.readable?.locked || port.writable?.locked;
+      
+      if (isAlreadyOpen && !streamsLocked) {
+        // Port is open and streams are available - we can reuse it
+        console.log('Reusing existing port connection');
+        needToPromptForPort = false;
+      } else if (!isAlreadyOpen) {
+        // Port was closed, try to reopen it
+        console.log('Port was closed, attempting to reopen...');
+        try {
+          await withTimeout(
+            port.open({ baudRate: CONNECTION.BAUD_RATE }),
+            CONNECTION.TIMEOUT.PORT_OPEN,
+            'Port reopen'
+          );
+          console.log('Successfully reopened existing port');
+          needToPromptForPort = false;
+        } catch (e: unknown) {
+          const error = e as Error;
+          // If reopen failed, we'll need to get a new port
+          console.warn('Failed to reopen existing port, will try previously granted ports:', error.message);
           port = null;
           this.port = null;
         }
+      } else {
+        // Streams are locked, can't reuse
+        console.warn('Port streams are locked, will try previously granted ports');
+        port = null;
+        this.port = null;
+      }
+    }
+    
+    // If we don't have a usable port and not forcing selection, try to get previously granted ports
+    if (needToPromptForPort && !port && !forceSelection) {
+      try {
+        const grantedPorts = await (navigator as any).serial.getPorts();
+        if (grantedPorts && grantedPorts.length > 0) {
+          // Use the first previously granted port (most recent)
+          port = grantedPorts[0] as WebSerialPort;
+          this.port = port;
+          console.log(`Reusing previously granted port (${grantedPorts.length} available)`);
+          
+          // Check if port needs to be opened
+          const isAlreadyOpen = port.readable !== null && port.writable !== null;
+          const streamsLocked = port.readable?.locked || port.writable?.locked;
+          
+          if (isAlreadyOpen && !streamsLocked) {
+            // Port is open and ready to use
+            needToPromptForPort = false;
+          } else if (!isAlreadyOpen) {
+            // Port needs to be opened
+            try {
+              await withTimeout(
+                port.open({ baudRate: CONNECTION.BAUD_RATE }),
+                CONNECTION.TIMEOUT.PORT_OPEN,
+                'Port open'
+              );
+              needToPromptForPort = false;
+            } catch (e: unknown) {
+              const error = e as Error;
+              console.warn('Failed to open previously granted port, will prompt for new port:', error.message);
+              port = null;
+              this.port = null;
+            }
+          } else {
+            // Streams are locked, can't use this port
+            console.warn('Previously granted port has locked streams, will prompt for new port');
+            port = null;
+            this.port = null;
+          }
+        }
+      } catch (e: unknown) {
+        console.warn('Failed to get previously granted ports:', e);
+        // Continue to prompt for port
+      }
+    }
+    
+    // Prompt for port only if we don't have a usable one, or if forcing selection
+    if (forceSelection || (needToPromptForPort && !port)) {
+      // Port selection dialog - no timeout, user can take as long as needed
+      // Note: If user cancels, this will throw a DOMException, which we'll catch
+      try {
+        port = await (navigator as any).serial.requestPort() as WebSerialPort;
+        this.port = port; // Store the port for future use
+      } catch (e: unknown) {
+        const error = e as Error;
+        // If user cancelled the port selection dialog, provide a clear message
+        if (error.message && (error.message.includes('No port selected') || error.message.includes('cancelled') || error.name === 'NotFoundError')) {
+          throw new Error('Port selection cancelled. Please select a port to continue.');
+        }
+        // Otherwise, rethrow the original error
+        throw error;
       }
       
-      // Prompt for port only if we don't have a usable one
-      if (needToPromptForPort) {
-        // Port selection dialog - no timeout, user can take as long as needed
-        // Note: If user cancels, this will throw a DOMException, which we'll catch
+      // Check if port is already open
+      const isAlreadyOpen = port.readable !== null && port.writable !== null;
+      
+      if (isAlreadyOpen && port.readable && port.writable) {
+        // Check if streams are locked (from a previous connection)
+        if (port.readable.locked || port.writable.locked) {
+          throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
+        }
+        console.log('Port is already open, will use existing connection');
+      } else {
+        // Port is not open, so open it - wrap in timeout
         try {
-          port = await (navigator as any).serial.requestPort() as WebSerialPort;
-          this.port = port; // Store the port for future use
+          await withTimeout(
+            port.open({ baudRate: CONNECTION.BAUD_RATE }),
+            CONNECTION.TIMEOUT.PORT_OPEN,
+            'Port open'
+          );
         } catch (e: unknown) {
           const error = e as Error;
-          // If user cancelled the port selection dialog, provide a clear message
-          if (error.message && (error.message.includes('No port selected') || error.message.includes('cancelled') || error.name === 'NotFoundError')) {
-            throw new Error('Port selection cancelled. Please select a port to continue.');
-          }
-          // Otherwise, rethrow the original error
-          throw error;
-        }
-        
-        // Check if port is already open
-        const isAlreadyOpen = port.readable !== null && port.writable !== null;
-        
-        if (isAlreadyOpen && port.readable && port.writable) {
-          // Check if streams are locked (from a previous connection)
-          if (port.readable.locked || port.writable.locked) {
-            throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
-          }
-          console.log('Port is already open, will use existing connection');
-        } else {
-          // Port is not open, so open it - wrap in timeout
-          try {
-            await withTimeout(
-              port.open({ baudRate: CONNECTION.BAUD_RATE }),
-              CONNECTION.TIMEOUT.PORT_OPEN,
-              'Port open'
-            );
-          } catch (e: unknown) {
-            const error = e as Error;
-            // If it says already open (race condition), check for locked streams
-            if (error.message && error.message.includes('already open')) {
-              if ((port.readable && port.readable.locked) || (port.writable && port.writable.locked)) {
-                throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
-              }
-              console.log('Port opened by another process, will use existing connection');
-            } else if (error.message && error.message.includes('timed out')) {
-              throw new Error('Port open timed out. Please check the USB connection and try again.');
-            } else {
-              throw new Error(`Failed to open port: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          // If it says already open (race condition), check for locked streams
+          if (error.message && error.message.includes('already open')) {
+            if ((port.readable && port.readable.locked) || (port.writable && port.writable.locked)) {
+              throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
             }
+            console.log('Port opened by another process, will use existing connection');
+          } else if (error.message && error.message.includes('timed out')) {
+            throw new Error('Port open timed out. Please check the USB connection and try again.');
+          } else {
+            throw new Error(`Failed to open port: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
         }
       }
-      
-      if (!port) {
-        throw new Error('No port available');
-      }
-      
-      // Brief delay after opening port (as per spec)
-      await new Promise(resolve => setTimeout(resolve, CONNECTION.INIT_DELAY));
-
-      this.port = port;
-      this.connection = new DM32Connection();
-      // Each request/response in connect() has its own 2s timeout (per-request basis)
-      await this.connection.connect(port);
-
-      // Query V-frames to get radio info
-      // Each V-frame query has its own 2s timeout (per-request basis)
-      const vframes = await this.connection.queryVFrames();
-
-      // Parse V-frame data
-      const firmware = this.parseVFrameString(vframes, VFRAME.FIRMWARE, 'Unknown');
-      const buildDate = this.parseVFrameString(vframes, VFRAME.BUILD_DATE, '');
-      const dspVersion = this.parseVFrameString(vframes, VFRAME.DSP_VERSION, '');
-      const radioVersion = this.parseVFrameString(vframes, VFRAME.RADIO_VERSION, '');
-      const codeplugVersion = this.parseVFrameString(vframes, VFRAME.CODEPLUG_VERSION, '');
-
-      // Parse memory layout (V-frame 0x0A) - Main config block range
-      // Format: 8 bytes = start_addr (4 bytes LE) + end_addr (4 bytes LE)
-      const configRange = vframes.get(VFRAME.MEMORY_LAYOUT);
-      if (!configRange || configRange.length < 8) {
-        throw new Error('Failed to get memory layout');
-      }
-
-      const startAddr = this.readUint32LE(configRange, 0);
-      const endAddr = this.readUint32LE(configRange, 4);
-
-      // Note: Other memory ranges (zones, contacts) can be parsed from V-frames if needed
-      // const zonesRange = vframes.get(0x08);
-      // const contactsRange = vframes.get(0x0F);
-
-      this.radioInfo = {
-        model: 'DP570UV',
-        firmware,
-        buildDate,
-        dspVersion,
-        radioVersion,
-        codeplugVersion,
-        memoryLayout: {
-          configStart: startAddr,
-          configEnd: endAddr,
-        },
-        vframes, // Store all raw V-frame data
-      };
-
-      // Enter programming mode
-      // Each request/response in enterProgrammingMode() has its own 2s timeout
-      await this.connection.enterProgrammingMode();
-    } catch (error) {
-      // Try to disconnect, but don't fail if we can't (e.g., locked streams)
-      try {
-        await this.disconnect();
-      } catch (disconnectError) {
-        console.warn('Error during disconnect cleanup:', disconnectError);
-        // Don't throw - the original error is more important
-      }
-      throw error;
     }
+    
+    if (!port) {
+      throw new Error('No port available');
+    }
+
+    return port;
+  }
+
+  private async connectWithPort(port: WebSerialPort): Promise<void> {
+    // Brief delay after opening port (as per spec)
+    await new Promise(resolve => setTimeout(resolve, CONNECTION.INIT_DELAY));
+
+    this.port = port;
+    this.connection = new DM32Connection();
+    // Each request/response in connect() has its own 2s timeout (per-request basis)
+    await this.connection.connect(port);
+
+    // Query V-frames to get radio info
+    // Each V-frame query has its own 2s timeout (per-request basis)
+    const vframes = await this.connection.queryVFrames();
+
+    // Parse V-frame data
+    const firmware = this.parseVFrameString(vframes, VFRAME.FIRMWARE, 'Unknown');
+    const buildDate = this.parseVFrameString(vframes, VFRAME.BUILD_DATE, '');
+    const dspVersion = this.parseVFrameString(vframes, VFRAME.DSP_VERSION, '');
+    const radioVersion = this.parseVFrameString(vframes, VFRAME.RADIO_VERSION, '');
+    const codeplugVersion = this.parseVFrameString(vframes, VFRAME.CODEPLUG_VERSION, '');
+
+    // Parse memory layout (V-frame 0x0A) - Main config block range
+    // Format: 8 bytes = start_addr (4 bytes LE) + end_addr (4 bytes LE)
+    const configRange = vframes.get(VFRAME.MEMORY_LAYOUT);
+    if (!configRange || configRange.length < 8) {
+      throw new Error('Failed to get memory layout');
+    }
+    const startAddr = this.readUint32LE(configRange, 0);
+    const endAddr = this.readUint32LE(configRange, 4);
+
+    // Note: Other memory ranges (zones, contacts) can be parsed from V-frames if needed
+    // const zonesRange = vframes.get(0x08);
+    // const contactsRange = vframes.get(0x0F);
+
+    this.radioInfo = {
+      model: 'DP570UV',
+      firmware,
+      buildDate,
+      dspVersion,
+      radioVersion,
+      codeplugVersion,
+      memoryLayout: {
+        configStart: startAddr,
+        configEnd: endAddr,
+      },
+      vframes, // Store all raw V-frame data
+    };
+
+    // Enter programming mode
+    // Each request/response in enterProgrammingMode() has its own 2s timeout
+    await this.connection.enterProgrammingMode();
   }
 
   /**
@@ -1389,16 +1487,20 @@ export class DM32UVProtocol implements RadioProtocol {
     
     this.onProgress?.(5, `Reading contacts sequentially from 0x${baseAddr.toString(16).toUpperCase()}...`);
     
-    // Read contacts in 4KB blocks, stopping when we hit an empty entry
+    // Read contacts in 4KB blocks
+    // Contact 0 is at baseAddr (has count in first 4 bytes, then padding, then name at 0x10)
+    // Contact 1+ are at baseAddr + (contactIndex * ENTRY_SIZE)
     // Each 4KB block can hold: 4096 / 92 = ~44 contacts
     const CONTACTS_PER_BLOCK = Math.floor(BLOCK_SIZE.STANDARD / ENTRY_SIZE);
     let contactIndex = 0;
     let blockIdx = 0;
     let foundEmptyEntry = false;
+    let countFromHeader = 0;
     
     // Read blocks until we find an empty entry or hit the limit
     while (!foundEmptyEntry && contactIndex < maxContacts && contactIndex < maxContactsInRange) {
       // Calculate block address (4KB-aligned)
+      // Contact 0 is at baseAddr, Contact 1 is at baseAddr + 0x5C, etc.
       const blockStartContact = blockIdx * CONTACTS_PER_BLOCK;
       const blockStartAddr = baseAddr + (blockStartContact * ENTRY_SIZE);
       const blockAddr = Math.floor(blockStartAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD; // Align to 4KB
@@ -1436,15 +1538,10 @@ export class DM32UVProtocol implements RadioProtocol {
         const entryData = blockData.slice(entryOffset, entryOffset + ENTRY_SIZE);
         
         // Contact 0 is special: contains count in first 4 bytes, but also has a real contact
-        // We'll parse it as a contact, but also extract the count
+        // Extract the count from the header
         if (currentContactIndex === 0) {
-          const count = entryData[0] | (entryData[1] << 8) | (entryData[2] << 16) | (entryData[3] << 24);
-          console.log(`Contact 0 (header): count = ${count}`);
-          // Use this count to limit how many contacts we read
-          if (count > 0 && count < maxContacts) {
-            // Update maxContacts to use the actual count from the radio
-            // But we'll still respect the firmware limit
-          }
+          countFromHeader = entryData[0] | (entryData[1] << 8) | (entryData[2] << 16) | (entryData[3] << 24);
+          console.log(`Contact 0 (header): count = ${countFromHeader}`);
           // Continue to parse Contact 0 as a real contact
         }
         
@@ -1461,9 +1558,10 @@ export class DM32UVProtocol implements RadioProtocol {
           const hexPreview = Array.from(entryData.slice(0, 48))
             .map(b => b.toString(16).padStart(2, '0').toUpperCase())
             .join(' ');
+          const contactAddr = baseAddr + (currentContactIndex * ENTRY_SIZE);
           console.log(`Contact ${currentContactIndex} at offset ${entryOffset} (block offset ${blockOffset}, i=${i}):`);
           console.log(`  First 48 bytes: ${hexPreview}`);
-          console.log(`  Expected address: 0x${(baseAddr + (currentContactIndex * ENTRY_SIZE)).toString(16).toUpperCase()}`);
+          console.log(`  Expected address: 0x${contactAddr.toString(16).toUpperCase()}`);
           // All contacts have name at 0x10 from entry start
           console.log(`  Name area (0x10-0x1F): ${Array.from(entryData.slice(0x10, 0x20)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
           console.log(`  ID candidates: 0x18=${Array.from(entryData.slice(0x18, 0x1C)).map(b => b.toString(16).padStart(2, '0')).join(' ')}, 0x1C=${Array.from(entryData.slice(0x1C, 0x20)).map(b => b.toString(16).padStart(2, '0')).join(' ')}, 0x20=${Array.from(entryData.slice(0x20, 0x24)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
@@ -1538,15 +1636,58 @@ export class DM32UVProtocol implements RadioProtocol {
     const CONTACTS_PER_BLOCK = Math.floor(BLOCK_SIZE.STANDARD / ENTRY_SIZE);
     const totalBlocks = Math.ceil(contacts.length / CONTACTS_PER_BLOCK);
     
-    this.onProgress?.(5, `Writing ${contacts.length} contacts in ${totalBlocks} block(s)...`);
+    // Write contact count in first 16 bytes (4 bytes count + 12 bytes padding)
+    // Count is at baseAddr, contacts start at baseAddr + 0x10
+    this.onProgress?.(5, `Writing contact count header...`);
+    
+    // Read first block to write count header
+    const firstBlockAddr = Math.floor(baseAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD;
+    let firstBlockData: Uint8Array;
+    let existingMetadata = 0xFF;
+    try {
+      firstBlockData = await this.connection!.readMemory(firstBlockAddr, BLOCK_SIZE.STANDARD);
+      existingMetadata = firstBlockData[0xFFF];
+    } catch (error) {
+      firstBlockData = new Uint8Array(BLOCK_SIZE.STANDARD);
+      firstBlockData.fill(0xFF);
+    }
+    
+    // Write count (4 bytes, little-endian uint32) at offset 0 from baseAddr
+    const countOffset = baseAddr - firstBlockAddr;
+    firstBlockData[countOffset] = contacts.length & 0xFF;
+    firstBlockData[countOffset + 1] = (contacts.length >> 8) & 0xFF;
+    firstBlockData[countOffset + 2] = (contacts.length >> 16) & 0xFF;
+    firstBlockData[countOffset + 3] = (contacts.length >> 24) & 0xFF;
+    
+    // Write 12 bytes of 0x00 padding after count
+    for (let i = 0; i < 12; i++) {
+      firstBlockData[countOffset + 4 + i] = 0x00;
+    }
+    
+    // Preserve metadata byte
+    firstBlockData[0xFFF] = existingMetadata;
+    
+    // Write first block with count header
+    await this.connection!.writeMemory(firstBlockAddr, firstBlockData, existingMetadata);
+    
+    this.onProgress?.(10, `Writing ${contacts.length} contacts in ${totalBlocks} block(s)...`);
+    
+    // Contacts start at baseAddr + 0x10 (skip the 16-byte header)
+    // Each contact is written sequentially: baseAddr + 0x10 + (contactIndex * ENTRY_SIZE)
+    const contactsStartAddr = baseAddr + 0x10;
     
     for (let blockIdx = 0; blockIdx < totalBlocks; blockIdx++) {
       const blockStartContact = blockIdx * CONTACTS_PER_BLOCK;
-      const blockStartAddr = baseAddr + (blockStartContact * ENTRY_SIZE);
-      const blockAddr = Math.floor(blockStartAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD; // Align to 4KB
       
-      const progress = 5 + Math.floor((blockIdx / totalBlocks) * 90); // 5-95%
-      this.onProgress?.(progress, `Writing contact block ${blockIdx + 1}/${totalBlocks}...`);
+      // Calculate the absolute address where the first contact in this block should be written
+      // Contact 0 is at baseAddr + 0x10, Contact 1 is at baseAddr + 0x10 + 0x5C, etc.
+      const blockStartAddr = contactsStartAddr + (blockStartContact * ENTRY_SIZE);
+      
+      // Align to 4KB block boundary for reading/writing
+      const blockAddr = Math.floor(blockStartAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD;
+      
+      const progress = 10 + Math.floor((blockIdx / totalBlocks) * 85); // 10-95%
+      this.onProgress?.(progress, `Writing contact block ${blockIdx + 1}/${totalBlocks} (address 0x${blockStartAddr.toString(16).toUpperCase()})...`);
       
       // Read existing block to preserve other data
       // Note: Contacts are in a raw data region (no metadata blocks), so we just preserve whatever is at 0xFFF
@@ -1562,16 +1703,27 @@ export class DM32UVProtocol implements RadioProtocol {
         blockData.fill(0xFF);
       }
       
-      // Calculate offset within block
-      const blockOffset = blockStartAddr - blockAddr;
-      
-      // Encode contacts into block
+      // Encode contacts into block - write them sequentially in address space
+      // Each contact is at: baseAddr + 0x10 + (contactIndex * ENTRY_SIZE)
       for (let i = 0; i < CONTACTS_PER_BLOCK; i++) {
         const contactIndex = blockStartContact + i;
         if (contactIndex >= contacts.length) break;
         
-        const entryOffset = blockOffset + (i * ENTRY_SIZE);
+        // Calculate absolute address where this contact should be written
+        // Contact 0 is at baseAddr + 0x10, Contact 1 is at baseAddr + 0x10 + 0x5C, etc.
+        const contactAddr = contactsStartAddr + (contactIndex * ENTRY_SIZE);
+        
+        // Calculate offset within this 4KB block
+        const entryOffset = contactAddr - blockAddr;
+        
         if (entryOffset + ENTRY_SIZE > blockData.length) break;
+        if (entryOffset < 0) continue; // Shouldn't happen, but safety check
+        
+        // Skip if this entry would overlap with the header (only in first block)
+        // Header is at baseAddr (0-15), contacts start at baseAddr + 0x10 (16+)
+        if (blockAddr === firstBlockAddr && contactAddr < baseAddr + 0x10) {
+          continue;
+        }
         
         const contact = contacts[contactIndex];
         const entryData = encodeContactEntry(contact);
