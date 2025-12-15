@@ -792,10 +792,11 @@ export const SmartImportTab: React.FC = () => {
           )}
           <Button
             onClick={handleSearch}
-            disabled={isSearching}
-            className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright"
+            disabled={true}
+            className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright opacity-50 cursor-not-allowed"
+            title="Repeater search is not yet implemented"
           >
-            {isSearching ? 'Searching...' : 'Search Repeaters'}
+            Search Repeaters (Not Implemented)
           </Button>
         </div>
       </div>
