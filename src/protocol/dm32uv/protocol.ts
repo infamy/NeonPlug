@@ -2008,7 +2008,7 @@ export class DM32UVProtocol implements RadioProtocol {
   /**
    * Write Radio Settings to metadata 0x04 block
    */
-  async writeRadioSettings(settings: RadioSettings): Promise<void> {
+  async writeRadioSettings(settings: RadioSettings, changedFields?: string[]): Promise<void> {
     requireConnection(this.connection, this.radioInfo);
     
     // Discover blocks if not already discovered
@@ -2041,15 +2041,17 @@ export class DM32UVProtocol implements RadioProtocol {
     this.onProgress?.(0, 'Writing Radio Settings...');
 
     // Encode settings to 4KB block, preserving original data if available
-    const blockData = encodeRadioSettings(settings, this.rawRadioSettingsData || undefined);
+    // If changedFields is provided, only encode those specific fields
+    const blockData = encodeRadioSettings(settings, this.rawRadioSettingsData || undefined, changedFields);
 
     // Write the entire block (writeMemory takes address, data, and metadata)
     await this.connection!.writeMemory(radioSettingsBlock.address, blockData, METADATA.VFO_SETTINGS);
     this.rawRadioSettingsData = blockData;
 
-    // Write VFO A and VFO B to block 0x41 (as channels 4001 and 4002)
+    // Write VFO A and VFO B to block 0x41 (as channels 4001 and 4002) only if changed
     const block41 = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x41);
-    if (block41 && settings.vfoA && settings.vfoB) {
+    const vfoChanged = changedFields && (changedFields.includes('vfoA') || changedFields.includes('vfoB'));
+    if (block41 && settings.vfoA && settings.vfoB && vfoChanged) {
       // Read current block 0x41 data to preserve other data
       const block41Cached = this.getCachedBlockByAddress(block41.address);
       if (block41Cached) {

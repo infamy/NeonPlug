@@ -1504,8 +1504,9 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
  * Encode Radio Settings to metadata 0x04 block format
  * @param settings - The radio settings to encode
  * @param originalData - Optional original data block to preserve unknown bytes. If provided, starts with this data instead of 0xFF.
+ * @param changedFields - Optional array of field names to encode. If provided, only these fields will be encoded, preserving all others from originalData.
  */
-export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint8Array): Uint8Array {
+export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint8Array, changedFields?: string[]): Uint8Array {
   const data = new Uint8Array(0x1000); // 4KB block
   
   // Start with original data if provided, otherwise fill with 0xFF
@@ -1517,93 +1518,154 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
     data.fill(0xFF);
   }
 
+  // Helper to check if a field should be encoded
+  const shouldEncode = (fieldName: string): boolean => {
+    return !changedFields || changedFields.includes(fieldName);
+  };
+
   // Header fields (0x00-0x20)
   // Power On Interface: 0x00 (0-2)
-  data[0x00] = Math.max(0, Math.min(2, settings.powerOnInterface)) & 0xFF;
+  if (shouldEncode('powerOnInterface')) {
+    data[0x00] = Math.max(0, Math.min(2, settings.powerOnInterface)) & 0xFF;
+  }
   
   // Power On Display Line 1: 0x01-0x0D (14 bytes, null-terminated)
-  const powerOnLine1Bytes = new Uint8Array(14);
-  const powerOnLine1Encoded = new TextEncoder().encode(settings.powerOnDisplayLine1.substring(0, 13));
-  powerOnLine1Bytes.set(powerOnLine1Encoded, 0);
-  if (powerOnLine1Encoded.length < 14) {
-    powerOnLine1Bytes[powerOnLine1Encoded.length] = 0; // Null terminator
+  if (shouldEncode('powerOnDisplayLine1')) {
+    const powerOnLine1Bytes = new Uint8Array(14);
+    const powerOnLine1Encoded = new TextEncoder().encode(settings.powerOnDisplayLine1.substring(0, 13));
+    powerOnLine1Bytes.set(powerOnLine1Encoded, 0);
+    if (powerOnLine1Encoded.length < 14) {
+      powerOnLine1Bytes[powerOnLine1Encoded.length] = 0; // Null terminator
+    }
+    data.set(powerOnLine1Bytes, 0x01);
   }
-  data.set(powerOnLine1Bytes, 0x01);
   
   // Power On Display Line 2: 0x0F-0x1B (14 bytes, null-terminated)
-  const powerOnLine2Bytes = new Uint8Array(14);
-  const powerOnLine2Encoded = new TextEncoder().encode(settings.powerOnDisplayLine2.substring(0, 13));
-  powerOnLine2Bytes.set(powerOnLine2Encoded, 0);
-  if (powerOnLine2Encoded.length < 14) {
-    powerOnLine2Bytes[powerOnLine2Encoded.length] = 0; // Null terminator
+  if (shouldEncode('powerOnDisplayLine2')) {
+    const powerOnLine2Bytes = new Uint8Array(14);
+    const powerOnLine2Encoded = new TextEncoder().encode(settings.powerOnDisplayLine2.substring(0, 13));
+    powerOnLine2Bytes.set(powerOnLine2Encoded, 0);
+    if (powerOnLine2Encoded.length < 14) {
+      powerOnLine2Bytes[powerOnLine2Encoded.length] = 0; // Null terminator
+    }
+    data.set(powerOnLine2Bytes, 0x0F);
   }
-  data.set(powerOnLine2Bytes, 0x0F);
   
   // Allow Reset: 0x1D (bit 0)
-  data[0x1D] = settings.allowReset ? (data[0x1D] | 0x01) : (data[0x1D] & ~0x01);
+  if (shouldEncode('allowReset')) {
+    data[0x1D] = settings.allowReset ? (data[0x1D] | 0x01) : (data[0x1D] & ~0x01);
+  }
   
   // Auto Power Off: 0x1E (0-5: 0=Off, 1=30 Min, 2=60 Min, 3=120 Min, 4=240 Min, 5=480 Min)
-  data[0x1E] = Math.max(0, Math.min(5, settings.autoPowerOff)) & 0xFF;
+  if (shouldEncode('autoPowerOff')) {
+    data[0x1E] = Math.max(0, Math.min(5, settings.autoPowerOff)) & 0xFF;
+  }
   
   // Alert Tone Flags: 0x20 (8 bits, bit flags)
-  data[0x20] = settings.alertToneFlags & 0xFF;
+  if (shouldEncode('alertToneFlags')) {
+    data[0x20] = settings.alertToneFlags & 0xFF;
+  }
   
   // Alert Tone Flags (cont): 0x21 (8 bits, bit flags + 2-bit field)
-  data[0x21] = settings.alertToneFlagsCont & 0xFF;
+  if (shouldEncode('alertToneFlagsCont')) {
+    data[0x21] = settings.alertToneFlagsCont & 0xFF;
+  }
 
   // Display and UI settings (0x30-0x3B)
   // Backlight Brightness: 0x30 (stored as 0-5, displayed as 1-6, so subtract 1)
-  data[0x30] = Math.max(0, Math.min(5, settings.backlightBrightness - 1)) & 0xFF;
+  if (shouldEncode('backlightBrightness')) {
+    data[0x30] = Math.max(0, Math.min(5, settings.backlightBrightness - 1)) & 0xFF;
+  }
   // Auto Backlight Duration at 0x31 (5-30 seconds, step 5)
   // Stored as value/5 - 1 (0-5), so 5s=0, 10s=1, 15s=2, 20s=3, 25s=4, 30s=5
-  const autoBacklightDurationValue = Math.max(5, Math.min(30, settings.autoBacklightDuration));
-  data[0x31] = Math.max(0, Math.min(5, Math.floor(autoBacklightDurationValue / 5) - 1)) & 0xFF;
-  data[0x32] = settings.unknownDisplay & 0xFF;
+  if (shouldEncode('autoBacklightDuration')) {
+    const autoBacklightDurationValue = Math.max(5, Math.min(30, settings.autoBacklightDuration));
+    data[0x31] = Math.max(0, Math.min(5, Math.floor(autoBacklightDurationValue / 5) - 1)) & 0xFF;
+  }
+  if (shouldEncode('unknownDisplay')) {
+    data[0x32] = settings.unknownDisplay & 0xFF;
+  }
   // Display Flags: 0x33
   // Preserve existing bits, only modify bit 3 (0x08) based on dataDisplayFormat
-  const currentDisplayFlags = originalData ? originalData[0x33] : settings.displayFlags;
-  let displayFlagsValue = currentDisplayFlags & 0xFF;
-  if (settings.dataDisplayFormat === 1) {
-    displayFlagsValue |= 0x08; // Set bit 3
-  } else {
-    displayFlagsValue &= ~0x08; // Clear bit 3
+  if (shouldEncode('displayFlags') || shouldEncode('dataDisplayFormat')) {
+    const currentDisplayFlags = originalData ? originalData[0x33] : settings.displayFlags;
+    let displayFlagsValue = currentDisplayFlags & 0xFF;
+    if (settings.dataDisplayFormat === 1) {
+      displayFlagsValue |= 0x08; // Set bit 3
+    } else {
+      displayFlagsValue &= ~0x08; // Clear bit 3
+    }
+    data[0x33] = displayFlagsValue;
   }
-  data[0x33] = displayFlagsValue;
   // Color fields (preserve upper 4 bits, modify lower 4 bits)
-  const setColorField = (offset: number, value: number) => {
-    data[offset] = (data[offset] & 0xF0) | (Math.max(0, Math.min(15, value)) & 0x0F);
+  const setColorField = (offset: number, value: number, fieldName: string) => {
+    if (shouldEncode(fieldName)) {
+      data[offset] = (data[offset] & 0xF0) | (Math.max(0, Math.min(15, value)) & 0x0F);
+    }
   };
-  setColorField(0x34, settings.callsignColor);
-  setColorField(0x35, settings.standbyTextColor);
-  data[0x36] = Math.max(1, Math.min(30, settings.menuExitTime)) & 0xFF;
-  data[0x37] = Math.max(0, Math.min(30, settings.standbyCharacterColor1)) & 0xFF;
-  setColorField(0x38, settings.channelAColor);
-  setColorField(0x39, settings.channelBColor);
-  setColorField(0x3A, settings.zoneAColor);
-  setColorField(0x3B, settings.zoneBColor);
+  setColorField(0x34, settings.callsignColor, 'callsignColor');
+  setColorField(0x35, settings.standbyTextColor, 'standbyTextColor');
+  if (shouldEncode('menuExitTime')) {
+    data[0x36] = Math.max(1, Math.min(30, settings.menuExitTime)) & 0xFF;
+  }
+  if (shouldEncode('standbyCharacterColor1')) {
+    data[0x37] = Math.max(0, Math.min(30, settings.standbyCharacterColor1)) & 0xFF;
+  }
+  setColorField(0x38, settings.channelAColor, 'channelAColor');
+  setColorField(0x39, settings.channelBColor, 'channelBColor');
+  setColorField(0x3A, settings.zoneAColor, 'zoneAColor');
+  setColorField(0x3B, settings.zoneBColor, 'zoneBColor');
 
   // Work mode and GPS settings (0x40-0x45)
-  data[0x40] = settings.workModeFlags & 0xFF;
-  data[0x41] = Math.max(0, Math.min(25, settings.utcZone)) & 0xFF;
-  data[0x42] = Math.max(0, Math.min(255, settings.measurePeriodInterval - 5)) & 0xFF; // value+5, so subtract 5
-  data[0x45] = settings.unknownFlags & 0xFF;
+  if (shouldEncode('workModeFlags')) {
+    data[0x40] = settings.workModeFlags & 0xFF;
+  }
+  if (shouldEncode('utcZone')) {
+    data[0x41] = Math.max(0, Math.min(25, settings.utcZone)) & 0xFF;
+  }
+  if (shouldEncode('measurePeriodInterval')) {
+    data[0x42] = Math.max(0, Math.min(255, settings.measurePeriodInterval - 5)) & 0xFF; // value+5, so subtract 5
+  }
+  if (shouldEncode('unknownFlags')) {
+    data[0x45] = settings.unknownFlags & 0xFF;
+  }
 
   // GPS/APRS and Digital settings (0x60-0x67)
-  data[0x60] = settings.gpsAprsFlags & 0xFF;
-  data[0x61] = Math.max(0, Math.min(61, settings.callHoldTime)) & 0xFF;
-  data[0x62] = Math.max(0, Math.min(255, settings.activeWaitTime - 1)) & 0xFF; // value+1, so subtract 1
-  data[0x63] = Math.max(0, Math.min(255, settings.activeRetriesTime - 1)) & 0xFF; // value+1, so subtract 1
-  data[0x64] = settings.preCarrierTime & 0xFF;
-  data[0x65] = settings.digitalSettingsFlags & 0xFF;
-  data[0x66] = settings.remoteMonitorTime & 0xFF;
-  data[0x67] = settings.digitalSettingsCont & 0xFF;
+  if (shouldEncode('gpsAprsFlags')) {
+    data[0x60] = settings.gpsAprsFlags & 0xFF;
+  }
+  if (shouldEncode('callHoldTime')) {
+    data[0x61] = Math.max(0, Math.min(61, settings.callHoldTime)) & 0xFF;
+  }
+  if (shouldEncode('activeWaitTime')) {
+    data[0x62] = Math.max(0, Math.min(255, settings.activeWaitTime - 1)) & 0xFF; // value+1, so subtract 1
+  }
+  if (shouldEncode('activeRetriesTime')) {
+    data[0x63] = Math.max(0, Math.min(255, settings.activeRetriesTime - 1)) & 0xFF; // value+1, so subtract 1
+  }
+  if (shouldEncode('preCarrierTime')) {
+    data[0x64] = settings.preCarrierTime & 0xFF;
+  }
+  if (shouldEncode('digitalSettingsFlags')) {
+    data[0x65] = settings.digitalSettingsFlags & 0xFF;
+  }
+  if (shouldEncode('remoteMonitorTime')) {
+    data[0x66] = settings.remoteMonitorTime & 0xFF;
+  }
+  if (shouldEncode('digitalSettingsCont')) {
+    data[0x67] = settings.digitalSettingsCont & 0xFF;
+  }
 
   // VFO/Embedded settings (0x80-0x81)
-  data[0x80] = settings.vfoEmbeddedFlags & 0xFF;
-  data[0x81] = settings.txDwellTime & 0xFF;
+  if (shouldEncode('vfoEmbeddedFlags')) {
+    data[0x80] = settings.vfoEmbeddedFlags & 0xFF;
+  }
+  if (shouldEncode('txDwellTime')) {
+    data[0x81] = settings.txDwellTime & 0xFF;
+  }
 
   // Language/Other settings (0xA0-0xA7)
-  if (settings.languageOtherSettings && settings.languageOtherSettings.length >= 8) {
+  if (shouldEncode('languageOtherSettings') && settings.languageOtherSettings && settings.languageOtherSettings.length >= 8) {
     data.set(settings.languageOtherSettings.slice(0, 8), 0xA0);
   }
 
@@ -1611,28 +1673,56 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   // Lock Key: bit 0 of 0x85 (0=Manual, 1=Auto)
   // Knob Lock: bit 1 of 0x85 (0=Off, 1=On)
   // Side Key Lock: bit 2 of 0x85 (0=Off, 1=On)
-  let lockKeyByte = data[0x85] & 0xFF;
-  lockKeyByte = settings.lockKey === 'Auto' ? (lockKeyByte | 0x01) : (lockKeyByte & ~0x01);  // Bit 0
-  lockKeyByte = settings.knobLock ? (lockKeyByte | 0x02) : (lockKeyByte & ~0x02);  // Bit 1
-  lockKeyByte = settings.sideKeyLock ? (lockKeyByte | 0x04) : (lockKeyByte & ~0x04);  // Bit 2
-  data[0x85] = lockKeyByte & 0xFF;
-  data[0x86] = Math.max(5, Math.min(60, settings.autoKeypadLockDelayTime)) & 0xFF;  // Auto Keypad Lock Delay Time (5-60 seconds)
-  data[0x93] = Math.max(0, Math.min(4, settings.longPressTime - 1)) & 0xFF;  // Long Press Time (stored as 0-4, displayed as 1-5, 1=shortest, 5=longest)
+  if (shouldEncode('lockKey') || shouldEncode('knobLock') || shouldEncode('sideKeyLock')) {
+    let lockKeyByte = data[0x85] & 0xFF;
+    if (shouldEncode('lockKey')) {
+      lockKeyByte = settings.lockKey === 'Auto' ? (lockKeyByte | 0x01) : (lockKeyByte & ~0x01);  // Bit 0
+    }
+    if (shouldEncode('knobLock')) {
+      lockKeyByte = settings.knobLock ? (lockKeyByte | 0x02) : (lockKeyByte & ~0x02);  // Bit 1
+    }
+    if (shouldEncode('sideKeyLock')) {
+      lockKeyByte = settings.sideKeyLock ? (lockKeyByte | 0x04) : (lockKeyByte & ~0x04);  // Bit 2
+    }
+    data[0x85] = lockKeyByte & 0xFF;
+  }
+  if (shouldEncode('autoKeypadLockDelayTime')) {
+    data[0x86] = Math.max(5, Math.min(60, settings.autoKeypadLockDelayTime)) & 0xFF;  // Auto Keypad Lock Delay Time (5-60 seconds)
+  }
+  if (shouldEncode('longPressTime')) {
+    data[0x93] = Math.max(0, Math.min(4, settings.longPressTime - 1)) & 0xFF;  // Long Press Time (stored as 0-4, displayed as 1-5, 1=shortest, 5=longest)
+  }
 
   // Button Functions (0x87-0x90)
   const clamp42 = (val: number) => Math.max(0, Math.min(42, val)) & 0xFF;
-  data[0x87] = clamp42(settings.sk1Short);
-  data[0x88] = clamp42(settings.sk1Long);
-  data[0x89] = clamp42(settings.sk2Short);
-  data[0x8A] = clamp42(settings.sk2Long);
-  data[0x8D] = clamp42(settings.p1Short);
-  data[0x8E] = clamp42(settings.p1Long);
-  data[0x8F] = clamp42(settings.p2Short);
-  data[0x90] = clamp42(settings.p2Long);
+  if (shouldEncode('sk1Short')) {
+    data[0x87] = clamp42(settings.sk1Short);
+  }
+  if (shouldEncode('sk1Long')) {
+    data[0x88] = clamp42(settings.sk1Long);
+  }
+  if (shouldEncode('sk2Short')) {
+    data[0x89] = clamp42(settings.sk2Short);
+  }
+  if (shouldEncode('sk2Long')) {
+    data[0x8A] = clamp42(settings.sk2Long);
+  }
+  if (shouldEncode('p1Short')) {
+    data[0x8D] = clamp42(settings.p1Short);
+  }
+  if (shouldEncode('p1Long')) {
+    data[0x8E] = clamp42(settings.p1Long);
+  }
+  if (shouldEncode('p2Short')) {
+    data[0x8F] = clamp42(settings.p2Short);
+  }
+  if (shouldEncode('p2Long')) {
+    data[0x90] = clamp42(settings.p2Long);
+  }
 
   // One Key Operation
   // Analog Call (4 entries, 2 bytes each, starting at 0x120)
-  if (settings.analogCall && settings.analogCall.length >= 4) {
+  if (shouldEncode('analogCall') && settings.analogCall && settings.analogCall.length >= 4) {
     for (let i = 0; i < 4; i++) {
       const offset = 0x120 + i * 2;
       const entry = settings.analogCall[i];
@@ -1644,7 +1734,7 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   }
 
   // One Touch Call (5 entries, 5 bytes each, starting at 0x200)
-  if (settings.oneTouchCall && settings.oneTouchCall.length >= 5) {
+  if (shouldEncode('oneTouchCall') && settings.oneTouchCall && settings.oneTouchCall.length >= 5) {
     for (let i = 0; i < 5; i++) {
       const baseOffset = 0x200 + i * 5;
       const entry = settings.oneTouchCall[i];
@@ -1660,7 +1750,7 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
 
   // Fun+ (10 entries, 7 bytes each, starting at 0x230)
   // Fun+Number is determined by entry index (0-9), not stored in data
-  if (settings.funPlus && settings.funPlus.length >= 10) {
+  if (shouldEncode('funPlus') && settings.funPlus && settings.funPlus.length >= 10) {
     for (let i = 0; i < 10; i++) {
       const baseOffset = 0x230 + i * 7;  // Base offset 0x230, 7 bytes per entry
       const entry = settings.funPlus[i];
@@ -1677,57 +1767,91 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   }
 
   // Legacy fields (0x301+)
-  data[0x301] = settings.unknownRadioSetting;
-  data[0x302] = settings.radioEnabled ? 0x01 : 0x00;
+  if (shouldEncode('unknownRadioSetting')) {
+    data[0x301] = settings.unknownRadioSetting;
+  }
+  if (shouldEncode('radioEnabled')) {
+    data[0x302] = settings.radioEnabled ? 0x01 : 0x00;
+  }
 
   // Latitude (0x306, 14 bytes, null-terminated)
-  const latBytes = new Uint8Array(14);
-  const latEncoded = new TextEncoder().encode(settings.latitude.substring(0, 13));
-  latBytes.set(latEncoded, 0);
-  latBytes[latEncoded.length] = 0;
-  data.set(latBytes, 0x306);
+  if (shouldEncode('latitude')) {
+    const latBytes = new Uint8Array(14);
+    const latEncoded = new TextEncoder().encode(settings.latitude.substring(0, 13));
+    latBytes.set(latEncoded, 0);
+    latBytes[latEncoded.length] = 0;
+    data.set(latBytes, 0x306);
+  }
 
   // Latitude direction (0x30F)
-  data[0x30F] = settings.latitudeDirection === 'N' ? 0x4E : 0x53;
+  if (shouldEncode('latitudeDirection')) {
+    data[0x30F] = settings.latitudeDirection === 'N' ? 0x4E : 0x53;
+  }
 
   // Longitude (0x310, 14 bytes, null-terminated)
-  const lonBytes = new Uint8Array(14);
-  const lonEncoded = new TextEncoder().encode(settings.longitude.substring(0, 13));
-  lonBytes.set(lonEncoded, 0);
-  lonBytes[lonEncoded.length] = 0;
-  data.set(lonBytes, 0x310);
+  if (shouldEncode('longitude')) {
+    const lonBytes = new Uint8Array(14);
+    const lonEncoded = new TextEncoder().encode(settings.longitude.substring(0, 13));
+    lonBytes.set(lonEncoded, 0);
+    lonBytes[lonEncoded.length] = 0;
+    data.set(lonBytes, 0x310);
+  }
 
   // Longitude direction (0x319)
-  data[0x319] = settings.longitudeDirection === 'E' ? 0x45 : 0x57;
+  if (shouldEncode('longitudeDirection')) {
+    data[0x319] = settings.longitudeDirection === 'E' ? 0x45 : 0x57;
+  }
 
-  // Channel settings (little-endian uint16)
-  data[0x320] = settings.currentChannelA & 0xFF;
-  data[0x321] = (settings.currentChannelA >> 8) & 0xFF;
-  data[0x322] = settings.currentChannelB & 0xFF;
-  data[0x323] = (settings.currentChannelB >> 8) & 0xFF;
-  data[0x324] = settings.channelSetting3 & 0xFF;
-  data[0x325] = (settings.channelSetting3 >> 8) & 0xFF;
-  data[0x326] = settings.channelSetting4 & 0xFF;
-  data[0x327] = (settings.channelSetting4 >> 8) & 0xFF;
-  data[0x328] = settings.channelSetting5 & 0xFF;
-  data[0x329] = (settings.channelSetting5 >> 8) & 0xFF;
-  data[0x32A] = settings.channelSetting6 & 0xFF;
-  data[0x32B] = (settings.channelSetting6 >> 8) & 0xFF;
-  data[0x32C] = settings.channelSetting7 & 0xFF;
-  data[0x32D] = (settings.channelSetting7 >> 8) & 0xFF;
-  data[0x32E] = settings.channelSetting8 & 0xFF;
-  data[0x32F] = (settings.channelSetting8 >> 8) & 0xFF;
+  // Channel settings (little-endian uint16) - these are runtime state, usually don't need to write
+  if (shouldEncode('currentChannelA')) {
+    data[0x320] = settings.currentChannelA & 0xFF;
+    data[0x321] = (settings.currentChannelA >> 8) & 0xFF;
+  }
+  if (shouldEncode('currentChannelB')) {
+    data[0x322] = settings.currentChannelB & 0xFF;
+    data[0x323] = (settings.currentChannelB >> 8) & 0xFF;
+  }
+  if (shouldEncode('channelSetting3')) {
+    data[0x324] = settings.channelSetting3 & 0xFF;
+    data[0x325] = (settings.channelSetting3 >> 8) & 0xFF;
+  }
+  if (shouldEncode('channelSetting4')) {
+    data[0x326] = settings.channelSetting4 & 0xFF;
+    data[0x327] = (settings.channelSetting4 >> 8) & 0xFF;
+  }
+  if (shouldEncode('channelSetting5')) {
+    data[0x328] = settings.channelSetting5 & 0xFF;
+    data[0x329] = (settings.channelSetting5 >> 8) & 0xFF;
+  }
+  if (shouldEncode('channelSetting6')) {
+    data[0x32A] = settings.channelSetting6 & 0xFF;
+    data[0x32B] = (settings.channelSetting6 >> 8) & 0xFF;
+  }
+  if (shouldEncode('channelSetting7')) {
+    data[0x32C] = settings.channelSetting7 & 0xFF;
+    data[0x32D] = (settings.channelSetting7 >> 8) & 0xFF;
+  }
+  if (shouldEncode('channelSetting8')) {
+    data[0x32E] = settings.channelSetting8 & 0xFF;
+    data[0x32F] = (settings.channelSetting8 >> 8) & 0xFF;
+  }
 
-  // Zone settings
-  data[0x330] = settings.currentZone;
-  data[0x331] = settings.zoneEnabled ? 0x01 : 0x00;
+  // Zone settings - runtime state, usually don't need to write
+  if (shouldEncode('currentZone')) {
+    data[0x330] = settings.currentZone;
+  }
+  if (shouldEncode('zoneEnabled')) {
+    data[0x331] = settings.zoneEnabled ? 0x01 : 0x00;
+  }
 
   // Unknown value (0x332, 3 bytes)
-  const unknownValueParts = settings.unknownValue.split(' ').filter(s => s.length > 0);
-  for (let i = 0; i < Math.min(3, unknownValueParts.length); i++) {
-    const byte = parseInt(unknownValueParts[i], 16);
-    if (!isNaN(byte)) {
-      data[0x332 + i] = byte;
+  if (shouldEncode('unknownValue')) {
+    const unknownValueParts = settings.unknownValue.split(' ').filter(s => s.length > 0);
+    for (let i = 0; i < Math.min(3, unknownValueParts.length); i++) {
+      const byte = parseInt(unknownValueParts[i], 16);
+      if (!isNaN(byte)) {
+        data[0x332 + i] = byte;
+      }
     }
   }
 
@@ -1753,15 +1877,18 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
     }
   };
 
-  // Initialize menu bytes to 0x00 (all bits clear)
-  let menuByte500 = 0x00;
-  let menuByte501 = 0x00;
-  let menuByte502 = 0x00;
-  let menuByte503 = 0x00;
-  let menuByte504 = 0x00;
-  let menuByte505 = 0x00;
-  let menuByte506 = 0x00;
-  let menuByte507 = 0x00;
+  // Menu Enable Flags - only encode if menuEnableFlags changed
+  const shouldEncodeMenuFlags = shouldEncode('menuEnableFlags');
+  
+  // Initialize menu bytes from original data if not encoding, otherwise start fresh
+  let menuByte500 = shouldEncodeMenuFlags ? 0x00 : (originalData ? originalData[0x500] : 0x00);
+  let menuByte501 = shouldEncodeMenuFlags ? 0x00 : (originalData ? originalData[0x501] : 0x00);
+  let menuByte502 = shouldEncodeMenuFlags ? 0x00 : (originalData ? originalData[0x502] : 0x00);
+  let menuByte503 = shouldEncodeMenuFlags ? 0x00 : (originalData ? originalData[0x503] : 0x00);
+  let menuByte504 = shouldEncodeMenuFlags ? 0x00 : (originalData ? originalData[0x504] : 0x00);
+  let menuByte505 = shouldEncodeMenuFlags ? 0x00 : (originalData ? originalData[0x505] : 0x00);
+  let menuByte506 = shouldEncodeMenuFlags ? 0x00 : (originalData ? originalData[0x506] : 0x00);
+  let menuByte507 = shouldEncodeMenuFlags ? 0x00 : (originalData ? originalData[0x507] : 0x00);
 
   const flags = settings.menuEnableFlags;
 
@@ -1828,15 +1955,17 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   menuByte507 = writeMenuBit(menuByte507, 3, flags.addChannel);     // Bit 3
   menuByte507 = writeMenuBit(menuByte507, 4, flags.channelName);    // Bit 4
 
-  // Write menu bytes
-  data[0x500] = menuByte500;
-  data[0x501] = menuByte501;
-  data[0x502] = menuByte502;
-  data[0x503] = menuByte503;
-  data[0x504] = menuByte504;
-  data[0x505] = menuByte505;
-  data[0x506] = menuByte506;
-  data[0x507] = menuByte507;
+  // Write menu bytes only if menuEnableFlags changed
+  if (shouldEncodeMenuFlags) {
+    data[0x500] = menuByte500;
+    data[0x501] = menuByte501;
+    data[0x502] = menuByte502;
+    data[0x503] = menuByte503;
+    data[0x504] = menuByte504;
+    data[0x505] = menuByte505;
+    data[0x506] = menuByte506;
+    data[0x507] = menuByte507;
+  }
 
   // Set metadata byte at offset 0xFFF
   data[0xFFF] = 0x04;

@@ -3,6 +3,7 @@ import { useChannelsStore } from '../../store/channelsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import type { Channel } from '../../models/Channel';
 import { ChannelEditModal } from './ChannelEditModal';
+import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
 
 interface ChannelsTableProps {
   channels?: Channel[];
@@ -225,18 +226,63 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                       <option value="CTCSS">CTCSS</option>
                       <option value="DCS">DCS</option>
                     </select>
-                    {channel.rxCtcssDcs.type !== 'None' && (
-                      <input
-                        type="number"
-                        step={channel.rxCtcssDcs.type === 'CTCSS' ? '0.1' : '1'}
+                    {channel.rxCtcssDcs.type === 'CTCSS' && (
+                      <select
                         value={channel.rxCtcssDcs.value || ''}
                         onChange={(e) => handleCellChange(channel.number, 'rxCtcssDcs', {
                           ...channel.rxCtcssDcs,
-                          value: parseFloat(e.target.value) || 0,
+                          value: e.target.value ? parseFloat(e.target.value) : undefined,
                         })}
-                        className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
-                        placeholder={channel.rxCtcssDcs.type === 'CTCSS' ? 'Hz' : 'Code'}
-                      />
+                        className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+                      >
+                        <option value="">Select...</option>
+                        {channel.rxCtcssDcs.value && !CTCSS_FREQUENCIES.includes(channel.rxCtcssDcs.value) && (
+                          <option value={channel.rxCtcssDcs.value}>
+                            {formatCTCSSFrequency(channel.rxCtcssDcs.value)} (Custom)
+                          </option>
+                        )}
+                        {CTCSS_FREQUENCIES.map((freq) => (
+                          <option key={freq} value={freq}>
+                            {formatCTCSSFrequency(freq)}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {channel.rxCtcssDcs.type === 'DCS' && (
+                      <div className="flex gap-1">
+                        <select
+                          value={channel.rxCtcssDcs.value || ''}
+                          onChange={(e) => handleCellChange(channel.number, 'rxCtcssDcs', {
+                            ...channel.rxCtcssDcs,
+                            value: e.target.value ? parseInt(e.target.value) : undefined,
+                          })}
+                          className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                        >
+                          <option value="">Select...</option>
+                          {channel.rxCtcssDcs.value && !DCS_CODES.includes(channel.rxCtcssDcs.value) && (
+                            <option value={channel.rxCtcssDcs.value}>
+                              {formatDCSCode(channel.rxCtcssDcs.value, channel.rxCtcssDcs.polarity)} (Custom)
+                            </option>
+                          )}
+                          {DCS_CODES.map((code) => (
+                            <option key={code} value={code}>
+                              {formatDCSCode(code)}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={channel.rxCtcssDcs.polarity || 'N'}
+                          onChange={(e) => handleCellChange(channel.number, 'rxCtcssDcs', {
+                            ...channel.rxCtcssDcs,
+                            polarity: e.target.value as 'N' | 'P',
+                          })}
+                          className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                          disabled={!channel.rxCtcssDcs.value}
+                        >
+                          <option value="N">N</option>
+                          <option value="P">P</option>
+                        </select>
+                      </div>
                     )}
                   </div>
                 </td>
@@ -258,18 +304,63 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                       <option value="CTCSS">CTCSS</option>
                       <option value="DCS">DCS</option>
                     </select>
-                    {channel.txCtcssDcs.type !== 'None' && (
-                      <input
-                        type="number"
-                        step={channel.txCtcssDcs.type === 'CTCSS' ? '0.1' : '1'}
+                    {channel.txCtcssDcs.type === 'CTCSS' && (
+                      <select
                         value={channel.txCtcssDcs.value || ''}
                         onChange={(e) => handleCellChange(channel.number, 'txCtcssDcs', {
                           ...channel.txCtcssDcs,
-                          value: parseFloat(e.target.value) || 0,
+                          value: e.target.value ? parseFloat(e.target.value) : undefined,
                         })}
-                        className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
-                        placeholder={channel.txCtcssDcs.type === 'CTCSS' ? 'Hz' : 'Code'}
-                      />
+                        className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+                      >
+                        <option value="">Select...</option>
+                        {channel.txCtcssDcs.value && !CTCSS_FREQUENCIES.includes(channel.txCtcssDcs.value) && (
+                          <option value={channel.txCtcssDcs.value}>
+                            {formatCTCSSFrequency(channel.txCtcssDcs.value)} (Custom)
+                          </option>
+                        )}
+                        {CTCSS_FREQUENCIES.map((freq) => (
+                          <option key={freq} value={freq}>
+                            {formatCTCSSFrequency(freq)}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {channel.txCtcssDcs.type === 'DCS' && (
+                      <div className="flex gap-1">
+                        <select
+                          value={channel.txCtcssDcs.value || ''}
+                          onChange={(e) => handleCellChange(channel.number, 'txCtcssDcs', {
+                            ...channel.txCtcssDcs,
+                            value: e.target.value ? parseInt(e.target.value) : undefined,
+                          })}
+                          className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                        >
+                          <option value="">Select...</option>
+                          {channel.txCtcssDcs.value && !DCS_CODES.includes(channel.txCtcssDcs.value) && (
+                            <option value={channel.txCtcssDcs.value}>
+                              {formatDCSCode(channel.txCtcssDcs.value, channel.txCtcssDcs.polarity)} (Custom)
+                            </option>
+                          )}
+                          {DCS_CODES.map((code) => (
+                            <option key={code} value={code}>
+                              {formatDCSCode(code)}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={channel.txCtcssDcs.polarity || 'N'}
+                          onChange={(e) => handleCellChange(channel.number, 'txCtcssDcs', {
+                            ...channel.txCtcssDcs,
+                            polarity: e.target.value as 'N' | 'P',
+                          })}
+                          className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                          disabled={!channel.txCtcssDcs.value}
+                        >
+                          <option value="N">N</option>
+                          <option value="P">P</option>
+                        </select>
+                      </div>
                     )}
                   </div>
                 </td>

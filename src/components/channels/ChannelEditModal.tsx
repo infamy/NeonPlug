@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal } from '../ui/Modal';
 import type { Channel } from '../../models/Channel';
+import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
 
 interface ChannelEditModalProps {
   isOpen: boolean;
@@ -169,18 +170,63 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <option value="CTCSS">CTCSS</option>
                   <option value="DCS">DCS</option>
                 </select>
-                {editedChannel.rxCtcssDcs.type !== 'None' && (
-                  <input
-                    type="number"
-                    step={editedChannel.rxCtcssDcs.type === 'CTCSS' ? '0.1' : '1'}
+                {editedChannel.rxCtcssDcs.type === 'CTCSS' && (
+                  <select
                     value={editedChannel.rxCtcssDcs.value || ''}
                     onChange={(e) => handleChange('rxCtcssDcs', {
                       ...editedChannel.rxCtcssDcs,
-                      value: parseFloat(e.target.value) || 0,
+                      value: e.target.value ? parseFloat(e.target.value) : undefined,
                     })}
-                    className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
-                    placeholder={editedChannel.rxCtcssDcs.type === 'CTCSS' ? 'Hz (e.g., 88.5)' : 'Code (e.g., 023)'}
-                  />
+                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                  >
+                    <option value="">Select CTCSS...</option>
+                    {editedChannel.rxCtcssDcs.value && !CTCSS_FREQUENCIES.includes(editedChannel.rxCtcssDcs.value) && (
+                      <option value={editedChannel.rxCtcssDcs.value}>
+                        {formatCTCSSFrequency(editedChannel.rxCtcssDcs.value)} (Custom)
+                      </option>
+                    )}
+                    {CTCSS_FREQUENCIES.map((freq) => (
+                      <option key={freq} value={freq}>
+                        {formatCTCSSFrequency(freq)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {editedChannel.rxCtcssDcs.type === 'DCS' && (
+                  <div className="flex gap-2">
+                    <select
+                      value={editedChannel.rxCtcssDcs.value || ''}
+                      onChange={(e) => handleChange('rxCtcssDcs', {
+                        ...editedChannel.rxCtcssDcs,
+                        value: e.target.value ? parseInt(e.target.value) : undefined,
+                      })}
+                      className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                    >
+                      <option value="">Select DCS...</option>
+                      {editedChannel.rxCtcssDcs.value && !DCS_CODES.includes(editedChannel.rxCtcssDcs.value) && (
+                        <option value={editedChannel.rxCtcssDcs.value}>
+                          {formatDCSCode(editedChannel.rxCtcssDcs.value, editedChannel.rxCtcssDcs.polarity)} (Custom)
+                        </option>
+                      )}
+                      {DCS_CODES.map((code) => (
+                        <option key={code} value={code}>
+                          {formatDCSCode(code)}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={editedChannel.rxCtcssDcs.polarity || 'N'}
+                      onChange={(e) => handleChange('rxCtcssDcs', {
+                        ...editedChannel.rxCtcssDcs,
+                        polarity: e.target.value as 'N' | 'P',
+                      })}
+                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                      disabled={!editedChannel.rxCtcssDcs.value}
+                    >
+                      <option value="N">N</option>
+                      <option value="P">P</option>
+                    </select>
+                  </div>
                 )}
                 <p className="text-xs text-cool-gray">Tone/code required to open receiver</p>
               </div>
@@ -204,18 +250,63 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <option value="CTCSS">CTCSS</option>
                   <option value="DCS">DCS</option>
                 </select>
-                {editedChannel.txCtcssDcs.type !== 'None' && (
-                  <input
-                    type="number"
-                    step={editedChannel.txCtcssDcs.type === 'CTCSS' ? '0.1' : '1'}
+                {editedChannel.txCtcssDcs.type === 'CTCSS' && (
+                  <select
                     value={editedChannel.txCtcssDcs.value || ''}
                     onChange={(e) => handleChange('txCtcssDcs', {
                       ...editedChannel.txCtcssDcs,
-                      value: parseFloat(e.target.value) || 0,
+                      value: e.target.value ? parseFloat(e.target.value) : undefined,
                     })}
-                    className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
-                    placeholder={editedChannel.txCtcssDcs.type === 'CTCSS' ? 'Hz (e.g., 88.5)' : 'Code (e.g., 023)'}
-                  />
+                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                  >
+                    <option value="">Select CTCSS...</option>
+                    {editedChannel.txCtcssDcs.value && !CTCSS_FREQUENCIES.includes(editedChannel.txCtcssDcs.value) && (
+                      <option value={editedChannel.txCtcssDcs.value}>
+                        {formatCTCSSFrequency(editedChannel.txCtcssDcs.value)} (Custom)
+                      </option>
+                    )}
+                    {CTCSS_FREQUENCIES.map((freq) => (
+                      <option key={freq} value={freq}>
+                        {formatCTCSSFrequency(freq)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {editedChannel.txCtcssDcs.type === 'DCS' && (
+                  <div className="flex gap-2">
+                    <select
+                      value={editedChannel.txCtcssDcs.value || ''}
+                      onChange={(e) => handleChange('txCtcssDcs', {
+                        ...editedChannel.txCtcssDcs,
+                        value: e.target.value ? parseInt(e.target.value) : undefined,
+                      })}
+                      className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                    >
+                      <option value="">Select DCS...</option>
+                      {editedChannel.txCtcssDcs.value && !DCS_CODES.includes(editedChannel.txCtcssDcs.value) && (
+                        <option value={editedChannel.txCtcssDcs.value}>
+                          {formatDCSCode(editedChannel.txCtcssDcs.value, editedChannel.txCtcssDcs.polarity)} (Custom)
+                        </option>
+                      )}
+                      {DCS_CODES.map((code) => (
+                        <option key={code} value={code}>
+                          {formatDCSCode(code)}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={editedChannel.txCtcssDcs.polarity || 'N'}
+                      onChange={(e) => handleChange('txCtcssDcs', {
+                        ...editedChannel.txCtcssDcs,
+                        polarity: e.target.value as 'N' | 'P',
+                      })}
+                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                      disabled={!editedChannel.txCtcssDcs.value}
+                    >
+                      <option value="N">N</option>
+                      <option value="P">P</option>
+                    </select>
+                  </div>
                 )}
                 <p className="text-xs text-cool-gray">Tone/code transmitted with signal</p>
               </div>

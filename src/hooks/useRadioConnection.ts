@@ -604,17 +604,30 @@ export function useRadioConnection() {
       onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
       await protocol.writeAllData(channels, zones, scanLists);
       
+      // Step 5: Write radio settings only if they have been modified
+      const radioSettingsStore = useRadioSettingsStore.getState();
+      const radioSettings = radioSettingsStore.settings;
+      const changedFields = radioSettingsStore.getChangedFields();
+      
+      if (radioSettings && changedFields.length > 0) {
+        onProgress?.(95, `Writing ${changedFields.length} changed setting(s) to radio...`, steps[4]);
+        await protocol.writeRadioSettings(radioSettings, changedFields);
+        // Clear changes after successful write
+        radioSettingsStore.clearChanges();
+      }
+      
       // Store write block data and zone comparison data for debug export
       setWriteBlockData((protocol as any).writeBlockData);
       setZoneComparisonData((protocol as any).zoneComparisonData);
       
-      // Step 5: Disconnect
+      // Step 6: Disconnect
       await protocol.disconnect();
       
       const summary = [
         channels.length > 0 ? `${channels.length} channels` : null,
         zones.length > 0 ? `${zones.length} zones` : null,
         scanLists.length > 0 ? `${scanLists.length} scan lists` : null,
+        radioSettings && changedFields.length > 0 ? `${changedFields.length} setting(s)` : null,
       ].filter(Boolean).join(', ');
       
       onProgress?.(100, `Successfully wrote ${summary} to radio!`, steps[4]);
