@@ -46,7 +46,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
   };
 
   const formatFrequency = (freq: number): string => {
-    return freq.toFixed(4);
+    return freq.toFixed(4); // Shows 3 digits before decimal, 4 after (e.g., 145.3500)
   };
 
   const isDigitalMode = (mode: Channel['mode']): boolean => {
@@ -71,15 +71,15 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
           <tr className="bg-dark-charcoal border-b border-neon-cyan">
             <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-0 bg-dark-charcoal z-30 min-w-[40px]">#</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[40px] bg-dark-charcoal z-30 min-w-[120px]">Name</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[90px]">RX Freq</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[90px]">TX Freq</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">Mode</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">BW</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">PWR</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">RX Freq</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">TX Freq</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[50px]">Mode</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[40px]">BW</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[40px]">PWR</th>
             {/* Essential columns - always visible */}
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">Color Code</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">RX CTCSS/DCS</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">TX CTCSS/DCS</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[85px]">RX Tone</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[85px]">TX Tone</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Forbid TX</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[75px]">
               <div className="leading-tight">Busy<br />Lock</div>
@@ -95,18 +95,18 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">APRS RX</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">APRS TX</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">VOX</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Scramble</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Compander</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Talkback</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Scramble">SCR</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Compander">CMP</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Talkback">TB</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Compander Dup">CMP DUP</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">SQL</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">PTT ID Display</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">PTT ID</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Compander Dup</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">VOX Related</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">RX Squelch Mode</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">Step Frequency</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">Signaling Type</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">PTT ID Type</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">Step Freq</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[65px]">Sig Type</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[65px]">PTT ID Type</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">Contact ID</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px] sticky right-0 bg-dark-charcoal z-30">Actions</th>
           </tr>
@@ -161,38 +161,42 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                     className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
                   />
                 </td>
-                <td className="px-2 py-2">
-                  <select
-                    value={channel.mode}
-                    onChange={(e) => handleCellChange(channel.number, 'mode', e.target.value)}
-                    className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                <td className="px-2 py-2 text-center">
+                  <button
+                    onClick={() => {
+                      const modeOrder = ['Analog', 'Digital', 'Fixed Analog', 'Fixed Digital'];
+                      const currentIndex = modeOrder.indexOf(channel.mode);
+                      const nextIndex = (currentIndex + 1) % modeOrder.length;
+                      handleCellChange(channel.number, 'mode', modeOrder[nextIndex]);
+                    }}
+                    className="w-10 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+                    title={channel.mode}
                   >
-                    <option value="Analog">Analog</option>
-                    <option value="Digital">Digital</option>
-                    <option value="Fixed Analog">Fixed Analog</option>
-                    <option value="Fixed Digital">Fixed Digital</option>
-                  </select>
+                    {channel.mode === 'Analog' || channel.mode === 'Fixed Analog' ? 'Ana' : 'Dig'}
+                  </button>
                 </td>
-                <td className="px-2 py-2">
-                  <select
-                    value={channel.bandwidth}
-                    onChange={(e) => handleCellChange(channel.number, 'bandwidth', e.target.value)}
-                    className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                <td className="px-2 py-2 text-center">
+                  <button
+                    onClick={() => handleCellChange(channel.number, 'bandwidth', channel.bandwidth === '25kHz' ? '12.5kHz' : '25kHz')}
+                    className="w-8 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+                    title={channel.bandwidth === '25kHz' ? 'Wide (25kHz)' : 'Narrow (12.5kHz)'}
                   >
-                    <option value="25kHz">25kHz</option>
-                    <option value="12.5kHz">12.5kHz</option>
-                  </select>
+                    {channel.bandwidth === '25kHz' ? 'W' : 'N'}
+                  </button>
                 </td>
-                <td className="px-2 py-2">
-                  <select
-                    value={channel.power}
-                    onChange={(e) => handleCellChange(channel.number, 'power', e.target.value)}
-                    className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                <td className="px-2 py-2 text-center">
+                  <button
+                    onClick={() => {
+                      const powerOrder = ['Low', 'Medium', 'High'];
+                      const currentIndex = powerOrder.indexOf(channel.power);
+                      const nextIndex = (currentIndex + 1) % powerOrder.length;
+                      handleCellChange(channel.number, 'power', powerOrder[nextIndex]);
+                    }}
+                    className="w-8 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+                    title={channel.power}
                   >
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                  </select>
+                    {channel.power === 'Low' ? 'L' : channel.power === 'Medium' ? 'M' : 'H'}
+                  </button>
                 </td>
                 <td className="px-2 py-2">
                   {showColorCode ? (
@@ -477,28 +481,40 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                     className="w-4 h-4 accent-neon-cyan"
                   />
                 </td>
-                <td className="px-2 py-2 text-center">
+                <td className="px-2 py-2 text-center" title="Scramble">
                   <input
                     type="checkbox"
                     checked={channel.scramble}
                     onChange={(e) => handleCellChange(channel.number, 'scramble', e.target.checked)}
                     className="w-4 h-4 accent-neon-cyan"
+                    title="Scramble"
                   />
                 </td>
-                <td className="px-2 py-2 text-center">
+                <td className="px-2 py-2 text-center" title="Compander">
                   <input
                     type="checkbox"
                     checked={channel.compander}
                     onChange={(e) => handleCellChange(channel.number, 'compander', e.target.checked)}
                     className="w-4 h-4 accent-neon-cyan"
+                    title="Compander"
                   />
                 </td>
-                <td className="px-2 py-2 text-center">
+                <td className="px-2 py-2 text-center" title="Talkback">
                   <input
                     type="checkbox"
                     checked={channel.talkback}
                     onChange={(e) => handleCellChange(channel.number, 'talkback', e.target.checked)}
                     className="w-4 h-4 accent-neon-cyan"
+                    title="Talkback"
+                  />
+                </td>
+                <td className="px-2 py-2 text-center" title="Compander Dup">
+                  <input
+                    type="checkbox"
+                    checked={channel.companderDup}
+                    onChange={(e) => handleCellChange(channel.number, 'companderDup', e.target.checked)}
+                    className="w-4 h-4 accent-neon-cyan"
+                    title="Compander Dup"
                   />
                 </td>
                 <td className="px-2 py-2">
@@ -527,14 +543,6 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                     value={channel.pttId}
                     onChange={(e) => handleCellChange(channel.number, 'pttId', parseInt(e.target.value) || 0)}
                     className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
-                  />
-                </td>
-                <td className="px-2 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    checked={channel.companderDup}
-                    onChange={(e) => handleCellChange(channel.number, 'companderDup', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
                   />
                 </td>
                 <td className="px-2 py-2 text-center">
@@ -581,9 +589,9 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                   >
                     <option value="None">None</option>
                     <option value="DTMF">DTMF</option>
-                    <option value="Two Tone">Two Tone</option>
-                    <option value="Five Tone">Five Tone</option>
-                    <option value="MDC1200">MDC1200</option>
+                    <option value="Two Tone">2Tone</option>
+                    <option value="Five Tone">5Tone</option>
+                    <option value="MDC1200">MDC</option>
                   </select>
                 </td>
                 <td className="px-2 py-2">
