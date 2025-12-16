@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
+import { useScanListsStore } from '../../store/scanListsStore';
+import { useRXGroupsStore } from '../../store/rxGroupsStore';
+import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import type { Channel } from '../../models/Channel';
 import { ChannelEditModal } from './ChannelEditModal';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
@@ -12,6 +15,9 @@ interface ChannelsTableProps {
 export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channelsProp }) => {
   const { channels: channelsFromStore, updateChannel, deleteChannel } = useChannelsStore();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
+  const { scanLists } = useScanListsStore();
+  const { groups: rxGroups } = useRXGroupsStore();
+  const { keys: encryptionKeys } = useEncryptionKeysStore();
   const channels = channelsProp ?? channelsFromStore;
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
 
@@ -46,7 +52,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
   };
 
   const formatFrequency = (freq: number): string => {
-    return freq.toFixed(4);
+    return freq.toFixed(4); // Shows 3 digits before decimal, 4 after (e.g., 145.3500)
   };
 
   const isDigitalMode = (mode: Channel['mode']): boolean => {
@@ -71,43 +77,51 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
           <tr className="bg-dark-charcoal border-b border-neon-cyan">
             <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-0 bg-dark-charcoal z-30 min-w-[40px]">#</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[40px] bg-dark-charcoal z-30 min-w-[120px]">Name</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[90px]">RX Freq</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[90px]">TX Freq</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">Mode</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">BW</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">PWR</th>
-            {/* Essential columns - always visible */}
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">Color Code</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">RX CTCSS/DCS</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">TX CTCSS/DCS</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">RX Freq</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">TX Freq</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[50px]">Mode</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[40px]">PWR</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[40px]">BW</th>
+            {/* Common fields - work for both analog and digital */}
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Forbid TX</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]">RX Tone</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]">TX Tone</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[75px]">
               <div className="leading-tight">Busy<br />Lock</div>
             </th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Lone Worker</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Lone Worker">LW</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Scan Add</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">Scan List</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[50px]">Scan List</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">FTA</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">Reverse Freq</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Emerg</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Emerg Ack</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">Emerg ID</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">APRS RX</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">APRS TX</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">VOX</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Scramble</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Compander</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Talkback</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Scramble">SCR</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Compander">CMP</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Talkback">TB</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Compander Dup">CMP DUP</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">SQL</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">PTT ID Display</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">PTT ID</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Compander Dup</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">VOX Related</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">RX Squelch Mode</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">Step Frequency</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">Signaling Type</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">PTT ID Type</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">Contact ID</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">Step Freq</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[65px]">Sig Type</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[65px]">PTT ID Type</th>
+            {/* Digital-only fields */}
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">Color Code</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]" title="RX Group List">RX Group</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]" title="Slot Operation">Slot</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Encryption">Enc</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]" title="Encryption ID">Enc ID</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="TDMA Direct Mode">TDMA</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Short Data Confirm">SDC</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Private Confirm">Priv</th>
+            {/* Common fields - work for both */}
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]" title="Contact ID (DMR ID for digital channels)">Contact ID</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px] sticky right-0 bg-dark-charcoal z-30">Actions</th>
           </tr>
         </thead>
@@ -161,67 +175,82 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                     className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
                   />
                 </td>
-                <td className="px-2 py-2">
-                  <select
-                    value={channel.mode}
-                    onChange={(e) => handleCellChange(channel.number, 'mode', e.target.value)}
-                    className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                <td className="px-2 py-2 text-center">
+                  <button
+                    onClick={() => {
+                      const modeOrder = ['Analog', 'Digital', 'Fixed Analog', 'Fixed Digital'];
+                      const currentIndex = modeOrder.indexOf(channel.mode);
+                      const nextIndex = (currentIndex + 1) % modeOrder.length;
+                      const newMode = modeOrder[nextIndex] as Channel['mode'];
+                      // Auto-set bandwidth to Narrow when switching to Digital
+                      if ((newMode === 'Digital' || newMode === 'Fixed Digital') && channel.bandwidth === '25kHz') {
+                        handleCellChange(channel.number, 'bandwidth', '12.5kHz');
+                      }
+                      handleCellChange(channel.number, 'mode', newMode);
+                    }}
+                    className="w-10 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+                    title={channel.mode}
                   >
-                    <option value="Analog">Analog</option>
-                    <option value="Digital">Digital</option>
-                    <option value="Fixed Analog">Fixed Analog</option>
-                    <option value="Fixed Digital">Fixed Digital</option>
-                  </select>
+                    {channel.mode === 'Analog' || channel.mode === 'Fixed Analog' ? 'Ana' : 'Dig'}
+                  </button>
+                </td>
+                <td className="px-2 py-2 text-center">
+                  <button
+                    onClick={() => {
+                      const powerOrder = ['Low', 'Medium', 'High'];
+                      const currentIndex = powerOrder.indexOf(channel.power);
+                      const nextIndex = (currentIndex + 1) % powerOrder.length;
+                      handleCellChange(channel.number, 'power', powerOrder[nextIndex]);
+                    }}
+                    className="w-8 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+                    title={channel.power}
+                  >
+                    {channel.power === 'Low' ? 'L' : channel.power === 'Medium' ? 'M' : 'H'}
+                  </button>
+                </td>
+                <td className="px-2 py-2 text-center">
+                  <button
+                    onClick={() => {
+                      if (!isDigitalMode(channel.mode)) {
+                        handleCellChange(channel.number, 'bandwidth', channel.bandwidth === '25kHz' ? '12.5kHz' : '25kHz');
+                      }
+                    }}
+                    disabled={isDigitalMode(channel.mode)}
+                    className={`w-8 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors ${
+                      isDigitalMode(channel.mode) 
+                        ? 'opacity-50 cursor-not-allowed' 
+                        : 'hover:bg-opacity-80 hover:border-neon-cyan'
+                    }`}
+                    title={isDigitalMode(channel.mode) ? 'Locked to Narrow (12.5kHz) for Digital' : (channel.bandwidth === '25kHz' ? 'Wide (25kHz)' : 'Narrow (12.5kHz)')}
+                  >
+                    {isDigitalMode(channel.mode) ? 'N' : (channel.bandwidth === '25kHz' ? 'W' : 'N')}
+                  </button>
+                </td>
+                <td className="px-2 py-2 text-center">
+                  <input
+                    type="checkbox"
+                    checked={channel.forbidTx}
+                    onChange={(e) => handleCellChange(channel.number, 'forbidTx', e.target.checked)}
+                    className="w-4 h-4 accent-neon-cyan"
+                  />
                 </td>
                 <td className="px-2 py-2">
-                  <select
-                    value={channel.bandwidth}
-                    onChange={(e) => handleCellChange(channel.number, 'bandwidth', e.target.value)}
-                    className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
-                  >
-                    <option value="25kHz">25kHz</option>
-                    <option value="12.5kHz">12.5kHz</option>
-                  </select>
-                </td>
-                <td className="px-2 py-2">
-                  <select
-                    value={channel.power}
-                    onChange={(e) => handleCellChange(channel.number, 'power', e.target.value)}
-                    className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
-                  >
-                    <option value="Low">Low</option>
-                    <option value="Medium">Medium</option>
-                    <option value="High">High</option>
-                  </select>
-                </td>
-                <td className="px-2 py-2">
-                  {showColorCode ? (
-                    <input
-                      type="number"
-                      min="0"
-                      max="15"
-                      value={channel.colorCode}
-                      onChange={(e) => handleCellChange(channel.number, 'colorCode', parseInt(e.target.value) || 0)}
-                      className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
-                    />
-                  ) : (
+                  {isDigitalMode(channel.mode) ? (
                     <span className="text-cool-gray text-xs text-center block">-</span>
-                  )}
-                </td>
-                <td className="px-2 py-2">
-                  <div className="flex flex-col gap-1">
-                    <select
-                      value={channel.rxCtcssDcs.type}
-                      onChange={(e) => {
-                        const type = e.target.value as 'CTCSS' | 'DCS' | 'None';
-                        handleCellChange(channel.number, 'rxCtcssDcs', {
-                          ...channel.rxCtcssDcs,
-                          type,
-                          value: type === 'None' ? undefined : channel.rxCtcssDcs.value,
-                        });
-                      }}
-                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
-                    >
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      <select
+                        value={channel.rxCtcssDcs.type}
+                        onChange={(e) => {
+                          const type = e.target.value as 'CTCSS' | 'DCS' | 'None';
+                          handleCellChange(channel.number, 'rxCtcssDcs', {
+                            ...channel.rxCtcssDcs,
+                            type,
+                            value: type === 'None' ? undefined : channel.rxCtcssDcs.value,
+                          });
+                        }}
+                        className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                      >
                       <option value="None">None</option>
                       <option value="CTCSS">CTCSS</option>
                       <option value="DCS">DCS</option>
@@ -284,22 +313,26 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                         </select>
                       </div>
                     )}
-                  </div>
+                    </div>
+                  )}
                 </td>
                 <td className="px-2 py-2">
-                  <div className="flex flex-col gap-1">
-                    <select
-                      value={channel.txCtcssDcs.type}
-                      onChange={(e) => {
-                        const type = e.target.value as 'CTCSS' | 'DCS' | 'None';
-                        handleCellChange(channel.number, 'txCtcssDcs', {
-                          ...channel.txCtcssDcs,
-                          type,
-                          value: type === 'None' ? undefined : channel.txCtcssDcs.value,
-                        });
-                      }}
-                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
-                    >
+                  {isDigitalMode(channel.mode) ? (
+                    <span className="text-cool-gray text-xs text-center block">-</span>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      <select
+                        value={channel.txCtcssDcs.type}
+                        onChange={(e) => {
+                          const type = e.target.value as 'CTCSS' | 'DCS' | 'None';
+                          handleCellChange(channel.number, 'txCtcssDcs', {
+                            ...channel.txCtcssDcs,
+                            type,
+                            value: type === 'None' ? undefined : channel.txCtcssDcs.value,
+                          });
+                        }}
+                        className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                      >
                       <option value="None">None</option>
                       <option value="CTCSS">CTCSS</option>
                       <option value="DCS">DCS</option>
@@ -362,15 +395,8 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                         </select>
                       </div>
                     )}
-                  </div>
-                </td>
-                <td className="px-2 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    checked={channel.forbidTx}
-                    onChange={(e) => handleCellChange(channel.number, 'forbidTx', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
-                  />
+                    </div>
+                  )}
                 </td>
                 <td className="px-2 py-2">
                   <select
@@ -383,12 +409,13 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                     <option value="Repeater">RPT</option>
                   </select>
                 </td>
-                <td className="px-2 py-2 text-center">
+                <td className="px-2 py-2 text-center" title="Lone Worker">
                   <input
                     type="checkbox"
                     checked={channel.loneWorker}
                     onChange={(e) => handleCellChange(channel.number, 'loneWorker', e.target.checked)}
                     className="w-4 h-4 accent-neon-cyan"
+                    title="Lone Worker"
                   />
                 </td>
                 <td className="px-2 py-2 text-center">
@@ -400,14 +427,18 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                   />
                 </td>
                 <td className="px-2 py-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max="15"
+                  <select
                     value={channel.scanListId}
                     onChange={(e) => handleCellChange(channel.number, 'scanListId', parseInt(e.target.value) || 0)}
-                    className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
-                  />
+                    className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                  >
+                    <option value={0}>None</option>
+                    {scanLists.map((scanList, index) => (
+                      <option key={scanList.name} value={index + 1}>
+                        {scanList.name}
+                      </option>
+                    ))}
+                  </select>
                 </td>
                 <td className="px-2 py-2 text-center">
                   <input
@@ -415,16 +446,6 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                     checked={channel.forbidTalkaround}
                     onChange={(e) => handleCellChange(channel.number, 'forbidTalkaround', e.target.checked)}
                     className="w-4 h-4 accent-neon-cyan"
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max="2"
-                    value={channel.reverseFreq}
-                    onChange={(e) => handleCellChange(channel.number, 'reverseFreq', parseInt(e.target.value) || 0)}
-                    className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
                   />
                 </td>
                 <td className="px-2 py-2 text-center">
@@ -470,35 +491,51 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                   />
                 </td>
                 <td className="px-2 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    checked={channel.voxFunction}
-                    onChange={(e) => handleCellChange(channel.number, 'voxFunction', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
-                  />
+                  {isDigitalMode(channel.mode) ? (
+                    <span className="text-cool-gray text-xs">-</span>
+                  ) : (
+                    <input
+                      type="checkbox"
+                      checked={channel.voxFunction}
+                      onChange={(e) => handleCellChange(channel.number, 'voxFunction', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan"
+                    />
+                  )}
                 </td>
-                <td className="px-2 py-2 text-center">
+                <td className="px-2 py-2 text-center" title="Scramble">
                   <input
                     type="checkbox"
                     checked={channel.scramble}
                     onChange={(e) => handleCellChange(channel.number, 'scramble', e.target.checked)}
                     className="w-4 h-4 accent-neon-cyan"
+                    title="Scramble"
                   />
                 </td>
-                <td className="px-2 py-2 text-center">
+                <td className="px-2 py-2 text-center" title="Compander">
                   <input
                     type="checkbox"
                     checked={channel.compander}
                     onChange={(e) => handleCellChange(channel.number, 'compander', e.target.checked)}
                     className="w-4 h-4 accent-neon-cyan"
+                    title="Compander"
                   />
                 </td>
-                <td className="px-2 py-2 text-center">
+                <td className="px-2 py-2 text-center" title="Talkback">
                   <input
                     type="checkbox"
                     checked={channel.talkback}
                     onChange={(e) => handleCellChange(channel.number, 'talkback', e.target.checked)}
                     className="w-4 h-4 accent-neon-cyan"
+                    title="Talkback"
+                  />
+                </td>
+                <td className="px-2 py-2 text-center" title="Compander Dup">
+                  <input
+                    type="checkbox"
+                    checked={channel.companderDup}
+                    onChange={(e) => handleCellChange(channel.number, 'companderDup', e.target.checked)}
+                    className="w-4 h-4 accent-neon-cyan"
+                    title="Compander Dup"
                   />
                 </td>
                 <td className="px-2 py-2">
@@ -512,30 +549,30 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                   />
                 </td>
                 <td className="px-2 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    checked={channel.pttIdDisplay}
-                    onChange={(e) => handleCellChange(channel.number, 'pttIdDisplay', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
-                  />
+                  {isDigitalMode(channel.mode) ? (
+                    <span className="text-cool-gray text-xs">-</span>
+                  ) : (
+                    <input
+                      type="checkbox"
+                      checked={channel.pttIdDisplay}
+                      onChange={(e) => handleCellChange(channel.number, 'pttIdDisplay', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan"
+                    />
+                  )}
                 </td>
                 <td className="px-2 py-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max="63"
-                    value={channel.pttId}
-                    onChange={(e) => handleCellChange(channel.number, 'pttId', parseInt(e.target.value) || 0)}
-                    className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
-                  />
-                </td>
-                <td className="px-2 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    checked={channel.companderDup}
-                    onChange={(e) => handleCellChange(channel.number, 'companderDup', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
-                  />
+                  {isDigitalMode(channel.mode) ? (
+                    <span className="text-cool-gray text-xs text-center block">-</span>
+                  ) : (
+                    <input
+                      type="number"
+                      min="0"
+                      max="63"
+                      value={channel.pttId}
+                      onChange={(e) => handleCellChange(channel.number, 'pttId', parseInt(e.target.value) || 0)}
+                      className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
+                    />
+                  )}
                 </td>
                 <td className="px-2 py-2 text-center">
                   <input
@@ -546,16 +583,20 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                   />
                 </td>
                 <td className="px-2 py-2">
-                  <select
-                    value={channel.rxSquelchMode}
-                    onChange={(e) => handleCellChange(channel.number, 'rxSquelchMode', e.target.value)}
-                    className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
-                  >
-                    <option value="Carrier/CTC">Carrier/CTC</option>
-                    <option value="Optional">Optional</option>
-                    <option value="CTC&Opt">CTC&Opt</option>
-                    <option value="CTC|Opt">CTC|Opt</option>
-                  </select>
+                  {isDigitalMode(channel.mode) ? (
+                    <span className="text-cool-gray text-xs text-center block">-</span>
+                  ) : (
+                    <select
+                      value={channel.rxSquelchMode}
+                      onChange={(e) => handleCellChange(channel.number, 'rxSquelchMode', e.target.value)}
+                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                    >
+                      <option value="Carrier/CTC">Carrier/CTC</option>
+                      <option value="Optional">Optional</option>
+                      <option value="CTC&Opt">CTC&Opt</option>
+                      <option value="CTC|Opt">CTC|Opt</option>
+                    </select>
+                  )}
                 </td>
                 <td className="px-2 py-2">
                   <select
@@ -574,17 +615,21 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                   </select>
                 </td>
                 <td className="px-2 py-2">
-                  <select
-                    value={channel.signalingType}
-                    onChange={(e) => handleCellChange(channel.number, 'signalingType', e.target.value)}
-                    className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
-                  >
-                    <option value="None">None</option>
-                    <option value="DTMF">DTMF</option>
-                    <option value="Two Tone">Two Tone</option>
-                    <option value="Five Tone">Five Tone</option>
-                    <option value="MDC1200">MDC1200</option>
-                  </select>
+                  {isDigitalMode(channel.mode) ? (
+                    <span className="text-cool-gray text-xs text-center block">-</span>
+                  ) : (
+                    <select
+                      value={channel.signalingType}
+                      onChange={(e) => handleCellChange(channel.number, 'signalingType', e.target.value)}
+                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                    >
+                      <option value="None">None</option>
+                      <option value="DTMF">DTMF</option>
+                      <option value="Two Tone">2Tone</option>
+                      <option value="Five Tone">5Tone</option>
+                      <option value="MDC1200">MDC</option>
+                    </select>
+                  )}
                 </td>
                 <td className="px-2 py-2">
                   <select
@@ -598,6 +643,132 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                     <option value="Both">Both</option>
                   </select>
                 </td>
+                {/* Digital-only fields */}
+                <td className="px-2 py-2">
+                  {showColorCode ? (
+                    <input
+                      type="number"
+                      min="0"
+                      max="15"
+                      value={channel.colorCode}
+                      onChange={(e) => handleCellChange(channel.number, 'colorCode', parseInt(e.target.value) || 0)}
+                      className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
+                    />
+                  ) : (
+                    <span className="text-cool-gray text-xs text-center block">-</span>
+                  )}
+                </td>
+                <td className="px-2 py-2">
+                  {showColorCode ? (
+                    <select
+                      value={channel.rxGroupListId ?? 0}
+                      onChange={(e) => handleCellChange(channel.number, 'rxGroupListId', parseInt(e.target.value) || 0)}
+                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                    >
+                      <option value={0}>None</option>
+                      {rxGroups
+                        .filter(group => group.index < 63) // RX Group List ID is 0-63, so valid indices are 0-62
+                        .map((group) => (
+                          <option key={group.index} value={group.index + 1}>
+                            {group.name}
+                          </option>
+                        ))}
+                    </select>
+                  ) : (
+                    <span className="text-cool-gray text-xs text-center block">-</span>
+                  )}
+                </td>
+                <td className="px-2 py-2 text-center">
+                  {showColorCode ? (
+                    <button
+                      onClick={() => {
+                        const currentSlot = channel.slotOperation ?? 1;
+                        const newSlot = currentSlot === 1 ? 2 : 1;
+                        handleCellChange(channel.number, 'slotOperation', newSlot);
+                      }}
+                      className="w-8 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+                      title={`Slot ${channel.slotOperation ?? 1}`}
+                    >
+                      {channel.slotOperation ?? 1}
+                    </button>
+                  ) : (
+                    <span className="text-cool-gray text-xs text-center block">-</span>
+                  )}
+                </td>
+                <td className="px-2 py-2 text-center">
+                  {showColorCode ? (
+                    <input
+                      type="checkbox"
+                      checked={channel.encryption ?? false}
+                      onChange={(e) => handleCellChange(channel.number, 'encryption', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan"
+                      title="Encryption"
+                    />
+                  ) : (
+                    <span className="text-cool-gray text-xs">-</span>
+                  )}
+                </td>
+                <td className="px-2 py-2">
+                  {showColorCode ? (
+                    <select
+                      value={channel.encryptionId ?? 0}
+                      onChange={(e) => handleCellChange(channel.number, 'encryptionId', parseInt(e.target.value) || 0)}
+                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                      title="Encryption Key"
+                    >
+                      <option value={0}>None</option>
+                      {encryptionKeys
+                        .filter(key => key.id >= 1 && key.id <= 8 && key.name.trim() !== '')
+                        .map((key) => (
+                          <option key={key.entryNumber} value={key.id}>
+                            {key.name || `Key ${key.id}`}
+                          </option>
+                        ))}
+                    </select>
+                  ) : (
+                    <span className="text-cool-gray text-xs text-center block">-</span>
+                  )}
+                </td>
+                <td className="px-2 py-2 text-center">
+                  {showColorCode ? (
+                    <input
+                      type="checkbox"
+                      checked={channel.tdmaDirectMode ?? false}
+                      onChange={(e) => handleCellChange(channel.number, 'tdmaDirectMode', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan"
+                      title="TDMA Direct Mode"
+                    />
+                  ) : (
+                    <span className="text-cool-gray text-xs">-</span>
+                  )}
+                </td>
+                <td className="px-2 py-2 text-center">
+                  {showColorCode ? (
+                    <input
+                      type="checkbox"
+                      checked={channel.shortDataConfirm ?? false}
+                      onChange={(e) => handleCellChange(channel.number, 'shortDataConfirm', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan"
+                      title="Short Data Confirm"
+                    />
+                  ) : (
+                    <span className="text-cool-gray text-xs">-</span>
+                  )}
+                </td>
+                <td className="px-2 py-2 text-center">
+                  {showColorCode ? (
+                    <input
+                      type="checkbox"
+                      checked={channel.privateConfirm ?? false}
+                      onChange={(e) => handleCellChange(channel.number, 'privateConfirm', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan"
+                      title="Private Confirm"
+                    />
+                  ) : (
+                    <span className="text-cool-gray text-xs">-</span>
+                  )}
+                </td>
+                {/* Common fields - work for both */}
                 <td className="px-2 py-2">
                   <input
                     type="number"

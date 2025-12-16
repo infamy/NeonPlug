@@ -32,7 +32,6 @@ export interface Channel {
   unknown1A_6_4: number;      // Bits 6-4: Unknown Setting (0-3, values ≥4 reset to 0)
   unknown1A_3: boolean;       // Bit 3: Unknown
   aprsReceive: boolean;       // Bit 2: 0=Off, 1=On
-  reverseFreq: number;         // Bits 1-0: 0-2
   
   // Emergency Settings (0x1B)
   emergencyIndicator: boolean; // Bit 7: 0=Off, 1=On
@@ -92,8 +91,19 @@ export interface Channel {
   // Unknown Setting (0x2A)
   unknown2A: number;           // 8-bit value (0-255), possibly DMR or signaling related
   
-  // Contact ID (0x2B)
+  // Contact ID (0x2B) - Also called "DMR ID" for digital channels
   contactId: number;          // 0-249 (displayed as 1-250)
+  
+  // Digital-only fields (only valid when mode is Digital or Fixed Digital)
+  // These fields reuse bytes 0x1D, 0x1E, 0x1F which are used for analog features in analog mode
+  rxGroupListId?: number;      // Byte 0x1F, bits 5-0 (mask 0x3F): RX Group List ID (0-63, 0=None)
+  slotOperation?: number;      // Byte 0x1D, bits 3-0: Slot Operation (0-15)
+  encryption?: boolean;        // Byte 0x1D, bit 7 (0x80): Encryption enabled
+  encryptionId?: number;       // Byte 0x1E: Encryption ID (0-8, 0=None)
+  tdmaDirectMode?: boolean;    // Byte 0x1D, bit 5 (0x20): TDMA Direct Mode
+  shortDataConfirm?: boolean;  // Byte 0x1D, bit 6 (0x40): Short Data Confirm
+  privateConfirm?: boolean;     // Byte 0x1F, bit 6 (0x40): Private Confirm
+  txContactId?: number;         // Separate buffer (not in 48-byte structure) - TX Contact ID
   
   // Metadata (not in protocol)
   source?: string;            // Source attribution for imported channels

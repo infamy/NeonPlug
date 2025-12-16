@@ -129,7 +129,6 @@ export function importChannelsFromCSV(content: string): ImportResult {
           unknown1A_6_4: getNumber('unknown1a_6_4', 0),
           unknown1A_3: getBool('unknown1a_3'),
           aprsReceive: getBool('aprs receive'),
-          reverseFreq: getNumber('reverse freq', 0),
           emergencyIndicator: getBool('emergency'),
           emergencyAck: getBool('emergency ack'),
           emergencySystemId: getNumber('emergency id', 0),

@@ -165,13 +165,12 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   // Bits 6-4 (mask 0x70): Unknown Setting (0-3, values ≥4 reset to 0)
   // Bit 3 (mask 0x08): Unknown
   // Bit 2 (mask 0x04): APRS Receive (0=Off, 1=On)
-  // Bits 1-0 (mask 0x03): Reverse Frequency (0-2)
+  // Bits 1-0 (mask 0x03): Reserved/Unknown
   const talkaroundAprs = data[0x1A];
   const forbidTalkaround = (talkaroundAprs & 0x80) !== 0;
   const unknown1A_6_4 = (talkaroundAprs >> 4) & 0x07;
   const unknown1A_3 = (talkaroundAprs & 0x08) !== 0;
   const aprsReceive = (talkaroundAprs & 0x04) !== 0;
-  const reverseFreq = talkaroundAprs & 0x03;
 
   // Emergency (0x1B)
   // Bit 7: Emergency Indicator (0=Off, 1=On)
@@ -215,36 +214,64 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     aprsReportValue === 2 ? 'Analog' : 'Off';
   const unknown1C_1_0 = 0; // No longer used
 
-  // Analog features (0x1D)
-  // Bit 7 (mask 0x80): VOX Function (0=Off, 1=On)
-  // Bit 6 (mask 0x40): Scramble (0=Off, 1=On)
-  // Bit 5 (mask 0x20): Compander (0=Off, 1=On)
-  // Bit 4 (mask 0x10): Talkback (0=Off, 1=On)
-  // Bits 3-0 (mask 0x0F): Unknown Setting (0-15)
-  const analogFeatures = data[0x1D];
-  const voxFunction = (analogFeatures & 0x80) !== 0;
-  const scramble = (analogFeatures & 0x40) !== 0;
-  const compander = (analogFeatures & 0x20) !== 0;
-  const talkback = (analogFeatures & 0x10) !== 0;
-  const unknown1D_3_0 = analogFeatures & 0x0F;
+  // Byte 0x1D, 0x1E, 0x1F have different meanings for analog vs digital channels
+  const isDigital = mode === 'Digital' || mode === 'Fixed Digital';
+  
+  let voxFunction = false;
+  let scramble = false;
+  let compander = false;
+  let talkback = false;
+  let unknown1D_3_0 = 0;
+  let digitalEmergencySystemId = 0;
+  let pttIdDisplay = false;
+  let pttId = 0;
+  
+  // Digital-only fields
+  let rxGroupListId: number | undefined;
+  let slotOperation: number | undefined;
+  let encryption: boolean | undefined;
+  let tdmaDirectMode: boolean | undefined;
+  let shortDataConfirm: boolean | undefined;
+  let privateConfirm: boolean | undefined;
 
-  // Digital Emergency System ID/Index (0x1E)
+  // Digital Emergency System ID/Index (0x1E) - same for both analog and digital
   // 0 = None (no emergency system)
   // 1-77 = Index into the Digital Emergency Systems list (1-based)
   // Values >77 reset to 0
-  let digitalEmergencySystemId = data[0x1E];
-  // Validate: 0-77, reset >77 to 0
+  digitalEmergencySystemId = data[0x1E];
   if (digitalEmergencySystemId > 77) {
     digitalEmergencySystemId = 0;
   }
 
-  // PTT ID (0x1F)
-  // Bit 6 (mask 0x40): PTT ID Display (0=Off, 1=On)
-  // NOTE: This is duplicated at 0x26 bit 7 - both locations control the same setting
-  // Bits 0-5 (mask 0x3F): PTT ID value (0-63)
-  const pttIdSettings = data[0x1F];
-  const pttIdDisplay = (pttIdSettings & 0x40) !== 0;
-  const pttId = pttIdSettings & 0x3F;
+  if (isDigital) {
+    // Digital mode: Parse digital-specific fields from bytes 0x1D, 0x1F
+    const digitalFeatures = data[0x1D];
+    encryption = (digitalFeatures & 0x80) !== 0; // Bit 7
+    shortDataConfirm = (digitalFeatures & 0x40) !== 0; // Bit 6
+    tdmaDirectMode = (digitalFeatures & 0x20) !== 0; // Bit 5
+    slotOperation = digitalFeatures & 0x0F; // Bits 3-0
+    
+    // Byte 0x1F: RX Group List and Private Confirm
+    const digitalSettings = data[0x1F];
+    privateConfirm = (digitalSettings & 0x40) !== 0; // Bit 6
+    rxGroupListId = digitalSettings & 0x3F; // Bits 5-0 (mask 0x3F)
+  } else {
+    // Analog mode: Parse analog features from bytes 0x1D, 0x1F
+    const analogFeatures = data[0x1D];
+    voxFunction = (analogFeatures & 0x80) !== 0; // Bit 7: VOX Function
+    scramble = (analogFeatures & 0x40) !== 0; // Bit 6: Scramble
+    compander = (analogFeatures & 0x20) !== 0; // Bit 5: Compander
+    talkback = (analogFeatures & 0x10) !== 0; // Bit 4: Talkback
+    unknown1D_3_0 = analogFeatures & 0x0F; // Bits 3-0: Unknown Setting
+
+    // PTT ID (0x1F) - Analog mode
+    // Bit 6 (mask 0x40): PTT ID Display (0=Off, 1=On)
+    // NOTE: This is duplicated at 0x26 bit 7 - both locations control the same setting
+    // Bits 0-5 (mask 0x3F): PTT ID value (0-63)
+    const pttIdSettings = data[0x1F];
+    pttIdDisplay = (pttIdSettings & 0x40) !== 0;
+    pttId = pttIdSettings & 0x3F;
+  }
 
   // Color Code (0x20)
   const colorCode = data[0x20] & 0x0F;
@@ -337,9 +364,21 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   const unknown29_3_2 = (pttIdTypeByte >> 2) & 0x03;
   const unknown29_1_0 = pttIdTypeByte & 0x03;
 
-  // Unknown Setting (0x2A)
-  // 8-bit value (0-255), possibly DMR or signaling related
-  const unknown2A = data[0x2A];
+  // Encryption ID (0x2A) - Digital only
+  // 0 = None (no encryption)
+  // 1-8 = Encryption Key ID (references encryption keys 1-8)
+  // For analog channels, this byte may be unused or have different meaning
+  let encryptionId: number | undefined;
+  let unknown2A: number;
+  if (isDigital) {
+    let encId = data[0x2A];
+    if (encId > 8) encId = 0; // Validate: 0-8
+    encryptionId = encId;
+    unknown2A = 0; // Not used for digital channels
+  } else {
+    // Analog: keep as unknown for now
+    unknown2A = data[0x2A];
+  }
 
   // Contact ID (0x2B)
   // 0-249 (displayed as 1-250 in radio UI)
@@ -367,7 +406,6 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     scanListId,
     forbidTalkaround,
     aprsReceive,
-    reverseFreq,
     emergencyIndicator,
     emergencyAck,
     emergencySystemId,
@@ -397,12 +435,22 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     pttIdType,
     unknown29_3_2,
     unknown29_1_0,
-    unknown2A,
+    unknown2A, // For digital, this is 0 (encryptionId is used instead)
     contactId,
     unknown1A_6_4,
     unknown1A_3,
     unknown1C_1_0,
     unknown1D_3_0,
+    // Digital-only fields (only set for digital channels)
+    ...(isDigital ? {
+      rxGroupListId,
+      slotOperation,
+      encryption,
+      encryptionId, // Stored at byte 0x2A
+      tdmaDirectMode,
+      shortDataConfirm,
+      privateConfirm,
+    } : {}),
   };
 }
 
@@ -464,7 +512,7 @@ export function encodeChannel(channel: Channel): Uint8Array {
   talkaroundAprs |= ((channel.unknown1A_6_4 & 0x07) << 4) & 0x70; // Bits 6-4
   if (channel.unknown1A_3) talkaroundAprs |= 0x08; // Bit 3
   if (channel.aprsReceive) talkaroundAprs |= 0x04; // Bit 2
-  talkaroundAprs |= channel.reverseFreq & 0x03; // Bits 1-0
+  // Bits 1-0: Reserved/Unknown (preserve original value if reading, otherwise leave as 0)
   data[0x1A] = talkaroundAprs;
 
   // Emergency (0x1B)
@@ -483,26 +531,44 @@ export function encodeChannel(channel: Channel): Uint8Array {
   const aprsReportValue = channel.aprsReportMode === 'Off' ? 0 : channel.aprsReportMode === 'Digital' ? 1 : 2;
   data[0x1C] = ((squelchValue << 4) & 0xF0) | ((powerValue << 2) & 0x0C) | (aprsReportValue & 0x03);
 
-  // Analog features (0x1D)
-  let analogFeatures = 0;
-  if (channel.voxFunction) analogFeatures |= 0x80; // Bit 7
-  if (channel.scramble) analogFeatures |= 0x40; // Bit 6
-  if (channel.compander) analogFeatures |= 0x20; // Bit 5
-  if (channel.talkback) analogFeatures |= 0x10; // Bit 4
-  analogFeatures |= channel.unknown1D_3_0 & 0x0F; // Bits 3-0
-  data[0x1D] = analogFeatures;
-
-  // Digital Emergency System ID/Index (0x1E)
+  // Digital Emergency System ID/Index (0x1E) - same for both analog and digital
   // 0 = None (no emergency system)
   // 1-77 = Index into the Digital Emergency Systems list (1-based)
   // Clamp to valid range (0-77)
   const digitalEmergencySystemIdValue = Math.min(77, Math.max(0, channel.digitalEmergencySystemId ?? 0)) & 0xFF;
   data[0x1E] = digitalEmergencySystemIdValue;
 
-  // PTT ID (0x1F)
-  let pttIdSettings = channel.pttId & 0x3F; // Bits 5-0
-  if (channel.pttIdDisplay) pttIdSettings |= 0x40; // Bit 6
-  data[0x1F] = pttIdSettings;
+  // Byte 0x1D, 0x1F have different meanings for analog vs digital channels
+  const isDigital = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
+  
+  if (isDigital) {
+    // Digital mode: Encode digital-specific fields
+    let digitalFeatures = 0;
+    if (channel.encryption) digitalFeatures |= 0x80; // Bit 7: Encryption
+    if (channel.shortDataConfirm) digitalFeatures |= 0x40; // Bit 6: Short Data Confirm
+    if (channel.tdmaDirectMode) digitalFeatures |= 0x20; // Bit 5: TDMA Direct Mode
+    digitalFeatures |= (channel.slotOperation ?? 0) & 0x0F; // Bits 3-0: Slot Operation
+    data[0x1D] = digitalFeatures;
+    
+    // Byte 0x1F: RX Group List and Private Confirm
+    let digitalSettings = (channel.rxGroupListId ?? 0) & 0x3F; // Bits 5-0: RX Group List ID
+    if (channel.privateConfirm) digitalSettings |= 0x40; // Bit 6: Private Confirm
+    data[0x1F] = digitalSettings;
+  } else {
+    // Analog mode: Encode analog features
+    let analogFeatures = 0;
+    if (channel.voxFunction) analogFeatures |= 0x80; // Bit 7
+    if (channel.scramble) analogFeatures |= 0x40; // Bit 6
+    if (channel.compander) analogFeatures |= 0x20; // Bit 5
+    if (channel.talkback) analogFeatures |= 0x10; // Bit 4
+    analogFeatures |= channel.unknown1D_3_0 & 0x0F; // Bits 3-0
+    data[0x1D] = analogFeatures;
+
+    // PTT ID (0x1F) - Analog mode
+    let pttIdSettings = channel.pttId & 0x3F; // Bits 5-0
+    if (channel.pttIdDisplay) pttIdSettings |= 0x40; // Bit 6
+    data[0x1F] = pttIdSettings;
+  }
 
   // Color Code (0x20)
   data[0x20] = channel.colorCode & 0x0F;
@@ -564,8 +630,16 @@ export function encodeChannel(channel: Channel): Uint8Array {
   pttIdTypeByte |= channel.unknown29_1_0 & 0x03; // Bits 1-0
   data[0x29] = pttIdTypeByte;
 
-  // Unknown Setting (0x2A)
-  data[0x2A] = channel.unknown2A & 0xFF;
+  // Encryption ID (0x2A) - Digital only
+  // 0 = None (no encryption)
+  // 1-8 = Encryption Key ID (references encryption keys 1-8)
+  if (isDigital) {
+    const encryptionIdValue = Math.min(8, Math.max(0, channel.encryptionId ?? 0)) & 0xFF;
+    data[0x2A] = encryptionIdValue;
+  } else {
+    // Analog: preserve unknown2A
+    data[0x2A] = channel.unknown2A & 0xFF;
+  }
 
   // Contact ID (0x2B)
   data[0x2B] = channel.contactId & 0xFF;

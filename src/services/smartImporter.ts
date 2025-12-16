@@ -361,7 +361,6 @@ export async function smartImportCodeplug(
                 squelchLevel: parseInt(row['Squelch'] || row['Squelch Level'] || '3') || 3,
                 digitalEmergencySystemId: parseInt(row['Digital Emergency System ID'] || '0') || 0,
                 emergencySystemId: parseInt(row['Emergency ID'] || row['Emergency System ID'] || '0') || 0,
-                reverseFreq: parseInt(row['Reverse Freq'] || '0') || 0,
                 emergencyIndicator: row['Emergency'] === 'Yes' || row['Emergency'] === true,
                 emergencyAck: row['Emergency Ack'] === 'Yes' || row['Emergency Ack'] === true,
                 voxFunction: row['VOX'] === 'Yes' || row['VOX'] === true,
