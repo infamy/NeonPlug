@@ -72,7 +72,6 @@ export function exportCodeplug(data: CodeplugData): void {
       'PTT ID Display': ch.pttIdDisplay ? 'Yes' : 'No',
       'PTT ID': ch.pttId || 0,
       'PTT ID Type': ch.pttIdType,
-      'Reverse Freq': ch.reverseFreq || 0,
       'RX Squelch Mode': ch.rxSquelchMode,
       'Step Frequency': ch.stepFrequency || 0,
       'Signaling Type': ch.signalingType,
@@ -113,7 +112,6 @@ export function exportCodeplug(data: CodeplugData): void {
       { wch: 12 },  // PTT ID Display
       { wch: 8 },   // PTT ID
       { wch: 12 },  // PTT ID Type
-      { wch: 12 },  // Reverse Freq
       { wch: 15 },  // RX Squelch Mode
       { wch: 12 },  // Step Frequency
       { wch: 15 },  // Signaling Type
@@ -363,7 +361,6 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
               squelchLevel: parseInt(row['Squelch'] || row['Squelch Level']) || 3,
               emergencySystemId: parseInt(row['Emergency ID'] || row['Emergency System ID']) || 0,
               // Import additional fields if present
-              reverseFreq: parseInt(row['Reverse Freq']) || 0,
               emergencyIndicator: row['Emergency'] === 'Yes',
               emergencyAck: row['Emergency Ack'] === 'Yes',
               voxFunction: row['VOX'] === 'Yes',

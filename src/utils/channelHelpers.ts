@@ -28,7 +28,6 @@ export function createDefaultChannel(overrides: Partial<Channel> = {}): Channel 
     unknown1A_6_4: 0,
     unknown1A_3: false,
     aprsReceive: false,
-    reverseFreq: 0,
     emergencyIndicator: false,
     emergencyAck: false,
     emergencySystemId: 0,
