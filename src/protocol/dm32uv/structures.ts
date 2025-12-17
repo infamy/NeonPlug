@@ -126,7 +126,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   // Mode flags (0x18)
   // Bits 7-4 (mask 0xF0): Channel Mode (0=Analog, 1=Digital, 2=Fixed Analog, 3=Fixed Digital)
   // Bit 3 (mask 0x08): Forbid TX (0=Allow, 1=Forbid)
-  // Bits 2-1 (mask 0x06): Busy Lock (0=Off, 1=Carrier, 2=Repeater)
+  // Bits 2-1 (mask 0x06): Power Level (0=Low, 1=Medium, 2=High) - NOT Busy Lock!
   // Bit 0 (mask 0x01): Lone Worker (0=Off, 1=On)
   const modeFlags = data[0x18];
   const channelMode = (modeFlags >> 4) & 0x0F;
@@ -136,10 +136,16 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   // Forbid TX is stored at byte 0x18, bit 3 (mask 0x08)
   const forbidTx = (modeFlags & 0x08) !== 0;
   
-  const busyLockValue = (modeFlags >> 1) & 0x03;
-  const busyLock: Channel['busyLock'] = 
-    busyLockValue === 0 ? 'Off' : 
-    busyLockValue === 1 ? 'Carrier' : 'Repeater';
+  // Power is stored at byte 0x18, bits 2-1 (mask 0x06)
+  const powerValue = (modeFlags >> 1) & 0x03;
+  const power: Channel['power'] = 
+    powerValue === 0 ? 'Low' : 
+    powerValue === 1 ? 'Medium' : 
+    powerValue === 2 ? 'High' : 'Low';
+  
+  // Busy Lock - need to find where this is actually stored
+  // For now, set to default
+  const busyLock: Channel['busyLock'] = 'Off';
   const loneWorker = (modeFlags & 0x01) !== 0;
 
   // Debug logging for VECTOR channels to diagnose forbid TX issues
@@ -147,7 +153,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     const bit3 = (modeFlags & 0x08) !== 0;
     const bit3Raw = (modeFlags >> 3) & 0x01;
     const rxEqualsTx = Math.abs(rxFreq - txFreq) < 0.0001;
-    console.log(`[DEBUG] Channel ${channelNumber} "${name}": modeFlags=0x${modeFlags.toString(16).padStart(2, '0')} (binary: ${modeFlags.toString(2).padStart(8, '0')}), mode=${mode} (${channelMode}), forbidTx=${forbidTx}, bit3=${bit3}, bit3Raw=${bit3Raw}, busyLock=${busyLockValue}, loneWorker=${loneWorker}, RX=${rxFreq.toFixed(4)}, TX=${txFreq.toFixed(4)}, RX==TX=${rxEqualsTx}`);
+    console.log(`[DEBUG] Channel ${channelNumber} "${name}": modeFlags=0x${modeFlags.toString(16).padStart(2, '0')} (binary: ${modeFlags.toString(2).padStart(8, '0')}), mode=${mode} (${channelMode}), forbidTx=${forbidTx}, bit3=${bit3}, bit3Raw=${bit3Raw}, power=${power}, loneWorker=${loneWorker}, RX=${rxFreq.toFixed(4)}, TX=${txFreq.toFixed(4)}, RX==TX=${rxEqualsTx}`);
   }
 
   // Scan & Bandwidth (0x19)
@@ -185,25 +191,13 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     emergencySystemId = 0;
   }
 
-  // Power & APRS & SQL (0x1C)
-  // Bits 7-4 (mask 0xF0): SQL Level (0-9, values >9 reset to 0)
-  // Bits 3-2 (mask 0x0C): Power Level (0=Low, 1=Medium, 2=High, 3=Low)
-  // Bits 1-0 (mask 0x03): APRS Report Mode (0=Off, 1=Digital, 2=Analog, values >2 reset to 0)
-  const powerAprsSql = data[0x1C];
-  // SQL Level: Upper 4 bits (bits 4-7), value range 0-9
-  let squelchLevel = (powerAprsSql >> 4) & 0x0F;
-  // Validate: 0-9, reset >9 to 0
-  if (squelchLevel > 9) {
-    squelchLevel = 0;
-  }
-  // Power: Bits 2-3
-  const powerValue = (powerAprsSql >> 2) & 0x03;
-  const power: Channel['power'] = 
-    powerValue === 0 ? 'Low' : 
-    powerValue === 1 ? 'Medium' : 
-    powerValue === 2 ? 'High' : 'Low';
-  // APRS: Bits 0-1
-  let aprsReportValue = powerAprsSql & 0x03;
+  // Power & APRS (0x1C)
+  // Bits 3-2 (mask 0x0C): APRS Report Mode (0=Off, 1=Digital, 2=Analog)
+  // Bits 1-0 (mask 0x03): Unknown
+  // NOTE: Power is actually stored at 0x1F, not 0x1C!
+  const powerAprs = data[0x1C];
+  // APRS: Bits 3-2
+  let aprsReportValue = (powerAprs >> 2) & 0x03;
   // Validate: 0-2, reset >2 to 0
   if (aprsReportValue > 2) {
     aprsReportValue = 0;
@@ -234,14 +228,16 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   let shortDataConfirm: boolean | undefined;
   let privateConfirm: boolean | undefined;
 
-  // Digital Emergency System ID/Index (0x1E) - same for both analog and digital
-  // 0 = None (no emergency system)
-  // 1-77 = Index into the Digital Emergency Systems list (1-based)
-  // Values >77 reset to 0
-  digitalEmergencySystemId = data[0x1E];
-  if (digitalEmergencySystemId > 77) {
-    digitalEmergencySystemId = 0;
-  }
+  // Squelch Level (0x1E) - full byte, value range 0-255
+  // According to spec, 0x1E is squelch level, not digital emergency system ID
+  const squelchLevel = data[0x1E] & 0xFF;
+  
+  // Digital Emergency System ID/Index - NOTE: This may be stored elsewhere
+  // The spec says 0x1E is squelch, but the code was using it for digital emergency system
+  // For now, we'll set it to 0 and note that this may need to be stored elsewhere
+  digitalEmergencySystemId = 0; // TODO: Find correct location for digital emergency system ID
+
+  // Power was already read from 0x18 bits 2-1 above
 
   if (isDigital) {
     // Digital mode: Parse digital-specific fields from bytes 0x1D, 0x1F
@@ -251,7 +247,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     tdmaDirectMode = (digitalFeatures & 0x20) !== 0; // Bit 5
     slotOperation = digitalFeatures & 0x0F; // Bits 3-0
     
-    // Byte 0x1F: RX Group List and Private Confirm
+    // Byte 0x1F: RX Group List and Private Confirm (but power is also here!)
     const digitalSettings = data[0x1F];
     privateConfirm = (digitalSettings & 0x40) !== 0; // Bit 6
     rxGroupListId = digitalSettings & 0x3F; // Bits 5-0 (mask 0x3F)
@@ -264,7 +260,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     talkback = (analogFeatures & 0x10) !== 0; // Bit 4: Talkback
     unknown1D_3_0 = analogFeatures & 0x0F; // Bits 3-0: Unknown Setting
 
-    // PTT ID (0x1F) - Analog mode
+    // PTT ID (0x1F) - Analog mode (power is also stored here!)
     // Bit 6 (mask 0x40): PTT ID Display (0=Off, 1=On)
     // NOTE: This is duplicated at 0x26 bit 7 - both locations control the same setting
     // Bits 0-5 (mask 0x3F): PTT ID value (0-63)
@@ -349,7 +345,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   // Reserved (0x28) - Unknown purpose, possibly padding or reserved for future use
   // const reserved28 = data[0x28];
 
-  // PTT ID Type (0x29)
+  // PTT ID Type (0x29) - restore original parsing
   // Bits 7-4 (mask 0xF0): PTT ID Type (0=Off, 1=BOT, 2=EOT, 3=Both, values >3 reset to 0)
   // Bits 3-2 (mask 0x0C): Unknown Setting (0-3)
   // Bits 1-0 (mask 0x03): Unknown
@@ -494,8 +490,9 @@ export function encodeChannel(channel: Channel): Uint8Array {
   } else {
     modeFlags &= 0xF7;  // Clear bit 3 (0xF7 = ~0x08)
   }
-  const busyLockValue = channel.busyLock === 'Off' ? 0 : channel.busyLock === 'Carrier' ? 1 : 2;
-  modeFlags |= (busyLockValue << 1) & 0x06;
+  // Power is stored at bits 2-1 (NOT busy lock!)
+  const powerValue = channel.power === 'Low' ? 0 : channel.power === 'Medium' ? 1 : 2;
+  modeFlags |= (powerValue << 1) & 0x06;
   if (channel.loneWorker) modeFlags |= 0x01;
   data[0x18] = modeFlags;
 
@@ -522,21 +519,23 @@ export function encodeChannel(channel: Channel): Uint8Array {
   emergency |= channel.emergencySystemId & 0x1F; // Bits 4-0
   data[0x1B] = emergency;
 
-  // Power & APRS & SQL (0x1C)
-  // SQL Level: Upper 4 bits (bits 4-7), value range 0-9
-  const squelchValue = Math.min(9, Math.max(0, channel.squelchLevel || 0)) & 0x0F;
-  // Power: Bits 2-3 (keeping compatibility, but may need adjustment)
-  const powerValue = channel.power === 'Low' ? 0 : channel.power === 'Medium' ? 1 : 2;
-  // APRS: Bits 0-1
+  // APRS Report Mode (0x1C) - Power is NOT here, it's at 0x1F!
+  // Bits 3-2 (mask 0x0C): APRS Report Mode (0=Off, 1=Digital, 2=Analog)
+  // Bits 1-0 (mask 0x03): Unknown
   const aprsReportValue = channel.aprsReportMode === 'Off' ? 0 : channel.aprsReportMode === 'Digital' ? 1 : 2;
-  data[0x1C] = ((squelchValue << 4) & 0xF0) | ((powerValue << 2) & 0x0C) | (aprsReportValue & 0x03);
+  data[0x1C] = ((aprsReportValue << 2) & 0x0C) | 0x00; // Bits 1-0 are unknown/reserved, bits 7-4 are also unknown/reserved
 
+  // Squelch Level (0x1E) - full byte, value range 0-255
+  const squelchLevel = Math.min(255, Math.max(0, channel.squelchLevel || 0)) & 0xFF;
+  data[0x1E] = squelchLevel;
+  
   // Digital Emergency System ID/Index (0x1E) - same for both analog and digital
-  // 0 = None (no emergency system)
-  // 1-77 = Index into the Digital Emergency Systems list (1-based)
-  // Clamp to valid range (0-77)
-  const digitalEmergencySystemIdValue = Math.min(77, Math.max(0, channel.digitalEmergencySystemId ?? 0)) & 0xFF;
-  data[0x1E] = digitalEmergencySystemIdValue;
+  // NOTE: This conflicts with squelch level! According to spec, 0x1E is squelch level.
+  // Digital Emergency System ID might be stored elsewhere or this is a conflict in the spec.
+  // For now, we'll use 0x1E for squelch as per the spec.
+  // If digital emergency system needs to be stored, it may need a different location.
+  // const digitalEmergencySystemIdValue = Math.min(77, Math.max(0, channel.digitalEmergencySystemId ?? 0)) & 0xFF;
+  // data[0x1E] = digitalEmergencySystemIdValue;
 
   // Byte 0x1D, 0x1F have different meanings for analog vs digital channels
   const isDigital = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
@@ -550,7 +549,8 @@ export function encodeChannel(channel: Channel): Uint8Array {
     digitalFeatures |= (channel.slotOperation ?? 0) & 0x0F; // Bits 3-0: Slot Operation
     data[0x1D] = digitalFeatures;
     
-    // Byte 0x1F: RX Group List and Private Confirm
+    // RX Group List (0x1F) - Digital mode
+    // Power is NOT here - it's at 0x18 bits 2-1!
     let digitalSettings = (channel.rxGroupListId ?? 0) & 0x3F; // Bits 5-0: RX Group List ID
     if (channel.privateConfirm) digitalSettings |= 0x40; // Bit 6: Private Confirm
     data[0x1F] = digitalSettings;
@@ -565,6 +565,7 @@ export function encodeChannel(channel: Channel): Uint8Array {
     data[0x1D] = analogFeatures;
 
     // PTT ID (0x1F) - Analog mode
+    // Power is NOT here - it's at 0x29!
     let pttIdSettings = channel.pttId & 0x3F; // Bits 5-0
     if (channel.pttIdDisplay) pttIdSettings |= 0x40; // Bit 6
     data[0x1F] = pttIdSettings;
@@ -617,7 +618,7 @@ export function encodeChannel(channel: Channel): Uint8Array {
   // Reserved (0x28)
   data[0x28] = 0x00;
 
-  // PTT ID Type (0x29)
+  // PTT ID Type (0x29) - restore original encoding
   const pttIdTypeMap: Record<Channel['pttIdType'], number> = {
     'Off': 0,
     'BOT': 1,

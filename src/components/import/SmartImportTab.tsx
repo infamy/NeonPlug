@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
 import { searchRepeaters, getCurrentLocation, geocodeLocation, type Repeater, type LocationInput } from '../../services/repeaterFinder';
@@ -9,6 +9,7 @@ import { generateAirportChannels } from '../../services/airportChannels';
 import { findNearbyAirports, getAirportFrequenciesWithTypes, type AirportData } from '../../data/airportsData';
 import { generateTaflChannels } from '../../services/taflChannels';
 import { findNearbyTaflEntries, groupTaflEntriesByName, type TaflData } from '../../data/taflData';
+import { importChannelsFromChirpCSV, exportChannelsToChirpCSV, downloadCSV } from '../../services/csv';
 import type { Channel } from '../../models';
 import type { Zone } from '../../models';
 import { Button } from '../ui/Button';
@@ -59,6 +60,15 @@ export const SmartImportTab: React.FC = () => {
   const [selectedTaflEntries, setSelectedTaflEntries] = useState<Set<number>>(new Set());
   const [expandedTaflGroups, setExpandedTaflGroups] = useState<Set<string>>(new Set());
   const [taflLoadProgress, setTaflLoadProgress] = useState<{ percent: number; loaded: number; total: number } | null>(null);
+  
+  // Chirp CSV import/export state
+  const [isImportingChirp, setIsImportingChirp] = useState(false);
+  const [chirpImportResult, setChirpImportResult] = useState<{ 
+    operation: 'import' | 'export';
+    channels: number; 
+    errors?: string[] 
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUseCurrentLocation = async () => {
     setIsSearching(true);
@@ -645,8 +655,179 @@ export const SmartImportTab: React.FC = () => {
     }
   };
 
+  const handleChirpCSVImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingChirp(true);
+    setError(null);
+    setChirpImportResult(null);
+
+    try {
+      const content = await file.text();
+      
+      // Find next available channel number
+      const existingNumbers = new Set(channels.map(ch => ch.number));
+      let nextChannelNumber = 1;
+      while (existingNumbers.has(nextChannelNumber)) {
+        nextChannelNumber++;
+      }
+
+      const result = importChannelsFromChirpCSV(content, nextChannelNumber);
+
+      if (result.success && result.channels) {
+        // Add imported channels
+        const newChannels = [...channels, ...result.channels];
+        setChannels(newChannels);
+        
+        setChirpImportResult({
+          operation: 'import',
+          channels: result.channels.length,
+          errors: result.errors,
+        });
+      } else {
+        setError(result.errors?.join('\n') || 'Failed to import Chirp CSV');
+        setChirpImportResult({
+          operation: 'import',
+          channels: 0,
+          errors: result.errors,
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import Chirp CSV file');
+    } finally {
+      setIsImportingChirp(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleChirpCSVExport = () => {
+    try {
+      // Filter out digital channels - Chirp doesn't support them
+      const analogChannels = channels.filter(ch => 
+        ch.mode === 'Analog' || ch.mode === 'Fixed Analog'
+      );
+      
+      if (analogChannels.length === 0) {
+        setError('No analog channels to export. Chirp only supports analog channels.');
+        return;
+      }
+      
+      const digitalCount = channels.length - analogChannels.length;
+      const csvContent = exportChannelsToChirpCSV(channels);
+      downloadCSV(csvContent, 'chirp_channels.csv');
+      
+      if (digitalCount > 0) {
+        setChirpImportResult({
+          operation: 'export',
+          channels: analogChannels.length,
+          errors: [`Exported ${analogChannels.length} analog channel${analogChannels.length !== 1 ? 's' : ''}. ${digitalCount} digital channel${digitalCount !== 1 ? 's' : ''} excluded (Chirp doesn't support digital).`],
+        });
+      } else {
+        setChirpImportResult({
+          operation: 'export',
+          channels: analogChannels.length,
+          errors: undefined,
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export Chirp CSV');
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto p-6">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-neon-cyan mb-2">Smart Import/Export</h2>
+        <p className="text-cool-gray">
+          Import channels from Chirp CSV format or export your channels to Chirp CSV format
+        </p>
+      </div>
+
+      {/* Chirp CSV Import/Export Section */}
+      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
+        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Chirp CSV Import/Export</h3>
+        <p className="text-sm text-cool-gray mb-4">
+          Import channels from Chirp CSV format or export your channels to Chirp CSV format for use with other radio programming software.
+        </p>
+
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="block text-sm text-cool-gray mb-2">Import from Chirp CSV</label>
+            <p className="text-xs text-cool-gray mb-2">
+              Note: Chirp doesn't support digital channels. Any digital channels in the CSV will be imported as analog.
+            </p>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".csv"
+              onChange={handleChirpCSVImport}
+              disabled={isImportingChirp}
+              className="hidden"
+            />
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isImportingChirp}
+              className="w-full bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright"
+            >
+              {isImportingChirp ? 'Importing...' : 'Import Chirp CSV'}
+            </Button>
+          </div>
+          <div>
+            <label className="block text-sm text-cool-gray mb-2">Export to Chirp CSV</label>
+            <p className="text-xs text-cool-gray mb-2">
+              Note: Only analog channels will be exported (Chirp doesn't support digital channels)
+            </p>
+            <Button
+              onClick={handleChirpCSVExport}
+              disabled={channels.filter(ch => ch.mode === 'Analog' || ch.mode === 'Fixed Analog').length === 0}
+              className="w-full bg-neon-magenta text-white hover:bg-neon-magenta-bright"
+            >
+              Export to Chirp CSV ({channels.filter(ch => ch.mode === 'Analog' || ch.mode === 'Fixed Analog').length} analog)
+            </Button>
+          </div>
+        </div>
+
+        {chirpImportResult && (
+          <div className={`rounded p-3 mb-4 ${
+            chirpImportResult.errors && chirpImportResult.errors.length > 0
+              ? 'bg-yellow-900 border border-yellow-500 text-yellow-200'
+              : 'bg-green-900 border border-green-500 text-green-200'
+          }`}>
+            <div className="font-semibold mb-1">
+              {chirpImportResult.operation === 'import' 
+                ? (chirpImportResult.errors && chirpImportResult.errors.length > 0
+                    ? 'Import completed with warnings'
+                    : 'Import successful')
+                : (chirpImportResult.errors && chirpImportResult.errors.length > 0
+                    ? 'Export completed with warnings'
+                    : 'Export successful')}
+            </div>
+            <div className="text-sm">
+              {chirpImportResult.operation === 'import' 
+                ? `Imported ${chirpImportResult.channels} channel${chirpImportResult.channels !== 1 ? 's' : ''}`
+                : `Exported ${chirpImportResult.channels} channel${chirpImportResult.channels !== 1 ? 's' : ''}`}
+            </div>
+            {chirpImportResult.errors && chirpImportResult.errors.length > 0 && (
+              <div className="text-sm mt-2">
+                <div className="font-semibold">Warnings:</div>
+                <ul className="list-disc list-inside mt-1">
+                  {chirpImportResult.errors.slice(0, 5).map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                  {chirpImportResult.errors.length > 5 && (
+                    <li>... and {chirpImportResult.errors.length - 5} more</li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-neon-cyan mb-2">Channel Wizard</h2>
         <p className="text-cool-gray">
