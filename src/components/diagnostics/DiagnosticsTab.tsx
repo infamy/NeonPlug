@@ -1,7 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
+import { useChannelsStore } from '../../store/channelsStore';
 import { parseRadioSettings } from '../../protocol/dm32uv/structures';
+import { decodeBCDFrequency, decodeCTCSSDCS } from '../../protocol/dm32uv/encoding';
 import {
   POWER_ON_INTERFACE_OPTIONS,
   COLOR_OPTIONS,
@@ -12,7 +14,16 @@ import {
 export const DiagnosticsTab: React.FC = () => {
   const { rawRadioSettingsData, rawContactBlockData, rawContactBlockAddress, blockMetadata, blockData } = useRadioStore();
   const { settings: radioSettings } = useRadioSettingsStore();
+  const { channels, rawChannelData } = useChannelsStore();
   const [showMetadataBlock, setShowMetadataBlock] = useState(false);
+  
+  // Expose store to window for debugging scripts
+  useEffect(() => {
+    (window as any).__NEONPLUG_STORE__ = {
+      channels,
+      rawChannelData,
+    };
+  }, [channels, rawChannelData]);
   const [showMetadataBlock10, setShowMetadataBlock10] = useState(false);
   const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
   const [showOffsetInspector, setShowOffsetInspector] = useState(false);
@@ -21,10 +32,13 @@ export const DiagnosticsTab: React.FC = () => {
   const [showHexDump10, setShowHexDump10] = useState(false);
   const [showHexDump41, setShowHexDump41] = useState(false);
   const [showContactBlock, setShowContactBlock] = useState(false);
+  const [showChannelParser, setShowChannelParser] = useState(false);
   const [inspectOffset, setInspectOffset] = useState<string>('');
   const [inspectOffset10, setInspectOffset10] = useState<string>('');
   const [inspectOffset41, setInspectOffset41] = useState<string>('');
   const [inspectContactOffset, setInspectContactOffset] = useState<string>('');
+  const [selectedChannelNumber, setSelectedChannelNumber] = useState<number>(1);
+  const [selectedChannelNumber2, setSelectedChannelNumber2] = useState<number | null>(null);
 
   // Find block with metadata 0x10
   const block10Address = useMemo(() => {
@@ -1147,6 +1161,426 @@ export const DiagnosticsTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Channel Parser */}
+      {rawChannelData.size > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-semibold text-yellow-400">Channel Parser</h3>
+              <span className="px-2 py-1 bg-yellow-900/30 text-yellow-400 text-xs rounded border border-yellow-600/30">
+                {rawChannelData.size} channels
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowChannelParser(!showChannelParser);
+              }}
+              className="text-sm text-yellow-400 hover:text-yellow-300"
+            >
+              {showChannelParser ? '▼ Hide' : '▶ Show'}
+            </button>
+          </div>
+          <p className="text-cool-gray text-sm mb-4">
+            Inspect raw channel data to debug power level and other field parsing issues.
+          </p>
+
+          <div className={`space-y-6 ${showChannelParser ? '' : 'hidden'}`}>
+            <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm text-cool-gray mb-2">Channel 1</label>
+                  <select
+                    value={selectedChannelNumber}
+                    onChange={(e) => setSelectedChannelNumber(parseInt(e.target.value))}
+                    className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm focus:outline-none focus:border-yellow-400"
+                  >
+                    {Array.from(rawChannelData.keys())
+                      .sort((a, b) => a - b)
+                      .map((chNum) => (
+                        <option key={chNum} value={chNum}>
+                          Channel {chNum} {channels.find(c => c.number === chNum)?.name ? `(${channels.find(c => c.number === chNum)?.name})` : ''}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-cool-gray mb-2">Channel 2 (for comparison)</label>
+                  <select
+                    value={selectedChannelNumber2 || ''}
+                    onChange={(e) => setSelectedChannelNumber2(e.target.value ? parseInt(e.target.value) : null)}
+                    className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm focus:outline-none focus:border-yellow-400"
+                  >
+                    <option value="">None</option>
+                    {Array.from(rawChannelData.keys())
+                      .sort((a, b) => a - b)
+                      .filter(chNum => chNum !== selectedChannelNumber)
+                      .map((chNum) => (
+                        <option key={chNum} value={chNum}>
+                          Channel {chNum} {channels.find(c => c.number === chNum)?.name ? `(${channels.find(c => c.number === chNum)?.name})` : ''}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              {(() => {
+                // Helper function to parse all known channel fields
+                const parseChannelFields = (channelBytes: Uint8Array) => {
+                  const nameBytes = channelBytes.slice(0, 16);
+                  const nullIndex = nameBytes.indexOf(0);
+                  const name = new TextDecoder('ascii', { fatal: false })
+                    .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : 16))
+                    .replace(/\x00/g, '')
+                    .trim();
+
+                  let rxFreq = 0;
+                  let txFreq = 0;
+                  try {
+                    rxFreq = decodeBCDFrequency(channelBytes.slice(0x10, 0x14));
+                    txFreq = decodeBCDFrequency(channelBytes.slice(0x14, 0x18));
+                  } catch (e) {
+                    // Ignore
+                  }
+
+                  const modeFlags = channelBytes[0x18];
+                  const channelMode = (modeFlags >> 4) & 0x0F;
+                  const modeMap = ['Analog', 'Digital', 'Fixed Analog', 'Fixed Digital'];
+                  const mode = modeMap[channelMode] || 'Analog';
+                  const forbidTx = (modeFlags & 0x08) !== 0;
+                  const busyLockValue = (modeFlags >> 1) & 0x03;
+                  const busyLock = busyLockValue === 0 ? 'Off' : busyLockValue === 1 ? 'Carrier' : 'Repeater';
+                  const loneWorker = (modeFlags & 0x01) !== 0;
+
+                  const scanBw = channelBytes[0x19];
+                  const bandwidth = (scanBw & 0x80) !== 0 ? '25kHz' : '12.5kHz';
+                  const scanAdd = (scanBw & 0x40) !== 0;
+                  const scanListId = (scanBw >> 2) & 0x0F;
+
+                  const talkaroundAprs = channelBytes[0x1A];
+                  const forbidTalkaround = (talkaroundAprs & 0x80) !== 0;
+                  const aprsReceive = (talkaroundAprs & 0x04) !== 0;
+
+                  const emergency = channelBytes[0x1B];
+                  const emergencyIndicator = (emergency & 0x80) !== 0;
+                  const emergencyAck = (emergency & 0x40) !== 0;
+                  const emergencySystemId = emergency & 0x1F;
+
+                  // Power is stored at 0x18, bits 2-1 (NOT 0x29!)
+                  const modeFlagsForPower = channelBytes[0x18];
+                  const powerValue = (modeFlagsForPower >> 1) & 0x03;
+                  const power = powerValue === 0 ? 'Low' : powerValue === 1 ? 'Medium' : powerValue === 2 ? 'High' : 'Low';
+                  
+                  // APRS Report Mode is at 0x1C, bits 3-2
+                  const powerAprs = channelBytes[0x1C];
+                  const aprsReportValue = (powerAprs >> 2) & 0x03;
+                  const aprsReportMode = aprsReportValue === 0 ? 'Off' : aprsReportValue === 1 ? 'Digital' : aprsReportValue === 2 ? 'Analog' : 'Off';
+
+                  // const isDigital = mode === 'Digital' || mode === 'Fixed Digital'; // Unused for now
+                  const analogFeatures = channelBytes[0x1D];
+                  const squelchLevel = channelBytes[0x1E];
+                  const pttIdSettings = channelBytes[0x1F];
+
+                  const colorCode = channelBytes[0x20] & 0x0F;
+
+                  let rxCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
+                  try {
+                    rxCtcssDcs = decodeCTCSSDCS(channelBytes.slice(0x21, 0x23));
+                  } catch (e) {
+                    // Ignore
+                  }
+
+                  let txCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
+                  try {
+                    txCtcssDcs = decodeCTCSSDCS(channelBytes.slice(0x23, 0x25));
+                  } catch (e) {
+                    // Ignore
+                  }
+
+                  const additionalFlags = channelBytes[0x25];
+                  const companderDup = (additionalFlags & 0x20) !== 0;
+                  const voxRelated = (additionalFlags & 0x10) !== 0;
+
+                  const rxSquelchPtt = channelBytes[0x26];
+                  const pttIdDisplay2 = (rxSquelchPtt & 0x80) !== 0;
+                  const rxSquelchValue = (rxSquelchPtt >> 4) & 0x07;
+                  const rxSquelchModeMap = ['Carrier/CTC', 'Optional', 'CTC&Opt', 'CTC|Opt'];
+                  const rxSquelchMode = rxSquelchModeMap[rxSquelchValue] || 'Carrier/CTC';
+
+                  const signaling = channelBytes[0x27];
+                  const stepFrequency = (signaling >> 4) & 0x0F;
+                  const signalingValue = signaling & 0x0F;
+                  const signalingTypeMap = ['None', 'DTMF', 'Two Tone', 'Five Tone', 'MDC1200'];
+                  const signalingType = signalingTypeMap[signalingValue] || 'None';
+
+                  const pttIdTypeByte = channelBytes[0x29];
+                  const pttIdTypeValue = (pttIdTypeByte >> 4) & 0x0F;
+                  const pttIdTypeMap = ['Off', 'BOT', 'EOT', 'Both'];
+                  const pttIdType = pttIdTypeMap[pttIdTypeValue] || 'Off';
+
+                  const unknown2A = channelBytes[0x2A];
+                  const contactId = channelBytes[0x2B];
+                  const reserved2C = channelBytes[0x2C];
+                  const reserved2D = channelBytes[0x2D];
+
+                  return {
+                    name,
+                    rxFreq,
+                    txFreq,
+                    mode,
+                    forbidTx,
+                    busyLock,
+                    loneWorker,
+                    bandwidth,
+                    scanAdd,
+                    scanListId,
+                    forbidTalkaround,
+                    aprsReceive,
+                    emergencyIndicator,
+                    emergencyAck,
+                    emergencySystemId,
+                    power,
+                    powerValue,
+                    powerAprsByte: powerAprs,
+                    aprsReportMode,
+                    analogFeatures,
+                    squelchLevel,
+                    pttIdSettings,
+                    colorCode,
+                    rxCtcssDcs,
+                    txCtcssDcs,
+                    companderDup,
+                    voxRelated,
+                    pttIdDisplay2,
+                    rxSquelchMode,
+                    stepFrequency,
+                    signalingType,
+                    pttIdType,
+                    unknown2A,
+                    contactId,
+                    reserved2C,
+                    reserved2D,
+                    // Raw bytes for all locations
+                    bytes: {
+                      0x18: channelBytes[0x18],
+                      0x19: channelBytes[0x19],
+                      0x1A: channelBytes[0x1A],
+                      0x1B: channelBytes[0x1B],
+                      0x1C: channelBytes[0x1C],
+                      0x1D: channelBytes[0x1D],
+                      0x1E: channelBytes[0x1E],
+                      0x1F: channelBytes[0x1F],
+                      0x20: channelBytes[0x20],
+                      0x21: channelBytes[0x21],
+                      0x22: channelBytes[0x22],
+                      0x23: channelBytes[0x23],
+                      0x24: channelBytes[0x24],
+                      0x25: channelBytes[0x25],
+                      0x26: channelBytes[0x26],
+                      0x27: channelBytes[0x27],
+                      0x28: channelBytes[0x28],
+                      0x29: channelBytes[0x29],
+                      0x2A: channelBytes[0x2A],
+                      0x2B: channelBytes[0x2B],
+                      0x2C: channelBytes[0x2C],
+                      0x2D: channelBytes[0x2D],
+                    }
+                  };
+                };
+
+                const rawData1 = rawChannelData.get(selectedChannelNumber);
+                const channel1 = channels.find(c => c.number === selectedChannelNumber);
+                const rawData2 = selectedChannelNumber2 ? rawChannelData.get(selectedChannelNumber2) : null;
+                const channel2 = selectedChannelNumber2 ? channels.find(c => c.number === selectedChannelNumber2) : null;
+
+                if (!rawData1) return <div className="text-cool-gray">No raw data for channel {selectedChannelNumber}</div>;
+
+                const fields1 = parseChannelFields(rawData1.data);
+                const fields2 = rawData2 ? parseChannelFields(rawData2.data) : null;
+
+                const fieldDefinitions = [
+                  { offset: 0x00, label: 'Name (0x00-0x0F)', getValue: (f: typeof fields1) => f.name },
+                  { offset: 0x10, label: 'RX Frequency (0x10-0x13)', getValue: (f: typeof fields1) => f.rxFreq.toFixed(4) + ' MHz' },
+                  { offset: 0x14, label: 'TX Frequency (0x14-0x17)', getValue: (f: typeof fields1) => f.txFreq.toFixed(4) + ' MHz' },
+                  { offset: 0x18, label: 'Mode Flags (0x18)', getValue: (f: typeof fields1) => {
+                    const modeFlags = f.bytes[0x18];
+                    return `0x${modeFlags.toString(16).toUpperCase().padStart(2, '0')} (mode=${f.mode}, forbidTx=${f.forbidTx}, power=${f.power}, loneWorker=${f.loneWorker})`;
+                  }},
+                  { offset: 0x18, label: 'Mode (0x18 bits 7-4)', getValue: (f: typeof fields1) => f.mode },
+                  { offset: 0x18, label: 'Forbid TX (0x18 bit 3)', getValue: (f: typeof fields1) => f.forbidTx ? 'Yes' : 'No' },
+                  { offset: 0x18, label: 'Power (0x18 bits 2-1)', getValue: (f: typeof fields1) => `${f.power} (value: ${f.powerValue})` },
+                  { offset: 0x18, label: 'Lone Worker (0x18 bit 0)', getValue: (f: typeof fields1) => f.loneWorker ? 'Yes' : 'No' },
+                  { offset: 0x19, label: 'Scan & Bandwidth (0x19)', getValue: (f: typeof fields1) => {
+                    const scanBw = f.bytes[0x19];
+                    return `0x${scanBw.toString(16).toUpperCase().padStart(2, '0')} (bandwidth=${f.bandwidth}, scanAdd=${f.scanAdd}, scanListId=${f.scanListId})`;
+                  }},
+                  { offset: 0x19, label: 'Bandwidth (0x19 bit 7)', getValue: (f: typeof fields1) => f.bandwidth },
+                  { offset: 0x19, label: 'Scan Add (0x19 bit 6)', getValue: (f: typeof fields1) => f.scanAdd ? 'Yes' : 'No' },
+                  { offset: 0x19, label: 'Scan List ID (0x19 bits 5-2)', getValue: (f: typeof fields1) => f.scanListId.toString() },
+                  { offset: 0x1A, label: 'Talkaround & APRS (0x1A)', getValue: (f: typeof fields1) => {
+                    const talkaroundAprs = f.bytes[0x1A];
+                    return `0x${talkaroundAprs.toString(16).toUpperCase().padStart(2, '0')} (forbidTalkaround=${f.forbidTalkaround}, aprsReceive=${f.aprsReceive})`;
+                  }},
+                  { offset: 0x1A, label: 'Forbid Talkaround (0x1A bit 7)', getValue: (f: typeof fields1) => f.forbidTalkaround ? 'Yes' : 'No' },
+                  { offset: 0x1A, label: 'APRS Receive (0x1A bit 2)', getValue: (f: typeof fields1) => f.aprsReceive ? 'Yes' : 'No' },
+                  { offset: 0x1B, label: 'Emergency (0x1B)', getValue: (f: typeof fields1) => {
+                    const emergency = f.bytes[0x1B];
+                    return `0x${emergency.toString(16).toUpperCase().padStart(2, '0')} (indicator=${f.emergencyIndicator}, ack=${f.emergencyAck}, systemId=${f.emergencySystemId})`;
+                  }},
+                  { offset: 0x1B, label: 'Emergency Indicator (0x1B bit 7)', getValue: (f: typeof fields1) => f.emergencyIndicator ? 'Yes' : 'No' },
+                  { offset: 0x1B, label: 'Emergency Ack (0x1B bit 6)', getValue: (f: typeof fields1) => f.emergencyAck ? 'Yes' : 'No' },
+                  { offset: 0x1B, label: 'Emergency System ID (0x1B bits 4-0)', getValue: (f: typeof fields1) => f.emergencySystemId.toString() },
+                  { offset: 0x1C, label: 'APRS Report Mode (0x1C bits 3-2)', getValue: (f: typeof fields1) => {
+                    const powerAprs = f.powerAprsByte;
+                    return `${f.aprsReportMode} (0x${powerAprs.toString(16).toUpperCase().padStart(2, '0')}, bits3-2=${(powerAprs >> 2) & 0x03})`;
+                  }},
+                  { offset: 0x1D, label: 'Analog Features (0x1D)', getValue: (f: typeof fields1) => `0x${f.analogFeatures.toString(16).toUpperCase().padStart(2, '0')}` },
+                  { offset: 0x1E, label: 'Squelch Level (0x1E)', getValue: (f: typeof fields1) => f.squelchLevel.toString() },
+                  { offset: 0x1F, label: 'PTT ID Settings (0x1F)', getValue: (f: typeof fields1) => `0x${f.pttIdSettings.toString(16).toUpperCase().padStart(2, '0')}` },
+                  { offset: 0x20, label: 'Color Code (0x20)', getValue: (f: typeof fields1) => f.colorCode.toString() },
+                  { offset: 0x21, label: 'RX CTCSS/DCS (0x21-0x22)', getValue: (f: typeof fields1) => f.rxCtcssDcs.type === 'None' ? 'None' : f.rxCtcssDcs.type === 'CTCSS' ? `CTCSS ${f.rxCtcssDcs.value} Hz` : `DCS ${f.rxCtcssDcs.value}${f.rxCtcssDcs.polarity || ''}` },
+                  { offset: 0x23, label: 'TX CTCSS/DCS (0x23-0x24)', getValue: (f: typeof fields1) => f.txCtcssDcs.type === 'None' ? 'None' : f.txCtcssDcs.type === 'CTCSS' ? `CTCSS ${f.txCtcssDcs.value} Hz` : `DCS ${f.txCtcssDcs.value}${f.txCtcssDcs.polarity || ''}` },
+                  { offset: 0x25, label: 'Additional Flags (0x25)', getValue: (f: typeof fields1) => {
+                    const additionalFlags = f.bytes[0x25];
+                    return `0x${additionalFlags.toString(16).toUpperCase().padStart(2, '0')} (companderDup=${f.companderDup}, voxRelated=${f.voxRelated})`;
+                  }},
+                  { offset: 0x25, label: 'Compander Dup (0x25 bit 5)', getValue: (f: typeof fields1) => f.companderDup ? 'Yes' : 'No' },
+                  { offset: 0x25, label: 'VOX Related (0x25 bit 4)', getValue: (f: typeof fields1) => f.voxRelated ? 'Yes' : 'No' },
+                  { offset: 0x26, label: 'RX Squelch & PTT ID (0x26)', getValue: (f: typeof fields1) => {
+                    const rxSquelchPtt = f.bytes[0x26];
+                    return `0x${rxSquelchPtt.toString(16).toUpperCase().padStart(2, '0')} (pttIdDisplay2=${f.pttIdDisplay2}, rxSquelchMode=${f.rxSquelchMode})`;
+                  }},
+                  { offset: 0x26, label: 'PTT ID Display 2 (0x26 bit 7)', getValue: (f: typeof fields1) => f.pttIdDisplay2 ? 'Yes' : 'No' },
+                  { offset: 0x26, label: 'RX Squelch Mode (0x26 bits 6-4)', getValue: (f: typeof fields1) => f.rxSquelchMode },
+                  { offset: 0x27, label: 'Signaling (0x27)', getValue: (f: typeof fields1) => {
+                    const signaling = f.bytes[0x27];
+                    return `0x${signaling.toString(16).toUpperCase().padStart(2, '0')} (stepFrequency=${f.stepFrequency}, signalingType=${f.signalingType})`;
+                  }},
+                  { offset: 0x27, label: 'Step Frequency (0x27 bits 7-4)', getValue: (f: typeof fields1) => f.stepFrequency.toString() },
+                  { offset: 0x27, label: 'Signaling Type (0x27 bits 3-0)', getValue: (f: typeof fields1) => f.signalingType },
+                  { offset: 0x28, label: 'Reserved (0x28)', getValue: (f: typeof fields1) => {
+                    const reserved = f.bytes[0x28];
+                    return `0x${reserved.toString(16).toUpperCase().padStart(2, '0')}`;
+                  }},
+                  { offset: 0x29, label: 'PTT ID Type (0x29 bits 7-4)', getValue: (f: typeof fields1) => f.pttIdType },
+                  { offset: 0x2A, label: 'Unknown 2A (0x2A)', getValue: (f: typeof fields1) => `0x${f.unknown2A.toString(16).toUpperCase().padStart(2, '0')} (${f.unknown2A})` },
+                  { offset: 0x2B, label: 'Contact ID (0x2B)', getValue: (f: typeof fields1) => f.contactId.toString() },
+                  { offset: 0x2C, label: 'Reserved 2C (0x2C)', getValue: (f: typeof fields1) => `0x${f.reserved2C.toString(16).toUpperCase().padStart(2, '0')} (${f.reserved2C})` },
+                  { offset: 0x2D, label: 'Reserved 2D (0x2D)', getValue: (f: typeof fields1) => `0x${f.reserved2D.toString(16).toUpperCase().padStart(2, '0')} (${f.reserved2D})` },
+                ].sort((a, b) => a.offset - b.offset);
+
+                return (
+                  <div className="space-y-4">
+                    <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
+                      <h4 className="text-lg font-semibold text-yellow-400 mb-3">Channel Field Comparison</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="border-b border-yellow-600/30">
+                              <th className="text-left py-2 px-3 text-yellow-400 font-semibold sticky left-0 bg-dark-charcoal z-10">Field</th>
+                              <th className="text-left py-2 px-3 text-yellow-400 font-semibold min-w-[200px]">
+                                Channel {selectedChannelNumber} {channel1?.name ? `(${channel1.name})` : ''}
+                              </th>
+                              {fields2 && (
+                                <th className="text-left py-2 px-3 text-yellow-400 font-semibold min-w-[200px]">
+                                  Channel {selectedChannelNumber2} {channel2?.name ? `(${channel2.name})` : ''}
+                                </th>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {fieldDefinitions.map((def, idx) => {
+                              const val1 = def.getValue(fields1);
+                              const val2 = fields2 ? def.getValue(fields2) : null;
+                              const isDifferent = fields2 && val1 !== val2;
+                              return (
+                                <tr 
+                                  key={idx} 
+                                  className={`border-b border-yellow-600/10 hover:bg-yellow-900/10 ${isDifferent ? 'bg-yellow-900/20' : ''}`}
+                                >
+                                  <td className="py-2 px-3 text-cool-gray font-semibold sticky left-0 bg-dark-charcoal z-10">{def.label}</td>
+                                  <td className="py-2 px-3 text-white font-mono">{val1}</td>
+                                  {fields2 && (
+                                    <td className={`py-2 px-3 font-mono ${isDifferent ? 'text-yellow-300' : 'text-white'}`}>
+                                      {val2}
+                                    </td>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
+                      <h4 className="text-lg font-semibold text-yellow-400 mb-3">Raw Byte Comparison</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="border-b border-yellow-600/30">
+                              <th className="text-left py-2 px-2 text-yellow-400">Byte</th>
+                              <th className="text-left py-2 px-2 text-yellow-400">Ch {selectedChannelNumber}</th>
+                              {fields2 && <th className="text-left py-2 px-2 text-yellow-400">Ch {selectedChannelNumber2}</th>}
+                              <th className="text-left py-2 px-2 text-yellow-400">Field</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(fields1.bytes).map(([offset, value]) => {
+                              const offsetNum = parseInt(offset);
+                              const val2 = fields2?.bytes[offsetNum as keyof typeof fields2.bytes];
+                              const isDifferent = fields2 && value !== val2;
+                              const fieldName = offsetNum === 0x1C ? 'Power & APRS' :
+                                offsetNum === 0x1D ? 'Analog Features' :
+                                offsetNum === 0x1E ? 'Squelch Level' :
+                                offsetNum === 0x1F ? 'PTT ID Settings' :
+                                offsetNum === 0x18 ? 'Mode & Flags' :
+                                offsetNum === 0x19 ? 'Scan & Bandwidth' :
+                                offsetNum === 0x1A ? 'Talkaround & APRS' :
+                                offsetNum === 0x1B ? 'Emergency' :
+                                offsetNum === 0x20 ? 'Color Code' :
+                                offsetNum === 0x21 || offsetNum === 0x22 ? 'RX CTCSS/DCS' :
+                                offsetNum === 0x23 || offsetNum === 0x24 ? 'TX CTCSS/DCS' :
+                                offsetNum === 0x25 ? 'Additional Flags' :
+                                offsetNum === 0x26 ? 'RX Squelch & PTT' :
+                                offsetNum === 0x27 ? 'Signaling' :
+                                offsetNum === 0x29 ? 'PTT ID Type' :
+                                offsetNum === 0x2A ? 'Unknown/Encryption ID' :
+                                offsetNum === 0x2B ? 'Contact ID' :
+                                offsetNum === 0x2C || offsetNum === 0x2D ? 'Reserved' : 'Unknown';
+                              return (
+                                <tr 
+                                  key={offset} 
+                                  className={`border-b border-yellow-600/10 hover:bg-yellow-900/10 ${isDifferent ? 'bg-yellow-900/20' : ''}`}
+                                >
+                                  <td className="py-1 px-2 text-cool-gray font-mono">{offset}</td>
+                                  <td className={`py-1 px-2 font-mono ${offsetNum === 0x1C ? 'text-yellow-300 font-bold' : 'text-white'}`}>
+                                    0x{value.toString(16).toUpperCase().padStart(2, '0')} ({value})
+                                  </td>
+                                  {fields2 && (
+                                    <td className={`py-1 px-2 font-mono ${isDifferent ? 'text-yellow-300' : offsetNum === 0x1C ? 'text-yellow-300 font-bold' : 'text-white'}`}>
+                                      0x{val2!.toString(16).toUpperCase().padStart(2, '0')} ({val2})
+                                    </td>
+                                  )}
+                                  <td className="py-1 px-2 text-cool-gray text-xs">{fieldName}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
