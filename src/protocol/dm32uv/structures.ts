@@ -191,13 +191,19 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     emergencySystemId = 0;
   }
 
-  // Power & APRS (0x1C)
+  // APRS & Squelch (0x1C)
+  // Bits 7-4 (mask 0xF0): Squelch Level (0-15, value range 0-15)
   // Bits 3-2 (mask 0x0C): APRS Report Mode (0=Off, 1=Digital, 2=Analog)
-  // Bits 1-0 (mask 0x03): Unknown
-  // NOTE: Power is actually stored at 0x1F, not 0x1C!
-  const powerAprs = data[0x1C];
+  // Bits 1-0 (mask 0x03): Unknown/Reserved
+  const aprsSquelch = data[0x1C];
+  // Squelch Level: Bits 7-4
+  let squelchLevel = (aprsSquelch >> 4) & 0x0F;
+  // Validate: 0-15
+  if (squelchLevel > 15) {
+    squelchLevel = 0;
+  }
   // APRS: Bits 3-2
-  let aprsReportValue = (powerAprs >> 2) & 0x03;
+  let aprsReportValue = (aprsSquelch >> 2) & 0x03;
   // Validate: 0-2, reset >2 to 0
   if (aprsReportValue > 2) {
     aprsReportValue = 0;
@@ -206,7 +212,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     aprsReportValue === 0 ? 'Off' : 
     aprsReportValue === 1 ? 'Digital' : 
     aprsReportValue === 2 ? 'Analog' : 'Off';
-  const unknown1C_1_0 = 0; // No longer used
+  const unknown1C_1_0 = aprsSquelch & 0x03; // Bits 1-0
 
   // Byte 0x1D, 0x1E, 0x1F have different meanings for analog vs digital channels
   const isDigital = mode === 'Digital' || mode === 'Fixed Digital';
@@ -228,13 +234,10 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   let shortDataConfirm: boolean | undefined;
   let privateConfirm: boolean | undefined;
 
-  // Squelch Level (0x1E) - full byte, value range 0-255
-  // According to spec, 0x1E is squelch level, not digital emergency system ID
-  const squelchLevel = data[0x1E] & 0xFF;
+  // Squelch Level was already read from 0x1C bits 7-4 above
   
   // Digital Emergency System ID/Index - NOTE: This may be stored elsewhere
-  // The spec says 0x1E is squelch, but the code was using it for digital emergency system
-  // For now, we'll set it to 0 and note that this may need to be stored elsewhere
+  // Squelch level is at 0x1C bits 7-4, not 0x1E
   digitalEmergencySystemId = 0; // TODO: Find correct location for digital emergency system ID
 
   // Power was already read from 0x18 bits 2-1 above
@@ -519,15 +522,17 @@ export function encodeChannel(channel: Channel): Uint8Array {
   emergency |= channel.emergencySystemId & 0x1F; // Bits 4-0
   data[0x1B] = emergency;
 
-  // APRS Report Mode (0x1C) - Power is NOT here, it's at 0x1F!
+  // APRS Report Mode & Squelch Level (0x1C)
+  // Bits 7-4 (mask 0xF0): Squelch Level (0-15, value range 0-15)
   // Bits 3-2 (mask 0x0C): APRS Report Mode (0=Off, 1=Digital, 2=Analog)
-  // Bits 1-0 (mask 0x03): Unknown
+  // Bits 1-0 (mask 0x03): Unknown/Reserved (preserve existing value if reading, otherwise 0)
+  const squelchLevel = Math.min(15, Math.max(0, channel.squelchLevel || 0)) & 0x0F;
   const aprsReportValue = channel.aprsReportMode === 'Off' ? 0 : channel.aprsReportMode === 'Digital' ? 1 : 2;
-  data[0x1C] = ((aprsReportValue << 2) & 0x0C) | 0x00; // Bits 1-0 are unknown/reserved, bits 7-4 are also unknown/reserved
+  // Combine squelch (bits 7-4), APRS (bits 3-2), and preserve/reset bits 1-0
+  data[0x1C] = ((squelchLevel << 4) & 0xF0) | ((aprsReportValue << 2) & 0x0C) | 0x00; // Bits 1-0 set to 0
 
-  // Squelch Level (0x1E) - full byte, value range 0-255
-  const squelchLevel = Math.min(255, Math.max(0, channel.squelchLevel || 0)) & 0xFF;
-  data[0x1E] = squelchLevel;
+  // Squelch Level is now at 0x1C bits 7-4, not 0x1E
+  // 0x1E is available for other uses (possibly digital emergency system ID)
   
   // Digital Emergency System ID/Index (0x1E) - same for both analog and digital
   // NOTE: This conflicts with squelch level! According to spec, 0x1E is squelch level.

@@ -117,15 +117,8 @@ export function exportChannelsToChirpCSV(channels: Channel[]): string {
       }
     }
 
-    // Determine mode
-    let mode = 'FM';
-    if (channel.mode === 'Digital' || channel.mode === 'Fixed Digital') {
-      mode = 'DV';
-    } else if (channel.bandwidth === '12.5kHz') {
-      mode = 'NFM';
-    } else {
-      mode = 'FM';
-    }
+    // Determine mode (only analog channels reach here after filtering)
+    const mode = channel.bandwidth === '12.5kHz' ? 'NFM' : 'FM';
 
     // Determine step frequency
     const stepFreqMap: Record<number, number> = {
@@ -143,38 +136,24 @@ export function exportChannelsToChirpCSV(channels: Channel[]): string {
     // Skip flag
     const skip = channel.scanAdd ? '' : 'S';
 
-    // Power level - Chirp typically uses "High", "Low", "Medium" or sometimes "H", "L", "M"
-    // Based on the sample CSV showing "50W", Chirp may also accept wattage, but we'll use standard values
-    // Most Chirp exports use "High" and "Low", but some use "H" and "L"
-    // We'll use "High"/"Low"/"Medium" as that's the most compatible format
+    // Power level - Chirp uses "High", "Low", "Medium"
     let power: string;
-    switch (channel.power) {
-      case 'Low':
-        power = 'Low';
-        break;
-      case 'Medium':
-        power = 'Medium';
-        break;
-      case 'High':
-        power = 'High';
-        break;
-      default:
-        // Default to High if power is somehow undefined or invalid
-        console.warn(`Channel ${channel.number} has invalid power value: ${channel.power}, defaulting to High`);
-        power = 'High';
-        break;
+    if (channel.power === 'Low' || channel.power === 'Medium' || channel.power === 'High') {
+      power = channel.power;
+    } else {
+      // Default to High if power is somehow undefined or invalid
+      console.warn(`Channel ${channel.number} has invalid power value: ${channel.power}, defaulting to High`);
+      power = 'High';
     }
 
     // Comment
     const comment = channel.source || '';
 
-    // Digital fields
+    // Digital fields (always empty since we only export analog channels)
     const urcall = '';
     const rpt1call = '';
     const rpt2call = '';
-    const dvcode = channel.mode === 'Digital' || channel.mode === 'Fixed Digital' 
-      ? (channel.contactId > 0 ? channel.contactId.toString() : '')
-      : '';
+    const dvcode = '';
 
     return [
       channel.number.toString(),
