@@ -717,7 +717,7 @@ export const SmartImportTab: React.FC = () => {
       }
       
       const digitalCount = channels.length - analogChannels.length;
-      const csvContent = exportChannelsToChirpCSV(channels);
+      const csvContent = exportChannelsToChirpCSV(analogChannels);
       downloadCSV(csvContent, 'chirp_channels.csv');
       
       if (digitalCount > 0) {

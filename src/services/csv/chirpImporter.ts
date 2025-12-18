@@ -46,7 +46,6 @@ export function importChannelsFromChirpCSV(
     };
 
     // Location field is ignored - we use next available channel number
-    // const locationIdx = getIndex('Location');
     const nameIdx = getIndex('Name');
     const frequencyIdx = getIndex('Frequency');
     const offsetIdx = getIndex('Offset');
@@ -57,17 +56,12 @@ export function importChannelsFromChirpCSV(
     const dtcsPolarityIdx = getIndex('DtcsPolarity');
     const rxDtcsCodeIdx = getIndex('RxDtcsCode');
     // CrossMode is handled via tone mode, not stored separately
-    // const crossModeIdx = getIndex('CrossMode');
     const modeIdx = getIndex('Mode');
     const tStepIdx = getIndex('TStep');
     const skipIdx = getIndex('Skip');
     const powerIdx = getIndex('Power');
     const commentIdx = getIndex('Comment');
     // Digital fields are not used since we import everything as analog
-    // const urcallIdx = getIndex('URCALL');
-    // const rpt1callIdx = getIndex('RPT1CALL');
-    // const rpt2callIdx = getIndex('RPT2CALL');
-    // const dvcodeIdx = getIndex('DVCODE');
 
     let currentChannelNumber = startChannelNumber;
 
@@ -98,17 +92,12 @@ export function importChannelsFromChirpCSV(
         const dtcsPolarity = getValue(dtcsPolarityIdx).toUpperCase() as 'N' | 'P' | '';
         const rxDtcsCode = getNumber(rxDtcsCodeIdx, 0);
         // CrossMode is handled via tone mode, not stored separately
-        // const crossMode = getValue(crossModeIdx);
         const mode = getValue(modeIdx).toUpperCase();
         const tStep = getNumber(tStepIdx, 0);
         const skip = getValue(skipIdx);
         const power = getValue(powerIdx);
         const comment = getValue(commentIdx);
         // Digital fields are not used since we import everything as analog
-        // const urcall = getValue(urcallIdx);
-        // const rpt1call = getValue(rpt1callIdx);
-        // const rpt2call = getValue(rpt2callIdx);
-        // const dvcode = getValue(dvcodeIdx);
 
         // Validate RX frequency
         if (rxFrequency <= 0) {
@@ -175,8 +164,15 @@ export function importChannelsFromChirpCSV(
         };
 
         // Parse RX and TX tones
-        const rxToneMode = tone === 'TSQL' || tone === 'Cross' ? tone : (rxDtcsCode > 0 ? 'DTCS-R' : '');
-        const txToneMode = tone === 'Tone' || tone === 'TSQL' || tone === 'Cross' ? tone : '';
+        // RX tone mode: TSQL/Cross use the tone value, DTCS uses DTCS-R if rxDtcsCode is set, otherwise check if tone is DTCS
+        const rxToneMode = tone === 'TSQL' || tone === 'Cross' 
+          ? tone 
+          : (tone === 'DTCS' || rxDtcsCode > 0 ? 'DTCS-R' : '');
+        
+        // TX tone mode: Tone/TSQL/Cross use the tone value, DTCS uses DTCS if tone is DTCS or dtcsCode is set
+        const txToneMode = tone === 'Tone' || tone === 'TSQL' || tone === 'Cross' 
+          ? tone 
+          : (tone === 'DTCS' || dtcsCode > 0 ? 'DTCS' : '');
         
         const rxCtcssDcs = parseTone(
           rxToneMode,
