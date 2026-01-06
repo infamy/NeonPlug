@@ -819,6 +819,8 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
             updateChannel(updatedChannel.number, updatedChannel);
             setEditingChannel(null);
           }}
+          rxGroups={rxGroups}
+          encryptionKeys={encryptionKeys}
         />
       )}
     </div>

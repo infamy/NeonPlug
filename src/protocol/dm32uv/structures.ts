@@ -7,6 +7,7 @@ import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency,
 import { decodeBCDFrequency, decodeCTCSSDCS, encodeBCDFrequency, encodeCTCSSDCS } from './encoding';
 import { OFFSET, BLOCK_SIZE, LIMITS } from './constants';
 import { createDefaultChannel } from '../../utils/channelHelpers';
+import { log } from './logger';
 
 /**
  * Calculate the block offset for a channel's flag byte
@@ -110,7 +111,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   try {
     rxFreq = decodeBCDFrequency(data.slice(0x10, 0x14));
   } catch (error) {
-    console.warn(`Failed to decode RX frequency for channel ${channelNumber}:`, error);
+    log.warn(`Failed to decode RX frequency for channel ${channelNumber}`, 'Structures', error);
     rxFreq = 0;
   }
 
@@ -119,7 +120,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   try {
     txFreq = decodeBCDFrequency(data.slice(0x14, 0x18));
   } catch (error) {
-    console.warn(`Failed to decode TX frequency for channel ${channelNumber}:`, error);
+    log.warn(`Failed to decode TX frequency for channel ${channelNumber}`, 'Structures', error);
     txFreq = 0;
   }
 
@@ -153,7 +154,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     const bit3 = (modeFlags & 0x08) !== 0;
     const bit3Raw = (modeFlags >> 3) & 0x01;
     const rxEqualsTx = Math.abs(rxFreq - txFreq) < 0.0001;
-    console.log(`[DEBUG] Channel ${channelNumber} "${name}": modeFlags=0x${modeFlags.toString(16).padStart(2, '0')} (binary: ${modeFlags.toString(2).padStart(8, '0')}), mode=${mode} (${channelMode}), forbidTx=${forbidTx}, bit3=${bit3}, bit3Raw=${bit3Raw}, power=${power}, loneWorker=${loneWorker}, RX=${rxFreq.toFixed(4)}, TX=${txFreq.toFixed(4)}, RX==TX=${rxEqualsTx}`);
+    log.debug(`Channel ${channelNumber} "${name}": modeFlags=0x${modeFlags.toString(16).padStart(2, '0')} (binary: ${modeFlags.toString(2).padStart(8, '0')}), mode=${mode} (${channelMode}), forbidTx=${forbidTx}, bit3=${bit3}, bit3Raw=${bit3Raw}, power=${power}, loneWorker=${loneWorker}, RX=${rxFreq.toFixed(4)}, TX=${txFreq.toFixed(4)}, RX==TX=${rxEqualsTx}`, 'Structures');
   }
 
   // Scan & Bandwidth (0x19)
@@ -681,7 +682,7 @@ export function parseZones(
   for (let zoneNum = 1; zoneNum <= 30; zoneNum++) {
     const offset = 16 + (zoneNum - 1) * 145;
     if (offset + 145 > data.length) {
-      console.log(`Zone ${zoneNum} would be at offset ${offset}, but data length is only ${data.length}`);
+      log.debug(`Zone ${zoneNum} would be at offset ${offset}, but data length is only ${data.length}`, 'Structures');
       break;
     }
 
@@ -703,7 +704,7 @@ export function parseZones(
       const isAllEmpty = zoneData.every(b => b === 0xFF || b === 0x00);
       if (isAllEmpty) {
         // If we hit a completely empty zone, we can stop (zones are contiguous)
-        console.log(`Zone ${zoneNum} at offset ${offset} is completely empty, stopping zone parsing`);
+        log.debug(`Zone ${zoneNum} at offset ${offset} is completely empty, stopping zone parsing`, 'Structures');
         break;
       }
       // Skip zones with empty names (even if not all empty)
@@ -792,7 +793,7 @@ export function parseZones(
     
     // Debug logging for zone parsing
     if (name.includes('FRS') || name.includes('DEFCON') || name.includes('Vector') || name.length > 0) {
-      console.log(`Zone "${name}" (Num ${zoneNum}, offset ${offset}): Found ${channels.length} channels (byte 16 count: ${channelCount}):`, channels);
+      log.debug(`Zone "${name}" (Num ${zoneNum}, offset ${offset}): Found ${channels.length} channels (byte 16 count: ${channelCount}): ${channels.join(', ')}`, 'Structures');
     }
 
     const zone = { name, channels };
@@ -922,7 +923,7 @@ export function parseScanLists(
       if (!isDuplicate) {
         foundLists.push({ namePos: i, name: potentialName });
         usedPositions.add(i);
-        console.log(`Found scan list name "${potentialName}" at offset ${i}`);
+        log.debug(`Found scan list name "${potentialName}" at offset ${i}`, 'Structures');
       }
     }
   }
@@ -960,7 +961,7 @@ export function parseScanLists(
     }
     
     if (channelStart === -1) {
-      console.warn(`Could not find channel start for scan list "${name}"`);
+      log.warn(`Could not find channel start for scan list "${name}"`, 'Structures');
       continue;
     }
     
@@ -1428,7 +1429,7 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
    */
   const readMenuBit = (data: Uint8Array, offset: number, bit: number): boolean => {
     if (offset >= data.length) {
-      console.warn(`readMenuBit: offset ${offset} (0x${offset.toString(16)}) is out of bounds (data length: ${data.length})`);
+      log.warn(`readMenuBit: offset ${offset} (0x${offset.toString(16)}) is out of bounds (data length: ${data.length})`, 'Structures');
       return false;
     }
     const byte = data[offset];
@@ -2085,7 +2086,7 @@ export function parseQuickMessages(
     const entryOffset = OFFSET.QUICK_MESSAGE_BASE * (entryNum + 1);
     
     if (entryOffset + BLOCK_SIZE.QUICK_MESSAGE > data.length) {
-      console.log(`Message ${entryNum} would be at offset ${entryOffset}, but data length is only ${data.length}`);
+      log.debug(`Message ${entryNum} would be at offset ${entryOffset}, but data length is only ${data.length}`, 'Structures');
       break;
     }
 

@@ -4,6 +4,7 @@
  */
 
 import { DM32Connection } from './connection';
+import { log } from './logger';
 
 export interface MemoryBlock {
   address: number;
@@ -29,7 +30,7 @@ export async function discoverMemoryBlocks(
   // Example: 0x001000 to 0x0C8FFF means blocks from 0x001000 to 0x0C8000 (inclusive)
   const alignedEndAddr = Math.floor(endAddr / 0x1000) * 0x1000; // Align end to block boundary
   const blockCount = Math.floor((alignedEndAddr - startAddr) / 0x1000) + 1;
-  console.log(`Reading metadata from ${blockCount} blocks from 0x${startAddr.toString(16)} to 0x${alignedEndAddr.toString(16)} (endAddr was 0x${endAddr.toString(16)})`);
+  log.info(`Reading metadata from ${blockCount} blocks from 0x${startAddr.toString(16)} to 0x${alignedEndAddr.toString(16)} (endAddr was 0x${endAddr.toString(16)})`, 'Memory');
 
   // Scan 4KB-aligned blocks - read metadata byte at offset 0xFFF for each block
   let blockIndex = 0;
@@ -93,14 +94,12 @@ export async function discoverMemoryBlocks(
   const unknownCount = blocks.filter(b => b.type === 'unknown').length;
   const emptyCount = blocks.filter(b => b.type === 'empty').length;
   
-  console.log(`Discovered ${blocks.length} blocks:`);
-  console.log(`  Channels: ${channelCount}, Zones: ${zoneCount}, Scan Lists: ${scanCount}`);
-  console.log(`  Unknown: ${unknownCount}, Empty: ${emptyCount}`);
+  log.info(`Discovered ${blocks.length} blocks: Channels=${channelCount}, Zones=${zoneCount}, Scan Lists=${scanCount}, Unknown=${unknownCount}, Empty=${emptyCount}`, 'Memory');
   
   // Log unknown metadata values for investigation
   if (unknownCount > 0) {
     const unknownMetadata = new Set(blocks.filter(b => b.type === 'unknown').map(b => b.metadata));
-    console.log(`  Unknown metadata values: ${Array.from(unknownMetadata).sort((a, b) => a - b).map(m => `0x${m.toString(16).padStart(2, '0')}`).join(', ')}`);
+    log.debug(`Unknown metadata values: ${Array.from(unknownMetadata).sort((a, b) => a - b).map(m => `0x${m.toString(16).padStart(2, '0')}`).join(', ')}`, 'Memory');
   }
   
   return blocks;

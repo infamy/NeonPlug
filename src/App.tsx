@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { MainLayout } from './components/layout/MainLayout';
 import { DebugPanel } from './components/ui/DebugPanel';
 import { StartupModal } from './components/ui/StartupModal';
@@ -24,6 +24,8 @@ import { useAnalogEmergencyStore } from './store/analogEmergencyStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
+import { setLogStore } from './protocol/dm32uv/logger';
+import { useLogStore } from './store/logStore';
 
 function App() {
   const [activeTab, setActiveTab] = useState('channels');
@@ -37,6 +39,14 @@ function App() {
   const { setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
   const { isConnecting, error: radioError } = useRadioConnection();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Initialize logger with log store
+  const logStore = useLogStore();
+  useEffect(() => {
+    setLogStore({
+      addLog: (entry) => logStore.addLog(entry),
+    });
+  }, [logStore]);
 
   const handleReadFromRadio = () => {
     // Close startup modal - the Toolbar's handleRead will show the progress modal

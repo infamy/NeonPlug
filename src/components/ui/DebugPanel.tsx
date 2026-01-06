@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
 import { useRadioStore } from '../../store/radioStore';
+import { useLogStore } from '../../store/logStore';
 import { exportFullDebug, exportWriteBlocks, downloadDebug } from '../../services/debugExport';
 import { analyzeMetadata, generateMetadataReport } from '../../services/metadataAnalysis';
 
 export interface LogEntry {
   timestamp: Date;
-  level: 'log' | 'warn' | 'error' | 'info';
+  level: 'log' | 'warn' | 'error' | 'info' | 'debug' | 'verbose';
   message: string;
   data?: any;
 }
@@ -16,10 +17,12 @@ export const DebugPanel: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [maxLogs] = useState(100);
-        const logEndRef = useRef<HTMLDivElement>(null);
-        const { channels, rawChannelData } = useChannelsStore();
-        const { zones, rawZoneData } = useZonesStore();
-        const { blockMetadata, blockData, writeBlockData, zoneComparisonData } = useRadioStore();
+  const [showProtocolLogs, setShowProtocolLogs] = useState(true);
+  const logEndRef = useRef<HTMLDivElement>(null);
+  const { channels, rawChannelData } = useChannelsStore();
+  const { zones, rawZoneData } = useZonesStore();
+  const { blockMetadata, blockData, writeBlockData, zoneComparisonData } = useRadioStore();
+  const { logs: protocolLogs } = useLogStore();
 
   useEffect(() => {
     // Capture console.log, console.warn, console.error
@@ -73,25 +76,55 @@ export const DebugPanel: React.FC = () => {
     };
   }, []);
 
+  // Convert protocol logs to LogEntry format for display
+  const protocolLogEntries = useMemo(() => {
+    return protocolLogs.map(log => {
+      // Map protocol log levels to LogEntry levels
+      let level: LogEntry['level'] = 'log';
+      if (log.level === 'ERROR') level = 'error';
+      else if (log.level === 'WARN') level = 'warn';
+      else if (log.level === 'INFO') level = 'info';
+      else if (log.level === 'DEBUG') level = 'debug';
+      else if (log.level === 'VERBOSE') level = 'verbose';
+      
+      return {
+        timestamp: new Date(log.timestamp),
+        level,
+        message: log.context ? `[${log.context}] ${log.message}` : log.message,
+        data: log.error,
+      };
+    });
+  }, [protocolLogs]);
+
+  // Combine console logs and protocol logs
+  const allLogs = useMemo(() => {
+    if (showProtocolLogs) {
+      return [...logs, ...protocolLogEntries].sort((a, b) => 
+        a.timestamp.getTime() - b.timestamp.getTime()
+      ).slice(-maxLogs);
+    }
+    return logs;
+  }, [logs, protocolLogEntries, showProtocolLogs, maxLogs]);
+
   useEffect(() => {
     // Auto-scroll to bottom when new logs are added
     if (isOpen && logEndRef.current) {
       logEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [logs, isOpen]);
+  }, [allLogs, isOpen]);
 
   const clearLogs = () => {
     setLogs([]);
   };
 
   const handleDebugExport = () => {
-    if (channels.length === 0 && zones.length === 0 && logs.length === 0 && blockMetadata.size === 0 && blockData.size === 0) {
+    if (channels.length === 0 && zones.length === 0 && allLogs.length === 0 && blockMetadata.size === 0 && blockData.size === 0) {
       alert('No data or logs to export. Please read from radio first.');
       return;
     }
 
     // Convert logs to export format (Date -> ISO string)
-    const exportLogs = logs.map(log => ({
+    const exportLogs = allLogs.map(log => ({
       timestamp: log.timestamp.toISOString(),
       level: log.level,
       message: log.message,
@@ -145,6 +178,8 @@ export const DebugPanel: React.FC = () => {
       case 'error': return 'text-red-400';
       case 'warn': return 'text-yellow-400';
       case 'info': return 'text-cyan-400';
+      case 'debug': return 'text-green-400';
+      case 'verbose': return 'text-gray-400';
       default: return 'text-gray-300';
     }
   };
@@ -171,9 +206,9 @@ export const DebugPanel: React.FC = () => {
           <span className="text-neon-cyan text-xs font-mono">
             🐛 Debug
           </span>
-          {logs.length > 0 && (
+          {(logs.length > 0 || protocolLogs.length > 0) && (
             <span className="bg-neon-cyan text-dark-charcoal text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-              {logs.length}
+              {allLogs.length}
             </span>
           )}
         </button>
@@ -184,7 +219,7 @@ export const DebugPanel: React.FC = () => {
             className="w-full bg-deep-gray border-b border-neon-cyan border-opacity-30 px-4 py-2 text-left hover:bg-deep-gray-light transition-colors flex items-center justify-between rounded-t-lg"
           >
             <span className="text-neon-cyan text-sm font-mono">
-              Debug Console {logs.length > 0 && `(${logs.length})`}
+              Debug Console {allLogs.length > 0 && `(${allLogs.length})`}
             </span>
             <span className="text-neon-cyan text-xs">
               ✕
@@ -193,7 +228,18 @@ export const DebugPanel: React.FC = () => {
           
           <div className="bg-black border-neon-cyan border-opacity-30 flex-1 overflow-hidden flex flex-col rounded-b-lg">
           <div className="flex items-center justify-between px-4 py-2 border-b border-neon-cyan border-opacity-20">
-            <span className="text-xs text-gray-400">Console Output</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-400">Console Output</span>
+              <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showProtocolLogs}
+                  onChange={(e) => setShowProtocolLogs(e.target.checked)}
+                  className="cursor-pointer"
+                />
+                <span>Protocol Logs ({protocolLogs.length})</span>
+              </label>
+            </div>
             <div className="flex gap-2">
               {writeBlockData.size > 0 && (
                 <button
@@ -241,10 +287,10 @@ export const DebugPanel: React.FC = () => {
           )}
           
           <div className="flex-1 overflow-y-auto p-2 font-mono text-xs">
-            {logs.length === 0 ? (
+            {allLogs.length === 0 ? (
               <div className="text-gray-500 text-center py-4">No logs yet...</div>
             ) : (
-              logs.map((log, index) => (
+              allLogs.map((log, index) => (
                 <div
                   key={index}
                   className={`mb-1 ${getLogColor(log.level)}`}

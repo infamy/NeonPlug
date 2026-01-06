@@ -87,7 +87,7 @@ export function exportZoneDebug(
 
 export interface LogEntry {
   timestamp: string;
-  level: 'log' | 'warn' | 'error' | 'info';
+  level: 'log' | 'warn' | 'error' | 'info' | 'debug' | 'verbose';
   message: string;
   data?: any;
 }

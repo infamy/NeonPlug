@@ -6,6 +6,7 @@
 import type { WebSerialPort } from './types';
 import { withTimeout } from './utils';
 import { CONNECTION } from './constants';
+import { log } from './logger';
 
 // Re-export for backward compatibility
 export type SerialPort = WebSerialPort;
@@ -41,13 +42,13 @@ export class DM32Connection {
 
     // Clear any initialization data from the radio
     // Read and discard any data sent immediately after port open
-    console.log('Clearing initialization data...');
+    log.debug('Clearing initialization data...', 'Connection');
     await this.clearBuffer();
     
     // Additional delay after clearing buffer to ensure radio is ready
     await this.delay(100);
     
-    console.log('Ready to communicate.');
+    log.info('Ready to communicate.', 'Connection');
     
     // Step 1: PSEARCH
     // According to serial capture: response is exactly 8 bytes: 06 44 50 35 37 30 55 56
@@ -106,7 +107,7 @@ export class DM32Connection {
         const data = await this.queryVFrame(frameId);
         results.set(frameId, data);
       } catch (e) {
-        console.warn(`Failed to query V-frame 0x${frameId.toString(16)}:`, e);
+        log.warn(`Failed to query V-frame 0x${frameId.toString(16)}`, 'Connection', e);
         // Continue with other V-frames even if one fails
       }
     }
@@ -116,23 +117,24 @@ export class DM32Connection {
 
   async queryVFrame(frameId: number): Promise<Uint8Array> {
     const command = new Uint8Array([0x56, 0x00, 0x00, 0x00, frameId]);
-    console.log(`Sending V-frame query: 0x${frameId.toString(16).padStart(2, '0')}`);
+    const frameIdHex = `0x${frameId.toString(16).padStart(2, '0')}`;
+    log.debug(`Sending V-frame query: ${frameIdHex}`, 'Connection');
     await this.write(command);
     
     // Wait for response - V-frames may take longer
     await this.delay(50);
 
-    console.log(`Reading V-frame 0x${frameId.toString(16).padStart(2, '0')} header (3 bytes)...`);
+    log.debug(`Reading V-frame ${frameIdHex} header (3 bytes)...`, 'Connection');
     const header = await this.readBytes(3);
     const headerHex = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join(' ');
-    console.log(`V-frame header: ${headerHex}`);
+    log.debug(`V-frame header: ${headerHex}`, 'Connection');
     
     if (header[0] !== 0x56 || header[1] !== frameId) {
       throw new Error(`Invalid V-frame response for frame 0x${frameId.toString(16)}: header=${headerHex}`);
     }
 
     const length = header[2];
-    console.log(`V-frame 0x${frameId.toString(16).padStart(2, '0')} data length: ${length}`);
+    log.debug(`V-frame ${frameIdHex} data length: ${length}`, 'Connection');
     
     if (length === 0) {
       return new Uint8Array(0);
@@ -140,7 +142,7 @@ export class DM32Connection {
 
     const data = await this.readBytes(length);
     const dataHex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
-    console.log(`V-frame 0x${frameId.toString(16).padStart(2, '0')} data: ${dataHex}`);
+    log.verbose(`V-frame ${frameIdHex} data: ${dataHex}`, 'Connection');
     
     // Delay after reading V-frame before next command
     await this.delay(50);
@@ -198,7 +200,7 @@ export class DM32Connection {
       const commandHex = Array.from(command)
         .map(b => b.toString(16).padStart(2, '0').toUpperCase())
         .join(' ');
-      console.log(`[READ] Sending read command (0x52 "R"): ${commandHex} (address: ${addressHex}, length: ${length})`);
+      log.debug(`Sending read command (0x52 "R"): ${commandHex} (address: ${addressHex}, length: ${length})`, 'Connection');
       await this.write(command);
       await this.delay(25); // Longer delay for block reads
 
@@ -218,7 +220,7 @@ export class DM32Connection {
       return data;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error(`[READ MEMORY ERROR] Failed to read ${length} bytes from ${addressHex}: ${errorMsg}`);
+      log.error(`Failed to read ${length} bytes from ${addressHex}`, 'Connection', error);
       throw new Error(`Failed to read memory at ${addressHex}: ${errorMsg}`);
     }
   }
@@ -270,38 +272,34 @@ export class DM32Connection {
       .map(b => b.toString(16).padStart(2, '0').toUpperCase())
       .join(' ');
     
-    console.log(`[WRITE] Sending write command (0x57 "W"):`);
-    console.log(`  Command header (first 6 bytes): ${commandHeader}`);
-    console.log(`  Address: ${addressHex}`);
-    console.log(`  Metadata: ${metadataHex}`);
-    console.log(`  Data size: ${data.length} bytes`);
-    console.log(`  Command total size: ${command.length} bytes (6 header + 4096 data)`);
+    log.debug(`Sending write command (0x57 "W"): address=${addressHex}, metadata=${metadataHex}, size=${data.length} bytes`, 'Connection');
+    log.verbose(`Write command header: ${commandHeader}`, 'Connection');
     
     // Log first 64 bytes of data for debugging
     const dataPreview = Array.from(data.slice(0, 64))
       .map(b => b.toString(16).padStart(2, '0').toUpperCase())
       .join(' ');
-    console.log(`  Data preview (first 64 bytes): ${dataPreview}`);
+    log.verbose(`Data preview (first 64 bytes): ${dataPreview}`, 'Connection');
     
     // Log metadata byte location in data (this is the ONLY place the metadata byte appears)
     const dataMetadataByte = data[0xFFF];
-    console.log(`  Data metadata byte at 0xFFF: 0x${dataMetadataByte.toString(16).padStart(2, '0').toUpperCase()}`);
-    console.log(`  Metadata byte in command[4101] (from data[0xFFF]): 0x${command[4101].toString(16).padStart(2, '0').toUpperCase()}`);
+    log.verbose(`Data metadata byte at 0xFFF: 0x${dataMetadataByte.toString(16).padStart(2, '0').toUpperCase()}`, 'Connection');
+    log.verbose(`Metadata byte in command[4101]: 0x${command[4101].toString(16).padStart(2, '0').toUpperCase()}`, 'Connection');
     
     // Verify metadata byte in data matches what we expect
     if (dataMetadataByte !== metadata) {
-      console.warn(`[WRITE WARNING] Metadata byte mismatch: data[0xFFF] = 0x${dataMetadataByte.toString(16).padStart(2, '0').toUpperCase()}, expected 0x${metadataHex}`);
+      log.warn(`Metadata byte mismatch: data[0xFFF] = 0x${dataMetadataByte.toString(16).padStart(2, '0').toUpperCase()}, expected ${metadataHex}`, 'Connection');
     }
 
     try {
       await this.write(command);
-      console.log(`[WRITE] Command sent successfully, waiting for ACK...`);
+      log.debug('Command sent successfully, waiting for ACK...', 'Connection');
       
       // Response: 0x06 (ACK) or error code
       // readBytes will wait for the response - no artificial delay needed
       const response = await this.readBytes(1);
       const responseHex = `0x${response[0].toString(16).padStart(2, '0').toUpperCase()}`;
-      console.log(`[WRITE] Response received: ${responseHex}`);
+      log.debug(`Response received: ${responseHex}`, 'Connection');
       
       if (response[0] !== 0x06) {
         // Common error codes:
@@ -315,13 +313,13 @@ export class DM32Connection {
         } else if (response[0] === 0x48) {
           errorMsg += '. Error code 0x48 may indicate: write timeout, radio busy processing previous write, or need for longer delay between writes.';
         }
-        console.error(`[WRITE ERROR] ${errorMsg}`);
+        log.error(errorMsg, 'Connection');
         throw new Error(errorMsg);
       }
       
-      console.log(`[WRITE] Write successful for block at ${addressHex} with metadata ${metadataHex}`);
+      log.info(`Write successful for block at ${addressHex} with metadata ${metadataHex}`, 'Connection');
     } catch (error) {
-      console.error(`[WRITE ERROR] Failed to write block at ${addressHex} with metadata ${metadataHex}:`, error);
+      log.error(`Failed to write block at ${addressHex} with metadata ${metadataHex}`, 'Connection', error);
       throw error;
     }
   }
@@ -357,7 +355,7 @@ export class DM32Connection {
   private async sendCommand(command: string): Promise<void> {
     const bytes = new TextEncoder().encode(command);
     const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
-    console.log(`Sending command: ${command} (${hex})`);
+    log.debug(`Sending command: ${command} (${hex})`, 'Connection');
     
     if (!this.writer) {
       throw new Error('Not connected');
@@ -391,12 +389,12 @@ export class DM32Connection {
       const commandPreview = Array.from(data.slice(0, 16))
         .map(b => b.toString(16).padStart(2, '0').toUpperCase())
         .join(' ');
-      console.log(`[SEND] ${commandType} command: ${commandPreview}... (${data.length} bytes total)`);
+      log.debug(`${commandType} command: ${commandPreview}... (${data.length} bytes total)`, 'Connection');
     } else {
       const commandHex = Array.from(data)
         .map(b => b.toString(16).padStart(2, '0').toUpperCase())
         .join(' ');
-      console.log(`[SEND] ${commandType} command: ${commandHex}`);
+      log.debug(`${commandType} command: ${commandHex}`, 'Connection');
     }
     
     await this.writer.write(data);
@@ -512,13 +510,13 @@ export class DM32Connection {
         const clearedHex = Array.from(this.readBuffer)
           .map(b => b.toString(16).padStart(2, '0'))
           .join(' ');
-        console.log(`Cleared ${this.readBuffer.length} bytes from buffer: ${clearedHex}`);
+        log.debug(`Cleared ${this.readBuffer.length} bytes from buffer: ${clearedHex}`, 'Connection');
         this.readBuffer = new Uint8Array(0); // Clear the buffer
       } else {
-        console.log('Buffer was already clear');
+        log.debug('Buffer was already clear', 'Connection');
       }
     } catch (e) {
-      console.log('Error clearing buffer:', e);
+      log.warn('Error clearing buffer', 'Connection', e);
       this.readBuffer = new Uint8Array(0); // Clear on error too
     }
   }

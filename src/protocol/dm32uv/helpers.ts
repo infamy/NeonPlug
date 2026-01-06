@@ -6,6 +6,7 @@
 import type { DM32Connection } from './connection';
 import type { MemoryBlock } from './memory';
 import { BLOCK_SIZE, CONNECTION } from './constants';
+import { log } from './logger';
 
 /**
  * Validate that connection and radio info are available
@@ -53,7 +54,7 @@ export function checkEmptyBlocks(
   onProgress?: (progress: number, message: string) => void
 ): boolean {
   if (blocks.length === 0) {
-    console.log(`No ${blockType} blocks found`);
+    log.debug(`No ${blockType} blocks found`, 'Helpers');
     onProgress?.(100, `No ${blockType}s found`);
     return true;
   }

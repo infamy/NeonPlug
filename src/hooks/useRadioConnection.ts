@@ -73,13 +73,8 @@ export function useRadioConnection() {
         onProgress?.(progress, message);
       };
       
-      // Step 1: Select port (this will show browser's native port picker)
-      onProgress?.(5, 'Please select a serial port in the browser dialog...', steps[0]);
-      
-      // Step 2: Connect to radio (force port selection for main read operation)
-      onProgress?.(10, 'Connecting to radio...', steps[1]);
-      // Force port selection by clearing any existing port
-      (protocol as any).port = null;
+      // Step 1: Connect to radio (will auto-detect previously granted port or prompt if needed)
+      onProgress?.(5, 'Connecting to radio...', steps[1]);
       await protocol.connect();
       
       // Step 3: Get radio info
