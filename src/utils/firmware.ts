@@ -94,3 +94,26 @@ export function isL01Firmware(firmware: string): boolean {
   return firmware.includes('L01');
 }
 
+/**
+ * Check if firmware version is 049 or newer (not recommended/untested)
+ * 
+ * Parses the last segment of the firmware version (e.g., "049" from "DM32.01.01.049")
+ * and checks if it's >= 049.
+ * 
+ * @param firmware Firmware version string (e.g., "DM32.01.01.049" or "DM32.01.L01.050")
+ * @returns True if firmware version is 049 or newer
+ */
+export function isFirmware049OrNewer(firmware: string): boolean {
+  // Extract the last segment after the final dot
+  const parts = firmware.split('.');
+  if (parts.length === 0) {
+    return false;
+  }
+  
+  const lastSegment = parts[parts.length - 1];
+  const versionNumber = parseInt(lastSegment, 10);
+  
+  // Check if it's a valid number and >= 049
+  return !isNaN(versionNumber) && versionNumber >= 49;
+}
+
