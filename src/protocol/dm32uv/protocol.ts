@@ -8,7 +8,7 @@ import { discoverMemoryBlocks, readChannelCount, type MemoryBlock } from './memo
 import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup } from '../../models';
-import type { WebSerialPort } from './types';
+import type { WebSerialPort, ProtocolDebugData } from './types';
 import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION } from './constants';
 import { withTimeout } from './utils';
 import { 
@@ -19,6 +19,7 @@ import {
   readAndConcatenateBlocks,
   storeRawData,
 } from './helpers';
+import { log } from './logger';
 
 /**
  * DM-32UV Protocol Implementation
@@ -109,12 +110,10 @@ export class DM32UVProtocol implements RadioProtocol {
     let port: WebSerialPort | null = null;
     let usedPreviouslyGrantedPort = false;
 
-    // Check if we should force port selection (port is null means force selection)
-    const forcePortSelection = this.port === null;
-
-    // First attempt: try to get a port (reuse existing, previously granted, or prompt)
+    // Try to get a port (will auto-detect previously granted port or prompt if needed)
+    // Don't force selection - let getOrSelectPort() handle autodetection
     try {
-      port = await this.getOrSelectPort(forcePortSelection);
+      port = await this.getOrSelectPort(false);
       if (port) {
         // Check if we used a previously granted port (not from prompt)
         const grantedPorts = await (navigator as any).serial.getPorts();
@@ -137,7 +136,7 @@ export class DM32UVProtocol implements RadioProtocol {
     } catch (connectError: unknown) {
       // If connection failed and we used a previously granted port, retry with port selection
       if (usedPreviouslyGrantedPort && port) {
-        console.warn('Connection failed with previously granted port, will prompt for port selection:', connectError);
+        log.warn('Connection failed with previously granted port, will prompt for port selection', 'Protocol', connectError);
         // Clear the failed port
         this.port = null;
         // Close the port if it's open
@@ -146,7 +145,7 @@ export class DM32UVProtocol implements RadioProtocol {
             await port.close();
           }
         } catch (closeError) {
-          console.warn('Error closing failed port:', closeError);
+          log.warn('Error closing failed port', 'Protocol', closeError);
         }
         // Retry with port selection
         port = await this.getOrSelectPort(true); // Force port selection
@@ -164,97 +163,105 @@ export class DM32UVProtocol implements RadioProtocol {
 
     // If forcing selection, skip all reuse logic and go straight to prompt
     if (forceSelection) {
-      console.log('Forcing port selection (port will be prompted)');
+      log.debug('Forcing port selection (port will be prompted)', 'Protocol');
       this.port = null; // Ensure port is cleared
       // Skip to prompt section below
     }
 
-    // Check if we already have a port that we can reuse
-    let port: WebSerialPort | null = this.port;
-    let needToPromptForPort = forceSelection;
+    let port: WebSerialPort | null = null;
     
-    if (!forceSelection && port) {
-      // Check if port is still usable (open and streams not locked)
-      const isAlreadyOpen = port.readable !== null && port.writable !== null;
-      const streamsLocked = port.readable?.locked || port.writable?.locked;
-      
-      if (isAlreadyOpen && !streamsLocked) {
-        // Port is open and streams are available - we can reuse it
-        console.log('Reusing existing port connection');
-        needToPromptForPort = false;
-      } else if (!isAlreadyOpen) {
-        // Port was closed, try to reopen it
-        console.log('Port was closed, attempting to reopen...');
-        try {
-          await withTimeout(
-            port.open({ baudRate: CONNECTION.BAUD_RATE }),
-            CONNECTION.TIMEOUT.PORT_OPEN,
-            'Port reopen'
-          );
-          console.log('Successfully reopened existing port');
-          needToPromptForPort = false;
-        } catch (e: unknown) {
-          const error = e as Error;
-          // If reopen failed, we'll need to get a new port
-          console.warn('Failed to reopen existing port, will try previously granted ports:', error.message);
-          port = null;
-          this.port = null;
-        }
-      } else {
-        // Streams are locked, can't reuse
-        console.warn('Port streams are locked, will try previously granted ports');
-        port = null;
-        this.port = null;
-      }
-    }
-    
-    // If we don't have a usable port and not forcing selection, try to get previously granted ports
-    if (needToPromptForPort && !port && !forceSelection) {
+    // FIRST: Try to reuse previously granted ports (autodetection)
+    // This matches Momentum Firmware's behavior - seamless connection if port was previously granted
+    if (!forceSelection) {
       try {
         const grantedPorts = await (navigator as any).serial.getPorts();
         if (grantedPorts && grantedPorts.length > 0) {
-          // Use the first previously granted port (most recent)
+          // Try to use the first previously granted port (most recent)
           port = grantedPorts[0] as WebSerialPort;
           this.port = port;
-          console.log(`Reusing previously granted port (${grantedPorts.length} available)`);
+          log.debug(`Found previously granted port (${grantedPorts.length} available), attempting to use...`, 'Protocol');
           
-          // Check if port needs to be opened
+          // Check if port is already open and ready
           const isAlreadyOpen = port.readable !== null && port.writable !== null;
           const streamsLocked = port.readable?.locked || port.writable?.locked;
           
           if (isAlreadyOpen && !streamsLocked) {
-            // Port is open and ready to use
-            needToPromptForPort = false;
+            // Port is ready to use
+            log.debug('Previously granted port is ready to use', 'Protocol');
+            return port;
           } else if (!isAlreadyOpen) {
-            // Port needs to be opened
+            // Try to open the port
             try {
               await withTimeout(
                 port.open({ baudRate: CONNECTION.BAUD_RATE }),
                 CONNECTION.TIMEOUT.PORT_OPEN,
                 'Port open'
               );
-              needToPromptForPort = false;
+              log.debug('Successfully opened previously granted port', 'Protocol');
+              return port;
             } catch (e: unknown) {
               const error = e as Error;
-              console.warn('Failed to open previously granted port, will prompt for new port:', error.message);
+              log.warn('Failed to open previously granted port, will prompt for new port', 'Protocol', error);
               port = null;
               this.port = null;
+              // Fall through to prompt
             }
           } else {
             // Streams are locked, can't use this port
-            console.warn('Previously granted port has locked streams, will prompt for new port');
+            log.warn('Previously granted port has locked streams, will prompt for new port', 'Protocol');
             port = null;
             this.port = null;
+            // Fall through to prompt
           }
+        } else {
+          // No previously granted ports - will prompt below
+          log.debug('No previously granted ports found, will prompt for port selection', 'Protocol');
         }
       } catch (e: unknown) {
-        console.warn('Failed to get previously granted ports:', e);
-        // Continue to prompt for port
+        log.warn('Failed to get previously granted ports, will prompt for port selection', 'Protocol', e);
+        port = null;
+        // Fall through to prompt
       }
     }
     
-    // Prompt for port only if we don't have a usable one, or if forcing selection
-    if (forceSelection || (needToPromptForPort && !port)) {
+    // SECOND: If we have a stored port instance, try to reuse it (fallback)
+    if (!forceSelection && !port && this.port) {
+      port = this.port;
+      log.debug('Attempting to reuse stored port instance...', 'Protocol');
+      
+      const isAlreadyOpen = port.readable !== null && port.writable !== null;
+      const streamsLocked = port.readable?.locked || port.writable?.locked;
+      
+      if (isAlreadyOpen && !streamsLocked) {
+        log.debug('Stored port is ready to use', 'Protocol');
+        return port;
+      } else if (!isAlreadyOpen) {
+        try {
+          await withTimeout(
+            port.open({ baudRate: CONNECTION.BAUD_RATE }),
+            CONNECTION.TIMEOUT.PORT_OPEN,
+            'Port reopen'
+          );
+          log.debug('Successfully reopened stored port', 'Protocol');
+          return port;
+        } catch (e: unknown) {
+          const error = e as Error;
+          log.warn('Failed to reopen stored port, will prompt for new port', 'Protocol', error);
+          port = null;
+          this.port = null;
+          // Fall through to prompt
+        }
+      } else {
+        log.warn('Stored port has locked streams, will prompt for new port', 'Protocol');
+        port = null;
+        this.port = null;
+        // Fall through to prompt
+      }
+    }
+    
+    // FINALLY: Prompt for port if we don't have a usable one, or if forcing selection
+    // This happens if: no previously granted ports, previously granted port failed, or forceSelection=true
+    if (forceSelection || !port) {
       // Port selection dialog - no timeout, user can take as long as needed
       // Note: If user cancels, this will throw a DOMException, which we'll catch
       try {
@@ -278,7 +285,7 @@ export class DM32UVProtocol implements RadioProtocol {
         if (port.readable.locked || port.writable.locked) {
           throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
         }
-        console.log('Port is already open, will use existing connection');
+        log.debug('Port is already open, will use existing connection', 'Protocol');
       } else {
         // Port is not open, so open it - wrap in timeout
         try {
@@ -294,7 +301,7 @@ export class DM32UVProtocol implements RadioProtocol {
             if ((port.readable && port.readable.locked) || (port.writable && port.writable.locked)) {
               throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
             }
-            console.log('Port opened by another process, will use existing connection');
+            log.debug('Port opened by another process, will use existing connection', 'Protocol');
           } else if (error.message && error.message.includes('timed out')) {
             throw new Error('Port open timed out. Please check the USB connection and try again.');
           } else {
@@ -399,6 +406,34 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   /**
+   * Get all debug data in a type-safe way
+   * This replaces the need for (protocol as any) casts
+   */
+  getDebugData(): ProtocolDebugData {
+    return {
+      rawChannelData: this.rawChannelData,
+      rawZoneData: this.rawZoneData,
+      rawContactBlockData: this.rawContactBlockData,
+      rawContactBlockAddress: this.rawContactBlockAddress,
+      rawScanListData: this.rawScanListData,
+      rawRadioSettingsData: this.rawRadioSettingsData,
+      rawDigitalEmergencyData: this.rawDigitalEmergencyData,
+      rawAnalogEmergencyData: this.rawAnalogEmergencyData,
+      rawMessageData: this.rawMessageData,
+      rawDMRRadioIDData: this.rawDMRRadioIDData,
+      rawRXGroupData: this.rawRXGroupData,
+      blockMetadata: this.blockMetadata,
+      blockData: this.blockData,
+      writeBlockData: this.writeBlockData,
+      zoneComparisonData: this.zoneComparisonData,
+      allBlockMetadata: (this as any).allBlockMetadata || new Map(),
+      allBlockData: (this as any).allBlockData || new Map(),
+      cachedBlockData: this.cachedBlockData,
+      discoveredBlocks: this.discoveredBlocks,
+    };
+  }
+
+  /**
    * Check if currently connected to the radio
    * @returns True if connected, false otherwise
    */
@@ -470,7 +505,7 @@ export class DM32UVProtocol implements RadioProtocol {
         // Read ONLY the first 4 bytes to get channel count (exception to bulk read)
         this.onProgress?.(10, 'Reading channel count from first block...');
         const channelCount = await readChannelCount(this.connection!, firstChannelBlock.address);
-        console.log(`Channel count: ${channelCount}`);
+        log.info(`Channel count: ${channelCount}`, 'Protocol');
         
         // Calculate how many channel blocks we need based on count
         const channelsInFirstBlock = 84;
@@ -508,9 +543,9 @@ export class DM32UVProtocol implements RadioProtocol {
       } else {
         // Warn if required block is missing (especially 0x04)
         if (metadata === METADATA.VFO_SETTINGS) {
-          console.warn(`⚠️  WARNING: Radio Settings block (metadata 0x04) not found during discovery! This block is required.`);
+          log.warn('Radio Settings block (metadata 0x04) not found during discovery! This block is required.', 'Protocol');
         } else {
-          console.log(`ℹ️  Info: Metadata block 0x${metadata.toString(16)} not found (optional)`);
+          log.debug(`Metadata block 0x${metadata.toString(16)} not found (optional)`, 'Protocol');
         }
       }
     }
@@ -518,7 +553,7 @@ export class DM32UVProtocol implements RadioProtocol {
     // Verify 0x04 block is included
     const vfoBlock = blocksToRead.find(b => b.metadata === METADATA.VFO_SETTINGS);
     if (!vfoBlock) {
-      console.error(`❌ ERROR: Radio Settings block (metadata 0x04) is missing from blocks to read!`);
+      log.error('Radio Settings block (metadata 0x04) is missing from blocks to read!', 'Protocol');
     }
 
     // Step 2c: Add zone and scan list blocks
@@ -542,7 +577,7 @@ export class DM32UVProtocol implements RadioProtocol {
     }
 
     const finalBlocksToRead = Array.from(uniqueBlocks.values());
-    console.log(`Bulk reading ${finalBlocksToRead.length} blocks (channels, zones, scan lists, and fixed metadata blocks)`);
+    log.info(`Bulk reading ${finalBlocksToRead.length} blocks (channels, zones, scan lists, and fixed metadata blocks)`, 'Protocol');
 
     // Step 3: Read ALL required blocks upfront into cachedBlockData array
     // This is the ONLY place we read blocks from the radio
@@ -558,7 +593,7 @@ export class DM32UVProtocol implements RadioProtocol {
       
       // Verify we got exactly 4096 bytes
       if (blockData.length !== BLOCK_SIZE.STANDARD) {
-        console.error(`⚠️  WARNING: Block at 0x${block.address.toString(16)} (metadata 0x${block.metadata.toString(16)}) has incorrect length: ${blockData.length} bytes (expected ${BLOCK_SIZE.STANDARD})`);
+        log.warn(`Block at 0x${block.address.toString(16)} (metadata 0x${block.metadata.toString(16)}) has incorrect length: ${blockData.length} bytes (expected ${BLOCK_SIZE.STANDARD})`, 'Protocol');
       }
       
       // IMPORTANT: Create a copy of the data to prevent corruption if the buffer is reused
@@ -582,14 +617,14 @@ export class DM32UVProtocol implements RadioProtocol {
     }
 
     this.onProgress?.(100, `Successfully cached ${this.cachedBlockData.length} blocks`);
-    console.log(`Bulk read complete: ${this.cachedBlockData.length} blocks cached`);
-    console.log('All blocks are now in cache - parsing can proceed without additional radio reads');
+    log.info(`Bulk read complete: ${this.cachedBlockData.length} blocks cached`, 'Protocol');
+    log.debug('All blocks are now in cache - parsing can proceed without additional radio reads', 'Protocol');
     
     // Step 4: Disconnect from radio - we have all the data we need
     // Parsing will happen from cached blocks, no connection needed
     // Disconnect silently (no progress message needed)
     await this.disconnect();
-    console.log('Connection closed - all data is cached and ready for parsing');
+    log.debug('Connection closed - all data is cached and ready for parsing', 'Protocol');
   }
 
   /**
@@ -627,7 +662,7 @@ export class DM32UVProtocol implements RadioProtocol {
       if (firstChannelBlock) {
         this.onProgress?.(10, 'Reading channel count from first block...');
         const channelCount = await readChannelCount(this.connection!, firstChannelBlock.address);
-        console.log(`Channel count: ${channelCount}`);
+        log.info(`Channel count: ${channelCount}`, 'Protocol');
         
         const channelsInFirstBlock = 84;
         let blocksNeeded: number;
@@ -682,7 +717,7 @@ export class DM32UVProtocol implements RadioProtocol {
     }
 
     const finalBlocksToRead = Array.from(uniqueBlocks.values());
-    console.log(`Bulk reading ${finalBlocksToRead.length} blocks for write operation`);
+    log.info(`Bulk reading ${finalBlocksToRead.length} blocks for write operation`, 'Protocol');
 
     // Step 3: Read all required blocks
     this.onProgress?.(10, `Reading ${finalBlocksToRead.length} blocks...`);
@@ -709,8 +744,8 @@ export class DM32UVProtocol implements RadioProtocol {
     }
 
     this.onProgress?.(100, `Successfully cached ${this.cachedBlockData.length} blocks`);
-    console.log(`Bulk read complete: ${this.cachedBlockData.length} blocks cached`);
-    console.log('All blocks are now in cache - connection remains open for writing');
+    log.info(`Bulk read complete: ${this.cachedBlockData.length} blocks cached`, 'Protocol');
+    log.debug('All blocks are now in cache - connection remains open for writing', 'Protocol');
     // NOTE: We do NOT disconnect here - connection must stay open for writing
   }
 
@@ -741,7 +776,7 @@ export class DM32UVProtocol implements RadioProtocol {
         allData.set(cachedBlock.data, offset);
         offset += BLOCK_SIZE.STANDARD;
       } else {
-        console.warn(`Block at address 0x${block.address.toString(16)} not found in cache`);
+        log.warn(`Block at address 0x${block.address.toString(16)} not found in cache`, 'Protocol');
       }
     }
     
@@ -790,7 +825,7 @@ export class DM32UVProtocol implements RadioProtocol {
                          (firstBlockData.data[1] << 8) | 
                          (firstBlockData.data[2] << 16) | 
                          (firstBlockData.data[3] << 24);
-    console.log(`Channel count: ${channelCount}`);
+    log.info(`Channel count: ${channelCount}`, 'Protocol');
 
     // Calculate how many blocks we need based on channel count
     const channelsInFirstBlock = 84;
@@ -807,7 +842,7 @@ export class DM32UVProtocol implements RadioProtocol {
     // Select only the blocks we need (in metadata order: 0x12, 0x13, 0x14, ...)
     const blocksToParse = channelBlocks.slice(0, blocksNeeded);
     
-    console.log(`Parsing ${blocksToParse.length} cached channel blocks for ${channelCount} channels`);
+    log.info(`Parsing ${blocksToParse.length} cached channel blocks for ${channelCount} channels`, 'Protocol');
 
     // Parse channels - process blocks in metadata order (0x12, 0x13, 0x14, ...)
     // All data comes from cachedBlockData - no radio reads here
@@ -820,7 +855,7 @@ export class DM32UVProtocol implements RadioProtocol {
       // Get block data from cache
       const cachedBlock = this.getCachedBlockByAddress(block.address);
       if (!cachedBlock) {
-        console.warn(`No cached data for block with metadata 0x${block.metadata.toString(16)} at 0x${block.address.toString(16)}`);
+        log.warn(`No cached data for block with metadata 0x${block.metadata.toString(16)} at 0x${block.address.toString(16)}`, 'Protocol');
         continue;
       }
       const blockDataBytes = cachedBlock.data;
@@ -835,26 +870,26 @@ export class DM32UVProtocol implements RadioProtocol {
         ? OFFSET.FIRST_CHANNEL + 83 * BLOCK_SIZE.CHANNEL  // First block: 84 channels
         : blockDataBytes.length - BLOCK_SIZE.CHANNEL;     // Other blocks: 85 channels
       
-      console.log(`Processing block metadata 0x${block.metadata.toString(16)} at 0x${block.address.toString(16)}, isFirst: ${isFirstBlock}, startOffset: 0x${startOffset.toString(16)}, maxOffset: 0x${maxOffset.toString(16)}`);
+      log.debug(`Processing block metadata 0x${block.metadata.toString(16)} at 0x${block.address.toString(16)}, isFirst: ${isFirstBlock}, startOffset: 0x${startOffset.toString(16)}, maxOffset: 0x${maxOffset.toString(16)}`, 'Protocol');
 
       for (let offset = startOffset; offset <= maxOffset; offset += BLOCK_SIZE.CHANNEL) {
         // Stop if we've reached the channel count
         if (channelIndex > channelCount) {
-          console.log(`Reached channel count limit (${channelCount}), stopping`);
+          log.debug(`Reached channel count limit (${channelCount}), stopping`, 'Protocol');
           break;
         }
 
         try {
           const channelData = blockDataBytes.slice(offset, offset + BLOCK_SIZE.CHANNEL);
           if (channelData.length < BLOCK_SIZE.CHANNEL) {
-            console.warn(`Incomplete channel data at block 0x${block.address.toString(16)} offset 0x${offset.toString(16)}`);
+            log.warn(`Incomplete channel data at block 0x${block.address.toString(16)} offset 0x${offset.toString(16)}`, 'Protocol');
             break;
           }
           
           // Check if channel is empty (all 0xFF or all 0x00)
           const isEmpty = channelData.every(b => b === 0xFF || b === 0x00);
           if (isEmpty) {
-            console.log(`Skipping empty channel ${channelIndex}`);
+            log.debug(`Skipping empty channel ${channelIndex}`, 'Protocol');
             channelIndex++;
             continue;
           }
@@ -877,7 +912,7 @@ export class DM32UVProtocol implements RadioProtocol {
             this.onProgress?.(parseProgress, `Parsed ${channelIndex} of ${channelCount} channels...`);
           }
         } catch (error) {
-          console.error(`Error parsing channel ${channelIndex} at block 0x${block.address.toString(16)} offset 0x${offset.toString(16)}:`, error);
+          log.error(`Error parsing channel ${channelIndex} at block 0x${block.address.toString(16)} offset 0x${offset.toString(16)}`, 'Protocol', error);
           // Continue with next channel
           channelIndex++;
         }
@@ -891,7 +926,7 @@ export class DM32UVProtocol implements RadioProtocol {
       currentBlockIndex++;
     }
 
-    console.log(`Successfully parsed ${channels.length} channels (expected ${channelCount})`);
+    log.info(`Successfully parsed ${channels.length} channels (expected ${channelCount})`, 'Protocol');
     this.onProgress?.(100, `Successfully read ${channels.length} channels`);
     
     // Store raw data in a property for retrieval
@@ -955,18 +990,16 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(10, `Writing ${channels.length} channels to ${channelBlocks.length} blocks...`);
 
-    console.log(`[WRITE CHANNELS] Starting write operation:`);
-    console.log(`  Total channels: ${channels.length}`);
-    console.log(`  Channel blocks found: ${channelBlocks.length}`);
-    console.log(`  Block addresses: ${channelBlocks.map(b => `0x${b.address.toString(16).padStart(6, '0').toUpperCase()}`).join(', ')}`);
+    log.info(`Starting write operation: ${channels.length} channels to ${channelBlocks.length} blocks`, 'Protocol');
+    log.debug(`Block addresses: ${channelBlocks.map(b => `0x${b.address.toString(16).padStart(6, '0').toUpperCase()}`).join(', ')}`, 'Protocol');
 
     // Encode all channels to binary
     const encodedChannels = channels.map(ch => encodeChannel(ch));
-    console.log(`[WRITE CHANNELS] Encoded ${encodedChannels.length} channels to binary format`);
+    log.debug(`Encoded ${encodedChannels.length} channels to binary format`, 'Protocol');
     
     // Step 1: Read metadata bytes from ALL active channel blocks (1 byte per block at offset 0xFFF)
     // This matches the serial capture pattern: read all metadata first, then write only blocks we change
-    console.log(`[WRITE CHANNELS] Reading metadata bytes (1 byte each) from all ${channelBlocks.length} active channel blocks...`);
+    log.debug(`Reading metadata bytes (1 byte each) from all ${channelBlocks.length} active channel blocks...`, 'Protocol');
     
     for (let blockIdx = 0; blockIdx < channelBlocks.length; blockIdx++) {
       const block = channelBlocks[blockIdx];
@@ -975,17 +1008,17 @@ export class DM32UVProtocol implements RadioProtocol {
       const metadataAddrHex = `0x${metadataAddr.toString(16).padStart(6, '0').toUpperCase()}`;
       
       try {
-        console.log(`[WRITE CHANNELS] Reading metadata byte from block ${blockIdx + 1}/${channelBlocks.length} at ${metadataAddrHex} (block address: ${addressHex}, metadata: 0x${block.metadata.toString(16).padStart(2, '0')})`);
+        log.debug(`Reading metadata byte from block ${blockIdx + 1}/${channelBlocks.length} at ${metadataAddrHex} (block address: ${addressHex}, metadata: 0x${block.metadata.toString(16).padStart(2, '0')})`, 'Protocol');
         
         // Read only the metadata byte (1 byte at offset 0xFFF)
         const metadataData = await this.connection!.readMemory(metadataAddr, 1);
         const metadataValue = metadataData[0];
         
-        console.log(`[WRITE CHANNELS] Successfully read metadata byte from ${addressHex}: 0x${metadataValue.toString(16).padStart(2, '0')}`);
+        log.debug(`Successfully read metadata byte from ${addressHex}: 0x${metadataValue.toString(16).padStart(2, '0')}`, 'Protocol');
         
         // Verify metadata matches what we discovered
         if (metadataValue !== block.metadata) {
-          console.warn(`[WRITE CHANNELS] Metadata mismatch at ${addressHex}: expected 0x${block.metadata.toString(16).padStart(2, '0')}, got 0x${metadataValue.toString(16).padStart(2, '0')}. Using discovered value.`);
+          log.warn(`Metadata mismatch at ${addressHex}: expected 0x${block.metadata.toString(16).padStart(2, '0')}, got 0x${metadataValue.toString(16).padStart(2, '0')}. Using discovered value.`, 'Protocol');
         }
         
         // Add delay between metadata reads
@@ -994,13 +1027,13 @@ export class DM32UVProtocol implements RadioProtocol {
         }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error(`[WRITE CHANNELS ERROR] Failed to read metadata from block ${blockIdx + 1}/${channelBlocks.length} at ${addressHex} (metadata address: ${metadataAddrHex}): ${errorMsg}`);
-        console.error(`[WRITE CHANNELS ERROR] This was block ${blockIdx + 1} of ${channelBlocks.length} total blocks`);
+        log.error(`Failed to read metadata from block ${blockIdx + 1}/${channelBlocks.length} at ${addressHex} (metadata address: ${metadataAddrHex})`, 'Protocol', error);
+        log.error(`This was block ${blockIdx + 1} of ${channelBlocks.length} total blocks`, 'Protocol');
         throw new Error(`Failed to read metadata from block ${blockIdx + 1} at ${addressHex}: ${errorMsg}`);
       }
     }
     
-    console.log(`[WRITE CHANNELS] Metadata read complete, starting write operations...`);
+    log.debug('Metadata read complete, starting write operations...', 'Protocol');
     
     // Step 2: Calculate how many blocks we actually need to write
     // First block: 84 channels (starts at offset 0x10, so (4096 - 0x10) / 48 = 84)
@@ -1019,7 +1052,7 @@ export class DM32UVProtocol implements RadioProtocol {
     
     // Only write to the blocks we actually need
     const blocksToWrite = channelBlocks.slice(0, blocksNeeded);
-    console.log(`[WRITE CHANNELS] Will write to ${blocksToWrite.length} blocks (${channels.length} channels)`);
+    log.info(`Will write to ${blocksToWrite.length} blocks (${channels.length} channels)`, 'Protocol');
     
     // Step 3: Create new block data and write only to blocks we need
     // We create fresh 4KB blocks filled with 0xFF, then write our channel data
@@ -1030,10 +1063,7 @@ export class DM32UVProtocol implements RadioProtocol {
       const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
       const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`;
       
-      console.log(`[WRITE CHANNELS] Processing block ${blockIdx + 1}/${blocksToWrite.length}:`);
-      console.log(`  Address: ${addressHex}`);
-      console.log(`  Metadata: ${metadataHex}`);
-      console.log(`  Is first block: ${isFirstBlock}`);
+      log.debug(`Processing block ${blockIdx + 1}/${blocksToWrite.length}: Address=${addressHex}, Metadata=${metadataHex}, IsFirst=${isFirstBlock}`, 'Protocol');
       
       // Create a new 4KB block filled with 0xFF (empty marker)
       const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
@@ -1047,7 +1077,7 @@ export class DM32UVProtocol implements RadioProtocol {
         channelCountBytes[2] = (channels.length >> 16) & 0xFF;
         channelCountBytes[3] = (channels.length >> 24) & 0xFF;
         blockData.set(channelCountBytes, 0);
-        console.log(`[WRITE CHANNELS] Updated channel count in first block header: ${channels.length} (bytes: ${Array.from(channelCountBytes).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ')})`);
+        log.debug(`Updated channel count in first block header: ${channels.length} (bytes: ${Array.from(channelCountBytes).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ')})`, 'Protocol');
       }
       
       // Determine start offset and max channels for this block
@@ -1055,10 +1085,7 @@ export class DM32UVProtocol implements RadioProtocol {
       const maxChannelsInBlock = isFirstBlock ? 84 : 85;
       const maxOffset = startOffset + (maxChannelsInBlock * BLOCK_SIZE.CHANNEL);
       
-      console.log(`[WRITE CHANNELS] Block channel layout:`);
-      console.log(`  Start offset: 0x${startOffset.toString(16).padStart(2, '0').toUpperCase()}`);
-      console.log(`  Max channels in block: ${maxChannelsInBlock}`);
-      console.log(`  Max offset: 0x${maxOffset.toString(16).padStart(4, '0').toUpperCase()}`);
+      log.verbose(`Block channel layout: Start offset=0x${startOffset.toString(16).padStart(2, '0').toUpperCase()}, Max channels=${maxChannelsInBlock}, Max offset=0x${maxOffset.toString(16).padStart(4, '0').toUpperCase()}`, 'Protocol');
       
       const channelsInThisBlock: number[] = [];
       
@@ -1093,36 +1120,33 @@ export class DM32UVProtocol implements RadioProtocol {
         for (let offset = lastChannelOffset; offset < maxOffset; offset += BLOCK_SIZE.CHANNEL) {
           blockData.set(emptyChannel, offset);
         }
-        console.log(`[WRITE CHANNELS] Filled ${Math.floor((maxOffset - lastChannelOffset) / BLOCK_SIZE.CHANNEL)} unused channel slots with 0xFF`);
+        log.debug(`Filled ${Math.floor((maxOffset - lastChannelOffset) / BLOCK_SIZE.CHANNEL)} unused channel slots with 0xFF`, 'Protocol');
       }
       
-      console.log(`[WRITE CHANNELS] Block ${blockIdx + 1} prepared:`);
-      console.log(`  Channels in this block: ${channelsInThisBlock.length} (${channelsInThisBlock.join(', ')})`);
-      console.log(`  Total channels encoded so far: ${channelIndex}/${channels.length}`);
+      log.debug(`Block ${blockIdx + 1} prepared: ${channelsInThisBlock.length} channels (${channelsInThisBlock.join(', ')}), Total encoded: ${channelIndex}/${channels.length}`, 'Protocol');
       
       // CRITICAL: Set metadata byte at offset 0xFFF in the block data
       // This must match the metadata byte we send at the end of the write command
       blockData[0xFFF] = block.metadata;
-      console.log(`[WRITE CHANNELS] Set metadata byte at 0xFFF to ${metadataHex}`);
+      log.debug(`Set metadata byte at 0xFFF to ${metadataHex}`, 'Protocol');
       
       // Final validation: Ensure block is exactly 4KB before writing
       if (blockData.length !== BLOCK_SIZE.STANDARD) {
         throw new Error(`Block data size error at ${addressHex}: must be exactly ${BLOCK_SIZE.STANDARD} bytes (4KB), got ${blockData.length} bytes`);
       }
-      console.log(`[WRITE CHANNELS] Block ${blockIdx + 1} validated: ${blockData.length} bytes (4KB)`);
+      log.debug(`Block ${blockIdx + 1} validated: ${blockData.length} bytes (4KB)`, 'Protocol');
       
       // Write the block back to radio
       const progress = 90 + Math.floor((blockIdx / blocksToWrite.length) * 10); // 90-100%
       this.onProgress?.(progress, `Writing block ${blockIdx + 1} of ${blocksToWrite.length}...`);
       
-      console.log(`[WRITE CHANNELS] Writing block ${blockIdx + 1}/${blocksToWrite.length} to radio at ${addressHex} (metadata: ${metadataHex})...`);
+      log.debug(`Writing block ${blockIdx + 1}/${blocksToWrite.length} to radio at ${addressHex} (metadata: ${metadataHex})...`, 'Protocol');
       try {
         await this.connection!.writeMemory(block.address, blockData, block.metadata);
-        console.log(`[WRITE CHANNELS] ✓ Successfully wrote block ${blockIdx + 1}/${blocksToWrite.length} to radio at ${addressHex}`);
+        log.info(`Successfully wrote block ${blockIdx + 1}/${blocksToWrite.length} to radio at ${addressHex}`, 'Protocol');
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error(`[WRITE CHANNELS ERROR] ✗ Failed to write block ${blockIdx + 1}/${blocksToWrite.length} at ${addressHex} (metadata: ${metadataHex}): ${errorMsg}`);
-        console.error(`[WRITE CHANNELS ERROR] This was write attempt ${blockIdx + 1} of ${blocksToWrite.length} total blocks`);
+        log.error(`Failed to write block ${blockIdx + 1}/${blocksToWrite.length} at ${addressHex} (metadata: ${metadataHex})`, 'Protocol', error);
+        log.error(`This was write attempt ${blockIdx + 1} of ${blocksToWrite.length} total blocks`, 'Protocol');
         throw error;
       }
       
@@ -1130,13 +1154,13 @@ export class DM32UVProtocol implements RadioProtocol {
       
       // Stop if we've written all channels
       if (channelIndex >= channels.length) {
-        console.log(`[WRITE CHANNELS] All ${channelIndex} channels have been written, stopping block iteration`);
+        log.debug(`All ${channelIndex} channels have been written, stopping block iteration`, 'Protocol');
         break;
       }
     }
 
     this.onProgress?.(100, `Successfully wrote ${channels.length} channels`);
-    console.log(`Successfully wrote ${channels.length} channels to radio`);
+    log.info(`Successfully wrote ${channels.length} channels to radio`, 'Protocol');
   }
 
   /**
@@ -1157,7 +1181,7 @@ export class DM32UVProtocol implements RadioProtocol {
 
     // Zone metadata identified from debug export: 0x5c
     const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE);
-    console.log(`Found ${zoneBlocks.length} zone blocks (metadata 0x${METADATA.ZONE.toString(16)})`);
+    log.info(`Found ${zoneBlocks.length} zone blocks (metadata 0x${METADATA.ZONE.toString(16)})`, 'Protocol');
 
     if (checkEmptyBlocks(zoneBlocks, 'zone', this.onProgress)) {
       return [];
@@ -1178,7 +1202,7 @@ export class DM32UVProtocol implements RadioProtocol {
       );
     });
 
-    console.log(`Successfully parsed ${zones.length} zones`);
+    log.info(`Successfully parsed ${zones.length} zones`, 'Protocol');
     this.onProgress?.(100, `Successfully read ${zones.length} zones`);
     return zones;
   }
@@ -1272,7 +1296,7 @@ export class DM32UVProtocol implements RadioProtocol {
     }
 
     this.onProgress?.(100, `Successfully wrote ${zones.length} zones`);
-    console.log(`Successfully wrote ${zones.length} zones to radio`);
+    log.info(`Successfully wrote ${zones.length} zones to radio`, 'Protocol');
   }
 
   /**
@@ -1292,7 +1316,7 @@ export class DM32UVProtocol implements RadioProtocol {
     this.onProgress?.(0, 'Parsing scan lists from cached blocks...');
 
     const scanBlocks = this.discoveredBlocks.filter(b => b.type === 'scan' && b.metadata === METADATA.SCAN_LIST);
-    console.log(`Found ${scanBlocks.length} scan list blocks (metadata 0x${METADATA.SCAN_LIST.toString(16)})`);
+    log.info(`Found ${scanBlocks.length} scan list blocks (metadata 0x${METADATA.SCAN_LIST.toString(16)})`, 'Protocol');
 
     if (checkEmptyBlocks(scanBlocks, 'scan list', this.onProgress)) {
       return [];
@@ -1310,17 +1334,17 @@ export class DM32UVProtocol implements RadioProtocol {
     }
 
     this.onProgress?.(50, 'Parsing scan list data...');
-    console.log(`Parsing scan list data, total size: ${allScanListData.length} bytes`);
+    log.debug(`Parsing scan list data, total size: ${allScanListData.length} bytes`, 'Protocol');
     const scanLists = parseScanLists(allScanListData, (listNum, rawData, name) => {
       // Store raw scan list data for debug export
       const offset = listNum <= 44 
         ? OFFSET.SCAN_LIST_START + (listNum - 1) * BLOCK_SIZE.SCAN_LIST 
         : (listNum - 45) * BLOCK_SIZE.SCAN_LIST;
       storeRawData(this.rawScanListData, name, rawData, { listNum }, offset);
-      console.log(`Parsed scan list ${listNum}: "${name}" with ${rawData.length >= 25 ? 'channels' : 'no channels'}`);
+      log.debug(`Parsed scan list ${listNum}: "${name}" with ${rawData.length >= 25 ? 'channels' : 'no channels'}`, 'Protocol');
     });
 
-    console.log(`Successfully parsed ${scanLists.length} scan lists:`, scanLists.map(sl => sl.name));
+    log.info(`Successfully parsed ${scanLists.length} scan lists: ${scanLists.map(sl => sl.name).join(', ')}`, 'Protocol');
     this.onProgress?.(100, `Successfully read ${scanLists.length} scan lists`);
     return scanLists;
   }
@@ -1415,7 +1439,7 @@ export class DM32UVProtocol implements RadioProtocol {
     }
 
     this.onProgress?.(100, `Successfully wrote ${scanLists.length} scan lists`);
-    console.log(`Successfully wrote ${scanLists.length} scan lists to radio`);
+    log.info(`Successfully wrote ${scanLists.length} scan lists to radio`, 'Protocol');
   }
 
   /**
@@ -1450,10 +1474,10 @@ export class DM32UVProtocol implements RadioProtocol {
     const baseAddr = this.readUint32LE(contactsVFrame, 0);
     const endAddr = this.readUint32LE(contactsVFrame, 4);
     
-    console.log(`Contacts memory range: 0x${baseAddr.toString(16)} - 0x${endAddr.toString(16)}`);
+    log.info(`Contacts memory range: 0x${baseAddr.toString(16)} - 0x${endAddr.toString(16)}`, 'Protocol');
     
     if (baseAddr === 0 && endAddr === 0) {
-      console.warn('Contacts range is 0x00000000-0x00000000, contacts may be disabled');
+      log.warn('Contacts range is 0x00000000-0x00000000, contacts may be disabled', 'Protocol');
       return [];
     }
     
@@ -1467,7 +1491,7 @@ export class DM32UVProtocol implements RadioProtocol {
     let maxContacts = 50000; // Default for standard firmware
     if (maxContactsVFrame && maxContactsVFrame.length >= 4) {
       maxContacts = this.readUint32LE(maxContactsVFrame, 0);
-      console.log(`Max contacts: ${maxContacts}`);
+      log.info(`Max contacts: ${maxContacts}`, 'Protocol');
     }
     
     const ENTRY_SIZE = 0x5C; // 92 bytes per contact
@@ -1568,7 +1592,7 @@ export class DM32UVProtocol implements RadioProtocol {
       }
     }
     
-    console.log(`Successfully read ${contacts.length} contacts`);
+    log.info(`Successfully read ${contacts.length} contacts`, 'Protocol');
     this.onProgress?.(100, `Successfully read ${contacts.length} contacts`);
     
     return contacts;
@@ -1739,7 +1763,7 @@ export class DM32UVProtocol implements RadioProtocol {
 
     const messageBlocks = this.discoveredBlocks.filter(b => b.type === 'message');
     if (messageBlocks.length === 0) {
-      console.log('No quick message blocks found');
+      log.debug('No quick message blocks found', 'Protocol');
       return [];
     }
 
@@ -1752,7 +1776,7 @@ export class DM32UVProtocol implements RadioProtocol {
 
       const cachedBlock = this.getCachedBlockByAddress(block.address);
       if (!cachedBlock) {
-        console.warn(`Message block at 0x${block.address.toString(16)} not found in cache`);
+        log.warn(`Message block at 0x${block.address.toString(16)} not found in cache`, 'Protocol');
         continue;
       }
       
@@ -1790,7 +1814,7 @@ export class DM32UVProtocol implements RadioProtocol {
     const radioIdBlocks = this.discoveredBlocks.filter(b => b.type === 'dmrradioid');
     if (radioIdBlocks.length === 0) {
       // DMR Radio IDs are optional - return empty array if not found
-      console.log('No DMR Radio ID blocks found');
+      log.debug('No DMR Radio ID blocks found', 'Protocol');
       return [];
     }
 
@@ -1803,7 +1827,7 @@ export class DM32UVProtocol implements RadioProtocol {
 
       const cachedBlock = this.getCachedBlockByAddress(block.address);
       if (!cachedBlock) {
-        console.warn(`DMR Radio ID block at 0x${block.address.toString(16)} not found in cache`);
+        log.warn(`DMR Radio ID block at 0x${block.address.toString(16)} not found in cache`, 'Protocol');
         continue;
       }
       
@@ -1841,7 +1865,7 @@ export class DM32UVProtocol implements RadioProtocol {
     const calibrationBlocks = this.discoveredBlocks.filter(b => b.type === 'calibration');
     if (calibrationBlocks.length === 0) {
       // Calibration is optional - return null if not found
-      console.log('No calibration blocks found');
+      log.debug('No calibration blocks found', 'Protocol');
       return null;
     }
 
@@ -1849,7 +1873,7 @@ export class DM32UVProtocol implements RadioProtocol {
     const block = calibrationBlocks[0];
     const cachedBlock = this.getCachedBlockByAddress(block.address);
     if (!cachedBlock) {
-      console.warn(`Calibration block at 0x${block.address.toString(16)} not found in cache`);
+      log.warn(`Calibration block at 0x${block.address.toString(16)} not found in cache`, 'Protocol');
       return null;
     }
 
@@ -1882,7 +1906,7 @@ export class DM32UVProtocol implements RadioProtocol {
     const rxGroupBlocks = this.discoveredBlocks.filter(b => b.type === 'rxgroup');
     if (rxGroupBlocks.length === 0) {
       // DMR RX Groups are optional - return empty array if not found
-      console.log('No DMR RX group blocks found');
+      log.debug('No DMR RX group blocks found', 'Protocol');
       return [];
     }
 
@@ -1895,7 +1919,7 @@ export class DM32UVProtocol implements RadioProtocol {
 
       const cachedBlock = this.getCachedBlockByAddress(block.address);
       if (!cachedBlock) {
-        console.warn(`RX Group block at 0x${block.address.toString(16)} not found in cache`);
+        log.warn(`RX Group block at 0x${block.address.toString(16)} not found in cache`, 'Protocol');
         continue;
       }
       
@@ -1934,7 +1958,7 @@ export class DM32UVProtocol implements RadioProtocol {
 
     if (!radioSettingsBlock) {
       // Block doesn't exist - this is OK, some radios may not have it
-      console.log('Radio Settings block (metadata 0x04) not found - radio may not support this feature');
+      log.debug('Radio Settings block (metadata 0x04) not found - radio may not support this feature', 'Protocol');
       return null;
     }
 
@@ -1943,7 +1967,7 @@ export class DM32UVProtocol implements RadioProtocol {
     try {
       const cachedBlock = this.getCachedBlockByAddress(radioSettingsBlock.address);
       if (!cachedBlock) {
-        console.warn('Radio Settings block not found in cache');
+        log.warn('Radio Settings block not found in cache', 'Protocol');
         return null;
       }
 
@@ -1981,7 +2005,7 @@ export class DM32UVProtocol implements RadioProtocol {
               vfoB = parseChannel(vfoBData, 4002);
             }
           } catch (err) {
-            console.warn('Failed to parse VFO channels from block 0x41:', err);
+            log.warn('Failed to parse VFO channels from block 0x41', 'Protocol', err);
           }
         }
       }
@@ -2000,7 +2024,7 @@ export class DM32UVProtocol implements RadioProtocol {
       return radioSettings;
     } catch (err) {
       // If parsing fails, don't crash - just return null
-      console.warn('Failed to parse Radio Settings block:', err);
+      log.warn('Failed to parse Radio Settings block', 'Protocol', err);
       return null;
     }
   }
@@ -2117,7 +2141,7 @@ export class DM32UVProtocol implements RadioProtocol {
     const emergencyBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.DIGITAL_EMERGENCY);
 
     if (!emergencyBlock) {
-      console.log('Digital Emergency Systems block (metadata 0x03) not found');
+      log.debug('Digital Emergency Systems block (metadata 0x03) not found', 'Protocol');
       return null;
     }
 
@@ -2126,7 +2150,7 @@ export class DM32UVProtocol implements RadioProtocol {
     try {
       const cachedBlock = this.getCachedBlockByAddress(emergencyBlock.address);
       if (!cachedBlock) {
-        console.warn('Digital Emergency Systems block not found in cache');
+        log.warn('Digital Emergency Systems block not found in cache', 'Protocol');
         return null;
       }
 
@@ -2140,7 +2164,7 @@ export class DM32UVProtocol implements RadioProtocol {
       // return parseDigitalEmergencies(cachedBlock.data);
       return { systems: [], config: { countIndex: 0, unknown: 0, numericFields: [0, 0, 0], byteFields: [0, 0], values16bit: [0, 0, 0, 0], bitFlags: 0, indexCount: 0, entryArray: [], additionalConfig: new Uint8Array(192) } };
     } catch (err) {
-      console.warn('Failed to process Digital Emergency Systems block:', err);
+      log.warn('Failed to process Digital Emergency Systems block', 'Protocol', err);
       return null;
     }
   }
@@ -2208,7 +2232,7 @@ export class DM32UVProtocol implements RadioProtocol {
     const emergencyBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.ANALOG_EMERGENCY);
 
     if (!emergencyBlock) {
-      console.log('Analog Emergency Systems block (metadata 0x10) not found');
+      log.debug('Analog Emergency Systems block (metadata 0x10) not found', 'Protocol');
       return null;
     }
 
@@ -2217,7 +2241,7 @@ export class DM32UVProtocol implements RadioProtocol {
     try {
       const cachedBlock = this.getCachedBlockByAddress(emergencyBlock.address);
       if (!cachedBlock) {
-        console.warn('Analog Emergency Systems block not found in cache');
+        log.warn('Analog Emergency Systems block not found in cache', 'Protocol');
         return null;
       }
 
@@ -2231,7 +2255,7 @@ export class DM32UVProtocol implements RadioProtocol {
       // return parseAnalogEmergencies(cachedBlock.data);
       return [];
     } catch (err) {
-      console.warn('Failed to process Analog Emergency Systems block:', err);
+      log.warn('Failed to process Analog Emergency Systems block', 'Protocol', err);
       return null;
     }
   }
@@ -2468,9 +2492,9 @@ export class DM32UVProtocol implements RadioProtocol {
         originalZoneData.set(blockData, offset);
         offset += blockData.length;
       }
-      console.log(`[ZONE DEBUG] Using cached zone data, total size: ${originalZoneData.length} bytes`);
+      log.debug(`Using cached zone data, total size: ${originalZoneData.length} bytes`, 'Protocol');
     } else {
-      console.warn(`[ZONE DEBUG] Zone blocks not in cache - skipping comparison`);
+      log.warn('Zone blocks not in cache - skipping comparison', 'Protocol');
     }
 
     // Calculate total size needed for all zone blocks
@@ -2482,13 +2506,13 @@ export class DM32UVProtocol implements RadioProtocol {
 
     // Encode all zones and write them to the fresh data
     const zonesToWrite = zones.length > 0 ? zones : [];
-    console.log(`[ZONE DEBUG] Writing ${zonesToWrite.length} zones to ${zoneBlocks.length} block(s)`);
+    log.info(`Writing ${zonesToWrite.length} zones to ${zoneBlocks.length} block(s)`, 'Protocol');
     
     if (zonesToWrite.length === 0) {
-      console.warn('[ZONE DEBUG] No zones provided - writing empty zone blocks');
+      log.warn('No zones provided - writing empty zone blocks', 'Protocol');
     } else {
       const encodedZones = zonesToWrite.map((zone, idx) => encodeZone(zone, idx + 1));
-      console.log(`[ZONE DEBUG] Encoded ${encodedZones.length} zones`);
+      log.debug(`Encoded ${encodedZones.length} zones`, 'Protocol');
       
       // Write all zones to the fresh data
       // Zones are 145 bytes each, starting at offset 16
@@ -2496,7 +2520,7 @@ export class DM32UVProtocol implements RadioProtocol {
       for (let i = 0; i < encodedZones.length; i++) {
         const zoneOffset = OFFSET.ZONE_START + (i * BLOCK_SIZE.ZONE);
         if (zoneOffset + BLOCK_SIZE.ZONE > allZoneData.length) {
-          console.error(`[ZONE DEBUG] Zone ${i + 1} would exceed block size: offset ${zoneOffset}, data length ${allZoneData.length}`);
+          log.error(`Zone ${i + 1} would exceed block size: offset ${zoneOffset}, data length ${allZoneData.length}`, 'Protocol');
           throw new Error(`Zone ${i + 1} would exceed block size`);
         }
         
@@ -2508,9 +2532,9 @@ export class DM32UVProtocol implements RadioProtocol {
       if (lastZoneOffset + 2 <= allZoneData.length) {
         allZoneData[lastZoneOffset] = 0x00;
         allZoneData[lastZoneOffset + 1] = 0x00;
-        console.log(`[ZONE DEBUG] Wrote zone terminator (0x0000) at offset ${lastZoneOffset} after ${encodedZones.length} zones`);
+        log.debug(`Wrote zone terminator (0x0000) at offset ${lastZoneOffset} after ${encodedZones.length} zones`, 'Protocol');
       } else {
-        console.warn(`[ZONE DEBUG] Cannot write zone terminator: offset ${lastZoneOffset} would exceed block size (${allZoneData.length})`);
+        log.warn(`Cannot write zone terminator: offset ${lastZoneOffset} would exceed block size (${allZoneData.length})`, 'Protocol');
       }
     }
     
@@ -2529,7 +2553,7 @@ export class DM32UVProtocol implements RadioProtocol {
       const zonesWrittenSoFar = Math.floor(zoneDataOffset / BLOCK_SIZE.STANDARD) * maxZonesPerBlock;
       const zonesInBlock = Math.min(zonesToWrite.length - zonesWrittenSoFar, maxZonesPerBlock);
       
-      console.log(`[ZONE DEBUG] Block ${blockIdx}: zonesWrittenSoFar=${zonesWrittenSoFar}, zonesInBlock=${zonesInBlock}, totalZones=${zonesToWrite.length}, maxZonesPerBlock=${maxZonesPerBlock}`);
+      log.verbose(`Block ${blockIdx}: zonesWrittenSoFar=${zonesWrittenSoFar}, zonesInBlock=${zonesInBlock}, totalZones=${zonesToWrite.length}, maxZonesPerBlock=${maxZonesPerBlock}`, 'Protocol');
       
       // Create a new block data array (don't use slice as it creates a view)
       const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
@@ -2541,10 +2565,10 @@ export class DM32UVProtocol implements RadioProtocol {
       if (zonesInBlock > 0) {
         const zoneCount = Math.min(Math.max(zonesInBlock, 1), 28); // Clamp to 1-28
         blockData[0] = zoneCount;
-        console.log(`[ZONE DEBUG] Set zone count in byte 0: ${zoneCount} zones for block ${blockIdx}`);
+        log.debug(`Set zone count in byte 0: ${zoneCount} zones for block ${blockIdx}`, 'Protocol');
       } else {
         blockData[0] = 0; // No zones in this block
-        console.log(`[ZONE DEBUG] Block ${blockIdx} has no zones, setting byte 0 to 0`);
+        log.debug(`Block ${blockIdx} has no zones, setting byte 0 to 0`, 'Protocol');
       }
       
       // Bytes 1-15: Reserved/padding (already filled with 0xFF)
@@ -2552,8 +2576,7 @@ export class DM32UVProtocol implements RadioProtocol {
       // Preserve the original bytes 1-15 if available (to match original structure)
       if (originalBlockData) {
         blockData.set(originalBlockData.slice(1, 16), 1);
-        console.log(`[ZONE DEBUG] Preserved original bytes 1-15 for block ${blockIdx}:`, 
-          Array.from(originalBlockData.slice(1, 16)).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' '));
+        log.verbose(`Preserved original bytes 1-15 for block ${blockIdx}: ${Array.from(originalBlockData.slice(1, 16)).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ')}`, 'Protocol');
       }
       
       // Copy the zone data for this block (this will overwrite bytes 16+ with zone data)
@@ -2598,7 +2621,7 @@ export class DM32UVProtocol implements RadioProtocol {
       };
       
       if (originalBlockData) {
-        console.log(`\n[ZONE DEBUG] ===== Zone Block ${blockIdx} Comparison (Address: ${blockComparison.address}) =====`);
+        log.verbose(`===== Zone Block ${blockIdx} Comparison (Address: ${blockComparison.address}) =====`, 'Protocol');
         
         // Compare byte by byte for the ENTIRE block (4096 bytes)
         for (let i = 0; i < BLOCK_SIZE.STANDARD; i++) {
@@ -2613,10 +2636,10 @@ export class DM32UVProtocol implements RadioProtocol {
         blockComparison.isIdentical = blockComparison.differences === 0;
         
         if (blockComparison.isIdentical) {
-          console.log(`[ZONE DEBUG] ✓ Block ${blockIdx} is IDENTICAL to original (all ${BLOCK_SIZE.STANDARD} bytes match)`);
+          log.verbose(`✓ Block ${blockIdx} is IDENTICAL to original (all ${BLOCK_SIZE.STANDARD} bytes match)`, 'Protocol');
         } else {
-          console.log(`[ZONE DEBUG] ✗ Block ${blockIdx} has ${blockComparison.differences} differences out of ${BLOCK_SIZE.STANDARD} bytes`);
-          console.log(`[ZONE DEBUG] First ${Math.min(50, blockComparison.differencePositions.length)} difference positions:`, blockComparison.differencePositions.slice(0, 50));
+          log.verbose(`✗ Block ${blockIdx} has ${blockComparison.differences} differences out of ${BLOCK_SIZE.STANDARD} bytes`, 'Protocol');
+          log.verbose(`First ${Math.min(50, blockComparison.differencePositions.length)} difference positions: ${blockComparison.differencePositions.slice(0, 50).join(', ')}`, 'Protocol');
           
           // Show detailed comparison for first few zones
           for (let zoneNum = 1; zoneNum <= 10; zoneNum++) { // Compare up to 10 zones
@@ -2644,19 +2667,17 @@ export class DM32UVProtocol implements RadioProtocol {
               
               blockComparison.zoneComparisons.push(zoneComp);
               
-              console.log(`[ZONE DEBUG] Zone ${zoneNum} (offset ${zoneOffset}):`);
-              console.log(`  Original: name="${origName}", channels=${origChCount}`);
-              console.log(`  New:      name="${newName}", channels=${newChCount}`);
+              log.verbose(`Zone ${zoneNum} (offset ${zoneOffset}): Original name="${origName}", channels=${origChCount}; New name="${newName}", channels=${newChCount}`, 'Protocol');
               
               if (!zoneComp.matches) {
-                console.log(`  ✗ MISMATCH!`);
+                log.verbose(`✗ MISMATCH!`, 'Protocol');
                 // Show hex comparison for first 32 bytes
                 const origHex = Array.from(origZone.slice(0, 32)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
                 const newHex = Array.from(newZone.slice(0, 32)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-                console.log(`  Original hex (first 32): ${origHex}`);
-                console.log(`  New hex (first 32):       ${newHex}`);
+                log.verbose(`Original hex (first 32): ${origHex}`, 'Protocol');
+                log.verbose(`New hex (first 32): ${newHex}`, 'Protocol');
               } else {
-                console.log(`  ✓ Zone ${zoneNum} matches`);
+                log.verbose(`✓ Zone ${zoneNum} matches`, 'Protocol');
               }
             }
           }
@@ -2668,12 +2689,12 @@ export class DM32UVProtocol implements RadioProtocol {
         blockComparison.metadataMatch = blockComparison.originalMetadata === blockComparison.newMetadata;
         
         if (!blockComparison.metadataMatch) {
-          console.log(`[ZONE DEBUG] ✗ Metadata byte mismatch: original=0x${blockComparison.originalMetadata.toString(16)}, new=0x${blockComparison.newMetadata.toString(16)}`);
+          log.verbose(`✗ Metadata byte mismatch: original=0x${blockComparison.originalMetadata.toString(16)}, new=0x${blockComparison.newMetadata.toString(16)}`, 'Protocol');
         } else {
-          console.log(`[ZONE DEBUG] ✓ Metadata byte matches: 0x${blockComparison.originalMetadata.toString(16)}`);
+          log.verbose(`✓ Metadata byte matches: 0x${blockComparison.originalMetadata.toString(16)}`, 'Protocol');
         }
         
-        console.log(`[ZONE DEBUG] ===== End Block ${blockIdx} Comparison =====\n`);
+        log.verbose(`===== End Block ${blockIdx} Comparison =====`, 'Protocol');
       }
       
       // Store comparison data for debug export
@@ -2811,11 +2832,11 @@ export class DM32UVProtocol implements RadioProtocol {
     }
     
     // Log write blocks for debug
-    console.log(`Write blocks prepared (${finalBlocksToWrite.length} blocks):`);
+    log.info(`Write blocks prepared (${finalBlocksToWrite.length} blocks)`, 'Protocol');
     for (const block of finalBlocksToWrite) {
       const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`;
       const addressHex = `0x${block.address.toString(16).padStart(6, '0')}`;
-      console.log(`  ${metadataHex} at ${addressHex} (${block.data.length} bytes)`);
+      log.debug(`${metadataHex} at ${addressHex} (${block.data.length} bytes)`, 'Protocol');
     }
     
     // Step 5: Write all blocks to radio in the correct order
@@ -2827,12 +2848,9 @@ export class DM32UVProtocol implements RadioProtocol {
       const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`;
       const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
       
-      console.log(`[WRITE ALL DATA] Writing block ${i + 1}/${finalBlocksToWrite.length}:`);
-      console.log(`  Address: ${addressHex}`);
-      console.log(`  Metadata: ${metadataHex}`);
-      console.log(`  Data size: ${block.data.length} bytes`);
-      console.log(`  Data preview (first 32 bytes): ${Array.from(block.data.slice(0, 32)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')}`);
-      console.log(`  Metadata byte at 0xFFF: 0x${block.data[0xFFF].toString(16).padStart(2, '0').toUpperCase()}`);
+      log.debug(`Writing block ${i + 1}/${finalBlocksToWrite.length}: Address=${addressHex}, Metadata=${metadataHex}, Size=${block.data.length} bytes`, 'Protocol');
+      log.verbose(`Data preview (first 32 bytes): ${Array.from(block.data.slice(0, 32)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ')}`, 'Protocol');
+      log.verbose(`Metadata byte at 0xFFF: 0x${block.data[0xFFF].toString(16).padStart(2, '0').toUpperCase()}`, 'Protocol');
       
       this.onProgress?.(progress, `Writing block ${i + 1} of ${finalBlocksToWrite.length} (${metadataHex})...`);
       
@@ -2843,13 +2861,10 @@ export class DM32UVProtocol implements RadioProtocol {
       
       try {
         await this.connection.writeMemory(block.address, block.data, block.metadata);
-        console.log(`[WRITE ALL DATA] ✓ Successfully wrote block ${i + 1}/${finalBlocksToWrite.length} at ${addressHex}`);
+        log.info(`Successfully wrote block ${i + 1}/${finalBlocksToWrite.length} at ${addressHex}`, 'Protocol');
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error(`[WRITE ALL DATA ERROR] ✗ Failed to write block ${i + 1}/${finalBlocksToWrite.length} at ${addressHex} (metadata: ${metadataHex}):`, errorMsg);
-        console.error(`[WRITE ALL DATA ERROR] Block data size: ${block.data.length} bytes`);
-        console.error(`[WRITE ALL DATA ERROR] Block data metadata byte: 0x${block.data[0xFFF].toString(16).padStart(2, '0').toUpperCase()}`);
-        console.error(`[WRITE ALL DATA ERROR] Expected metadata: ${metadataHex}`);
+        log.error(`Failed to write block ${i + 1}/${finalBlocksToWrite.length} at ${addressHex} (metadata: ${metadataHex})`, 'Protocol', error);
+        log.error(`Block data size: ${block.data.length} bytes, metadata byte: 0x${block.data[0xFFF].toString(16).padStart(2, '0').toUpperCase()}, expected: ${metadataHex}`, 'Protocol');
         throw error;
       }
       
@@ -2861,8 +2876,8 @@ export class DM32UVProtocol implements RadioProtocol {
     this.onProgress?.(100, 'Successfully wrote all data to radio');
     const changedCount = blocksToWrite.length;
     const totalCount = finalBlocksToWrite.length;
-    console.log(`Smart write complete: Wrote ${totalCount} blocks total (${changedCount} changed, ${totalCount - changedCount} from cache)`);
-    console.log(`  - ${channels.length} channels, ${zones.length} zones, ${scanLists.length} scan lists`);
+    log.info(`Smart write complete: Wrote ${totalCount} blocks total (${changedCount} changed, ${totalCount - changedCount} from cache)`, 'Protocol');
+    log.info(`- ${channels.length} channels, ${zones.length} zones, ${scanLists.length} scan lists`, 'Protocol');
   }
 }
 

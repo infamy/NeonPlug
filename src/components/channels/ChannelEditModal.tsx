@@ -1,6 +1,8 @@
 import React from 'react';
 import { Modal } from '../ui/Modal';
 import type { Channel } from '../../models/Channel';
+import type { RXGroup } from '../../models/RXGroup';
+import type { EncryptionKey } from '../../models/EncryptionKey';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
 
 interface ChannelEditModalProps {
@@ -8,6 +10,8 @@ interface ChannelEditModalProps {
   onClose: () => void;
   channel: Channel;
   onSave: (channel: Channel) => void;
+  rxGroups?: RXGroup[];
+  encryptionKeys?: EncryptionKey[];
 }
 
 export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
@@ -15,11 +19,20 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   onClose,
   channel,
   onSave,
+  rxGroups = [],
+  encryptionKeys = [],
 }) => {
   const [editedChannel, setEditedChannel] = React.useState<Channel>(channel);
 
   React.useEffect(() => {
-    setEditedChannel(channel);
+    const updatedChannel = { ...channel };
+    // Ensure VFO channels have the correct name
+    if (channel.number === 4001) {
+      updatedChannel.name = 'VFO A';
+    } else if (channel.number === 4002) {
+      updatedChannel.name = 'VFO B';
+    }
+    setEditedChannel(updatedChannel);
   }, [channel]);
 
   const handleChange = (field: keyof Channel, value: any) => {
@@ -39,11 +52,23 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
     return mode === 'Digital' || mode === 'Fixed Digital';
   };
 
+  const isVFOChannel = (channelNumber: number): boolean => {
+    return channelNumber === 4001 || channelNumber === 4002;
+  };
+
+  const getVFOIdentifier = (channelNumber: number): string => {
+    if (channelNumber === 4001) return 'A';
+    if (channelNumber === 4002) return 'B';
+    return channelNumber.toString();
+  };
+
+  const vfoName = isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : null;
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Edit Channel ${channel.number}`}
+      title={`Edit ${isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : `Channel ${channel.number}`}`}
     >
       <div className="flex flex-col h-full">
         <div className="flex-1 overflow-y-auto pr-2">
@@ -56,14 +81,26 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 <label className="block text-xs font-medium text-cool-gray mb-1">
                   Channel Name
                 </label>
-                <input
-                  type="text"
-                  value={editedChannel.name}
-                  onChange={(e) => handleChange('name', e.target.value)}
-                  className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                  maxLength={16}
-                />
-                <p className="text-xs text-cool-gray mt-0.5">Maximum 16 characters</p>
+                {vfoName ? (
+                  <input
+                    type="text"
+                    value={vfoName}
+                    disabled
+                    readOnly
+                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-cool-gray cursor-not-allowed opacity-60"
+                  />
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      value={editedChannel.name}
+                      onChange={(e) => handleChange('name', e.target.value)}
+                      className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      maxLength={16}
+                    />
+                    <p className="text-xs text-cool-gray mt-0.5">Maximum 16 characters</p>
+                  </>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -317,34 +354,150 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
           {isDigitalMode(editedChannel.mode) && (
             <section>
               <h3 className="text-neon-cyan font-bold mb-2 text-sm">Digital Settings</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-cool-gray mb-1">
-                    Color Code
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="15"
-                    value={editedChannel.colorCode}
-                    onChange={(e) => handleChange('colorCode', parseInt(e.target.value) || 0)}
-                    className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                  />
-                  <p className="text-xs text-cool-gray mt-0.5">DMR color code (0-15)</p>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-cool-gray mb-1">
+                      Color Code
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="15"
+                      value={editedChannel.colorCode}
+                      onChange={(e) => handleChange('colorCode', parseInt(e.target.value) || 0)}
+                      className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    />
+                    <p className="text-xs text-cool-gray mt-0.5">DMR color code (0-15)</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-cool-gray mb-1">
+                      Contact ID
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="249"
+                      value={editedChannel.contactId}
+                      onChange={(e) => handleChange('contactId', parseInt(e.target.value) || 0)}
+                      className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    />
+                    <p className="text-xs text-cool-gray mt-0.5">DMR contact ID (0-249)</p>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-cool-gray mb-1">
-                    Contact ID
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-cool-gray mb-1">
+                      RX Group List
+                    </label>
+                    <select
+                      value={editedChannel.rxGroupListId ?? 0}
+                      onChange={(e) => handleChange('rxGroupListId', parseInt(e.target.value) || 0)}
+                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    >
+                      <option value={0}>None</option>
+                      {rxGroups
+                        .filter(group => group.index < 63)
+                        .map((group) => (
+                          <option key={group.index} value={group.index + 1}>
+                            {group.name}
+                          </option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-cool-gray mt-0.5">RX Group List ID (0-63)</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-cool-gray mb-1">
+                      Slot Operation
+                    </label>
+                    <select
+                      value={editedChannel.slotOperation ?? 1}
+                      onChange={(e) => handleChange('slotOperation', parseInt(e.target.value) || 1)}
+                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    >
+                      <option value={1}>Slot 1</option>
+                      <option value={2}>Slot 2</option>
+                    </select>
+                    <p className="text-xs text-cool-gray mt-0.5">TDMA slot (1 or 2)</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-cool-gray mb-1">
+                      Encryption ID
+                    </label>
+                    <select
+                      value={editedChannel.encryptionId ?? 0}
+                      onChange={(e) => handleChange('encryptionId', parseInt(e.target.value) || 0)}
+                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    >
+                      <option value={0}>None</option>
+                      {encryptionKeys
+                        .filter(key => key.id >= 1 && key.id <= 8 && key.name.trim() !== '')
+                        .map((key) => (
+                          <option key={key.entryNumber} value={key.id}>
+                            {key.name || `Key ${key.id}`}
+                          </option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-cool-gray mt-0.5">Encryption key (0-8)</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editedChannel.encryption ?? false}
+                      onChange={(e) => handleChange('encryption', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                    />
+                    <div>
+                      <span className="text-sm text-white font-medium">Encryption</span>
+                      <p className="text-xs text-cool-gray">Enable encryption</p>
+                    </div>
                   </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="249"
-                    value={editedChannel.contactId}
-                    onChange={(e) => handleChange('contactId', parseInt(e.target.value) || 0)}
-                    className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                  />
-                  <p className="text-xs text-cool-gray mt-0.5">DMR contact ID (0-249)</p>
+
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editedChannel.tdmaDirectMode ?? false}
+                      onChange={(e) => handleChange('tdmaDirectMode', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                    />
+                    <div>
+                      <span className="text-sm text-white font-medium">TDMA Direct Mode</span>
+                      <p className="text-xs text-cool-gray">Enable TDMA direct mode</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editedChannel.shortDataConfirm ?? false}
+                      onChange={(e) => handleChange('shortDataConfirm', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                    />
+                    <div>
+                      <span className="text-sm text-white font-medium">Short Data Confirm</span>
+                      <p className="text-xs text-cool-gray">Enable short data confirmation</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editedChannel.privateConfirm ?? false}
+                      onChange={(e) => handleChange('privateConfirm', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                    />
+                    <div>
+                      <span className="text-sm text-white font-medium">Private Confirm</span>
+                      <p className="text-xs text-cool-gray">Enable private confirmation</p>
+                    </div>
+                  </label>
                 </div>
               </div>
             </section>
@@ -405,8 +558,8 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
                 >
                   <option value="Off">Off</option>
-                  <option value="Carrier">Carrier (CXR)</option>
-                  <option value="Repeater">Repeater (RPT)</option>
+                  <option value="Carrier">CXR</option>
+                  <option value="Repeater">RPT</option>
                 </select>
                 <p className="text-xs text-cool-gray mt-0.5">Lock transmit when channel is busy</p>
               </div>
@@ -496,6 +649,32 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   </div>
                 </label>
 
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={editedChannel.companderDup}
+                    onChange={(e) => handleChange('companderDup', e.target.checked)}
+                    className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                  />
+                  <div>
+                    <span className="text-sm text-white font-medium">Compander Dup</span>
+                    <p className="text-xs text-cool-gray">Enable compander on duplex</p>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={editedChannel.voxRelated}
+                    onChange={(e) => handleChange('voxRelated', e.target.checked)}
+                    className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                  />
+                  <div>
+                    <span className="text-sm text-white font-medium">VOX Related</span>
+                    <p className="text-xs text-cool-gray">VOX-related function</p>
+                  </div>
+                </label>
+
                 <div>
                   <label className="block text-xs font-medium text-cool-gray mb-1">
                     Squelch Level
@@ -522,8 +701,8 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   >
                     <option value="Carrier/CTC">Carrier/CTC</option>
                     <option value="Optional">Optional</option>
-                    <option value="CTC&Opt">CTC & Optional</option>
-                    <option value="CTC|Opt">CTC | Optional</option>
+                    <option value="CTC&Opt">CTC&Opt</option>
+                    <option value="CTC|Opt">CTC|Opt</option>
                   </select>
                   <p className="text-xs text-cool-gray mt-0.5">Squelch opening method</p>
                 </div>
@@ -544,14 +723,14 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   onChange={(e) => handleChange('stepFrequency', parseInt(e.target.value) || 0)}
                   className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
                 >
-                  <option value={0}>2.5 kHz</option>
-                  <option value={1}>5 kHz</option>
-                  <option value={2}>6.25 kHz</option>
-                  <option value={3}>10 kHz</option>
-                  <option value={4}>12.5 kHz</option>
-                  <option value={5}>25 kHz</option>
-                  <option value={6}>50 kHz</option>
-                  <option value={7}>100 kHz</option>
+                  <option value={0}>2.5K</option>
+                  <option value={1}>5K</option>
+                  <option value={2}>6.25K</option>
+                  <option value={3}>10K</option>
+                  <option value={4}>12.5K</option>
+                  <option value={5}>25K</option>
+                  <option value={6}>50K</option>
+                  <option value={7}>100K</option>
                 </select>
                 <p className="text-xs text-cool-gray mt-0.5">Frequency step size</p>
               </div>
@@ -567,9 +746,9 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 >
                   <option value="None">None</option>
                   <option value="DTMF">DTMF</option>
-                  <option value="Two Tone">Two Tone</option>
-                  <option value="Five Tone">Five Tone</option>
-                  <option value="MDC1200">MDC1200</option>
+                  <option value="Two Tone">2Tone</option>
+                  <option value="Five Tone">5Tone</option>
+                  <option value="MDC1200">MDC</option>
                 </select>
                 <p className="text-xs text-cool-gray mt-0.5">Signaling system type</p>
               </div>
@@ -584,8 +763,8 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
                 >
                   <option value="Off">Off</option>
-                  <option value="BOT">Beginning of Transmission (BOT)</option>
-                  <option value="EOT">End of Transmission (EOT)</option>
+                  <option value="BOT">BOT</option>
+                  <option value="EOT">EOT</option>
                   <option value="Both">Both</option>
                 </select>
                 <p className="text-xs text-cool-gray mt-0.5">When to send PTT ID</p>

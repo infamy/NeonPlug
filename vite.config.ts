@@ -43,28 +43,23 @@ export default defineConfig(({ mode }) => {
           manualChunks: (id) => {
             // Split vendor libraries
             if (id.includes('node_modules')) {
-              if (id.includes('react') || id.includes('react-dom')) {
-                return 'react-vendor';
-              }
-              if (id.includes('zustand')) {
-                return 'zustand';
-              }
+              // Separate xlsx as it's very large (400KB+)
               if (id.includes('xlsx')) {
                 return 'xlsx';
               }
-              if (id.includes('@silevis/reactgrid')) {
-                return 'reactgrid';
-              }
-              // Other node_modules go into vendor chunk
+              // Combine all other vendor code into one chunk to avoid circular dependencies
+              // This includes react, react-dom, zustand, reactgrid, and all other dependencies
+              // While this is less optimal for caching, it eliminates circular chunk warnings
+              // and simplifies the build output
               return 'vendor';
             }
-            // Split large protocol files
-            if (id.includes('protocol/dm32uv/protocol')) {
+            // Combine protocol and structures into one chunk to avoid circular dependency
+            // They are tightly coupled and importing each other
+            if (id.includes('protocol/dm32uv/protocol') || id.includes('protocol/dm32uv/structures')) {
               return 'protocol';
             }
-            if (id.includes('protocol/dm32uv/structures')) {
-              return 'structures';
-            }
+            // Return undefined to let Vite handle other chunks automatically
+            return undefined;
           },
           entryFileNames: 'assets/[name].[hash].js',
           chunkFileNames: 'assets/[name].[hash].js',
