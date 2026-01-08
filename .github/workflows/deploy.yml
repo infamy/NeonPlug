@@ -36,6 +36,12 @@ jobs:
         env:
           VITE_COMMIT_HASH: ${{ github.sha }}
 
+      - name: Copy data files to dist root
+        run: |
+          cp src/data/tafl_min.json dist/tafl_min.json
+          cp src/data/airports_min.json dist/airports_min.json
+          cp src/data/radioid-users.csv dist/radioid-users.csv
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 

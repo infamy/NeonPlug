@@ -137,6 +137,7 @@ async function loadRadioIDCSV(
       onProgress?.('Loading RadioID.net database...', 10);
 
       const pathsToTry = [
+        'https://neonplug.app/radioid-users.csv',  // Production domain (first priority)
         './radioid-users.csv',
         './data/radioid-users.csv',
         '/radioid-users.csv',

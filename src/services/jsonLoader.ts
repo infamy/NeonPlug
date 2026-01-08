@@ -125,6 +125,7 @@ export async function loadJsonFile<T = any>(
   
   // List of paths to try in order
   const pathsToTry = [
+    `https://neonplug.app/${filename}`,  // Production domain (first priority)
     `./${filename}`,           // Same directory as index.html (for single-file builds)
     `./public/${filename}`,    // Public directory
     `/${filename}`,            // Root directory
