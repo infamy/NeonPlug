@@ -95,3 +95,30 @@ Airports are location-based and require a location to be set. The Channel Wizard
 
 **Note:** This is a large dataset (~98k airports). The system filters by location for performance, so only nearby airports are processed.
 
+## DMR Repeater Data (`rptrs.json`)
+
+**Readonly** - This file contains DMR repeater information with location data. It's automatically loaded from `src/data/rptrs.json`.
+
+### Data Structure
+
+The file contains a JSON object with a `rptrs` array. Each repeater entry contains:
+- `callsign`: Repeater callsign
+- `frequency`: Frequency as string (e.g., "440.58750")
+- `offset`: Offset as string (e.g., "+5.000", "-5.000")
+- `color_code`: DMR color code (0-15)
+- `ts_linked`: Timeslots linked (e.g., "TS1 TS2", "TS1", "Mixed Mode")
+- `city`, `state`, `country`: Location information
+- `lat`, `lng`: Latitude and longitude as strings
+- `ipsc_network`: Network name (e.g., "Brandmeister", "DMR-MARC")
+- `status`: Repeater status (e.g., "ACTIVE", "INACTIVE")
+
+### Usage
+
+DMR repeaters are location-based and require a location to be set. The Smart Import tab will:
+1. Filter repeaters by proximity to your location (configurable radius)
+2. Create separate channels for each timeslot if multiple timeslots are available
+3. Generate channels with DMR-specific settings (color code, digital mode, 12.5kHz bandwidth)
+4. Create zones grouped by network, location, or all in one zone
+
+**Note:** This is a large dataset. The system filters by location for performance, so only nearby repeaters are processed. Only ACTIVE repeaters are included in search results.
+

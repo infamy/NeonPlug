@@ -38,6 +38,7 @@ jobs:
 
       - name: Copy data files to dist root
         run: |
+          cp src/data/rptrs.json dist/rptrs.json
           cp src/data/tafl_min.json dist/tafl_min.json
           cp src/data/airports_min.json dist/airports_min.json
           cp src/data/radioid-users.csv dist/radioid-users.csv
