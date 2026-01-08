@@ -422,13 +422,15 @@ export const ContactsTab: React.FC = () => {
         setProgress(progress);
       });
 
-      setProgressMessage('Filtering by selected countries...', 95);
+      setProgressMessage('Filtering by selected countries...');
+      setProgress(95);
       const countrySet = new Set(countriesToFetch.map(c => c.toLowerCase()));
       const radioIDUsers = allUsers.filter(user => 
         user.country && countrySet.has(user.country.toLowerCase())
       );
 
-      setProgressMessage(`Found ${radioIDUsers.length.toLocaleString()} contacts from selected countries`, 95);
+      setProgressMessage(`Found ${radioIDUsers.length.toLocaleString()} contacts from selected countries`);
+      setProgress(95);
 
       // Convert RadioID users to Contact format in batches to avoid stack overflow
       // Assign sequential IDs starting from 1
