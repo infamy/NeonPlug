@@ -9,6 +9,8 @@ import { generateAirportChannels } from '../../services/airportChannels';
 import { findNearbyAirports, getAirportFrequenciesWithTypes, type AirportData } from '../../data/airportsData';
 import { generateTaflChannels } from '../../services/taflChannels';
 import { findNearbyTaflEntries, groupTaflEntriesByName, type TaflData } from '../../data/taflData';
+import { generateRptrsChannels } from '../../services/rptrsChannels';
+import { findNearbyRptrs, convertRptrFrequency, type RptrData } from '../../data/rptrsData';
 import { importChannelsFromChirpCSV, exportChannelsToChirpCSV, downloadCSV } from '../../services/csv';
 import type { Channel } from '../../models';
 import type { Zone } from '../../models';
@@ -60,6 +62,17 @@ export const SmartImportTab: React.FC = () => {
   const [selectedTaflEntries, setSelectedTaflEntries] = useState<Set<number>>(new Set());
   const [expandedTaflGroups, setExpandedTaflGroups] = useState<Set<string>>(new Set());
   const [taflLoadProgress, setTaflLoadProgress] = useState<{ percent: number; loaded: number; total: number } | null>(null);
+  
+  // DMR Repeater (rptrs) channels state
+  const [rptrsRadius, setRptrsRadius] = useState('50');
+  const [rptrsSearchFilter, setRptrsSearchFilter] = useState('');
+  const [isAddingRptrs, setIsAddingRptrs] = useState(false);
+  const [isSearchingRptrs, setIsSearchingRptrs] = useState(false);
+  const [rptrs, setRptrs] = useState<(RptrData & { distance?: number })[]>([]);
+  const [selectedRptrs, setSelectedRptrs] = useState<Set<number>>(new Set());
+  const [rptrsZoneGrouping, setRptrsZoneGrouping] = useState<'location' | 'single'>('location');
+  const [rptrsSeparateTimeslots, setRptrsSeparateTimeslots] = useState(true);
+  const [rptrsLoadProgress, setRptrsLoadProgress] = useState<{ percent: number; loaded: number; total: number } | null>(null);
   
   // Chirp CSV import/export state
   const [isImportingChirp, setIsImportingChirp] = useState(false);
@@ -652,6 +665,169 @@ export const SmartImportTab: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Failed to add TAFL channels');
     } finally {
       setIsAddingTafl(false);
+    }
+  };
+
+  const handleSearchRptrs = async () => {
+    setIsSearchingRptrs(true);
+    setError(null);
+    setRptrs([]);
+    setSelectedRptrs(new Set());
+    setRptrsLoadProgress({ percent: 0, loaded: 0, total: 0 });
+    
+    try {
+      let lat: number;
+      let lon: number;
+      
+      if (locationType === 'current') {
+        const currentLoc = await getCurrentLocation();
+        lat = currentLoc.latitude;
+        lon = currentLoc.longitude;
+      } else if (locationType === 'coordinates') {
+        const parsedLat = parseFloat(latitude);
+        const parsedLon = parseFloat(longitude);
+        
+        if (isNaN(parsedLat) || isNaN(parsedLon) || !latitude.trim() || !longitude.trim()) {
+          throw new Error('Invalid coordinates. Please enter valid latitude and longitude.');
+        }
+        
+        if (parsedLat < -90 || parsedLat > 90) {
+          throw new Error('Latitude must be between -90 and 90');
+        }
+        
+        if (parsedLon < -180 || parsedLon > 180) {
+          throw new Error('Longitude must be between -180 and 180');
+        }
+        
+        lat = parsedLat;
+        lon = parsedLon;
+      } else {
+        // City/State - need to geocode
+        if (!city.trim()) {
+          throw new Error('Please enter a city name or use coordinates.');
+        }
+        const geocoded = await geocodeLocation(city, state);
+        if (!geocoded) {
+          throw new Error('Could not find location. Please use coordinates instead.');
+        }
+        lat = geocoded.latitude;
+        lon = geocoded.longitude;
+      }
+      
+      // Parse radius with validation
+      const searchRadius = parseFloat(rptrsRadius);
+      if (isNaN(searchRadius) || searchRadius <= 0) {
+        throw new Error('Please enter a valid search radius (greater than 0).');
+      }
+      
+      console.log(`Searching for DMR repeaters near ${lat}, ${lon} within ${searchRadius} miles`);
+      
+      // Load DMR repeaters data with progress tracking
+      const nearbyRptrs = await findNearbyRptrs(
+        lat,
+        lon,
+        searchRadius,
+        (progress) => {
+          setRptrsLoadProgress({
+            percent: progress.percent,
+            loaded: progress.loaded,
+            total: progress.total,
+          });
+        }
+      );
+      
+      console.log(`Found ${nearbyRptrs.length} DMR repeaters within ${searchRadius} miles`);
+      
+      setRptrs(nearbyRptrs);
+      
+      // Auto-select all repeaters
+      setSelectedRptrs(new Set(nearbyRptrs.map((_, i) => i)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to search DMR repeaters');
+      console.error('DMR repeater search error:', err);
+    } finally {
+      setIsSearchingRptrs(false);
+      setRptrsLoadProgress(null);
+    }
+  };
+
+  const handleToggleRptr = (index: number) => {
+    const newSelected = new Set(selectedRptrs);
+    if (newSelected.has(index)) {
+      newSelected.delete(index);
+    } else {
+      newSelected.add(index);
+    }
+    setSelectedRptrs(newSelected);
+  };
+
+  const handleSelectAllRptrs = () => {
+    setSelectedRptrs(new Set(rptrs.map((_, i) => i)));
+  };
+
+  const handleDeselectAllRptrs = () => {
+    setSelectedRptrs(new Set());
+  };
+
+  const handleAddRptrsChannels = async () => {
+    if (selectedRptrs.size === 0) {
+      setError('Please select at least one DMR repeater');
+      return;
+    }
+    
+    setIsAddingRptrs(true);
+    setError(null);
+    
+    try {
+      // Get selected repeaters
+      const selectedRptrsList = Array.from(selectedRptrs)
+        .map(i => rptrs[i])
+        .filter(Boolean);
+      
+      if (selectedRptrsList.length === 0) {
+        throw new Error('No DMR repeaters selected');
+      }
+      
+      // Find next available channel number
+      const existingNumbers = new Set(channels.map(ch => ch.number));
+      let nextChannelNumber = 1;
+      while (existingNumbers.has(nextChannelNumber)) {
+        nextChannelNumber++;
+      }
+      
+      // Generate channels and zones for selected repeaters
+      const result = generateRptrsChannels(
+        nextChannelNumber,
+        selectedRptrsList,
+        rptrsZoneGrouping === 'single',
+        rptrsZoneGrouping === 'location',
+        rptrsSeparateTimeslots
+      );
+      
+      if (result.channels.length === 0) {
+        setError('No channels to add from selected DMR repeaters');
+        return;
+      }
+      
+      // Merge with existing channels to avoid duplicates
+      const mergedResult = mergeOverlappingChannels([channels, result.channels]);
+      setChannels(mergedResult.mergedChannels);
+      
+      // Add zones
+      const updatedZones = [...zones, ...result.zones];
+      setZones(updatedZones);
+      
+      setGenerationResult({
+        channels: result.channels.length,
+        zones: result.zones.length,
+      });
+      
+      // Clear selection
+      setSelectedRptrs(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add DMR repeater channels');
+    } finally {
+      setIsAddingRptrs(false);
     }
   };
 
@@ -1561,6 +1737,206 @@ export const SmartImportTab: React.FC = () => {
           </Button>
         </div>
       )}
+
+      {/* DMR Repeater Search Section */}
+      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
+        <h3 className="text-lg font-semibold text-neon-cyan mb-4">DMR Repeaters</h3>
+        <p className="text-cool-gray text-sm mb-4">
+          Search for nearby DMR repeaters and add their frequencies as channels (readonly data from rptrs.json)
+        </p>
+        
+        <div className="mb-4 space-y-3">
+          <div className="flex items-end gap-3">
+            <div>
+              <label className="block text-sm text-cool-gray mb-2">Search Radius (miles)</label>
+              <input
+                type="number"
+                value={rptrsRadius}
+                onChange={(e) => setRptrsRadius(e.target.value)}
+                min="1"
+                max="500"
+                className="w-32 bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              />
+            </div>
+            <Button
+              onClick={handleSearchRptrs}
+              disabled={isSearchingRptrs}
+              className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright"
+            >
+              {isSearchingRptrs ? 'Loading...' : 'Search DMR Repeaters'}
+            </Button>
+          </div>
+        </div>
+
+        {rptrsLoadProgress && (
+          <div className="mb-4">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm text-cool-gray">
+                Loading DMR repeater data...
+              </span>
+              <span className="text-sm text-neon-cyan">
+                {rptrsLoadProgress.percent.toFixed(1)}%
+              </span>
+            </div>
+            <div className="w-full bg-dark-gray rounded-full h-2">
+              <div
+                className="bg-neon-cyan h-2 rounded-full transition-all"
+                style={{ width: `${rptrsLoadProgress.percent}%` }}
+              />
+            </div>
+            {rptrsLoadProgress.total > 0 && (
+              <div className="text-xs text-cool-gray mt-1">
+                {formatBytes(rptrsLoadProgress.loaded)} / {formatBytes(rptrsLoadProgress.total)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* DMR Repeater Results */}
+        {rptrs.length > 0 && (
+          <>
+            <div className="mb-4">
+              <input
+                type="text"
+                placeholder="Filter by callsign, city, or network..."
+                value={rptrsSearchFilter}
+                onChange={(e) => setRptrsSearchFilter(e.target.value)}
+                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              />
+            </div>
+            
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="text-md font-semibold text-neon-cyan">
+                {rptrs.filter(r => {
+                  if (!rptrsSearchFilter.trim()) return true;
+                  const filter = rptrsSearchFilter.toLowerCase();
+                  return r.callsign.toLowerCase().includes(filter) ||
+                         r.city.toLowerCase().includes(filter) ||
+                         r.state.toLowerCase().includes(filter) ||
+                         r.ipsc_network.toLowerCase().includes(filter);
+                }).length} of {rptrs.length} DMR Repeater{rptrs.length !== 1 ? 's' : ''}
+                {rptrsSearchFilter.trim() && ` (filtered)`}
+              </h4>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSelectAllRptrs}
+                  className="text-sm text-neon-cyan hover:text-neon-cyan-bright"
+                >
+                  Select All
+                </button>
+                <button
+                  onClick={handleDeselectAllRptrs}
+                  className="text-sm text-neon-cyan hover:text-neon-cyan-bright"
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
+              {rptrs
+                .filter(r => {
+                  if (!rptrsSearchFilter.trim()) return true;
+                  const filter = rptrsSearchFilter.toLowerCase();
+                  return r.callsign.toLowerCase().includes(filter) ||
+                         r.city.toLowerCase().includes(filter) ||
+                         r.state.toLowerCase().includes(filter) ||
+                         r.ipsc_network.toLowerCase().includes(filter);
+                })
+                .map((rptr) => {
+                  const originalIndex = rptrs.findIndex(r => r === rptr);
+                  return (
+                    <div
+                      key={originalIndex}
+                      className={`border rounded p-3 cursor-pointer transition-colors ${
+                        selectedRptrs.has(originalIndex)
+                          ? 'border-neon-cyan bg-neon-cyan bg-opacity-10'
+                          : 'border-gray-600 hover:border-gray-500'
+                      }`}
+                      onClick={() => handleToggleRptr(originalIndex)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <input
+                              type="checkbox"
+                              checked={selectedRptrs.has(originalIndex)}
+                              onChange={() => handleToggleRptr(originalIndex)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="mr-2"
+                            />
+                            <span className="font-semibold text-neon-cyan">{rptr.callsign}</span>
+                            <span className="text-cool-gray text-sm">CC{rptr.color_code}</span>
+                            <span className="text-cool-gray text-sm">{rptr.ts_linked}</span>
+                          </div>
+                          <div className="text-sm text-cool-gray">
+                            <div>
+                              {convertRptrFrequency(rptr.frequency).toFixed(5)} MHz
+                              {rptr.offset && ` (Offset: ${rptr.offset} MHz)`}
+                            </div>
+                            <div>
+                              {rptr.city}
+                              {rptr.state && `, ${rptr.state}`}
+                              {rptr.distance && ` (${rptr.distance.toFixed(1)} mi)`}
+                            </div>
+                            <div className="text-xs mt-1">
+                              Network: {rptr.ipsc_network || 'Unknown'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {selectedRptrs.size > 0 && (
+              <div className="space-y-3">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm text-cool-gray">Zone Grouping:</label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="rptrsZoneGrouping"
+                      value="location"
+                      checked={rptrsZoneGrouping === 'location'}
+                      onChange={(e) => setRptrsZoneGrouping(e.target.value as 'location' | 'single')}
+                    />
+                    <span className="text-cool-gray">Group by location</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="rptrsZoneGrouping"
+                      value="single"
+                      checked={rptrsZoneGrouping === 'single'}
+                      onChange={(e) => setRptrsZoneGrouping(e.target.value as 'location' | 'single')}
+                    />
+                    <span className="text-cool-gray">Single zone (all repeaters together)</span>
+                  </label>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rptrsSeparateTimeslots}
+                    onChange={(e) => setRptrsSeparateTimeslots(e.target.checked)}
+                  />
+                  <span className="text-cool-gray">Create separate channels for each timeslot (TS1, TS2)</span>
+                </label>
+                <Button
+                  onClick={handleAddRptrsChannels}
+                  disabled={isAddingRptrs}
+                  className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
+                >
+                  {isAddingRptrs
+                    ? 'Adding DMR Repeater Channels...'
+                    : `Add ${selectedRptrs.size} DMR Repeater Channel${selectedRptrs.size !== 1 ? 's' : ''}`}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
       {/* Fixed Channels Section */}
       <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
