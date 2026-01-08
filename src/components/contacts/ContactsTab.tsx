@@ -5,8 +5,205 @@ import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ContactsTable } from './ContactsTable';
 import { ProgressBar } from '../ui/ProgressBar';
 import { getContactCapacityWithFallback } from '../../utils/firmware';
-import { fetchRadioIDUsers, COUNTRIES_BY_REGION, type CountryRegion } from '../../services/radioidApi';
 import type { Contact } from '../../models/Contact';
+
+// RadioID User interface
+interface RadioIDUser {
+  id: number;
+  callsign?: string;
+  name?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
+// Countries organized by region
+export interface CountryRegion {
+  name: string;
+  countries: string[];
+}
+
+export const COUNTRIES_BY_REGION: CountryRegion[] = [
+  {
+    name: 'North America',
+    countries: ['United States', 'Canada', 'Mexico'],
+  },
+  {
+    name: 'Central & South America',
+    countries: [
+      'Brazil', 'Argentina', 'Chile', 'Colombia', 'Peru', 'Venezuela',
+      'Ecuador', 'Guatemala', 'Cuba', 'Costa Rica', 'Panama', 'Uruguay',
+      'Paraguay', 'Bolivia',
+    ],
+  },
+  {
+    name: 'Europe - Western',
+    countries: [
+      'United Kingdom', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands',
+      'Belgium', 'Switzerland', 'Austria', 'Portugal', 'Ireland', 'Greece',
+      'Luxembourg',
+    ],
+  },
+  {
+    name: 'Europe - Northern',
+    countries: [
+      'Sweden', 'Norway', 'Denmark', 'Finland', 'Iceland', 'Estonia',
+      'Latvia', 'Lithuania',
+    ],
+  },
+  {
+    name: 'Europe - Eastern',
+    countries: [
+      'Poland', 'Czech Republic', 'Romania', 'Bulgaria', 'Hungary', 'Slovakia',
+      'Slovenia', 'Croatia', 'Serbia', 'Ukraine', 'Belarus', 'Russia',
+    ],
+  },
+  {
+    name: 'Asia Pacific',
+    countries: [
+      'Australia', 'New Zealand', 'Japan', 'South Korea', 'India', 'Thailand',
+      'Philippines', 'Indonesia', 'Malaysia', 'Singapore', 'Vietnam', 'Taiwan',
+      'Hong Kong', 'China',
+    ],
+  },
+  {
+    name: 'Middle East & Africa',
+    countries: [
+      'Israel', 'Turkey', 'South Africa', 'Egypt', 'United Arab Emirates',
+      'Saudi Arabia', 'Kenya', 'Morocco', 'Tunisia',
+    ],
+  },
+];
+
+// Cache for CSV data
+let csvCache: RadioIDUser[] | null = null;
+let csvCachePromise: Promise<RadioIDUser[]> | null = null;
+
+/**
+ * Parse CSV line into RadioIDUser
+ */
+function parseCSVLine(line: string, lineNumber: number): RadioIDUser | null {
+  if (lineNumber === 0) return null; // Skip header
+
+  const fields: string[] = [];
+  let currentField = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      fields.push(currentField.trim());
+      currentField = '';
+    } else {
+      currentField += char;
+    }
+  }
+  fields.push(currentField.trim());
+
+  if (fields.length < 6) return null;
+
+  const [radioIdStr, callsign, firstName, lastName, city, state, country] = fields;
+  const radioId = parseInt(radioIdStr, 10);
+  if (isNaN(radioId)) return null;
+
+  const nameParts: string[] = [];
+  if (firstName) nameParts.push(firstName);
+  if (lastName) nameParts.push(lastName);
+  const name = nameParts.length > 0 ? nameParts.join(' ').trim() : undefined;
+
+  return {
+    id: radioId,
+    callsign: callsign || undefined,
+    name: name,
+    city: city || undefined,
+    state: state || undefined,
+    country: country || undefined,
+  };
+}
+
+/**
+ * Load and parse CSV file
+ */
+async function loadRadioIDCSV(
+  onProgress?: (message: string, progress: number) => void
+): Promise<RadioIDUser[]> {
+  if (csvCache) return csvCache;
+  if (csvCachePromise) return csvCachePromise;
+
+  csvCachePromise = (async () => {
+    try {
+      onProgress?.('Loading RadioID.net database...', 10);
+
+      const pathsToTry = [
+        'https://neonplug.app/radioid-users.csv',  // Production domain (first priority)
+        './radioid-users.csv',
+        './data/radioid-users.csv',
+        '/radioid-users.csv',
+        '/data/radioid-users.csv',
+      ];
+
+      let response: Response | null = null;
+      let lastError: Error | null = null;
+
+      for (const path of pathsToTry) {
+        try {
+          response = await fetch(path);
+          if (response.ok) {
+            console.log(`Loaded radioid-users.csv from ${path}`);
+            break;
+          }
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+        }
+      }
+
+      if (!response || !response.ok) {
+        throw new Error(
+          `Failed to load radioid-users.csv. ` +
+          `Last error: ${lastError?.message || 'Unknown error'}. ` +
+          `Please ensure radioid-users.csv is in the public directory.`
+        );
+      }
+
+      onProgress?.('Parsing CSV data...', 30);
+      const text = await response.text();
+      const lines = text.split('\n');
+      onProgress?.(`Processing ${lines.length.toLocaleString()} lines...`, 40);
+
+      const users: RadioIDUser[] = [];
+      const BATCH_SIZE = 10000;
+      const uniqueMap = new Map<number, RadioIDUser>();
+
+      for (let i = 0; i < lines.length; i += BATCH_SIZE) {
+        const batch = lines.slice(i, i + BATCH_SIZE);
+        for (let j = 0; j < batch.length; j++) {
+          const line = batch[j];
+          if (!line.trim()) continue;
+
+          const user = parseCSVLine(line, i + j);
+          if (user && !uniqueMap.has(user.id)) {
+            uniqueMap.set(user.id, user);
+            users.push(user);
+          }
+        }
+
+        const progress = 40 + Math.floor((i / lines.length) * 50);
+        onProgress?.(`Processed ${Math.min(i + BATCH_SIZE, lines.length).toLocaleString()} / ${lines.length.toLocaleString()} lines...`, progress);
+      }
+
+      onProgress?.(`Loaded ${users.length.toLocaleString()} unique contacts`, 100);
+      csvCache = users;
+      return users;
+    } catch (error) {
+      csvCachePromise = null;
+      throw error;
+    }
+  })();
+
+  return csvCachePromise;
+}
 
 // Component for region selector with indeterminate checkbox support
 const RegionSelector: React.FC<{
@@ -219,10 +416,19 @@ export const ContactsTab: React.FC = () => {
     setProgressMessage('');
 
     try {
-      const radioIDUsers = await fetchRadioIDUsers(countriesToFetch, (message, progress) => {
+      // Load CSV and filter by countries
+      const allUsers = await loadRadioIDCSV((message, progress) => {
         setProgressMessage(message);
         setProgress(progress);
       });
+
+      setProgressMessage('Filtering by selected countries...', 95);
+      const countrySet = new Set(countriesToFetch.map(c => c.toLowerCase()));
+      const radioIDUsers = allUsers.filter(user => 
+        user.country && countrySet.has(user.country.toLowerCase())
+      );
+
+      setProgressMessage(`Found ${radioIDUsers.length.toLocaleString()} contacts from selected countries`, 95);
 
       // Convert RadioID users to Contact format in batches to avoid stack overflow
       // Assign sequential IDs starting from 1
@@ -307,9 +513,8 @@ export const ContactsTab: React.FC = () => {
       setProgressMessage(`Successfully downloaded ${contacts.length.toLocaleString()} contact${contacts.length === 1 ? '' : 's'} from ${countriesToFetch.length} countr${countriesToFetch.length === 1 ? 'y' : 'ies'}`);
       setProgress(100);
 
-      // Clear selection after successful download
-      setSelectedCountries([]);
-      setCustomCountry('');
+      // Keep selection checked so user can download again if needed
+      // Don't clear selectedCountries or customCountry
 
       setTimeout(() => {
         setProgress(0);
