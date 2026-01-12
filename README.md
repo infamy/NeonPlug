@@ -6,6 +6,8 @@ WEB Based CPS for Baofeng DM-32UV.
 
 **Try it live:** [https://neonplug.app](https://neonplug.app)
 
+**Join our Discord:** [https://discord.gg/9ckzrcKU](https://discord.gg/9ckzrcKU)
+
 ## Features
 
 - Cyberpunk neon-themed UI
