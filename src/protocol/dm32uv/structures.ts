@@ -249,12 +249,12 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     encryption = (digitalFeatures & 0x80) !== 0; // Bit 7
     shortDataConfirm = (digitalFeatures & 0x40) !== 0; // Bit 6
     tdmaDirectMode = (digitalFeatures & 0x20) !== 0; // Bit 5
-    slotOperation = digitalFeatures & 0x0F; // Bits 3-0
+    slotOperation = (digitalFeatures & 0x10) !== 0 ? 1 : 0; // Bit 4: Timeslot (0=TS1, 1=TS2)
     
-    // Byte 0x1F: RX Group List and Private Confirm (but power is also here!)
+    // Byte 0x1F: RX Group List ID (bits 5-0) and Private Confirm (bit 6)
     const digitalSettings = data[0x1F];
     privateConfirm = (digitalSettings & 0x40) !== 0; // Bit 6
-    rxGroupListId = digitalSettings & 0x3F; // Bits 5-0 (mask 0x3F)
+    rxGroupListId = digitalSettings & 0x3F; // Bits 5-0 (mask 0x3F): RX Group List ID
   } else {
     // Analog mode: Parse analog features from bytes 0x1D, 0x1F
     const analogFeatures = data[0x1D];
@@ -552,11 +552,12 @@ export function encodeChannel(channel: Channel): Uint8Array {
     if (channel.encryption) digitalFeatures |= 0x80; // Bit 7: Encryption
     if (channel.shortDataConfirm) digitalFeatures |= 0x40; // Bit 6: Short Data Confirm
     if (channel.tdmaDirectMode) digitalFeatures |= 0x20; // Bit 5: TDMA Direct Mode
-    digitalFeatures |= (channel.slotOperation ?? 0) & 0x0F; // Bits 3-0: Slot Operation
+    if ((channel.slotOperation ?? 0) === 1) digitalFeatures |= 0x10; // Bit 4: Timeslot (0=TS1, 1=TS2)
     data[0x1D] = digitalFeatures;
     
-    // RX Group List (0x1F) - Digital mode
+    // RX Group List ID and Private Confirm (0x1F) - Digital mode
     // Power is NOT here - it's at 0x18 bits 2-1!
+    // Bits 5-0: RX Group List ID, Bit 6: Private Confirm
     let digitalSettings = (channel.rxGroupListId ?? 0) & 0x3F; // Bits 5-0: RX Group List ID
     if (channel.privateConfirm) digitalSettings |= 0x40; // Bit 6: Private Confirm
     data[0x1F] = digitalSettings;

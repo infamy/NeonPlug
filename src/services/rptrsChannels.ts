@@ -126,12 +126,8 @@ export function generateRptrsChannels(
           // For now, we'll create separate channels for each timeslot
         });
         
-        // Set slotOperation if available (this might control timeslot behavior)
-        // Based on the Channel model, slotOperation is in unknown1D_3_0 for digital channels
-        // Timeslot 1 = 0, Timeslot 2 = 1 (or similar mapping)
-        if (channel.slotOperation !== undefined) {
-          channel.slotOperation = timeslot - 1; // Convert 1-based to 0-based if needed
-        }
+        // Set slotOperation: stored at 0x1D bit 4 (0=TS1, 1=TS2)
+        channel.slotOperation = timeslot === 1 ? 0 : 1; // TS1 → 0, TS2 → 1
         
         channelMap.set(channelKey, channel);
         channels.push(channel);

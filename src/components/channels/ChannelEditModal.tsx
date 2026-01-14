@@ -412,14 +412,20 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       Slot Operation
                     </label>
                     <select
-                      value={editedChannel.slotOperation ?? 1}
-                      onChange={(e) => handleChange('slotOperation', parseInt(e.target.value) || 1)}
+                      value={(editedChannel.slotOperation ?? 0) === 0 ? 1 : 2}
+                      onChange={(e) => {
+                        // Storage: 0 = TS1, 1 = TS2 (at 0x1D bit 4)
+                        // Convert from UI (1/2) to storage (0/1)
+                        const uiValue = parseInt(e.target.value) || 1;
+                        const storageValue = uiValue === 1 ? 0 : 1; // TS1 (1) → 0, TS2 (2) → 1
+                        handleChange('slotOperation', storageValue);
+                      }}
                       className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
                     >
-                      <option value={1}>Slot 1</option>
-                      <option value={2}>Slot 2</option>
+                      <option value={1}>Slot 1 (TS1)</option>
+                      <option value={2}>Slot 2 (TS2)</option>
                     </select>
-                    <p className="text-xs text-cool-gray mt-0.5">TDMA slot (1 or 2)</p>
+                    <p className="text-xs text-cool-gray mt-0.5">Storage: 0 = TS1, 1 = TS2 (0x1D bit 4)</p>
                   </div>
                 </div>
 

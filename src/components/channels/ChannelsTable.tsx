@@ -682,14 +682,16 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                   {showColorCode ? (
                     <button
                       onClick={() => {
-                        const currentSlot = channel.slotOperation ?? 1;
-                        const newSlot = currentSlot === 1 ? 2 : 1;
+                        // slotOperation: 0 = TS1, 1 = TS2 (stored at 0x1D bit 4)
+                        // Toggle between 0 and 1
+                        const currentSlot = channel.slotOperation ?? 0;
+                        const newSlot = currentSlot === 0 ? 1 : 0; // Toggle: 0→1, 1→0
                         handleCellChange(channel.number, 'slotOperation', newSlot);
                       }}
                       className="w-8 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
-                      title={`Slot ${channel.slotOperation ?? 1}`}
+                      title={`Slot ${(channel.slotOperation ?? 0) === 0 ? 1 : 2}`}
                     >
-                      {channel.slotOperation ?? 1}
+                      {(channel.slotOperation ?? 0) === 0 ? 1 : 2}
                     </button>
                   ) : (
                     <span className="text-cool-gray text-xs text-center block">-</span>

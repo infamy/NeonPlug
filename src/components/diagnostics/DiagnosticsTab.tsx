@@ -1219,13 +1219,30 @@ export const DiagnosticsTab: React.FC = () => {
                     onChange={(e) => setSelectedChannelNumber(parseInt(e.target.value))}
                     className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm focus:outline-none focus:border-yellow-400"
                   >
-                    {Array.from(rawChannelData.keys())
-                      .sort((a, b) => a - b)
-                      .map((chNum) => (
-                        <option key={chNum} value={chNum}>
-                          Channel {chNum} {channels.find(c => c.number === chNum)?.name ? `(${channels.find(c => c.number === chNum)?.name})` : ''}
-                        </option>
-                      ))}
+                    {(() => {
+                      const channelNumbers = Array.from(rawChannelData.keys());
+                      const vfoNumbers: number[] = [];
+                      // Add VFO A and VFO B if block 0x41 data is available
+                      if (block41Data) {
+                        if (!channelNumbers.includes(4001)) vfoNumbers.push(4001);
+                        if (!channelNumbers.includes(4002)) vfoNumbers.push(4002);
+                      }
+                      // Separate VFOs from regular channels and sort
+                      const regularChannels = channelNumbers.filter(n => n !== 4001 && n !== 4002).sort((a, b) => a - b);
+                      // VFOs first, then regular channels
+                      const sortedChannels = [...vfoNumbers, ...regularChannels];
+                      return sortedChannels.map((chNum) => {
+                        const channel = channels.find(c => c.number === chNum);
+                        const vfoName = chNum === 4001 ? radioSettings.vfoA?.name : chNum === 4002 ? radioSettings.vfoB?.name : null;
+                        const displayName = channel?.name || vfoName || '';
+                        const label = chNum === 4001 ? 'VFO A' : chNum === 4002 ? 'VFO B' : `Channel ${chNum}`;
+                        return (
+                          <option key={chNum} value={chNum}>
+                            {label} {displayName && chNum !== 4001 && chNum !== 4002 ? `(${displayName})` : ''}
+                          </option>
+                        );
+                      });
+                    })()}
                   </select>
                 </div>
                 <div>
@@ -1236,19 +1253,66 @@ export const DiagnosticsTab: React.FC = () => {
                     className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm focus:outline-none focus:border-yellow-400"
                   >
                     <option value="">None</option>
-                    {Array.from(rawChannelData.keys())
-                      .sort((a, b) => a - b)
-                      .filter(chNum => chNum !== selectedChannelNumber)
-                      .map((chNum) => (
-                        <option key={chNum} value={chNum}>
-                          Channel {chNum} {channels.find(c => c.number === chNum)?.name ? `(${channels.find(c => c.number === chNum)?.name})` : ''}
-                        </option>
-                      ))}
+                    {(() => {
+                      const channelNumbers = Array.from(rawChannelData.keys());
+                      const vfoNumbers: number[] = [];
+                      // Add VFO A and VFO B if block 0x41 data is available
+                      if (block41Data) {
+                        if (!channelNumbers.includes(4001)) vfoNumbers.push(4001);
+                        if (!channelNumbers.includes(4002)) vfoNumbers.push(4002);
+                      }
+                      // Separate VFOs from regular channels and sort
+                      const regularChannels = channelNumbers.filter(n => n !== 4001 && n !== 4002).sort((a, b) => a - b);
+                      // VFOs first, then regular channels
+                      const sortedChannels = [...vfoNumbers, ...regularChannels]
+                        .filter(chNum => chNum !== selectedChannelNumber);
+                      return sortedChannels.map((chNum) => {
+                        const channel = channels.find(c => c.number === chNum);
+                        const vfoName = chNum === 4001 ? radioSettings.vfoA?.name : chNum === 4002 ? radioSettings.vfoB?.name : null;
+                        const displayName = channel?.name || vfoName || '';
+                        const label = chNum === 4001 ? 'VFO A' : chNum === 4002 ? 'VFO B' : `Channel ${chNum}`;
+                        return (
+                          <option key={chNum} value={chNum}>
+                            {label} {displayName && chNum !== 4001 && chNum !== 4002 ? `(${displayName})` : ''}
+                          </option>
+                        );
+                      });
+                    })()}
                   </select>
                 </div>
               </div>
 
               {(() => {
+                // Extract VFO A and VFO B from block 0x41 if available
+                const getVFOData = (channelNumber: number): { data: Uint8Array; blockAddr: number; offset: number } | null => {
+                  if (!block41Data) return null;
+                  
+                  if (channelNumber === 4001) {
+                    // VFO A - offset 0x0F9F
+                    const vfoAOffset = 0x0F9F;
+                    if (block41Data.length >= vfoAOffset + 48) {
+                      const vfoAData = block41Data.slice(vfoAOffset, vfoAOffset + 48);
+                      return {
+                        data: vfoAData,
+                        blockAddr: block41Address || 0,
+                        offset: vfoAOffset,
+                      };
+                    }
+                  } else if (channelNumber === 4002) {
+                    // VFO B - offset 0x0FCF
+                    const vfoBOffset = 0x0FCF;
+                    if (block41Data.length >= vfoBOffset + 48) {
+                      const vfoBData = block41Data.slice(vfoBOffset, vfoBOffset + 48);
+                      return {
+                        data: vfoBData,
+                        blockAddr: block41Address || 0,
+                        offset: vfoBOffset,
+                      };
+                    }
+                  }
+                  return null;
+                };
+
                 // Helper function to parse all known channel fields
                 const parseChannelFields = (channelBytes: Uint8Array) => {
                   const nameBytes = channelBytes.slice(0, 16);
@@ -1347,6 +1411,37 @@ export const DiagnosticsTab: React.FC = () => {
                   const reserved2C = channelBytes[0x2C];
                   const reserved2D = channelBytes[0x2D];
 
+                  // Digital-only fields (only valid when mode is Digital or Fixed Digital)
+                  const isDigital = mode === 'Digital' || mode === 'Fixed Digital';
+                  let rxGroupListId: number | undefined;
+                  let slotOperation: number | undefined;
+                  let encryption: boolean | undefined;
+                  let encryptionId: number | undefined;
+                  let tdmaDirectMode: boolean | undefined;
+                  let shortDataConfirm: boolean | undefined;
+                  let privateConfirm: boolean | undefined;
+
+                  if (isDigital) {
+                    // Digital mode: Parse digital-specific fields from bytes 0x1D, 0x1F
+                    const digitalFeatures = channelBytes[0x1D];
+                    encryption = (digitalFeatures & 0x80) !== 0; // Bit 7
+                    shortDataConfirm = (digitalFeatures & 0x40) !== 0; // Bit 6
+                    tdmaDirectMode = (digitalFeatures & 0x20) !== 0; // Bit 5
+                    slotOperation = (digitalFeatures & 0x10) !== 0 ? 1 : 0; // Bit 4: Timeslot (0=TS1, 1=TS2)
+                    
+                    // Byte 0x1F: RX Group List ID (bits 5-0) and Private Confirm (bit 6)
+                    const digitalSettings = channelBytes[0x1F];
+                    privateConfirm = (digitalSettings & 0x40) !== 0; // Bit 6
+                    rxGroupListId = digitalSettings & 0x3F; // Bits 5-0 (mask 0x3F): RX Group List ID
+                    
+                    // Encryption ID (0x2A) - Digital only
+                    // 0 = None (no encryption)
+                    // 1-8 = Encryption Key ID (references encryption keys 1-8)
+                    let encId = channelBytes[0x2A];
+                    if (encId > 8) encId = 0; // Validate: 0-8
+                    encryptionId = encId;
+                  }
+
                   return {
                     name,
                     rxFreq,
@@ -1384,6 +1479,15 @@ export const DiagnosticsTab: React.FC = () => {
                     contactId,
                     reserved2C,
                     reserved2D,
+                    // Digital-only fields
+                    isDigital,
+                    rxGroupListId,
+                    slotOperation,
+                    encryption,
+                    encryptionId,
+                    tdmaDirectMode,
+                    shortDataConfirm,
+                    privateConfirm,
                     // Raw bytes for all locations
                     bytes: {
                       0x18: channelBytes[0x18],
@@ -1412,18 +1516,39 @@ export const DiagnosticsTab: React.FC = () => {
                   };
                 };
 
-                const rawData1 = rawChannelData.get(selectedChannelNumber);
-                const channel1 = channels.find(c => c.number === selectedChannelNumber);
-                const rawData2 = selectedChannelNumber2 ? rawChannelData.get(selectedChannelNumber2) : null;
-                const channel2 = selectedChannelNumber2 ? channels.find(c => c.number === selectedChannelNumber2) : null;
+                // Get raw data - check rawChannelData first, then VFO data from block 0x41
+                let rawData1 = rawChannelData.get(selectedChannelNumber);
+                if (!rawData1 && (selectedChannelNumber === 4001 || selectedChannelNumber === 4002)) {
+                  const vfoData = getVFOData(selectedChannelNumber);
+                  if (vfoData) {
+                    rawData1 = vfoData;
+                  }
+                }
+                
+                let rawData2 = selectedChannelNumber2 ? rawChannelData.get(selectedChannelNumber2) : undefined;
+                if (!rawData2 && selectedChannelNumber2 && (selectedChannelNumber2 === 4001 || selectedChannelNumber2 === 4002)) {
+                  const vfoData = getVFOData(selectedChannelNumber2);
+                  if (vfoData) {
+                    rawData2 = vfoData;
+                  }
+                }
+                
+                const channel1 = channels.find(c => c.number === selectedChannelNumber) || radioSettings.vfoA || radioSettings.vfoB;
+                const channel2 = selectedChannelNumber2 ? (channels.find(c => c.number === selectedChannelNumber2) || (selectedChannelNumber2 === 4001 ? radioSettings.vfoA : selectedChannelNumber2 === 4002 ? radioSettings.vfoB : null)) : null;
 
                 if (!rawData1) return <div className="text-cool-gray">No raw data for channel {selectedChannelNumber}</div>;
 
                 const fields1 = parseChannelFields(rawData1.data);
                 const fields2 = rawData2 ? parseChannelFields(rawData2.data) : null;
 
+                // Check if either selected channel is a VFO
+                const isVFO1 = selectedChannelNumber === 4001 || selectedChannelNumber === 4002;
+                const isVFO2 = selectedChannelNumber2 === 4001 || selectedChannelNumber2 === 4002;
+                const hideName = isVFO1 || isVFO2;
+
                 const fieldDefinitions = [
-                  { offset: 0x00, label: 'Name (0x00-0x0F)', getValue: (f: typeof fields1) => f.name },
+                  // Only show name field if neither channel is a VFO
+                  ...(hideName ? [] : [{ offset: 0x00, label: 'Name (0x00-0x0F)', getValue: (f: typeof fields1) => f.name }]),
                   { offset: 0x10, label: 'RX Frequency (0x10-0x13)', getValue: (f: typeof fields1) => f.rxFreq.toFixed(4) + ' MHz' },
                   { offset: 0x14, label: 'TX Frequency (0x14-0x17)', getValue: (f: typeof fields1) => f.txFreq.toFixed(4) + ' MHz' },
                   { offset: 0x18, label: 'Mode Flags (0x18)', getValue: (f: typeof fields1) => {
@@ -1454,13 +1579,47 @@ export const DiagnosticsTab: React.FC = () => {
                   { offset: 0x1B, label: 'Emergency Indicator (0x1B bit 7)', getValue: (f: typeof fields1) => f.emergencyIndicator ? 'Yes' : 'No' },
                   { offset: 0x1B, label: 'Emergency Ack (0x1B bit 6)', getValue: (f: typeof fields1) => f.emergencyAck ? 'Yes' : 'No' },
                   { offset: 0x1B, label: 'Emergency System ID (0x1B bits 4-0)', getValue: (f: typeof fields1) => f.emergencySystemId.toString() },
-                  { offset: 0x1C, label: 'APRS Report Mode (0x1C bits 3-2)', getValue: (f: typeof fields1) => {
-                    const powerAprs = f.powerAprsByte;
-                    return `${f.aprsReportMode} (0x${powerAprs.toString(16).toUpperCase().padStart(2, '0')}, bits3-2=${(powerAprs >> 2) & 0x03})`;
+                  { offset: 0x1C, label: 'APRS & Squelch (0x1C) - Full Byte', getValue: (f: typeof fields1) => {
+                    const aprsSquelch = f.bytes[0x1C];
+                    const bits3_2 = (aprsSquelch >> 2) & 0x03;
+                    const bits7_4 = (aprsSquelch >> 4) & 0x0F;
+                    const bits1_0 = aprsSquelch & 0x03;
+                    return `0x${aprsSquelch.toString(16).toUpperCase().padStart(2, '0')} (bits7-4=squelch=${bits7_4}, bits3-2=${bits3_2}, bits1-0=${bits1_0})`;
                   }},
-                  { offset: 0x1D, label: 'Analog Features (0x1D)', getValue: (f: typeof fields1) => `0x${f.analogFeatures.toString(16).toUpperCase().padStart(2, '0')}` },
-                  { offset: 0x1E, label: 'Squelch Level (0x1E)', getValue: (f: typeof fields1) => f.squelchLevel.toString() },
-                  { offset: 0x1F, label: 'PTT ID Settings (0x1F)', getValue: (f: typeof fields1) => `0x${f.pttIdSettings.toString(16).toUpperCase().padStart(2, '0')}` },
+                  { offset: 0x1C, label: 'APRS Report Mode (0x1C bits 3-2) [CURRENT]', getValue: (f: typeof fields1) => {
+                    const aprsSquelch = f.bytes[0x1C];
+                    const bits3_2 = (aprsSquelch >> 2) & 0x03;
+                    return `${f.aprsReportMode} (bits3-2=${bits3_2}, full byte=0x${aprsSquelch.toString(16).toUpperCase().padStart(2, '0')})`;
+                  }},
+                  { offset: 0x1C, label: 'Timeslot? (0x1C bits 3-2) [SUSPECTED TS LOCATION]', getValue: (f: typeof fields1) => {
+                    if (!f.isDigital) return 'N/A (Analog mode)';
+                    const aprsSquelch = f.bytes[0x1C];
+                    const bits3_2 = (aprsSquelch >> 2) & 0x03;
+                    // Interpret as timeslot: 0=TS2, 1=TS1 (based on user observation)
+                    let tsInterpretation = '';
+                    if (bits3_2 === 0) {
+                      tsInterpretation = 'TS2? (Raw=0)';
+                    } else if (bits3_2 === 1) {
+                      tsInterpretation = 'TS1? (Raw=1)';
+                    } else if (bits3_2 === 2) {
+                      tsInterpretation = `Raw=2 (unusual for TS)`;
+                    } else {
+                      tsInterpretation = `Raw=3 (unusual for TS)`;
+                    }
+                    return `${tsInterpretation} [bits 3-2: ${bits3_2}, full 0x1C: 0x${aprsSquelch.toString(16).toUpperCase().padStart(2, '0')}] | Current slotOperation (0x1D bits 3-0): ${f.slotOperation ?? 'N/A'}`;
+                  }},
+                  { offset: 0x1D, label: 'Analog Features (0x1D) - Analog Only', getValue: (f: typeof fields1) => {
+                    if (f.isDigital) return 'N/A (Digital mode - see Digital Features below)';
+                    return `0x${f.analogFeatures.toString(16).toUpperCase().padStart(2, '0')}`;
+                  }},
+                  { offset: 0x1E, label: 'Squelch Level (0x1E) - Analog Only', getValue: (f: typeof fields1) => {
+                    if (f.isDigital) return 'N/A (Digital mode - see Encryption ID below)';
+                    return f.squelchLevel.toString();
+                  }},
+                  { offset: 0x1F, label: 'PTT ID Settings (0x1F) - Analog Only', getValue: (f: typeof fields1) => {
+                    if (f.isDigital) return 'N/A (Digital mode - see Digital Settings below)';
+                    return `0x${f.pttIdSettings.toString(16).toUpperCase().padStart(2, '0')}`;
+                  }},
                   { offset: 0x20, label: 'Color Code (0x20)', getValue: (f: typeof fields1) => f.colorCode.toString() },
                   { offset: 0x21, label: 'RX CTCSS/DCS (0x21-0x22)', getValue: (f: typeof fields1) => f.rxCtcssDcs.type === 'None' ? 'None' : f.rxCtcssDcs.type === 'CTCSS' ? `CTCSS ${f.rxCtcssDcs.value} Hz` : `DCS ${f.rxCtcssDcs.value}${f.rxCtcssDcs.polarity || ''}` },
                   { offset: 0x23, label: 'TX CTCSS/DCS (0x23-0x24)', getValue: (f: typeof fields1) => f.txCtcssDcs.type === 'None' ? 'None' : f.txCtcssDcs.type === 'CTCSS' ? `CTCSS ${f.txCtcssDcs.value} Hz` : `DCS ${f.txCtcssDcs.value}${f.txCtcssDcs.polarity || ''}` },
@@ -1487,7 +1646,52 @@ export const DiagnosticsTab: React.FC = () => {
                     return `0x${reserved.toString(16).toUpperCase().padStart(2, '0')}`;
                   }},
                   { offset: 0x29, label: 'PTT ID Type (0x29 bits 7-4)', getValue: (f: typeof fields1) => f.pttIdType },
-                  { offset: 0x2A, label: 'Unknown 2A (0x2A)', getValue: (f: typeof fields1) => `0x${f.unknown2A.toString(16).toUpperCase().padStart(2, '0')} (${f.unknown2A})` },
+                  { offset: 0x1D, label: 'Digital Features (0x1D) - Digital Only', getValue: (f: typeof fields1) => {
+                    if (!f.isDigital) return 'N/A (Analog mode)';
+                    const digitalFeatures = f.bytes[0x1D];
+                    return `0x${digitalFeatures.toString(16).toUpperCase().padStart(2, '0')} (encryption=${f.encryption}, shortDataConfirm=${f.shortDataConfirm}, tdmaDirectMode=${f.tdmaDirectMode}, slotOperation=${f.slotOperation})`;
+                  }},
+                  { offset: 0x1D, label: 'Encryption (0x1D bit 7) - Digital Only', getValue: (f: typeof fields1) => f.isDigital ? (f.encryption ? 'Yes' : 'No') : 'N/A' },
+                  { offset: 0x1D, label: 'Short Data Confirm (0x1D bit 6) - Digital Only', getValue: (f: typeof fields1) => f.isDigital ? (f.shortDataConfirm ? 'Yes' : 'No') : 'N/A' },
+                  { offset: 0x1D, label: 'TDMA Direct Mode (0x1D bit 5) - Digital Only', getValue: (f: typeof fields1) => f.isDigital ? (f.tdmaDirectMode ? 'Yes' : 'No') : 'N/A' },
+                  { offset: 0x1D, label: 'Digital Features (0x1D) - Digital Only', getValue: (f: typeof fields1) => {
+                    if (!f.isDigital) return 'N/A (Analog mode)';
+                    const digitalFeatures = f.bytes[0x1D];
+                    return `0x${digitalFeatures.toString(16).toUpperCase().padStart(2, '0')} (encryption=${f.encryption}, shortDataConfirm=${f.shortDataConfirm}, tdmaDirectMode=${f.tdmaDirectMode})`;
+                  }},
+                  { offset: 0x1D, label: 'Timeslot / Slot Operation (0x1D bit 4) - Digital Only', getValue: (f: typeof fields1) => {
+                    if (!f.isDigital) return 'N/A (Analog mode)';
+                    const slotValue = f.slotOperation ?? 0;
+                    const rawByte = f.bytes[0x1D];
+                    const bit4 = (rawByte & 0x10) !== 0; // bit 4
+                    // Display timeslot interpretation (0=TS1, 1=TS2)
+                    let interpretation = '';
+                    if (slotValue === 0) {
+                      interpretation = 'TS1 (Raw=0, bit4=0)';
+                    } else if (slotValue === 1) {
+                      interpretation = 'TS2 (Raw=1, bit4=1)';
+                    } else {
+                      interpretation = `Raw=${slotValue} (unusual - expected 0 or 1)`;
+                    }
+                    return `${interpretation} [bit 4: ${bit4 ? '1' : '0'}, full 0x1D: 0x${rawByte.toString(16).toUpperCase().padStart(2, '0')}]`;
+                  }},
+                  { offset: 0x1F, label: 'Digital Settings (0x1F) - Digital Only', getValue: (f: typeof fields1) => {
+                    if (!f.isDigital) return 'N/A (Analog mode)';
+                    const digitalSettings = f.bytes[0x1F];
+                    return `0x${digitalSettings.toString(16).toUpperCase().padStart(2, '0')} (privateConfirm=${f.privateConfirm}, rxGroupListId=${f.rxGroupListId ?? 0})`;
+                  }},
+                  { offset: 0x1F, label: 'Private Confirm (0x1F bit 6) - Digital Only', getValue: (f: typeof fields1) => f.isDigital ? (f.privateConfirm ? 'Yes' : 'No') : 'N/A' },
+                  { offset: 0x1F, label: 'RX Group List ID (0x1F bits 5-0) - Digital Only', getValue: (f: typeof fields1) => {
+                    if (!f.isDigital) return 'N/A (Analog mode)';
+                    const rxGroupValue = f.rxGroupListId ?? 0;
+                    const rawByte = f.bytes[0x1F];
+                    const rawBits = rawByte & 0x3F; // bits 5-0
+                    return `RX Group ID: ${rxGroupValue} (0=None) [bits 5-0: 0x${rawBits.toString(16).toUpperCase().padStart(2, '0')}, full 0x1F: 0x${rawByte.toString(16).toUpperCase().padStart(2, '0')}]`;
+                  }},
+                  { offset: 0x2A, label: 'Encryption ID (0x2A) - Digital Only', getValue: (f: typeof fields1) => {
+                    if (!f.isDigital) return `0x${f.unknown2A.toString(16).toUpperCase().padStart(2, '0')} (${f.unknown2A}) - Analog: Unknown`;
+                    return f.encryptionId !== undefined ? `${f.encryptionId} (0=None, 1-8=Key ID)` : 'N/A';
+                  }},
                   { offset: 0x2B, label: 'Contact ID (0x2B)', getValue: (f: typeof fields1) => f.contactId.toString() },
                   { offset: 0x2C, label: 'Reserved 2C (0x2C)', getValue: (f: typeof fields1) => `0x${f.reserved2C.toString(16).toUpperCase().padStart(2, '0')} (${f.reserved2C})` },
                   { offset: 0x2D, label: 'Reserved 2D (0x2D)', getValue: (f: typeof fields1) => `0x${f.reserved2D.toString(16).toUpperCase().padStart(2, '0')} (${f.reserved2D})` },
@@ -1503,11 +1707,11 @@ export const DiagnosticsTab: React.FC = () => {
                             <tr className="border-b border-yellow-600/30">
                               <th className="text-left py-2 px-3 text-yellow-400 font-semibold sticky left-0 bg-dark-charcoal z-10">Field</th>
                               <th className="text-left py-2 px-3 text-yellow-400 font-semibold min-w-[200px]">
-                                Channel {selectedChannelNumber} {channel1?.name ? `(${channel1.name})` : ''}
+                                Channel {selectedChannelNumber} {channel1?.name && !isVFO1 ? `(${channel1.name})` : ''}
                               </th>
                               {fields2 && (
                                 <th className="text-left py-2 px-3 text-yellow-400 font-semibold min-w-[200px]">
-                                  Channel {selectedChannelNumber2} {channel2?.name ? `(${channel2.name})` : ''}
+                                  Channel {selectedChannelNumber2} {channel2?.name && !isVFO2 ? `(${channel2.name})` : ''}
                                 </th>
                               )}
                             </tr>
