@@ -11,6 +11,7 @@ import {
   UTC_ZONE_OPTIONS,
   BUTTON_FUNCTION_OPTIONS,
 } from './diagnosticsConstants';
+import { MetadataBlockDisplay } from './MetadataBlockDisplay';
 
 export const DiagnosticsTab: React.FC = () => {
   const { rawRadioSettingsData, rawContactBlockData, rawContactBlockAddress, blockMetadata, blockData } = useRadioStore();
@@ -64,6 +65,27 @@ export const DiagnosticsTab: React.FC = () => {
   }, [blockMetadata]);
 
   const block41Data = block41Address !== null ? blockData.get(block41Address) : null;
+
+  // Helper function to find block data by metadata number
+  const getBlockByMetadata = (metadataNum: number): { data: Uint8Array | null; address: number | null } => {
+    for (const [address, metadata] of blockMetadata.entries()) {
+      if (metadata.metadata === metadataNum) {
+        return {
+          data: blockData.get(address) || null,
+          address
+        };
+      }
+    }
+    return { data: null, address: null };
+  };
+
+  const block02 = getBlockByMetadata(0x02);
+  const block03 = getBlockByMetadata(0x03);
+  const block06 = getBlockByMetadata(0x06);
+  const block0A = getBlockByMetadata(0x0A);
+  const block0F = getBlockByMetadata(0x0F);
+  const block44 = getBlockByMetadata(0x44);
+  const block67 = getBlockByMetadata(0x67);
 
   // Auto-scroll log viewer to bottom when new logs arrive
   useEffect(() => {
@@ -161,6 +183,26 @@ export const DiagnosticsTab: React.FC = () => {
         <h2 className="text-2xl font-bold text-yellow-400">Diagnostics & Debug</h2>
         <p className="text-cool-gray text-sm mt-1">Inspect raw memory offsets and verify field parsing</p>
       </div>
+
+      {/* Metadata Block 0x02 (Calibration) */}
+      <MetadataBlockDisplay
+        metadata={0x02}
+        blockData={block02.data}
+        blockAddress={block02.address}
+        description="Calibration data"
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      />
+
+      {/* Metadata Block 0x03 (Digital Emergency Systems) */}
+      <MetadataBlockDisplay
+        metadata={0x03}
+        blockData={block03.data}
+        blockAddress={block03.address}
+        description="Digital Emergency Systems"
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      />
 
       {/* Metadata Block 0x04 - Radio Settings */}
       <div className="mb-6">
@@ -541,6 +583,36 @@ export const DiagnosticsTab: React.FC = () => {
             </div>
         </div>
       </div>
+
+      {/* Metadata Block 0x06 (Config Section 4 - Talk Groups Counter) */}
+      <MetadataBlockDisplay
+        metadata={0x06}
+        blockData={block06.data}
+        blockAddress={block06.address}
+        description="Config Section 4 - Talk Groups counter at offset 0x1FF"
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      />
+
+      {/* Metadata Block 0x0A (Quick Messages) */}
+      <MetadataBlockDisplay
+        metadata={0x0A}
+        blockData={block0A.data}
+        blockAddress={block0A.address}
+        description="Quick Messages"
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      />
+
+      {/* Metadata Block 0x0F (RX Groups) */}
+      <MetadataBlockDisplay
+        metadata={0x0F}
+        blockData={block0F.data}
+        blockAddress={block0F.address}
+        description="RX Groups"
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      />
 
       {/* Metadata Block 0x10 - VFO/Other Settings */}
       {block10Data && (
@@ -1046,6 +1118,25 @@ export const DiagnosticsTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Metadata Block 0x44 (Talk Groups) */}
+      <MetadataBlockDisplay
+        metadata={0x44}
+        blockData={block44.data}
+        blockAddress={block44.address}
+        description="Talk Groups (DMR Group IDs)"
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      />
+
+      {/* Metadata Block 0x67 */}
+      <MetadataBlockDisplay
+        metadata={0x67}
+        blockData={block67.data}
+        blockAddress={block67.address}
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      />
 
       {/* First Contact Block */}
       {rawContactBlockData && (
