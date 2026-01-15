@@ -12,6 +12,7 @@ import {
   BUTTON_FUNCTION_OPTIONS,
 } from './diagnosticsConstants';
 import { MetadataBlockDisplay } from './MetadataBlockDisplay';
+import { CollapsibleSection } from './CollapsibleSection';
 
 export const DiagnosticsTab: React.FC = () => {
   const { rawRadioSettingsData, rawContactBlockData, rawContactBlockAddress, blockMetadata, blockData } = useRadioStore();
@@ -20,11 +21,6 @@ export const DiagnosticsTab: React.FC = () => {
   const [showMetadataBlock, setShowMetadataBlock] = useState(false);
   const [showMetadataBlock10, setShowMetadataBlock10] = useState(false);
   const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
-  const [showOffsetInspector, setShowOffsetInspector] = useState(false);
-  const [showFieldVerification, setShowFieldVerification] = useState(false);
-  const [showHexDump, setShowHexDump] = useState(false);
-  const [showHexDump10, setShowHexDump10] = useState(false);
-  const [showHexDump41, setShowHexDump41] = useState(false);
   const [showContactBlock, setShowContactBlock] = useState(false);
   const [showChannelParser, setShowChannelParser] = useState(false);
   const [inspectOffset, setInspectOffset] = useState<string>('');
@@ -260,22 +256,8 @@ export const DiagnosticsTab: React.FC = () => {
 
       <div className={`space-y-6 ${showMetadataBlock ? '' : 'hidden'}`}>
         {/* Offset Inspector */}
-        <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-yellow-400">Offset Inspector</h3>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setShowOffsetInspector(!showOffsetInspector);
-              }}
-              className="text-xs text-yellow-400 hover:text-yellow-300"
-            >
-              {showOffsetInspector ? '▼' : '▶'}
-            </button>
-          </div>
-          <div className={`bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4 ${showOffsetInspector ? '' : 'hidden'}`}>
+        <CollapsibleSection title="Offset Inspector">
+          <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
               <div className="mb-4">
                 <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
                 <div className="flex gap-2">
@@ -405,26 +387,12 @@ export const DiagnosticsTab: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-            </div>
-        </div>
+          </div>
+        </CollapsibleSection>
 
         {/* Field Verification Table */}
-        <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-yellow-400">Field Verification</h3>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setShowFieldVerification(!showFieldVerification);
-              }}
-              className="text-xs text-yellow-400 hover:text-yellow-300"
-            >
-              {showFieldVerification ? '▼' : '▶'}
-            </button>
-          </div>
-          <div className={`bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4 ${showFieldVerification ? '' : 'hidden'}`}>
+        <CollapsibleSection title="Field Verification">
+          <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-sm">
                   <thead>
@@ -518,70 +486,49 @@ export const DiagnosticsTab: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-            </div>
-        </div>
+          </div>
+        </CollapsibleSection>
 
         {/* Hex Dump Viewer */}
-        <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-yellow-400">Hex Dump (Full Block)</h3>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setShowHexDump(!showHexDump);
-              }}
-              className="text-xs text-yellow-400 hover:text-yellow-300"
-            >
-              {showHexDump ? '▼' : '▶'}
-            </button>
-          </div>
-          <div className={`bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4 ${showHexDump ? '' : 'hidden'}`}>
-              <div className="overflow-x-auto">
-                <div className="font-mono text-xs">
-                  {useMemo(() => {
-                    const bytesPerRow = 16;
-                    const rows = [];
+        <CollapsibleSection title="Hex Dump (Full Block)">
+          <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
+            <div className="overflow-x-auto">
+              <div className="font-mono text-xs">
+                {useMemo(() => {
+                  const bytesPerRow = 16;
+                  const rows = [];
+                  
+                  for (let i = 0; i < rawRadioSettingsData.length; i += bytesPerRow) {
+                    const offset = i;
+                    const rowBytes = rawRadioSettingsData.slice(i, i + bytesPerRow);
                     
-                    for (let i = 0; i < rawRadioSettingsData.length; i += bytesPerRow) {
-                      const offset = i;
-                      const rowBytes = rawRadioSettingsData.slice(i, i + bytesPerRow);
-                      
-                      // Format offset
-                      const offsetHex = offset.toString(16).toUpperCase().padStart(4, '0');
-                      
-                      // Format hex bytes
-                      const hexBytes = Array.from(rowBytes)
-                        .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
-                        .join(' ');
-                      
-                      // Pad hex bytes if row is incomplete
-                      const hexPadding = '   '.repeat(bytesPerRow - rowBytes.length);
-                      
-                      // Format ASCII representation
-                      const ascii = Array.from(rowBytes)
-                        .map(b => {
-                          const char = String.fromCharCode(b);
-                          return (b >= 32 && b <= 126) ? char : '.';
-                        })
-                        .join('');
-                      
-                      rows.push(
-                        <div key={offset} className="flex border-b border-yellow-600/10 hover:bg-yellow-900/10 py-1">
-                          <div className="w-20 text-yellow-400 px-2">{offsetHex}</div>
-                          <div className="flex-1 text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
-                          <div className="w-16 text-green-400 px-2">{ascii}</div>
-                        </div>
-                      );
-                    }
+                    const offsetHex = offset.toString(16).toUpperCase().padStart(4, '0');
+                    const hexBytes = Array.from(rowBytes)
+                      .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
+                      .join(' ');
+                    const hexPadding = '   '.repeat(bytesPerRow - rowBytes.length);
+                    const ascii = Array.from(rowBytes)
+                      .map(b => {
+                        const char = String.fromCharCode(b);
+                        return (b >= 32 && b <= 126) ? char : '.';
+                      })
+                      .join('');
                     
-                    return rows;
-                  }, [rawRadioSettingsData?.length])}
-                </div>
+                    rows.push(
+                      <div key={offset} className="flex border-b border-yellow-600/10 hover:bg-yellow-900/10 py-1">
+                        <div className="w-20 text-yellow-400 px-2">{offsetHex}</div>
+                        <div className="flex-1 text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
+                        <div className="w-16 text-green-400 px-2">{ascii}</div>
+                      </div>
+                    );
+                  }
+                  
+                  return rows;
+                }, [rawRadioSettingsData?.length])}
               </div>
             </div>
-        </div>
+          </div>
+        </CollapsibleSection>
       </div>
 
       {/* Metadata Block 0x06 (Config Section 4 - Talk Groups Counter) */}
@@ -675,22 +622,8 @@ export const DiagnosticsTab: React.FC = () => {
 
           <div className={`space-y-6 ${showMetadataBlock10 ? '' : 'hidden'}`}>
             {/* Hex Dump Viewer for Block 0x10 */}
-            <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-yellow-400">Hex Dump (Full Block 0x10)</h3>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setShowHexDump10(!showHexDump10);
-                  }}
-                  className="text-xs text-yellow-400 hover:text-yellow-300"
-                >
-                  {showHexDump10 ? '▼' : '▶'}
-                </button>
-              </div>
-              <div className={`bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4 ${showHexDump10 ? '' : 'hidden'}`}>
+            <CollapsibleSection title="Hex Dump (Full Block 0x10)">
+              <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
                 <div className="mb-4">
                   <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
                   <div className="flex gap-2">
@@ -759,7 +692,7 @@ export const DiagnosticsTab: React.FC = () => {
                   </div>
                 </div>
               </div>
-            </div>
+            </CollapsibleSection>
           </div>
         </div>
       )}
@@ -834,10 +767,7 @@ export const DiagnosticsTab: React.FC = () => {
 
           <div className={`space-y-6 ${showMetadataBlock41 ? '' : 'hidden'}`}>
             {/* Offset Inspector for Block 0x41 */}
-            <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-yellow-400">Offset Inspector (Block 0x41)</h3>
-              </div>
+            <CollapsibleSection title="Offset Inspector (Block 0x41)">
               <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
                 <div className="mb-4">
                   <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
@@ -926,13 +856,10 @@ export const DiagnosticsTab: React.FC = () => {
                   </table>
                 </div>
               </div>
-            </div>
+            </CollapsibleSection>
 
             {/* Field Verification for Block 0x41 */}
-            <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-yellow-400">Field Verification (Block 0x41)</h3>
-              </div>
+            <CollapsibleSection title="Field Verification (Block 0x41)">
               <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm">
@@ -1018,25 +945,11 @@ export const DiagnosticsTab: React.FC = () => {
                   </table>
                 </div>
               </div>
-            </div>
+            </CollapsibleSection>
 
             {/* Hex Dump Viewer for Block 0x41 */}
-            <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-yellow-400">Hex Dump (Full Block 0x41)</h3>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setShowHexDump41(!showHexDump41);
-                  }}
-                  className="text-xs text-yellow-400 hover:text-yellow-300"
-                >
-                  {showHexDump41 ? '▼' : '▶'}
-                </button>
-              </div>
-              <div className={`bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4 ${showHexDump41 ? '' : 'hidden'}`}>
+            <CollapsibleSection title="Hex Dump (Full Block 0x41)">
+              <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
                 <div className="mb-4">
                   <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
                   <div className="flex gap-2">
@@ -1105,7 +1018,7 @@ export const DiagnosticsTab: React.FC = () => {
                   </div>
                 </div>
               </div>
-            </div>
+            </CollapsibleSection>
           </div>
         </div>
       )}
@@ -1202,10 +1115,7 @@ export const DiagnosticsTab: React.FC = () => {
 
           <div className={`space-y-6 ${showContactBlock ? '' : 'hidden'}`}>
             {/* Hex Dump Viewer for Contact Block */}
-            <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-yellow-400">Hex Dump (Full Contact Block)</h3>
-              </div>
+            <CollapsibleSection title="Hex Dump (Full Contact Block)">
               <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
                 <div className="mb-4">
                   <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
@@ -1269,7 +1179,7 @@ export const DiagnosticsTab: React.FC = () => {
                   })}
                 </div>
               </div>
-            </div>
+            </CollapsibleSection>
           </div>
         </div>
       )}
@@ -1301,7 +1211,7 @@ export const DiagnosticsTab: React.FC = () => {
           </p>
 
           <div className={`space-y-6 ${showChannelParser ? '' : 'hidden'}`}>
-            <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
+            <CollapsibleSection title="Channel Comparison" defaultOpen={true}>
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm text-cool-gray mb-2">Channel 1</label>
@@ -1892,13 +1802,13 @@ export const DiagnosticsTab: React.FC = () => {
                   </div>
                 );
               })()}
-            </div>
+            </CollapsibleSection>
           </div>
         </div>
       )}
 
       {/* CPS CSV Comparison */}
-      {rawChannelData.size > 0 && (
+      {rawChannelData && rawChannelData.size > 0 && (
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">

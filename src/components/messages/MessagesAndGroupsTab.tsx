@@ -86,6 +86,7 @@ export const MessagesAndGroupsTab: React.FC = () => {
       name: 'New Contact',
       contactNumber: 0,
       callType: 0x03,
+      flag: 0,
     });
   };
 

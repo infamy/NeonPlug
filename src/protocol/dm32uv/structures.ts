@@ -3013,9 +3013,6 @@ export function encodeRXGroup(group: RXGroup): Uint8Array {
   return data;
 }
 
-// Fixed size for the contact structure (after header for Contact 1)
-const CONTACT_STRUCTURE_SIZE = 24;
-
 /**
  * Parse Talk Groups from metadata block 0x44
  * Fixed-size entries:
@@ -3187,8 +3184,6 @@ export function encodeQuickContacts(contacts: QuickContact[]): Uint8Array {
       log.warn(`Not enough space for contact ${contact.index}, truncating at offset ${offset}`, 'Structures');
       break;
     }
-
-    const entryStart = offset;
 
     // Write flag byte (0x00 for PC-created contacts)
     // Note: Radio-created contacts may have 0x01, but we write 0x00
