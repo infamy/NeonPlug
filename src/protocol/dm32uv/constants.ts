@@ -14,6 +14,7 @@ export const METADATA = {
   ANALOG_EMERGENCY: 0x10,   // Analog Emergency Systems
   METADATA_0x41: 0x41,      // Metadata block 0x41
   QUICK_MESSAGES: 0x0A,     // Quick text messages block
+  METADATA_0x0B: 0x0B,      // Metadata block 0x0B
   RX_GROUPS: 0x0F,          // DMR RX Groups (DMR Receive Groups) - separate from V-frame 0x0F
   CALIBRATION: 0x02,        // Frequency adjustment/calibration data
   METADATA_0x44: 0x44,      // Metadata block 0x44 (Talk Groups)

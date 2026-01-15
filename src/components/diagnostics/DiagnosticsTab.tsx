@@ -80,6 +80,7 @@ export const DiagnosticsTab: React.FC = () => {
   const block03 = getBlockByMetadata(0x03);
   const block06 = getBlockByMetadata(0x06);
   const block0A = getBlockByMetadata(0x0A);
+  const block0B = getBlockByMetadata(0x0B);
   const block0F = getBlockByMetadata(0x0F);
   const block44 = getBlockByMetadata(0x44);
   const block67 = getBlockByMetadata(0x67);
@@ -644,6 +645,15 @@ export const DiagnosticsTab: React.FC = () => {
         blockData={block0A.data}
         blockAddress={block0A.address}
         description="Quick Messages"
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      />
+
+      {/* Metadata Block 0x0B */}
+      <MetadataBlockDisplay
+        metadata={0x0B}
+        blockData={block0B.data}
+        blockAddress={block0B.address}
         downloadHexDump={downloadHexDump}
         downloadBinary={downloadBinary}
       />

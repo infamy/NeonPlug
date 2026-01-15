@@ -531,6 +531,7 @@ export class DM32UVProtocol implements RadioProtocol {
       METADATA.ANALOG_EMERGENCY,     // Analog Emergency Systems (0x10)
       METADATA.METADATA_0x41,        // Metadata block 0x41 - REQUIRED
       METADATA.QUICK_MESSAGES,       // Quick Messages (0x0A)
+      METADATA.METADATA_0x0B,        // Metadata block 0x0B
       METADATA.DMR_RADIO_IDS,        // DMR Radio IDs (0x67)
       METADATA.CALIBRATION,          // Calibration (0x02)
       METADATA.RX_GROUPS,            // RX Groups (0x0F)
@@ -686,6 +687,7 @@ export class DM32UVProtocol implements RadioProtocol {
       METADATA.DIGITAL_EMERGENCY,
       METADATA.ANALOG_EMERGENCY,
       METADATA.QUICK_MESSAGES,
+      METADATA.METADATA_0x0B,
       METADATA.DMR_RADIO_IDS,
       METADATA.CALIBRATION,
       METADATA.RX_GROUPS,
