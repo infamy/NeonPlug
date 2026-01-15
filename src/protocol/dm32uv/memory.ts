@@ -9,7 +9,7 @@ import { log } from './logger';
 export interface MemoryBlock {
   address: number;
   metadata: number;
-  type: 'channel' | 'zone' | 'contact' | 'scan' | 'rxgroup' | 'message' | 'vfo' | 'digitalemergency' | 'analogemergency' | 'dmrradioid' | 'calibration' | 'empty' | 'unknown';
+  type: 'channel' | 'zone' | 'contact' | 'scan' | 'rxgroup' | 'message' | 'vfo' | 'digitalemergency' | 'analogemergency' | 'dmrradioid' | 'calibration' | 'config' | 'empty' | 'unknown';
 }
 
 /**
@@ -63,12 +63,13 @@ export async function discoverMemoryBlocks(
       type = 'rxgroup'; // DMR RX Groups (DMR Receive Groups)
     } else if (metadata === 0x67) {
       type = 'dmrradioid'; // DMR Radio ID list
+    } else if (metadata === 0x06) {
+      type = 'config'; // Config section 4 (contains Talk Groups counter at 0x1FF)
     } else if (metadata === 0xFF) {
       type = 'empty'; // Invalid/unavailable
     } else {
       // All other metadata values are marked as 'unknown' for analysis
       // Known but unhandled metadata values:
-      // 0x06 - DTMF Encode Data
       // 0x07 - Config header
       // 0x0F - RX Groups/Memberships (V-frame 0x0E range)
       // Others - Need investigation

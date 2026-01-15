@@ -185,7 +185,7 @@ export const SettingsTab: React.FC = () => {
                   
                   <div>
                     <div className="flex justify-between items-center mb-2">
-                      <span className="text-cool-gray">Contacts</span>
+                      <span className="text-cool-gray">CSV Contacts</span>
                       <span className="text-white font-mono text-sm">
                         {contactUsage.used} / {contactUsage.total.toLocaleString()} ({contactUsage.percent}%)
                       </span>
@@ -1161,7 +1161,7 @@ export const SettingsTab: React.FC = () => {
 
               {/* Contacts Section */}
               <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
-                <h4 className="text-md font-semibold text-neon-cyan mb-3">Contacts</h4>
+                <h4 className="text-md font-semibold text-neon-cyan mb-3">CSV Contacts</h4>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <input

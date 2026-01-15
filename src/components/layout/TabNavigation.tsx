@@ -10,7 +10,7 @@ const tabs = [
   { id: 'channels', label: 'Channels' },
   { id: 'zones', label: 'Zones' },
   { id: 'scanlists', label: 'Scan Lists' },
-  { id: 'contacts', label: 'Contacts' },
+  { id: 'contacts', label: 'CSV Contacts' },
   { id: 'messages', label: 'Messages & Groups' },
   { id: 'digital', label: 'Digital' },
   { id: 'settings', label: 'Settings' },

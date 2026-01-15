@@ -535,7 +535,7 @@ export const DiagnosticsTab: React.FC = () => {
                     }
                     
                     return rows;
-                  }, [rawRadioSettingsData])}
+                  }, [rawRadioSettingsData?.length])}
                 </div>
               </div>
             </div>
@@ -683,7 +683,7 @@ export const DiagnosticsTab: React.FC = () => {
                       }
                       
                       return rows;
-                    }, [block10Data])}
+                    }, [block10Data?.length])}
                   </div>
                 </div>
               </div>
@@ -849,7 +849,7 @@ export const DiagnosticsTab: React.FC = () => {
                             </tr>
                           );
                         }).filter(Boolean);
-                      }, [block41Data])}
+                      }, [block41Data?.length])}
                     </tbody>
                   </table>
                 </div>

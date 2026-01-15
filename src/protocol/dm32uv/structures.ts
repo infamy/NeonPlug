@@ -3,9 +3,9 @@
  * Parses channel, zone, and contact structures from radio memory
  */
 
-import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, CalibrationData, RXGroup, EncryptionKey } from '../../models';
+import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, CalibrationData, RXGroup, EncryptionKey, QuickContact } from '../../models';
 import { decodeBCDFrequency, decodeCTCSSDCS, encodeBCDFrequency, encodeCTCSSDCS } from './encoding';
-import { OFFSET, BLOCK_SIZE, LIMITS } from './constants';
+import { OFFSET, BLOCK_SIZE, LIMITS, METADATA } from './constants';
 import { createDefaultChannel } from '../../utils/channelHelpers';
 import { log } from './logger';
 
@@ -3013,5 +3013,260 @@ export function encodeRXGroup(group: RXGroup): Uint8Array {
   return data;
 }
 
+// Fixed size for the contact structure (after header for Contact 1)
+const CONTACT_STRUCTURE_SIZE = 24;
 
+/**
+ * Parse Talk Groups from metadata block 0x44
+ * Fixed-size entries:
+ * - Contact 1: 26 bytes total = 2-byte header (0x0000) + 24-byte structure
+ * - Contact 2+: 24 bytes total (no header)
+ * 
+ * The 24-byte structure contains:
+ * - Variable-length name (null-terminated)
+ * - Remaining bytes: padding + 3-byte contact number + 1-byte call type + padding
+ */
+export function parseQuickContacts(
+  data: Uint8Array,
+  onRawContactParsed?: (contactIndex: number, rawData: Uint8Array, name: string) => void
+): QuickContact[] {
+  const contacts: QuickContact[] = [];
+  let offset = 0;
+  let contactIndex = 1; // 1-based index
 
+  while (offset < data.length) {
+    const entryStartOffset = offset;
+    let hasHeader = false;
+
+    // Check if this is Contact 1 with 1-byte header (0x00)
+    if (contactIndex === 1 && offset + 1 <= data.length) {
+      const header = data[offset];
+      if (header === 0x00) {
+        hasHeader = true;
+        offset += 1; // Skip the 1-byte header
+      }
+    }
+
+    // Read flag byte (0x00 = PC-created, 0x01 = radio-created)
+    const flagByte = data[offset];
+    offset++;
+
+    // Name is fixed at 16 bytes, followed by null byte (17 bytes total)
+    const nameStart = offset;
+    const nameEnd = nameStart + 16; // Fixed 16-byte name field
+    
+    if (nameEnd + 1 > data.length) {
+      break; // Not enough space for name + null
+    }
+
+    // Check if entry is empty (first byte of name is 0x00)
+    if (data[nameStart] === 0x00) {
+      // Empty/unused entry - skip it
+      // Skip entire entry: 16 (name) + 1 (null) + 3 (contact) + 1 (call) + 2 (pad) = 23 bytes
+      // Note: flag byte already consumed above, so offset is already after it
+      offset = nameStart + 23;
+      contactIndex++;
+      continue;
+    }
+
+    // Extract name (16 bytes, null-padded)
+    const nameBytes = data.slice(nameStart, nameEnd);
+    const name = new TextDecoder('ascii', { fatal: false })
+      .decode(nameBytes)
+      .trim();
+
+    // The null terminator is at nameEnd (after 16-byte name field)
+    // Structure: [null at nameEnd] [3 contact] [1 call] [2 pad]
+    // Fixed fields: 1 (null) + 3 (contact) + 1 (call) + 2 (pad) = 7 bytes
+    if (nameEnd + 7 > data.length) {
+      break; // Not enough space for fixed fields
+    }
+    
+    // Skip to contact number: just the null byte (1 byte from nameEnd)
+    const contactNumberOffset = nameEnd + 1; // Contact number (3 bytes) - immediately after null
+    const callTypeOffset = contactNumberOffset + 3; // Call type immediately after 3-byte contact number (no padding)
+    
+    if (callTypeOffset >= data.length) {
+      break;
+    }
+
+    // Read contact number (3 bytes, little-endian)
+    const contactNumber = data[contactNumberOffset] | 
+                         (data[contactNumberOffset + 1] << 8) | 
+                         (data[contactNumberOffset + 2] << 16);
+
+    // Read call type (1 byte)
+    const callType = data[callTypeOffset];
+
+    // Entry ends after the 2 bytes of final padding
+    // callTypeOffset is at the call type byte, so:
+    // callTypeOffset + 1 = after call type, start of 2 bytes padding
+    // callTypeOffset + 3 = after call type + 2 bytes padding = start of next entry
+    const entryEnd = callTypeOffset + 3; // call type (1 byte) + 2 bytes padding = start of next entry
+    offset = entryEnd;
+
+    // Extract raw entry data for debugging
+    const rawData = data.slice(entryStartOffset, offset);
+
+    const contact: QuickContact = {
+      index: contactIndex,
+      offset: entryStartOffset,
+      name: name,
+      contactNumber: contactNumber,
+      callType: callType,
+      hasHeader: hasHeader,
+      flag: flagByte,
+      rawData: new Uint8Array(rawData),
+    };
+
+    contacts.push(contact);
+
+    // Callback for raw data access
+    if (onRawContactParsed) {
+      onRawContactParsed(contactIndex, rawData, contact.name);
+    }
+
+    contactIndex++;
+  }
+
+  return contacts;
+}
+
+/**
+ * Encode Talk Groups to binary format for metadata block 0x44
+ * This is the reverse of parseQuickContacts()
+ * 
+ * @param contacts - Array of Talk Groups to encode
+ * @returns Encoded data (4KB block)
+ */
+export function encodeQuickContacts(contacts: QuickContact[]): Uint8Array {
+  const data = new Uint8Array(BLOCK_SIZE.STANDARD);
+  data.fill(0x00); // Initialize entire block to 0x00
+
+  // Set metadata byte at 0xFFF to 0x44 (metadata for Talk Groups block)
+  data[OFFSET.METADATA_BYTE] = METADATA.METADATA_0x44;
+
+  // Radio requires at least one contact - if none provided, create default "All" contact
+  // This prevents the radio from crashing when the block is empty
+  const contactsToEncode = contacts.length === 0 ? [{
+    index: 1,
+    offset: 0,
+    name: 'All',
+    contactNumber: 16777215, // All Call contact number
+    callType: 0x05, // All Call (0x05)
+    hasHeader: true,
+    rawData: new Uint8Array(0),
+  }] : contacts;
+  
+  if (contacts.length === 0) {
+    log.warn('No contacts provided - creating default "All" contact to prevent radio crash', 'Structures');
+  }
+
+  let offset = 0;
+
+  for (let i = 0; i < contactsToEncode.length; i++) {
+    const contact = contactsToEncode[i];
+    const isFirstContact = i === 0;
+
+    // Contact 1 ALWAYS has 1-byte header (0x00) - this is critical for the radio to recognize the block
+    if (isFirstContact) {
+      if (offset + 1 > data.length) {
+        log.warn(`Not enough space for contact ${contact.index} header, truncating`, 'Structures');
+        break;
+      }
+      data[offset] = 0x00;
+      offset += 1;
+    }
+
+    // Structure: [header?] [flag] [16 name] [1 null] [3 contact] [1 call] [2 pad]
+    // Entry 1: 1 (header) + 1 (flag) + 16 (name) + 1 (null) + 3 (contact) + 1 (call) + 2 (pad) = 25 bytes
+    // Entry 2+: 1 (flag) + 16 (name) + 1 (null) + 3 (contact) + 1 (call) + 2 (pad) = 24 bytes
+    const requiredSpace = isFirstContact ? 25 : 24; // Entry 1 includes 1-byte header + flag
+    
+    if (offset + requiredSpace > data.length) {
+      log.warn(`Not enough space for contact ${contact.index}, truncating at offset ${offset}`, 'Structures');
+      break;
+    }
+
+    const entryStart = offset;
+
+    // Write flag byte (0x00 for PC-created contacts)
+    // Note: Radio-created contacts may have 0x01, but we write 0x00
+    data[offset] = 0x00;
+    offset++;
+
+    // Write name (16 bytes, null-padded)
+    const nameBytes = new TextEncoder().encode(contact.name);
+    for (let j = 0; j < 16; j++) {
+      data[offset] = j < nameBytes.length ? nameBytes[j] : 0x00;
+      offset++;
+    }
+
+    // Null terminator (after 16-byte name field)
+    data[offset] = 0x00;
+    offset++;
+
+    // Write contact number (3 bytes, little-endian)
+    // Example: 3023401 (0x002E2229) should be written as: 29 22 2E
+    // Example: 1 (0x00000001) should be written as: 01 00 00
+    const contactNumber = contact.contactNumber;
+    data[offset] = (contactNumber & 0xFF);                    // Low byte (bits 0-7)
+    data[offset + 1] = ((contactNumber >> 8) & 0xFF);         // Mid byte (bits 8-15)
+    data[offset + 2] = ((contactNumber >> 16) & 0xFF);        // High byte (bits 16-23)
+    offset += 3;
+
+    // Write call type (1 byte) - immediately after contact number (no padding)
+    data[offset] = contact.callType;
+    offset++;
+
+    // 2 bytes padding
+    data[offset] = 0x00;
+    data[offset + 1] = 0x00;
+    offset += 2;
+  }
+
+  // Add sentinel entry after the last contact to mark the end
+  // Sentinel: [1 flag (0x00)] [16 name (all 0x00)] [1 null] [3 contact (all 0x00)] [1 call (0x00)] [2 pad (all 0x00)]
+  if (offset + 24 <= data.length) {
+    // Flag byte
+    data[offset] = 0x00;
+    offset++;
+    
+    // 16-byte name field (all zeros)
+    for (let j = 0; j < 16; j++) {
+      data[offset] = 0x00;
+      offset++;
+    }
+    
+    // Null terminator
+    data[offset] = 0x00;
+    offset++;
+    
+    // 3 bytes contact number (all 0x00)
+    for (let j = 0; j < 3; j++) {
+      data[offset] = 0x00;
+      offset++;
+    }
+    
+    // 1 byte call type (0x00)
+    data[offset] = 0x00;
+    offset++;
+    
+    // 2 bytes padding
+    data[offset] = 0x00;
+    data[offset + 1] = 0x00;
+    offset += 2;
+  }
+
+  // Fill all remaining bytes from after termination to 0xFFF with 0x00
+  // (0xFFF is the metadata byte, which we already set to 0x44)
+  const metadataOffset = OFFSET.METADATA_BYTE;
+  for (let j = offset; j < metadataOffset; j++) {
+    data[j] = 0x00;
+  }
+
+  // Ensure metadata byte at 0xFFF is set to 0x44
+  data[metadataOffset] = METADATA.METADATA_0x44;
+
+  return data;
+}

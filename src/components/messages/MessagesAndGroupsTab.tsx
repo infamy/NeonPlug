@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
+import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import type { DMRRadioID } from '../../models/DMRRadioID';
+import type { QuickContact } from '../../models/QuickContact';
 
 export const MessagesAndGroupsTab: React.FC = () => {
   const { messages, messagesLoaded } = useQuickMessagesStore();
+  const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact } = useQuickContactsStore();
   const { radioIds, radioIdsLoaded, updateRadioId } = useDMRRadioIDsStore();
   const { groups: rxGroups, groupsLoaded: rxGroupsLoaded } = useRXGroupsStore();
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -47,6 +50,49 @@ export const MessagesAndGroupsTab: React.FC = () => {
     setEditingId(null);
     setEditName('');
     setEditDmrId('');
+  };
+
+  const handleCellChange = (
+    contactIndex: number,
+    field: 'name' | 'contactNumber' | 'callType',
+    value: string | number
+  ) => {
+    const contact = quickContacts.find(c => c.index === contactIndex);
+    if (!contact) return;
+
+    let updateData: Partial<QuickContact> = {};
+
+    if (field === 'name') {
+      updateData.name = value as string;
+    } else if (field === 'contactNumber') {
+      const numValue = typeof value === 'string' ? parseInt(value, 10) : value;
+      if (!isNaN(numValue) && numValue >= 0 && numValue <= 16777215) {
+        updateData.contactNumber = numValue;
+      }
+    } else if (field === 'callType') {
+      const callTypeValue = typeof value === 'string' ? parseInt(value, 10) : value;
+      updateData.callType = callTypeValue;
+      // If All Call, lock contact number to 16777215
+      if (callTypeValue === 0x05) {
+        updateData.contactNumber = 16777215;
+      }
+    }
+
+    updateContact(contactIndex, updateData);
+  };
+
+  const handleAddContact = () => {
+    addContact({
+      name: 'New Contact',
+      contactNumber: 0,
+      callType: 0x03,
+    });
+  };
+
+  const handleDeleteContact = (index: number) => {
+    if (confirm(`Are you sure you want to delete this contact?`)) {
+      deleteContact(index);
+    }
   };
 
   return (
@@ -215,6 +261,111 @@ export const MessagesAndGroupsTab: React.FC = () => {
                 </p>
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Talk Groups Section */}
+      <div className="mb-8">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-neon-magenta">Talk Groups</h3>
+          <div className="flex items-center gap-4">
+            {quickContactsLoaded && (
+              <div className="text-cool-gray text-sm">
+                {quickContacts.length} contact{quickContacts.length !== 1 ? 's' : ''}
+              </div>
+            )}
+            {quickContactsLoaded && (
+              <button
+                onClick={handleAddContact}
+                className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
+              >
+                + Add Contact
+              </button>
+            )}
+          </div>
+        </div>
+
+        {!quickContactsLoaded ? (
+          <div className="border border-deep-gray rounded-lg p-6 bg-deep-gray">
+            <div className="text-center">
+              <p className="text-cool-gray">
+                Talk groups will be loaded when you read from the radio.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="border border-deep-gray rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-deep-gray border-b border-deep-gray">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-neon-cyan">Name</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-neon-cyan">ID</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-neon-cyan">Call Type</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-neon-cyan">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-deep-gray">
+                  {quickContacts.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-3 text-cool-gray text-center">
+                        No talk groups found on the radio.
+                      </td>
+                    </tr>
+                  ) : (
+                    quickContacts.map((contact) => {
+                      const isAllCall = contact.callType === 0x05;
+                      return (
+                        <tr key={contact.index} className="hover:bg-deep-gray transition-colors">
+                          <td className="px-4 py-3">
+                            <input
+                              type="text"
+                              value={contact.name}
+                              onChange={(e) => handleCellChange(contact.index, 'name', e.target.value)}
+                              className="w-full px-2 py-1 bg-dark-charcoal text-white border border-transparent rounded focus:outline-none focus:border-neon-cyan focus:ring-2 focus:ring-neon-cyan"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="number"
+                              value={contact.contactNumber}
+                              onChange={(e) => handleCellChange(contact.index, 'contactNumber', e.target.value)}
+                              min="0"
+                              max="16777215"
+                              disabled={isAllCall}
+                              className={`w-full px-2 py-1 bg-dark-charcoal text-white border border-transparent rounded focus:outline-none focus:border-neon-cyan focus:ring-2 focus:ring-neon-cyan font-mono ${
+                                isAllCall ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
+                              title={isAllCall ? 'ID is locked to 16777215 for All Call' : ''}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <select
+                              value={contact.callType}
+                              onChange={(e) => handleCellChange(contact.index, 'callType', parseInt(e.target.value, 10))}
+                              className="w-full px-2 py-1 bg-dark-charcoal text-white border border-transparent rounded focus:outline-none focus:border-neon-cyan focus:ring-2 focus:ring-neon-cyan"
+                            >
+                              <option value={0x03}>Private Call</option>
+                              <option value={0x04}>Group Call</option>
+                              <option value={0x05}>All Call</option>
+                            </select>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleDeleteContact(contact.index)}
+                              className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

@@ -10,6 +10,7 @@ import { useRadioSettingsStore } from '../store/radioSettingsStore';
 import { useDigitalEmergencyStore } from '../store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from '../store/analogEmergencyStore';
 import { useQuickMessagesStore } from '../store/quickMessagesStore';
+import { useQuickContactsStore } from '../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
 import { useCalibrationStore } from '../store/calibrationStore';
 import { useRXGroupsStore } from '../store/rxGroupsStore';
@@ -39,18 +40,19 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-    const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
-    const { setChannels, setRawChannelData } = useChannelsStore();
-    const { setZones, setRawZoneData } = useZonesStore();
-    const { setScanLists, setRawScanListData } = useScanListsStore();
-    const { setContacts } = useContactsStore();
-    const { setSettings: setRadioSettings } = useRadioSettingsStore();
-    const { setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
-    const { setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
-    const { setMessages, setRawMessageData } = useQuickMessagesStore();
-    const { setRadioIds, setRawRadioIdData } = useDMRRadioIDsStore();
-    const { setCalibration } = useCalibrationStore();
-    const { setGroups: setRXGroups, setRawGroupData } = useRXGroupsStore();
+  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
+  const { setChannels, setRawChannelData } = useChannelsStore();
+  const { setZones, setRawZoneData } = useZonesStore();
+  const { setScanLists, setRawScanListData } = useScanListsStore();
+  const { setContacts } = useContactsStore();
+  const { setSettings: setRadioSettings } = useRadioSettingsStore();
+  const { setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
+  const { setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
+  const { setMessages, setRawMessageData } = useQuickMessagesStore();
+  const { setContacts: setQuickContacts } = useQuickContactsStore();
+  const { setRadioIds, setRawRadioIdData } = useDMRRadioIDsStore();
+  const { setCalibration } = useCalibrationStore();
+  const { setGroups: setRXGroups, setRawGroupData } = useRXGroupsStore();
 
   const readFromRadio = useCallback(async (
     onProgress?: (progress: number, message: string, step?: string) => void
@@ -189,8 +191,15 @@ export function useRadioConnection() {
         }
         setRawGroupData(rawGroupDataMap);
       } catch (err) {
-        // DMR RX Groups are optional - log error but don't fail the entire read
-        console.warn('Failed to read DMR RX Groups:', err);
+        console.warn('Could not read RX Groups:', err);
+      }
+
+      // Read Talk Groups (metadata 0x44)
+      try {
+        const quickContacts = await protocol.readQuickContacts();
+        setQuickContacts(quickContacts);
+      } catch (err) {
+        console.warn('Could not read Talk Groups:', err);
       }
 
       // Step 7: Read configuration blocks (Radio Settings, Emergency Systems, etc.)
@@ -381,6 +390,16 @@ export function useRadioConnection() {
           } catch (err) {
             console.warn('Could not read RX Groups:', err);
           }
+
+          // Read Talk Groups
+          try {
+            const quickContacts = await protocol.readQuickContacts();
+            if (quickContacts) {
+              setQuickContacts(quickContacts);
+            }
+          } catch (err) {
+            console.warn('Could not read Talk Groups:', err);
+          }
           
           try {
             const analogEmergencies = await protocol.readAnalogEmergencies();
@@ -446,7 +465,7 @@ export function useRadioConnection() {
         setIsConnecting(false);
       }
     }
-  }, [setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setRadioIds, setRawRadioIdData, setCalibration, setRXGroups, setRawGroupData]);
+  }, [setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setQuickContacts, setRadioIds, setRawRadioIdData, setCalibration, setRXGroups, setRawGroupData]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
@@ -599,11 +618,19 @@ export function useRadioConnection() {
       onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
       await protocol.writeAllData(channels, zones, scanLists);
       
-      // Step 5: Write radio settings only if they have been modified
+      // Step 5: Write Talk Groups if they have been loaded
+      const quickContactsStore = useQuickContactsStore.getState();
+      const quickContacts = quickContactsStore.contacts;
+      if (quickContacts && quickContacts.length > 0) {
+        onProgress?.(90, `Writing ${quickContacts.length} talk group(s) to radio...`, steps[4]);
+        await protocol.writeQuickContacts(quickContacts);
+      }
+
+      // Step 6: Write radio settings only if they have been modified
       const radioSettingsStore = useRadioSettingsStore.getState();
       const radioSettings = radioSettingsStore.settings;
       const changedFields = radioSettingsStore.getChangedFields();
-      
+
       if (radioSettings && changedFields.length > 0) {
         onProgress?.(95, `Writing ${changedFields.length} changed setting(s) to radio...`, steps[4]);
         await protocol.writeRadioSettings(radioSettings, changedFields);
@@ -622,6 +649,7 @@ export function useRadioConnection() {
         channels.length > 0 ? `${channels.length} channels` : null,
         zones.length > 0 ? `${zones.length} zones` : null,
         scanLists.length > 0 ? `${scanLists.length} scan lists` : null,
+        quickContacts && quickContacts.length > 0 ? `${quickContacts.length} talk group(s)` : null,
         radioSettings && changedFields.length > 0 ? `${changedFields.length} setting(s)` : null,
       ].filter(Boolean).join(', ');
       

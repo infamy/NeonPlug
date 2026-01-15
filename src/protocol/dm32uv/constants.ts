@@ -16,6 +16,8 @@ export const METADATA = {
   QUICK_MESSAGES: 0x0A,     // Quick text messages block
   RX_GROUPS: 0x0F,          // DMR RX Groups (DMR Receive Groups) - separate from V-frame 0x0F
   CALIBRATION: 0x02,        // Frequency adjustment/calibration data
+  METADATA_0x44: 0x44,      // Metadata block 0x44 (Talk Groups)
+  METADATA_0x06: 0x06,      // Metadata block 0x06 (Config section 4 - contains Talk Groups counter at 0x1FF)
   DMR_RADIO_IDS: 0x67,      // DMR Radio ID list block
   EMPTY: 0x00,              // Empty block
   EMPTY_ALT: 0xFF,          // Alternative empty block marker
@@ -34,6 +36,7 @@ export const BLOCK_SIZE = {
   QUICK_MESSAGE: 129,       // Bytes per quick message entry (0x81)
   RX_GROUP: 109,            // Bytes per DMR RX group entry (0x6D)
   DMR_RADIO_ID: 16,         // Bytes per DMR radio ID entry (0x10)
+  QUICK_CONTACT: 16,        // Bytes per quick contact entry (0x10)
 } as const;
 
 // Memory offsets
@@ -47,6 +50,7 @@ export const OFFSET = {
   QUICK_MESSAGE_BASE: 0x80,  // Entry base offset (128) for entry 0
   DMR_RADIO_ID_COUNT: 0x00,  // Count field at offset 0 (4 bytes, DWORD, little-endian)
   DMR_RADIO_ID_BASE: 0x00,   // Entry base offset (entries start at buffer base)
+  TALK_GROUP_COUNTER: 0x1FF, // Talk Groups counter in block 0x06 (offset 511)
 } as const;
 
 // V-Frame IDs
