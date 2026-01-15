@@ -19,6 +19,7 @@ export const MetadataBlockDisplay: React.FC<MetadataBlockDisplayProps> = ({
   downloadHexDump,
   downloadBinary,
 }) => {
+  // All hooks must be called before any conditional returns
   const [showBlock, setShowBlock] = useState(false);
   const [showHexDump, setShowHexDump] = useState(false);
   const [inspectOffset, setInspectOffset] = useState<string>('');
@@ -26,6 +27,42 @@ export const MetadataBlockDisplay: React.FC<MetadataBlockDisplayProps> = ({
   const metadataHex = metadata.toString(16).toUpperCase().padStart(2, '0');
   const blockId = `block${metadataHex}`;
 
+  // Memoize hex dump rows (only computed if blockData exists)
+  const hexDumpRows = useMemo(() => {
+    if (!blockData) return [];
+    
+    const bytesPerRow = 16;
+    const rows = [];
+    
+    for (let i = 0; i < blockData.length; i += bytesPerRow) {
+      const offset = i;
+      const rowBytes = blockData.slice(i, i + bytesPerRow);
+      
+      const offsetHex = offset.toString(16).toUpperCase().padStart(4, '0');
+      const hexBytes = Array.from(rowBytes)
+        .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
+        .join(' ');
+      const hexPadding = '   '.repeat(bytesPerRow - rowBytes.length);
+      const ascii = Array.from(rowBytes)
+        .map(b => {
+          const char = String.fromCharCode(b);
+          return (b >= 32 && b <= 126) ? char : '.';
+        })
+        .join('');
+      
+      rows.push(
+        <div key={offset} id={`${blockId}-${offset}`} className="flex border-b border-yellow-600/10 hover:bg-yellow-900/10 py-1">
+          <div className="w-20 text-yellow-400 px-2">{offsetHex}</div>
+          <div className="flex-1 text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
+          <div className="w-16 text-green-400 px-2">{ascii}</div>
+        </div>
+      );
+    }
+    
+    return rows;
+  }, [blockData, blockId]);
+
+  // Now we can have conditional returns after all hooks are called
   if (!blockData) {
     return (
       <div className="mb-6">
@@ -142,37 +179,7 @@ export const MetadataBlockDisplay: React.FC<MetadataBlockDisplayProps> = ({
             </div>
             <div className="overflow-x-auto">
               <div className="font-mono text-xs">
-                {useMemo(() => {
-                  const bytesPerRow = 16;
-                  const rows = [];
-                  
-                  for (let i = 0; i < blockData.length; i += bytesPerRow) {
-                    const offset = i;
-                    const rowBytes = blockData.slice(i, i + bytesPerRow);
-                    
-                    const offsetHex = offset.toString(16).toUpperCase().padStart(4, '0');
-                    const hexBytes = Array.from(rowBytes)
-                      .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
-                      .join(' ');
-                    const hexPadding = '   '.repeat(bytesPerRow - rowBytes.length);
-                    const ascii = Array.from(rowBytes)
-                      .map(b => {
-                        const char = String.fromCharCode(b);
-                        return (b >= 32 && b <= 126) ? char : '.';
-                      })
-                      .join('');
-                    
-                    rows.push(
-                      <div key={offset} id={`${blockId}-${offset}`} className="flex border-b border-yellow-600/10 hover:bg-yellow-900/10 py-1">
-                        <div className="w-20 text-yellow-400 px-2">{offsetHex}</div>
-                        <div className="flex-1 text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
-                        <div className="w-16 text-green-400 px-2">{ascii}</div>
-                      </div>
-                    );
-                  }
-                  
-                  return rows;
-                }, [blockData.length])}
+                {hexDumpRows}
               </div>
             </div>
           </div>

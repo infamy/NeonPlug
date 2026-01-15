@@ -13,6 +13,7 @@ import {
 } from './diagnosticsConstants';
 import { MetadataBlockDisplay } from './MetadataBlockDisplay';
 import { CollapsibleSection } from './CollapsibleSection';
+import JSZip from 'jszip';
 
 export const DiagnosticsTab: React.FC = () => {
   const { rawRadioSettingsData, rawContactBlockData, rawContactBlockAddress, blockMetadata, blockData } = useRadioStore();
@@ -159,6 +160,90 @@ export const DiagnosticsTab: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const downloadAllMetadataBlocks = async () => {
+    const zip = new JSZip();
+    let blocksAdded = 0;
+
+    // Function to generate hex dump content
+    const generateHexDump = (data: Uint8Array, metadataHex: string): string => {
+      const bytesPerRow = 16;
+      let hexDump = `Metadata Block 0x${metadataHex}\n`;
+      hexDump += `Size: ${data.length} bytes (${(data.length / 1024).toFixed(2)} KB)\n`;
+      hexDump += `${'='.repeat(80)}\n\n`;
+      
+      for (let i = 0; i < data.length; i += bytesPerRow) {
+        const offset = i;
+        const rowBytes = data.slice(i, i + bytesPerRow);
+        
+        const offsetHex = offset.toString(16).toUpperCase().padStart(4, '0');
+        const hexBytes = Array.from(rowBytes)
+          .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
+          .join(' ');
+        const hexPadding = '   '.repeat(bytesPerRow - rowBytes.length);
+        const ascii = Array.from(rowBytes)
+          .map(b => {
+            const char = String.fromCharCode(b);
+            return (b >= 32 && b <= 126) ? char : '.';
+          })
+          .join('');
+        
+        hexDump += `${offsetHex}  ${hexBytes}${hexPadding}  ${ascii}\n`;
+      }
+      
+      return hexDump;
+    };
+
+    // Add Radio Settings (0x04)
+    if (rawRadioSettingsData) {
+      const hexDump = generateHexDump(rawRadioSettingsData, '04');
+      zip.file('metadata-0x04-radio-settings.txt', hexDump);
+      zip.file('metadata-0x04-radio-settings.bin', rawRadioSettingsData);
+      blocksAdded++;
+    }
+
+    // Add all other metadata blocks
+    for (const [address, metadata] of blockMetadata.entries()) {
+      const data = blockData.get(address);
+      if (data) {
+        const metadataHex = metadata.metadata.toString(16).toUpperCase().padStart(2, '0');
+        const hexDump = generateHexDump(data, metadataHex);
+        zip.file(`metadata-0x${metadataHex}.txt`, hexDump);
+        zip.file(`metadata-0x${metadataHex}.bin`, data);
+        blocksAdded++;
+      }
+    }
+
+    // Add contact block if available
+    if (rawContactBlockData) {
+      const hexDump = generateHexDump(rawContactBlockData, 'CONTACTS');
+      zip.file('contact-block-first-4kb.txt', hexDump);
+      zip.file('contact-block-first-4kb.bin', rawContactBlockData);
+      blocksAdded++;
+    }
+
+    if (blocksAdded === 0) {
+      alert('No metadata blocks available to download. Please read from radio first.');
+      return;
+    }
+
+    // Generate zip and download
+    try {
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      a.download = `metadata-blocks-${timestamp}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error creating zip:', error);
+      alert('Failed to create zip file. See console for details.');
+    }
+  };
+
   if (!radioSettings || !rawRadioSettingsData) {
     return (
       <div className="h-full overflow-y-auto">
@@ -176,8 +261,20 @@ export const DiagnosticsTab: React.FC = () => {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-yellow-400">Diagnostics & Debug</h2>
-        <p className="text-cool-gray text-sm mt-1">Inspect raw memory offsets and verify field parsing</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-yellow-400">Diagnostics & Debug</h2>
+            <p className="text-cool-gray text-sm mt-1">Inspect raw memory offsets and verify field parsing</p>
+          </div>
+          <button
+            type="button"
+            onClick={downloadAllMetadataBlocks}
+            className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-semibold rounded transition-colors flex items-center gap-2"
+            title="Download all metadata blocks as a zip file"
+          >
+            📦 Download All Blocks (.zip)
+          </button>
+        </div>
       </div>
 
       {/* Metadata Block 0x02 (Calibration) */}
