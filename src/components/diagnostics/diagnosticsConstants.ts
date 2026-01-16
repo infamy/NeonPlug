@@ -62,7 +62,7 @@ export const BUTTON_FUNCTION_OPTIONS = [
   { value: 12, label: 'One Touch Call 4' },
   { value: 13, label: 'One Touch Call 5' },
   { value: 14, label: 'SMS' },
-  { value: 15, label: 'Contacts' },
+  { value: 15, label: 'CSV Contacts' },
   { value: 16, label: 'Zone Up' },
   { value: 17, label: 'Zone Down' },
   { value: 18, label: 'Scan' },

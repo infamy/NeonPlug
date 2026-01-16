@@ -693,13 +693,13 @@ export const ContactsTab: React.FC = () => {
       {/* Contacts Table Section */}
       <div className="flex-1 flex flex-col min-h-0">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-neon-cyan">DMR Contacts</h2>
+          <h2 className="text-2xl font-bold text-neon-cyan">CSV Contacts</h2>
           <div className="text-cool-gray">
             {contacts.length} / {contactCapacity.toLocaleString()} contact{contacts.length !== 1 ? 's' : ''}
           </div>
         </div>
         <div className="mb-4 text-cool-gray text-sm">
-          DMR contacts are primarily imported from CSV or read from the radio. Use Import to load contacts.
+          CSV contacts are primarily imported from CSV or read from the radio. Use Import to load contacts.
         </div>
         <div className="flex-1 min-h-0">
           <ContactsTable />

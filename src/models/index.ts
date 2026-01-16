@@ -6,6 +6,7 @@ export * from './ScanList';
 export * from './DigitalEmergency';
 export * from './AnalogEmergency';
 export * from './QuickTextMessage';
+export * from './QuickContact';
 export * from './DMRRadioID';
 export * from './Calibration';
 export * from './RXGroup';
