@@ -149,7 +149,7 @@ export const MessagesAndGroupsTab: React.FC = () => {
   return (
     <div className="h-full">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-neon-cyan mb-2">Messages & Groups</h2>
+        <h2 className="text-2xl font-bold text-neon-cyan mb-2">Groups & Messages</h2>
         <p className="text-cool-gray text-sm">
           Manage quick text messages and DMR RX groups for your radio.
         </p>
