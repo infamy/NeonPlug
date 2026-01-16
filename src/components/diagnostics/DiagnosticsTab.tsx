@@ -1458,17 +1458,55 @@ export const DiagnosticsTab: React.FC = () => {
             };
           };
           
-          // Calculate entry offsets based on contact index
-          const calculateEntryOffset = (contactIndex: number): number => {
-            if (contactIndex === 1) {
-              return 0; // First entry starts at 0 (has header)
+          // Helper to calculate entry offset based on sequential position
+          const calculateOffset = (position: number): number => {
+            if (position === 1) {
+              return 0; // First entry starts at 0
             }
             // Entry 1: 25 bytes (1 header + 24 data)
             // Entry 2+: 24 bytes each
-            return 25 + ((contactIndex - 2) * 24);
+            return 25 + ((position - 2) * 24);
           };
           
-          // Use block 0x0B to determine active entries and order
+          // First, parse all entries sequentially to build a map of contactIndex → parsed entry
+          const entriesByIndex = new Map<number, ReturnType<typeof parseEntryAtOffset>>();
+          let entryPosition = 1;
+          
+          while (true) {
+            try {
+              const offset = calculateOffset(entryPosition);
+              
+              if (offset >= data.length - 24) {
+                break;
+              }
+              
+              // Check if this is an empty entry
+              let checkOffset = offset;
+              if (entryPosition === 1 && data[offset] === 0x00) {
+                checkOffset++; // Skip header
+              }
+              const nameStartOffset = checkOffset + 1; // Skip flag byte
+              if (data[nameStartOffset] === 0x00) {
+                break; // Empty entry, stop parsing
+              }
+              
+              // Parse this entry
+              const entry = parseEntryAtOffset(offset, entryPosition, entryPosition);
+              
+              // Skip empty entries
+              if (entry.name.length === 0 && entry.contactNumber === 0) {
+                break;
+              }
+              
+              entriesByIndex.set(entryPosition, entry);
+              entryPosition++;
+            } catch (e) {
+              console.error(`Failed to parse entry at position ${entryPosition}:`, e);
+              break;
+            }
+          }
+          
+          // Use block 0x0B to determine display order
           if (quickAccessData && quickAccessData.length >= 0x700) {
             // Read Index Table 1 (0x100-0x6FF) - Name sorted order
             for (let i = 0; i < Math.floor((0x700 - 0x100) / 2); i++) {
@@ -1481,19 +1519,19 @@ export const DiagnosticsTab: React.FC = () => {
                 break;
               }
               
-              // Calculate offset in block 0x44
-              const entryOffset = calculateEntryOffset(contactIndex);
-              
-              // Parse the entry
-              if (entryOffset < data.length - 24) {
-                try {
-                  const entry = parseEntryAtOffset(entryOffset, contactIndex, i + 1);
-                  parsedEntries.push(entry);
-                } catch (e) {
-                  console.error(`Failed to parse entry ${contactIndex} at offset ${entryOffset}:`, e);
-                }
+              // Get the parsed entry for this contact index
+              const entry = entriesByIndex.get(contactIndex);
+              if (entry) {
+                // Update display order
+                parsedEntries.push({
+                  ...entry,
+                  displayOrder: i + 1
+                });
               }
             }
+          } else {
+            // No block 0x0B available, use sequential order
+            parsedEntries.push(...Array.from(entriesByIndex.values()));
           }
           
           return (

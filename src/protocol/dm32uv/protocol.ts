@@ -2163,9 +2163,9 @@ export class DM32UVProtocol implements RadioProtocol {
       quickAccessData[i] = 0xFF;
     }
 
-    // Build sorted index lists
-    const contactsWithIndices = contacts.map((contact, idx) => ({
-      contactIndex: idx, // 0-based index in the contacts array
+    // Build sorted index lists using the actual contact.index values
+    const contactsWithIndices = contacts.map((contact) => ({
+      contactIndex: contact.index, // Use the actual contact index (1-based)
       name: contact.name,
       callType: contact.callType,
       typeByte: contact.callType === 0x05 ? 0x30 : // All Call
@@ -2175,16 +2175,17 @@ export class DM32UVProtocol implements RadioProtocol {
     }));
 
     // Index Table 1: Name-sorted (appended in order)
-    // Just use the original order for now (assuming they're already in a reasonable order)
-    contactsWithIndices.forEach((item, idx) => {
-      const offset = 0x100 + (idx * 2);
+    // Use the original order from the contacts array
+    contactsWithIndices.forEach((item, displayIndex) => {
+      const offset = 0x100 + (displayIndex * 2);
       if (offset < 0x700) {
         quickAccessData[offset] = item.contactIndex;
         quickAccessData[offset + 1] = item.typeByte;
         
         // Clear bit in bitmask (0 = used, 1 = free)
-        const byteIdx = Math.floor(idx / 8);
-        const bitIdx = idx % 8;
+        // Use displayIndex for bitmask position, not contactIndex
+        const byteIdx = Math.floor(displayIndex / 8);
+        const bitIdx = displayIndex % 8;
         if (0x10 + byteIdx < 0x20) {
           quickAccessData[0x10 + byteIdx] &= ~(1 << bitIdx);
         }
@@ -2196,8 +2197,8 @@ export class DM32UVProtocol implements RadioProtocol {
       a.name.toLowerCase().localeCompare(b.name.toLowerCase())
     );
     
-    sortedByName.forEach((item, idx) => {
-      const offset = 0x740 + (idx * 2);
+    sortedByName.forEach((item, displayIndex) => {
+      const offset = 0x740 + (displayIndex * 2);
       if (offset < 0xD00) {
         quickAccessData[offset] = item.contactIndex;
         quickAccessData[offset + 1] = item.typeByte;
