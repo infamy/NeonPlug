@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
+import { useRadioStore } from '../../store/radioStore';
 import type { DMRRadioID } from '../../models/DMRRadioID';
 import type { QuickContact } from '../../models/QuickContact';
 
@@ -11,11 +12,60 @@ export const MessagesAndGroupsTab: React.FC = () => {
   const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact } = useQuickContactsStore();
   const { radioIds, radioIdsLoaded, updateRadioId } = useDMRRadioIDsStore();
   const { groups: rxGroups, groupsLoaded: rxGroupsLoaded } = useRXGroupsStore();
+  const { blockData, blockMetadata } = useRadioStore();
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
   const [editDmrId, setEditDmrId] = useState('');
 
   const MAX_DMR_RADIO_IDS = 5;
+
+  // Get block 0x0B data for proper ordering
+  const block0BData = useMemo(() => {
+    for (const [address, metadata] of blockMetadata.entries()) {
+      if (metadata.metadata === 0x0B) {
+        return blockData.get(address) || null;
+      }
+    }
+    return null;
+  }, [blockMetadata, blockData]);
+
+  // Reorder contacts based on block 0x0B Index Table 1 (name-sorted order)
+  const orderedContacts = useMemo(() => {
+    if (!block0BData || !quickContactsLoaded || quickContacts.length === 0) {
+      return quickContacts;
+    }
+
+    // Read Index Table 1 (0x100-0x6FF) - Name sorted order
+    const orderedList: QuickContact[] = [];
+    const indexedContactIds = new Set<number>();
+    
+    for (let i = 0; i < Math.floor((0x700 - 0x100) / 2); i++) {
+      const tableOffset = 0x100 + (i * 2);
+      const contactIndex = block0BData[tableOffset];
+      const typeByte = block0BData[tableOffset + 1];
+      
+      // Stop at empty entry (0xFF 0xFF)
+      if (contactIndex === 0xFF && typeByte === 0xFF) {
+        break;
+      }
+      
+      // Find the contact with this index
+      const contact = quickContacts.find(c => c.index === contactIndex);
+      if (contact) {
+        orderedList.push(contact);
+        indexedContactIds.add(contactIndex);
+      }
+    }
+    
+    // Add any contacts not in the index table at the end (e.g., newly added)
+    quickContacts.forEach(contact => {
+      if (!indexedContactIds.has(contact.index)) {
+        orderedList.push(contact);
+      }
+    });
+    
+    return orderedList;
+  }, [block0BData, quickContacts, quickContactsLoaded]);
 
   const handleEdit = (radioId: DMRRadioID) => {
     setEditingId(radioId.index);
@@ -83,9 +133,9 @@ export const MessagesAndGroupsTab: React.FC = () => {
 
   const handleAddContact = () => {
     addContact({
-      name: 'New Contact',
+      name: 'New Talk Group',
       contactNumber: 0,
-      callType: 0x03,
+      callType: 0x04, // Default to Group Call
       flag: 0,
     });
   };
@@ -273,7 +323,7 @@ export const MessagesAndGroupsTab: React.FC = () => {
           <div className="flex items-center gap-4">
             {quickContactsLoaded && (
               <div className="text-cool-gray text-sm">
-                {quickContacts.length} contact{quickContacts.length !== 1 ? 's' : ''}
+                {orderedContacts.length} group{orderedContacts.length !== 1 ? 's' : ''} {block0BData && '(ordered by 0x0B)'}
               </div>
             )}
             {quickContactsLoaded && (
@@ -281,7 +331,7 @@ export const MessagesAndGroupsTab: React.FC = () => {
                 onClick={handleAddContact}
                 className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
               >
-                + Add Contact
+                + Add Group
               </button>
             )}
           </div>
@@ -301,6 +351,7 @@ export const MessagesAndGroupsTab: React.FC = () => {
               <table className="w-full">
                 <thead className="bg-deep-gray border-b border-deep-gray">
                   <tr>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-neon-cyan">Order</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-neon-cyan">Name</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-neon-cyan">ID</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-neon-cyan">Call Type</th>
@@ -308,17 +359,20 @@ export const MessagesAndGroupsTab: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-deep-gray">
-                  {quickContacts.length === 0 ? (
+                  {orderedContacts.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-4 py-3 text-cool-gray text-center">
+                      <td colSpan={5} className="px-4 py-3 text-cool-gray text-center">
                         No talk groups found on the radio.
                       </td>
                     </tr>
                   ) : (
-                    quickContacts.map((contact) => {
+                    orderedContacts.map((contact, displayIndex) => {
                       const isAllCall = contact.callType === 0x05;
                       return (
                         <tr key={contact.index} className="hover:bg-deep-gray transition-colors">
+                          <td className="px-4 py-3 text-cool-gray font-mono">
+                            {displayIndex + 1}
+                          </td>
                           <td className="px-4 py-3">
                             <input
                               type="text"

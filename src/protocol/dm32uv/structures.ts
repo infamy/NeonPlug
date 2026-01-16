@@ -3066,8 +3066,18 @@ export function parseQuickContacts(
       continue;
     }
 
-    // Extract name (16 bytes, null-padded)
-    const nameBytes = data.slice(nameStart, nameEnd);
+    // Extract name (16 bytes, null-padded or 0xFF-padded)
+    // Find the actual length by looking for null byte or 0xFF padding
+    let nameLength = 0;
+    for (let i = 0; i < 16; i++) {
+      const byte = data[nameStart + i];
+      if (byte === 0x00 || byte === 0xFF) {
+        break;
+      }
+      nameLength++;
+    }
+    
+    const nameBytes = data.slice(nameStart, nameStart + nameLength);
     const name = new TextDecoder('ascii', { fatal: false })
       .decode(nameBytes)
       .trim();
@@ -3191,7 +3201,17 @@ export function encodeQuickContacts(contacts: QuickContact[]): Uint8Array {
     offset++;
 
     // Write name (16 bytes, null-padded)
-    const nameBytes = new TextEncoder().encode(contact.name);
+    // Clean the name: remove any non-ASCII printable characters (including ÿ from old parsing)
+    const cleanName = contact.name
+      .split('')
+      .filter(char => {
+        const code = char.charCodeAt(0);
+        return code >= 0x20 && code <= 0x7E; // Only ASCII printable characters
+      })
+      .join('')
+      .substring(0, 16); // Limit to 16 bytes
+    
+    const nameBytes = new TextEncoder().encode(cleanName);
     for (let j = 0; j < 16; j++) {
       data[offset] = j < nameBytes.length ? nameBytes[j] : 0x00;
       offset++;

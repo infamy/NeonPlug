@@ -11,17 +11,38 @@ interface QuickContactsState {
   deleteContact: (index: number) => void;
 }
 
+// Helper function to clean contact names (remove non-ASCII printable characters)
+const cleanContactName = (name: string): string => {
+  return name
+    .split('')
+    .filter(char => {
+      const code = char.charCodeAt(0);
+      return code >= 0x20 && code <= 0x7E; // Only ASCII printable characters
+    })
+    .join('')
+    .trim();
+};
+
 export const useQuickContactsStore = create<QuickContactsState>((set, get) => ({
   contacts: [],
   contactsLoaded: false,
-  setContacts: (contacts) => set({ contacts, contactsLoaded: true }),
+  setContacts: (contacts) => set({ 
+    contacts: contacts.map(c => ({ ...c, name: cleanContactName(c.name) })), 
+    contactsLoaded: true 
+  }),
   setContactsLoaded: (loaded) => set({ contactsLoaded: loaded }),
   updateContact: (index, updates) => {
-    const contacts = get().contacts.map(contact => 
-      contact.index === index 
-        ? { ...contact, ...updates }
-        : contact
-    );
+    const contacts = get().contacts.map(contact => {
+      if (contact.index === index) {
+        const updated = { ...contact, ...updates };
+        // Clean name if it was updated
+        if (updates.name) {
+          updated.name = cleanContactName(updated.name);
+        }
+        return updated;
+      }
+      return contact;
+    });
     set({ contacts });
   },
   addContact: (newContact) => {
@@ -30,6 +51,7 @@ export const useQuickContactsStore = create<QuickContactsState>((set, get) => ({
     const newIndex = maxIndex + 1;
     const contact: QuickContact = {
       ...newContact,
+      name: cleanContactName(newContact.name),
       index: newIndex,
       offset: 0, // Will be calculated when writing
       hasHeader: newIndex === 1, // Only first contact has header
