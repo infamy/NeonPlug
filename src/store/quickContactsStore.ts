@@ -47,8 +47,9 @@ export const useQuickContactsStore = create<QuickContactsState>((set, get) => ({
   },
   addContact: (newContact) => {
     const contacts = get().contacts;
-    const maxIndex = contacts.length > 0 ? Math.max(...contacts.map(c => c.index)) : 0;
-    const newIndex = maxIndex + 1;
+    // New index is simply the next position (array length + 1)
+    // This ensures indexes are always sequential: 1, 2, 3, ...
+    const newIndex = contacts.length + 1;
     const contact: QuickContact = {
       ...newContact,
       name: cleanContactName(newContact.name),

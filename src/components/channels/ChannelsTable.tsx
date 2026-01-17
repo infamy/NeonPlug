@@ -1,25 +1,106 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useScanListsStore } from '../../store/scanListsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
+import { useQuickContactsStore } from '../../store/quickContactsStore';
 import type { Channel } from '../../models/Channel';
 import { ChannelEditModal } from './ChannelEditModal';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
 
-interface ChannelsTableProps {
-  channels?: Channel[];
+// Frequency input component that only updates parent on blur (prevents cursor jumping)
+interface FrequencyInputProps {
+  value: number;
+  onChange: (value: number) => void;
+  className?: string;
 }
 
-export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channelsProp }) => {
+const FrequencyInput: React.FC<FrequencyInputProps> = ({ value, onChange, className }) => {
+  const [localValue, setLocalValue] = useState(value.toFixed(4));
+  
+  // Sync local value when prop changes (e.g., when channel changes)
+  useEffect(() => {
+    setLocalValue(value.toFixed(4));
+  }, [value]);
+  
+  const handleBlur = () => {
+    const parsed = parseFloat(localValue);
+    if (!isNaN(parsed) && parsed > 0) {
+      onChange(parsed);
+      setLocalValue(parsed.toFixed(4));
+    } else {
+      // Reset to original value if invalid
+      setLocalValue(value.toFixed(4));
+    }
+  };
+  
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={localValue}
+      onChange={(e) => setLocalValue(e.target.value)}
+      onBlur={handleBlur}
+      className={className}
+    />
+  );
+};
+
+interface ChannelsTableProps {
+  channels?: Channel[];
+  scrollToChannel?: number | null;  // Channel number to scroll to
+  onScrollComplete?: () => void;    // Callback after scroll completes
+}
+
+export const ChannelsTable: React.FC<ChannelsTableProps> = ({ 
+  channels: channelsProp,
+  scrollToChannel,
+  onScrollComplete 
+}) => {
   const { channels: channelsFromStore, updateChannel, deleteChannel } = useChannelsStore();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
   const { scanLists } = useScanListsStore();
   const { groups: rxGroups } = useRXGroupsStore();
   const { keys: encryptionKeys } = useEncryptionKeysStore();
+  const { contacts: talkGroups } = useQuickContactsStore();
   const channels = channelsProp ?? channelsFromStore;
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
+  const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+
+  // Scroll to channel when scrollToChannel changes
+  useEffect(() => {
+    if (scrollToChannel !== null && scrollToChannel !== undefined) {
+      const row = rowRefs.current.get(scrollToChannel);
+      if (row) {
+        // Small delay to ensure the DOM has updated
+        requestAnimationFrame(() => {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          
+          // Use IntersectionObserver to detect when scroll completes and row is visible
+          const observer = new IntersectionObserver((entries) => {
+            const entry = entries[0];
+            if (entry.isIntersecting) {
+              observer.disconnect();
+              // Brief highlight effect after scroll completes
+              row.classList.add('bg-neon-cyan', 'bg-opacity-20');
+              setTimeout(() => {
+                row.classList.remove('bg-neon-cyan', 'bg-opacity-20');
+                onScrollComplete?.();
+              }, 1000);
+            }
+          }, { threshold: 0.5 });
+          
+          observer.observe(row);
+          
+          // Fallback timeout in case observer doesn't fire
+          setTimeout(() => {
+            observer.disconnect();
+          }, 3000);
+        });
+      }
+    }
+  }, [scrollToChannel, onScrollComplete]);
 
   const handleCellChange = (
     channelNumber: number,
@@ -121,7 +202,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Short Data Confirm">SDC</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Private Confirm">Priv</th>
             {/* Common fields - work for both */}
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]" title="Contact ID (DMR ID for digital channels)">Contact ID</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="TX Contact (Group/Private/All Call - index into Contacts list)">TG</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px] sticky right-0 bg-dark-charcoal z-30">Actions</th>
           </tr>
         </thead>
@@ -131,6 +212,10 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
             return (
               <tr
                 key={channel.number}
+                ref={(el) => {
+                  if (el) rowRefs.current.set(channel.number, el);
+                  else rowRefs.current.delete(channel.number);
+                }}
                 className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
               >
                 <td className="px-2 py-2 text-white sticky left-0 bg-deep-gray z-10 text-sm font-medium">
@@ -152,26 +237,16 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                   />
                 </td>
                 <td className="px-2 py-2">
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={formatFrequency(channel.rxFrequency)}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      handleCellChange(channel.number, 'rxFrequency', val);
-                    }}
+                  <FrequencyInput
+                    value={channel.rxFrequency}
+                    onChange={(val) => handleCellChange(channel.number, 'rxFrequency', val)}
                     className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
                   />
                 </td>
                 <td className="px-2 py-2">
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={formatFrequency(channel.txFrequency)}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      handleCellChange(channel.number, 'txFrequency', val);
-                    }}
+                  <FrequencyInput
+                    value={channel.txFrequency}
+                    onChange={(val) => handleCellChange(channel.number, 'txFrequency', val)}
                     className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
                   />
                 </td>
@@ -772,14 +847,25 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
                 </td>
                 {/* Common fields - work for both */}
                 <td className="px-2 py-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max="249"
-                    value={channel.contactId}
-                    onChange={(e) => handleCellChange(channel.number, 'contactId', parseInt(e.target.value) || 0)}
-                    className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
-                  />
+                  {showColorCode ? (
+                    <select
+                      value={channel.contactId}
+                      onChange={(e) => handleCellChange(channel.number, 'contactId', parseInt(e.target.value) || 0)}
+                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                    >
+                      <option value={0}>None</option>
+                      {talkGroups.map((tg) => {
+                        const callTypeLabel = tg.callType === 0x05 ? 'All' : tg.callType === 0x04 ? 'Grp' : tg.callType === 0x03 ? 'Prv' : '?';
+                        return (
+                          <option key={tg.index} value={tg.index}>
+                            {tg.name} [{callTypeLabel}] ({tg.contactNumber})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  ) : (
+                    <span className="text-cool-gray text-xs text-center block">-</span>
+                  )}
                 </td>
                 <td className="px-2 py-2 text-center sticky right-0 bg-deep-gray z-10">
                   <div className="flex items-center justify-center gap-2">
@@ -823,6 +909,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({ channels: channels
           }}
           rxGroups={rxGroups}
           encryptionKeys={encryptionKeys}
+          talkGroups={talkGroups}
         />
       )}
     </div>

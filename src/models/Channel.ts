@@ -91,8 +91,13 @@ export interface Channel {
   // Unknown Setting (0x2A)
   unknown2A: number;           // 8-bit value (0-255), possibly DMR or signaling related
   
-  // Contact ID (0x2B) - Also called "DMR ID" for digital channels
-  contactId: number;          // 0-249 (displayed as 1-250)
+  // Talk Group (TX Contact) - stored in metadata blocks 0x42 and 0x43, NOT byte 0x2B
+  // Block 0x42: Channels 1-2048 (2 bytes per channel)
+  // Block 0x43: Channels 2049+ and VFOs (4001, 4002)
+  // Format: 12-bit index = (byte0 >> 4) * 256 + byte1
+  // This is an index into the Talk Groups list (block 0x44) - 0=None, 1+=index
+  // The Talk Groups list contains the full DMR Talk Group ID (24-bit)
+  contactId: number;          // Talk Group index for digital channels (0-4095)
   
   // Digital-only fields (only valid when mode is Digital or Fixed Digital)
   // These fields reuse bytes 0x1D, 0x1E, 0x1F which are used for analog features in analog mode

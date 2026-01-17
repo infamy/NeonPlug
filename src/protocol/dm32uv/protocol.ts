@@ -5,7 +5,7 @@
 
 import { DM32Connection } from './connection';
 import { discoverMemoryBlocks, readChannelCount, type MemoryBlock } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, parseTxContactForChannel, encodeTxContactForChannel } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
@@ -537,6 +537,8 @@ export class DM32UVProtocol implements RadioProtocol {
       METADATA.RX_GROUPS,            // RX Groups (0x0F)
       METADATA.METADATA_0x44,        // Metadata block 0x44 (Talk Groups data)
       METADATA.METADATA_0x06,        // Metadata block 0x06 (Config section 4 - Talk Groups counter)
+      METADATA.TX_CONTACT_LOW,       // TX Contact block 0x42 (channels 1-2048)
+      METADATA.TX_CONTACT_HIGH,      // TX Contact block 0x43 (channels 2049+ and VFOs)
     ];
 
     for (const metadata of fixedMetadataBlocks) {
@@ -612,6 +614,13 @@ export class DM32UVProtocol implements RadioProtocol {
 
       // Also store in blockData map for backward compatibility (use copy here too)
       this.blockData.set(block.address, blockDataCopy);
+
+      // IMPORTANT: Set rawRadioSettingsData when we read block 0x04
+      // This is required for writeRadioSettings() to preserve unknown fields
+      if (block.metadata === METADATA.VFO_SETTINGS) {
+        this.rawRadioSettingsData = blockDataCopy;
+        log.debug('Set rawRadioSettingsData from block 0x04 during bulk read', 'Protocol');
+      }
 
       // Small delay between reads
       if (i < finalBlocksToRead.length - 1) {
@@ -693,6 +702,8 @@ export class DM32UVProtocol implements RadioProtocol {
       METADATA.RX_GROUPS,
       METADATA.METADATA_0x44,        // Talk Groups data
       METADATA.METADATA_0x06,        // Talk Groups counter
+      METADATA.TX_CONTACT_LOW,       // TX Contact block 0x42 (channels 1-2048)
+      METADATA.TX_CONTACT_HIGH,      // TX Contact block 0x43 (channels 2049+ and VFOs)
     ];
 
     for (const metadata of fixedMetadataBlocks) {
@@ -736,13 +747,23 @@ export class DM32UVProtocol implements RadioProtocol {
 
       const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
       
+      // IMPORTANT: Create a copy of the data to prevent corruption if the buffer is reused
+      const blockDataCopy = new Uint8Array(blockData);
+      
       this.cachedBlockData.push({
         metadata: block.metadata,
         address: block.address,
-        data: blockData,
+        data: blockDataCopy,
       });
 
-      this.blockData.set(block.address, blockData);
+      this.blockData.set(block.address, blockDataCopy);
+
+      // IMPORTANT: Set rawRadioSettingsData when we read block 0x04
+      // This is required for writeRadioSettings() to preserve unknown fields
+      if (block.metadata === METADATA.VFO_SETTINGS) {
+        this.rawRadioSettingsData = blockDataCopy;
+        log.debug('Set rawRadioSettingsData from block 0x04 during bulk read', 'Protocol');
+      }
 
       if (i < finalBlocksToRead.length - 1) {
         await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
@@ -850,6 +871,23 @@ export class DM32UVProtocol implements RadioProtocol {
     
     log.info(`Parsing ${blocksToParse.length} cached channel blocks for ${channelCount} channels`, 'Protocol');
 
+    // Get TX Contact blocks (0x42 and 0x43) for setting talkGroupId on digital channels
+    const txContactBlock42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+    const txContactBlock43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    const block42Data = txContactBlock42?.data || null;
+    const block43Data = txContactBlock43?.data || null;
+    
+    if (block42Data) {
+      log.debug(`Found TX Contact block 0x42 (${block42Data.length} bytes)`, 'Protocol');
+    } else {
+      log.debug('TX Contact block 0x42 not found - contactId will use legacy byte 0x2B', 'Protocol');
+    }
+    if (block43Data) {
+      log.debug(`Found TX Contact block 0x43 (${block43Data.length} bytes)`, 'Protocol');
+    } else {
+      log.debug('TX Contact block 0x43 not found - contactId for high channels/VFOs will use legacy', 'Protocol');
+    }
+
     // Parse channels - process blocks in metadata order (0x12, 0x13, 0x14, ...)
     // All data comes from cachedBlockData - no radio reads here
     const channels: Channel[] = [];
@@ -909,6 +947,18 @@ export class DM32UVProtocol implements RadioProtocol {
 
           // Parse channel (forbid TX is at byte 0x18, bit 3)
           const channel = parseChannel(channelData, channelIndex);
+          
+          // Apply TX Contact from blocks 0x42/0x43 for digital channels
+          // This overrides the legacy contactId from byte 0x2B
+          const isDigitalMode = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
+          if (isDigitalMode && (block42Data || block43Data)) {
+            const txContact = parseTxContactForChannel(channelIndex, block42Data, block43Data);
+            if (txContact) {
+              channel.contactId = txContact.contactId;
+              log.verbose?.(`Channel ${channelIndex}: TX Contact from block = ${txContact.contactId}`, 'Protocol');
+            }
+          }
+          
           channels.push(channel);
           channelIndex++;
 
@@ -1165,8 +1215,85 @@ export class DM32UVProtocol implements RadioProtocol {
       }
     }
 
+    // Step 4: Write TX Contact blocks (0x42 and 0x43) for digital channels
+    this.onProgress?.(92, 'Writing TX Contact data...');
+    await this.writeTxContactBlocks(channels);
+
     this.onProgress?.(100, `Successfully wrote ${channels.length} channels`);
     log.info(`Successfully wrote ${channels.length} channels to radio`, 'Protocol');
+  }
+
+  /**
+   * Write TX Contact blocks (0x42 and 0x43) for digital channels
+   * 
+   * TX Contact is stored separately from channel data in metadata blocks 0x42 and 0x43.
+   * Block 0x42: Channels 1-2048
+   * Block 0x43: Channels 2049+ and VFOs (4001, 4002)
+   * 
+   * @param channels Array of channels to write TX Contact for
+   */
+  private async writeTxContactBlocks(channels: Channel[]): Promise<void> {
+    // Find TX Contact blocks
+    const block42 = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+    const block43 = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    
+    if (!block42 && !block43) {
+      log.warn('TX Contact blocks (0x42, 0x43) not found - skipping TX Contact write', 'Protocol');
+      return;
+    }
+    
+    // Initialize block data from cache - MUST have cached data to preserve existing TX Contact entries
+    const cached42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+    const cached43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    
+    // SAFETY CHECK: We must have cached data to avoid wiping TX Contact entries
+    if (!cached42 || !cached43) {
+      log.warn('TX Contact blocks not in cache - skipping TX Contact write to avoid data loss. Read from radio first!', 'Protocol');
+      return;
+    }
+    
+    // Copy cached data to avoid modifying the original
+    const block42Data = new Uint8Array(cached42.data);
+    const block43Data = new Uint8Array(cached43.data);
+    
+    // Update TX Contact for each channel
+    let updatedCount = 0;
+    for (const channel of channels) {
+      const isDigital = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
+      const contactId = channel.contactId || 0;
+      
+      // Encode TX Contact for this channel
+      encodeTxContactForChannel(
+        channel.number,
+        contactId,
+        isDigital,
+        block42Data,
+        block43Data
+      );
+      
+      if (isDigital && contactId > 0) {
+        updatedCount++;
+      }
+    }
+    
+    log.info(`Updated TX Contact for ${updatedCount} digital channels with TG assignments`, 'Protocol');
+    
+    // Set metadata bytes
+    block42Data[0xFFF] = METADATA.TX_CONTACT_LOW;
+    block43Data[0xFFF] = METADATA.TX_CONTACT_HIGH;
+    
+    // Write blocks to radio
+    if (block42) {
+      log.debug(`Writing TX Contact block 0x42 to address 0x${block42.address.toString(16)}`, 'Protocol');
+      await this.connection!.writeMemory(block42.address, block42Data, METADATA.TX_CONTACT_LOW);
+      log.info('Successfully wrote TX Contact block 0x42', 'Protocol');
+    }
+    
+    if (block43) {
+      log.debug(`Writing TX Contact block 0x43 to address 0x${block43.address.toString(16)}`, 'Protocol');
+      await this.connection!.writeMemory(block43.address, block43Data, METADATA.TX_CONTACT_HIGH);
+      log.info('Successfully wrote TX Contact block 0x43', 'Protocol');
+    }
   }
 
   /**
@@ -2163,9 +2290,11 @@ export class DM32UVProtocol implements RadioProtocol {
       quickAccessData[i] = 0xFF;
     }
 
-    // Build sorted index lists using the actual contact.index values
-    const contactsWithIndices = contacts.map((contact) => ({
-      contactIndex: contact.index, // Use the actual contact index (1-based)
+    // Build sorted index lists using physical position (1-based) in block 0x44
+    // The index stored in 0x0B must match the physical position in block 0x44,
+    // NOT the contact.index value (which may have gaps after deletions)
+    const contactsWithIndices = contacts.map((contact, arrayIndex) => ({
+      contactIndex: arrayIndex + 1, // Physical position in block 0x44 (1-based)
       name: contact.name,
       callType: contact.callType,
       typeByte: contact.callType === 0x05 ? 0x30 : // All Call
@@ -2306,6 +2435,30 @@ export class DM32UVProtocol implements RadioProtocol {
         }
       }
 
+      // Get TX Contact blocks (0x42 and 0x43) for VFO Talk Group IDs
+      const txContactBlock42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+      const txContactBlock43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+      const block42Data = txContactBlock42?.data || null;
+      const block43Data = txContactBlock43?.data || null;
+
+      // Apply TX Contact to VFO A (channel 4001) if it's digital
+      if (vfoA && (vfoA.mode === 'Digital' || vfoA.mode === 'Fixed Digital') && (block42Data || block43Data)) {
+        const txContact = parseTxContactForChannel(4001, block42Data, block43Data);
+        if (txContact) {
+          vfoA.contactId = txContact.contactId;
+          log.debug(`VFO A (4001): TX Contact from block 0x43 = ${txContact.contactId}`, 'Protocol');
+        }
+      }
+
+      // Apply TX Contact to VFO B (channel 4002) if it's digital
+      if (vfoB && (vfoB.mode === 'Digital' || vfoB.mode === 'Fixed Digital') && (block42Data || block43Data)) {
+        const txContact = parseTxContactForChannel(4002, block42Data, block43Data);
+        if (txContact) {
+          vfoB.contactId = txContact.contactId;
+          log.debug(`VFO B (4002): TX Contact from block 0x43 = ${txContact.contactId}`, 'Protocol');
+        }
+      }
+
       const radioSettings = parseRadioSettings(cachedBlock.data);
       
       // Override VFO A and VFO B with data from block 0x41
@@ -2360,9 +2513,16 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(0, 'Writing Radio Settings...');
 
-    // Encode settings to 4KB block, preserving original data if available
+    // SAFETY CHECK: Ensure we have valid original data to preserve unknown bytes
+    // Without original data, we would fill with 0xFF which wipes the block!
+    if (!this.rawRadioSettingsData || this.rawRadioSettingsData.length < 0x1000) {
+      log.error('Cannot write Radio Settings: No valid original data cached. Read from radio first!', 'Protocol');
+      throw new Error('Cannot write Radio Settings without reading from radio first. Original block data is required to preserve unknown fields.');
+    }
+
+    // Encode settings to 4KB block, preserving original data
     // If changedFields is provided, only encode those specific fields
-    const blockData = encodeRadioSettings(settings, this.rawRadioSettingsData || undefined, changedFields);
+    const blockData = encodeRadioSettings(settings, this.rawRadioSettingsData, changedFields);
 
     // Write the entire block (writeMemory takes address, data, and metadata)
     await this.connection!.writeMemory(radioSettingsBlock.address, blockData, METADATA.VFO_SETTINGS);
@@ -2414,6 +2574,11 @@ export class DM32UVProtocol implements RadioProtocol {
         // Update cache
         this.blockData.set(block41.address, block41DataCopy);
       }
+
+      // NOTE: TX Contact for VFOs is stored in block 0x43, but we don't write it here
+      // to avoid potential corruption. VFO TX Contact write is disabled until properly debugged.
+      // The TX Contact data is read-only for now - VFO Talk Group changes won't persist.
+      // TODO: Implement safe VFO TX Contact write after verifying block structure
     }
 
     this.onProgress?.(100, 'Radio Settings written');

@@ -3285,3 +3285,210 @@ export function encodeQuickContacts(contacts: QuickContact[]): Uint8Array {
 
   return data;
 }
+
+/**
+ * TX Contact Block Structure (Metadata blocks 0x42 and 0x43)
+ * 
+ * Each channel has a 2-byte TX Contact entry that maps the channel to a Talk Group.
+ * This stores an index into the Talk Groups list (block 0x44).
+ * 
+ * Buffer Layout:
+ * - Block 0x42: Channels 1-2048 (4KB block)
+ * - Block 0x43: Channels 2049+ and VFOs
+ * 
+ * Per-Channel Entry (2 bytes):
+ * Byte 0:
+ *   - Bits 7-4: TG Index High (bits 11-8 of index)
+ *   - Bits 3-1: Reserved
+ *   - Bit 0: Digital Flag (1=Digital, 0=Analog/Mixed)
+ * Byte 1:
+ *   - Bits 7-0: TG Index Low (bits 7-0 of index)
+ * 
+ * Talk Group Index Formula: (byte0 >> 4) * 256 + byte1 = 12-bit index (0-4095)
+ * This is an index into the Talk Groups list (0=None, 1+=index into Talk Groups)
+ * The Talk Groups list in block 0x44 contains the full 24-bit DMR Talk Group IDs
+ * 
+ * Offset Formulas (block-relative, within 4KB block):
+ * - Block 0x42: Channels 1-2047: (channel - 1) * 2
+ * - Block 0x43: VFO A (4001): Fixed at 0x0FFA
+ * - Block 0x43: VFO B (4002): Fixed at 0x0FFC
+ * - Block 0x43: Channels 2048+: (channel & 0x7FF) * 2
+ */
+
+/**
+ * Parse TX Contact entry for a single channel
+ * @param byte0 - First byte of TX Contact entry
+ * @param byte1 - Second byte of TX Contact entry
+ * @returns Object with contactId (TG index) and isDigital flag
+ */
+export function parseTxContactEntry(byte0: number, byte1: number): { contactId: number; isDigital: boolean } {
+  // Contact ID (TG index): (byte0 >> 4) * 256 + byte1 = 12-bit value
+  const contactIdHigh = (byte0 >> 4) & 0x0F; // bits 11-8
+  const contactIdLow = byte1 & 0xFF;          // bits 7-0
+  const contactId = (contactIdHigh << 8) | contactIdLow;
+  
+  // Digital flag is bit 0 of byte0
+  const isDigital = (byte0 & 0x01) !== 0;
+  
+  return { contactId, isDigital };
+}
+
+/**
+ * Encode TX Contact entry for a single channel
+ * @param contactId - Contact index (0-4095, 12-bit value)
+ * @param isDigital - Whether channel is digital mode
+ * @returns 2-byte array [byte0, byte1]
+ */
+export function encodeTxContactEntry(contactId: number, isDigital: boolean): [number, number] {
+  // Clamp contactId to 12 bits (0-4095)
+  const clampedId = Math.max(0, Math.min(4095, contactId));
+  
+  // Split into high (bits 11-8) and low (bits 7-0) parts
+  const contactIdHigh = (clampedId >> 8) & 0x0F; // bits 11-8
+  const contactIdLow = clampedId & 0xFF;         // bits 7-0
+  
+  // Byte 0: high nibble is contact ID high, bit 0 is digital flag
+  const byte0 = (contactIdHigh << 4) | (isDigital ? 0x01 : 0x00);
+  const byte1 = contactIdLow;
+  
+  return [byte0, byte1];
+}
+
+/**
+ * Calculate the offset within TX Contact block for a given channel number
+ * @param channelNumber - Channel number (1-4000) or VFO (4001, 4002)
+ * @returns Object with blockType (0x42 or 0x43) and offset within that block
+ */
+export function getTxContactOffset(channelNumber: number): { blockMetadata: number; offset: number } {
+  if (channelNumber === 4001) {
+    // VFO A - fixed offset in block 0x43 (0x0FFA within the 4KB block)
+    // Combined buffer offset would be 0x1FFA, but block 0x43 is only 4KB so we use 0x0FFA
+    return { blockMetadata: 0x43, offset: 0x0FFA };
+  }
+  
+  if (channelNumber === 4002) {
+    // VFO B - fixed offset in block 0x43 (0x0FFC within the 4KB block)
+    // Combined buffer offset would be 0x1FFC, but block 0x43 is only 4KB so we use 0x0FFC
+    return { blockMetadata: 0x43, offset: 0x0FFC };
+  }
+  
+  if (channelNumber >= 1 && channelNumber <= 2047) {
+    // Channels 1-2047 in block 0x42
+    const offset = (channelNumber - 1) * 2;
+    return { blockMetadata: 0x42, offset };
+  }
+  
+  if (channelNumber >= 2048) {
+    // Channels 2048+ in block 0x43
+    // Combined buffer offset would be 0x1000 + (channel & 0x7FF) * 2
+    // Block-relative offset (within 4KB block): (channel & 0x7FF) * 2
+    const offset = (channelNumber & 0x7FF) * 2;
+    return { blockMetadata: 0x43, offset };
+  }
+  
+  // Default fallback (shouldn't happen)
+  return { blockMetadata: 0x42, offset: 0 };
+}
+
+/**
+ * Parse TX Contact for a specific channel from the TX Contact blocks
+ * @param channelNumber - Channel number (1-4000) or VFO (4001, 4002)
+ * @param block42Data - Data from metadata block 0x42 (channels 1-2048)
+ * @param block43Data - Data from metadata block 0x43 (channels 2049+ and VFOs)
+ * @returns Object with contactId and isDigital, or null if not found
+ */
+export function parseTxContactForChannel(
+  channelNumber: number,
+  block42Data: Uint8Array | null,
+  block43Data: Uint8Array | null
+): { contactId: number; isDigital: boolean } | null {
+  const { blockMetadata, offset } = getTxContactOffset(channelNumber);
+  
+  const blockData = blockMetadata === 0x42 ? block42Data : block43Data;
+  
+  if (!blockData || offset + 1 >= blockData.length) {
+    return null;
+  }
+  
+  const byte0 = blockData[offset];
+  const byte1 = blockData[offset + 1];
+  
+  return parseTxContactEntry(byte0, byte1);
+}
+
+/**
+ * Parse all TX Contact entries from the TX Contact blocks
+ * @param block42Data - Data from metadata block 0x42
+ * @param block43Data - Data from metadata block 0x43
+ * @returns Map of channel number to TX Contact info
+ */
+export function parseAllTxContacts(
+  block42Data: Uint8Array | null,
+  block43Data: Uint8Array | null
+): Map<number, { contactId: number; isDigital: boolean }> {
+  const result = new Map<number, { contactId: number; isDigital: boolean }>();
+  
+  // Parse block 0x42 (channels 1-2047)
+  if (block42Data) {
+    for (let ch = 1; ch <= 2047; ch++) {
+      const offset = (ch - 1) * 2;
+      if (offset + 1 < block42Data.length) {
+        const entry = parseTxContactEntry(block42Data[offset], block42Data[offset + 1]);
+        result.set(ch, entry);
+      }
+    }
+  }
+  
+  // Parse block 0x43 (channels 2048+)
+  if (block43Data) {
+    // Channels 2048-4000
+    // Block-relative offset: (channel & 0x7FF) * 2
+    for (let ch = 2048; ch <= 4000; ch++) {
+      const offset = (ch & 0x7FF) * 2;
+      if (offset + 1 < block43Data.length) {
+        const entry = parseTxContactEntry(block43Data[offset], block43Data[offset + 1]);
+        result.set(ch, entry);
+      }
+    }
+    
+    // VFO A (4001) - offset 0x0FFA within block 0x43
+    if (0x0FFA + 1 < block43Data.length) {
+      const entry = parseTxContactEntry(block43Data[0x0FFA], block43Data[0x0FFB]);
+      result.set(4001, entry);
+    }
+    
+    // VFO B (4002) - offset 0x0FFC within block 0x43
+    if (0x0FFC + 1 < block43Data.length) {
+      const entry = parseTxContactEntry(block43Data[0x0FFC], block43Data[0x0FFD]);
+      result.set(4002, entry);
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Encode TX Contact for a specific channel into the appropriate block
+ * @param channelNumber - Channel number (1-4000) or VFO (4001, 4002)
+ * @param contactId - Contact index (0-4095)
+ * @param isDigital - Whether channel is digital mode
+ * @param block42Data - Data for metadata block 0x42 (will be modified)
+ * @param block43Data - Data for metadata block 0x43 (will be modified)
+ */
+export function encodeTxContactForChannel(
+  channelNumber: number,
+  contactId: number,
+  isDigital: boolean,
+  block42Data: Uint8Array,
+  block43Data: Uint8Array
+): void {
+  const { blockMetadata, offset } = getTxContactOffset(channelNumber);
+  const [byte0, byte1] = encodeTxContactEntry(contactId, isDigital);
+  
+  const blockData = blockMetadata === 0x42 ? block42Data : block43Data;
+  
+  if (offset + 1 < blockData.length) {
+    blockData[offset] = byte0;
+    blockData[offset + 1] = byte1;
+  }
+}

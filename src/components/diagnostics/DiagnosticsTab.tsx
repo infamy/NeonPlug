@@ -82,6 +82,8 @@ export const DiagnosticsTab: React.FC = () => {
   const block0A = getBlockByMetadata(0x0A);
   const block0B = getBlockByMetadata(0x0B);
   const block0F = getBlockByMetadata(0x0F);
+  const block42 = getBlockByMetadata(0x42);
+  const block43 = getBlockByMetadata(0x43);
   const block44 = getBlockByMetadata(0x44);
   const block67 = getBlockByMetadata(0x67);
 
@@ -393,7 +395,7 @@ export const DiagnosticsTab: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {useMemo(() => {
+                    {(() => {
                       const knownOffsets = [
                         { offset: 0x00, field: 'Power On Interface' },
                         { offset: 0x30, field: 'Backlight Brightness' },
@@ -481,7 +483,7 @@ export const DiagnosticsTab: React.FC = () => {
                           </tr>
                         );
                       }).filter(Boolean);
-                    }, [rawRadioSettingsData, radioSettings])}
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -504,7 +506,7 @@ export const DiagnosticsTab: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {useMemo(() => {
+                    {(() => {
                       if (!rawRadioSettingsData) return [];
                       
                       try {
@@ -580,7 +582,7 @@ export const DiagnosticsTab: React.FC = () => {
                           </tr>
                         );
                       }
-                    }, [rawRadioSettingsData, radioSettings])}
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -592,7 +594,7 @@ export const DiagnosticsTab: React.FC = () => {
           <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
             <div className="overflow-x-auto">
               <div className="font-mono text-xs">
-                {useMemo(() => {
+                {(() => {
                   const bytesPerRow = 16;
                   const rows = [];
                   
@@ -622,7 +624,7 @@ export const DiagnosticsTab: React.FC = () => {
                   }
                   
                   return rows;
-                }, [rawRadioSettingsData?.length])}
+                })()}
               </div>
             </div>
           </div>
@@ -984,7 +986,7 @@ export const DiagnosticsTab: React.FC = () => {
                 </div>
                 <div className="overflow-x-auto">
                   <div className="font-mono text-xs">
-                    {useMemo(() => {
+                    {(() => {
                       const bytesPerRow = 16;
                       const rows = [];
                       
@@ -1021,7 +1023,7 @@ export const DiagnosticsTab: React.FC = () => {
                       }
                       
                       return rows;
-                    }, [block10Data?.length])}
+                    })()}
                   </div>
                 </div>
               </div>
@@ -1139,7 +1141,7 @@ export const DiagnosticsTab: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {useMemo(() => {
+                      {(() => {
                         const knownOffsets = [
                           { offset: 0x0F9F, field: 'VFO A Channel (4001) - Start' },
                           { offset: 0x0FAF, field: 'VFO A - RX Frequency (BCD)' },
@@ -1184,7 +1186,7 @@ export const DiagnosticsTab: React.FC = () => {
                             </tr>
                           );
                         }).filter(Boolean);
-                      }, [block41Data?.length])}
+                      })()}
                     </tbody>
                   </table>
                 </div>
@@ -1207,7 +1209,7 @@ export const DiagnosticsTab: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {useMemo(() => {
+                      {(() => {
                         if (!block41Data || !radioSettings) return [];
                         
                         const fields = [
@@ -1273,7 +1275,7 @@ export const DiagnosticsTab: React.FC = () => {
                             </tr>
                           );
                         });
-                      }, [block41Data, radioSettings])}
+                      })()}
                     </tbody>
                   </table>
                 </div>
@@ -1310,7 +1312,7 @@ export const DiagnosticsTab: React.FC = () => {
                 </div>
                 <div className="overflow-x-auto">
                   <div className="font-mono text-xs">
-                    {useMemo(() => {
+                    {(() => {
                       const bytesPerRow = 16;
                       const rows = [];
                       
@@ -1347,7 +1349,7 @@ export const DiagnosticsTab: React.FC = () => {
                       }
                       
                       return rows;
-                    }, [block41Data])}
+                    })()}
                   </div>
                 </div>
               </div>
@@ -1364,6 +1366,146 @@ export const DiagnosticsTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Metadata Block 0x42 (TX Contact - Channels 1-2048) */}
+      <MetadataBlockDisplay
+        metadata={0x42}
+        blockData={block42.data}
+        blockAddress={block42.address}
+        description="TX Contact for Channels 1-2048 (2 bytes per channel: Talk Group Index)"
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      >
+        {block42.data && (() => {
+          const data = block42.data!;
+          return (
+            <>
+              <CollapsibleSection title="TX Contact Structure Reference" defaultOpen={true}>
+                <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
+                  <div className="space-y-4 text-sm">
+                    <div>
+                      <h4 className="text-yellow-400 font-semibold mb-2">Entry Structure (2 bytes per channel)</h4>
+                      <ul className="list-disc list-inside text-cool-gray space-y-1">
+                        <li><span className="text-green-400 font-mono">Byte 0 bits 7-4:</span> Talk Group Index bits 11-8</li>
+                        <li><span className="text-green-400 font-mono">Byte 0 bits 3-1:</span> Reserved</li>
+                        <li><span className="text-green-400 font-mono">Byte 0 bit 0:</span> Digital Flag (1=Digital, 0=Analog)</li>
+                        <li><span className="text-green-400 font-mono">Byte 1:</span> Talk Group Index bits 7-0</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="text-yellow-400 font-semibold mb-2">Offset Calculation</h4>
+                      <ul className="list-disc list-inside text-cool-gray space-y-1">
+                        <li><span className="text-yellow-300 font-mono">Channels 1-2047:</span> (channel - 1) * 2</li>
+                        <li><span className="text-yellow-300 font-mono">Example:</span> Channel 1 → offset 0x0000, Channel 2 → offset 0x0002</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="text-yellow-400 font-semibold mb-2">First 10 Channels</h4>
+                      <div className="font-mono text-xs space-y-1">
+                        {Array.from({ length: 10 }, (_, i) => {
+                          const chNum = i + 1;
+                          const offset = i * 2;
+                          const byte0 = data[offset] ?? 0;
+                          const byte1 = data[offset + 1] ?? 0;
+                          const tgIndex = ((byte0 >> 4) << 8) | byte1;
+                          const isDigital = (byte0 & 0x01) !== 0;
+                          const hasData = offset + 1 < data.length;
+                          return (
+                            <div key={i} className="flex items-center gap-2 hover:bg-yellow-900/10 py-1 px-2 rounded">
+                              <span className="text-yellow-400 w-20">Ch {chNum}</span>
+                              <span className="text-green-400 w-16">0x{offset.toString(16).toUpperCase().padStart(4, '0')}</span>
+                              {hasData ? (
+                                <>
+                                  <span className="text-yellow-300 w-16">{byte0.toString(16).toUpperCase().padStart(2, '0')} {byte1.toString(16).toUpperCase().padStart(2, '0')}</span>
+                                  <span className="text-white w-24">TG Index: {tgIndex}</span>
+                                  <span className={isDigital ? 'text-green-400' : 'text-cool-gray'}>{isDigital ? 'Digital' : 'Analog'}</span>
+                                </>
+                              ) : (
+                                <span className="text-red-400">No data</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            </>
+          );
+        })()}
+      </MetadataBlockDisplay>
+
+      {/* Metadata Block 0x43 (TX Contact - Channels 2049+ and VFOs) */}
+      <MetadataBlockDisplay
+        metadata={0x43}
+        blockData={block43.data}
+        blockAddress={block43.address}
+        description="TX Contact for Channels 2049+ and VFOs (2 bytes per channel: Talk Group Index)"
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      >
+        {block43.data && (() => {
+          const data = block43.data!;
+          return (
+            <>
+              <CollapsibleSection title="TX Contact Structure Reference" defaultOpen={true}>
+                <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
+                  <div className="space-y-4 text-sm">
+                    <div>
+                      <h4 className="text-yellow-400 font-semibold mb-2">VFO TX Contact (Fixed Offsets)</h4>
+                      <p className="text-xs text-cool-gray mb-2">Offsets shown are within this 4KB block (combined buffer offset - 0x1000)</p>
+                      <div className="font-mono text-xs space-y-1">
+                        {[
+                          { name: 'VFO A (4001)', bufferOffset: 0x1FFA, blockOffset: 0x0FFA },
+                          { name: 'VFO B (4002)', bufferOffset: 0x1FFC, blockOffset: 0x0FFC },
+                        ].map((vfo) => {
+                          const byte0 = data[vfo.blockOffset] ?? 0;
+                          const byte1 = data[vfo.blockOffset + 1] ?? 0;
+                          const tgIndex = ((byte0 >> 4) << 8) | byte1;
+                          const isDigital = (byte0 & 0x01) !== 0;
+                          const hasData = vfo.blockOffset < data.length;
+                          return (
+                            <div key={vfo.name} className="flex items-center gap-2 hover:bg-yellow-900/10 py-1 px-2 rounded">
+                              <span className="text-yellow-400 w-24">{vfo.name}</span>
+                              <span className="text-green-400 w-16">0x{vfo.blockOffset.toString(16).toUpperCase().padStart(4, '0')}</span>
+                              {hasData ? (
+                                <>
+                                  <span className="text-yellow-300 w-16">{byte0.toString(16).toUpperCase().padStart(2, '0')} {byte1.toString(16).toUpperCase().padStart(2, '0')}</span>
+                                  <span className="text-white w-24">TG Index: {tgIndex}</span>
+                                  <span className={isDigital ? 'text-green-400' : 'text-cool-gray'}>{isDigital ? 'Digital' : 'Analog'}</span>
+                                </>
+                              ) : (
+                                <span className="text-red-400">Offset out of bounds</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-yellow-400 font-semibold mb-2">Entry Structure (2 bytes per channel)</h4>
+                      <ul className="list-disc list-inside text-cool-gray space-y-1">
+                        <li><span className="text-green-400 font-mono">Byte 0 bits 7-4:</span> Talk Group Index bits 11-8</li>
+                        <li><span className="text-green-400 font-mono">Byte 0 bits 3-1:</span> Reserved</li>
+                        <li><span className="text-green-400 font-mono">Byte 0 bit 0:</span> Digital Flag (1=Digital, 0=Analog)</li>
+                        <li><span className="text-green-400 font-mono">Byte 1:</span> Talk Group Index bits 7-0</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="text-yellow-400 font-semibold mb-2">Offset Calculation (Channels 2049+)</h4>
+                      <ul className="list-disc list-inside text-cool-gray space-y-1">
+                        <li><span className="text-yellow-300 font-mono">Formula:</span> 0x1000 + (channel & 0x7FF) * 2</li>
+                        <li><span className="text-yellow-300 font-mono">Example:</span> Channel 2049 → offset 0x1002</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            </>
+          );
+        })()}
+      </MetadataBlockDisplay>
 
       {/* Metadata Block 0x44 (Talk Groups) */}
       <MetadataBlockDisplay
@@ -2085,31 +2227,12 @@ export const DiagnosticsTab: React.FC = () => {
                     tdmaDirectMode,
                     shortDataConfirm,
                     privateConfirm,
-                    // Raw bytes for all locations
-                    bytes: {
-                      0x18: channelBytes[0x18],
-                      0x19: channelBytes[0x19],
-                      0x1A: channelBytes[0x1A],
-                      0x1B: channelBytes[0x1B],
-                      0x1C: channelBytes[0x1C],
-                      0x1D: channelBytes[0x1D],
-                      0x1E: channelBytes[0x1E],
-                      0x1F: channelBytes[0x1F],
-                      0x20: channelBytes[0x20],
-                      0x21: channelBytes[0x21],
-                      0x22: channelBytes[0x22],
-                      0x23: channelBytes[0x23],
-                      0x24: channelBytes[0x24],
-                      0x25: channelBytes[0x25],
-                      0x26: channelBytes[0x26],
-                      0x27: channelBytes[0x27],
-                      0x28: channelBytes[0x28],
-                      0x29: channelBytes[0x29],
-                      0x2A: channelBytes[0x2A],
-                      0x2B: channelBytes[0x2B],
-                      0x2C: channelBytes[0x2C],
-                      0x2D: channelBytes[0x2D],
-                    }
+                    // Raw bytes for all 48 bytes (0x00-0x2F)
+                    bytes: Object.fromEntries(
+                      Array.from({ length: 48 }, (_, i) => [i, channelBytes[i] ?? 0])
+                    ) as Record<number, number>,
+                    // Full raw data for hex dump
+                    rawBytes: channelBytes
                   };
                 };
 
@@ -2289,7 +2412,7 @@ export const DiagnosticsTab: React.FC = () => {
                     if (!f.isDigital) return `0x${f.unknown2A.toString(16).toUpperCase().padStart(2, '0')} (${f.unknown2A}) - Analog: Unknown`;
                     return f.encryptionId !== undefined ? `${f.encryptionId} (0=None, 1-8=Key ID)` : 'N/A';
                   }},
-                  { offset: 0x2B, label: 'Contact ID (0x2B)', getValue: (f: typeof fields1) => f.contactId.toString() },
+                  { offset: 0x2B, label: 'Legacy Contact ID (0x2B) - DEPRECATED', getValue: (f: typeof fields1) => `${f.contactId} (TG is in blocks 0x42/0x43)` },
                   { offset: 0x2C, label: 'Reserved 2C (0x2C)', getValue: (f: typeof fields1) => `0x${f.reserved2C.toString(16).toUpperCase().padStart(2, '0')} (${f.reserved2C})` },
                   { offset: 0x2D, label: 'Reserved 2D (0x2D)', getValue: (f: typeof fields1) => `0x${f.reserved2D.toString(16).toUpperCase().padStart(2, '0')} (${f.reserved2D})` },
                 ].sort((a, b) => a.offset - b.offset);
@@ -2371,7 +2494,7 @@ export const DiagnosticsTab: React.FC = () => {
                                 offsetNum === 0x27 ? 'Signaling' :
                                 offsetNum === 0x29 ? 'PTT ID Type' :
                                 offsetNum === 0x2A ? 'Unknown/Encryption ID' :
-                                offsetNum === 0x2B ? 'Contact ID' :
+                                offsetNum === 0x2B ? 'Legacy Contact (TG in 0x42/0x43)' :
                                 offsetNum === 0x2C || offsetNum === 0x2D ? 'Reserved' : 'Unknown';
                               return (
                                 <tr 
@@ -2393,6 +2516,102 @@ export const DiagnosticsTab: React.FC = () => {
                             })}
                           </tbody>
                         </table>
+                      </div>
+                    </div>
+
+                    {/* Full Hex Dump of All 48 Bytes */}
+                    <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
+                      <h4 className="text-lg font-semibold text-yellow-400 mb-3">Full Hex Dump (48 bytes)</h4>
+                      <div className="overflow-x-auto">
+                        <div className="font-mono text-xs">
+                          {/* Header row with byte offsets */}
+                          <div className="flex border-b border-yellow-600/30 pb-1 mb-1">
+                            <div className="w-16 text-yellow-400 font-bold">Offset</div>
+                            <div className="flex-1 text-yellow-400 font-bold">
+                              {Array.from({ length: 16 }, (_, i) => (
+                                <span key={i} className="inline-block w-8 text-center">
+                                  {i.toString(16).toUpperCase().padStart(2, '0')}
+                                </span>
+                              ))}
+                            </div>
+                            <div className="w-36 text-yellow-400 font-bold text-center">ASCII</div>
+                          </div>
+                          {/* Data rows */}
+                          {(() => {
+                            const rows = [];
+                            for (let row = 0; row < 3; row++) {
+                              const startOffset = row * 16;
+                              const rowBytes = fields1.rawBytes.slice(startOffset, startOffset + 16);
+                              const hexBytes = Array.from(rowBytes).map((b, i) => {
+                                const byte2 = fields2?.rawBytes[startOffset + i];
+                                const isDifferent = fields2 && b !== byte2;
+                                return (
+                                  <span 
+                                    key={i} 
+                                    className={`inline-block w-8 text-center ${isDifferent ? 'text-yellow-300 bg-yellow-900/30' : 'text-white'}`}
+                                    title={`Offset 0x${(startOffset + i).toString(16).toUpperCase()}`}
+                                  >
+                                    {b.toString(16).toUpperCase().padStart(2, '0')}
+                                  </span>
+                                );
+                              });
+                              const ascii = Array.from(rowBytes)
+                                .map(b => (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.')
+                                .join('');
+                              
+                              rows.push(
+                                <div key={row} className="flex hover:bg-yellow-900/10 py-1">
+                                  <div className="w-16 text-yellow-400">0x{startOffset.toString(16).toUpperCase().padStart(2, '0')}</div>
+                                  <div className="flex-1">{hexBytes}</div>
+                                  <div className="w-36 text-green-400 text-center">{ascii}</div>
+                                </div>
+                              );
+                            }
+                            return rows;
+                          })()}
+                          {fields2 && (
+                            <>
+                              <div className="border-t border-yellow-600/30 mt-2 pt-2 mb-1">
+                                <span className="text-yellow-400 font-bold">Channel {selectedChannelNumber2} (comparison)</span>
+                              </div>
+                              {(() => {
+                                const rows = [];
+                                for (let row = 0; row < 3; row++) {
+                                  const startOffset = row * 16;
+                                  const rowBytes = fields2.rawBytes.slice(startOffset, startOffset + 16);
+                                  const hexBytes = Array.from(rowBytes).map((b, i) => {
+                                    const byte1 = fields1.rawBytes[startOffset + i];
+                                    const isDifferent = b !== byte1;
+                                    return (
+                                      <span 
+                                        key={i} 
+                                        className={`inline-block w-8 text-center ${isDifferent ? 'text-yellow-300 bg-yellow-900/30' : 'text-white'}`}
+                                        title={`Offset 0x${(startOffset + i).toString(16).toUpperCase()}`}
+                                      >
+                                        {b.toString(16).toUpperCase().padStart(2, '0')}
+                                      </span>
+                                    );
+                                  });
+                                  const ascii = Array.from(rowBytes)
+                                    .map(b => (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.')
+                                    .join('');
+                                  
+                                  rows.push(
+                                    <div key={row} className="flex hover:bg-yellow-900/10 py-1">
+                                      <div className="w-16 text-yellow-400">0x{startOffset.toString(16).toUpperCase().padStart(2, '0')}</div>
+                                      <div className="flex-1">{hexBytes}</div>
+                                      <div className="w-36 text-green-400 text-center">{ascii}</div>
+                                    </div>
+                                  );
+                                }
+                                return rows;
+                              })()}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-3 text-xs text-cool-gray">
+                        <strong>Byte layout:</strong> 0x00-0x0F = Name (16 bytes) | 0x10-0x13 = RX Freq | 0x14-0x17 = TX Freq | 0x18-0x2F = Settings
                       </div>
                     </div>
                   </div>

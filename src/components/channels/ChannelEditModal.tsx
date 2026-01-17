@@ -3,7 +3,46 @@ import { Modal } from '../ui/Modal';
 import type { Channel } from '../../models/Channel';
 import type { RXGroup } from '../../models/RXGroup';
 import type { EncryptionKey } from '../../models/EncryptionKey';
+import type { QuickContact } from '../../models/QuickContact';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
+
+// Frequency input component that only updates parent on blur
+interface FrequencyInputProps {
+  value: number;
+  onChange: (value: number) => void;
+  className?: string;
+}
+
+const FrequencyInput: React.FC<FrequencyInputProps> = ({ value, onChange, className }) => {
+  const [localValue, setLocalValue] = React.useState(value.toFixed(4));
+  
+  // Sync local value when prop changes (e.g., when channel changes)
+  React.useEffect(() => {
+    setLocalValue(value.toFixed(4));
+  }, [value]);
+  
+  const handleBlur = () => {
+    const parsed = parseFloat(localValue);
+    if (!isNaN(parsed) && parsed > 0) {
+      onChange(parsed);
+      setLocalValue(parsed.toFixed(4));
+    } else {
+      // Reset to original value if invalid
+      setLocalValue(value.toFixed(4));
+    }
+  };
+  
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={localValue}
+      onChange={(e) => setLocalValue(e.target.value)}
+      onBlur={handleBlur}
+      className={className}
+    />
+  );
+};
 
 interface ChannelEditModalProps {
   isOpen: boolean;
@@ -12,6 +51,7 @@ interface ChannelEditModalProps {
   onSave: (channel: Channel) => void;
   rxGroups?: RXGroup[];
   encryptionKeys?: EncryptionKey[];
+  talkGroups?: QuickContact[];
 }
 
 export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
@@ -21,6 +61,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   onSave,
   rxGroups = [],
   encryptionKeys = [],
+  talkGroups = [],
 }) => {
   const [editedChannel, setEditedChannel] = React.useState<Channel>(channel);
 
@@ -108,11 +149,9 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <label className="block text-xs font-medium text-cool-gray mb-1">
                     Receive Frequency (MHz)
                   </label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={formatFrequency(editedChannel.rxFrequency)}
-                    onChange={(e) => handleChange('rxFrequency', parseFloat(e.target.value) || 0)}
+                  <FrequencyInput
+                    value={editedChannel.rxFrequency}
+                    onChange={(val) => handleChange('rxFrequency', val)}
                     className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
                   />
                   <p className="text-xs text-cool-gray mt-0.5">Frequency the radio receives on</p>
@@ -121,11 +160,9 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <label className="block text-xs font-medium text-cool-gray mb-1">
                     Transmit Frequency (MHz)
                   </label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={formatFrequency(editedChannel.txFrequency)}
-                    onChange={(e) => handleChange('txFrequency', parseFloat(e.target.value) || 0)}
+                  <FrequencyInput
+                    value={editedChannel.txFrequency}
+                    onChange={(val) => handleChange('txFrequency', val)}
                     className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
                   />
                   <p className="text-xs text-cool-gray mt-0.5">Frequency the radio transmits on</p>
@@ -372,17 +409,24 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-cool-gray mb-1">
-                      Contact ID
+                      TX Contact
                     </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="249"
+                    <select
                       value={editedChannel.contactId}
                       onChange={(e) => handleChange('contactId', parseInt(e.target.value) || 0)}
-                      className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                    />
-                    <p className="text-xs text-cool-gray mt-0.5">DMR contact ID (0-249)</p>
+                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    >
+                      <option value={0}>None</option>
+                      {talkGroups.map((tg) => {
+                        const callTypeLabel = tg.callType === 0x05 ? 'All Call' : tg.callType === 0x04 ? 'Group' : tg.callType === 0x03 ? 'Private' : 'Unknown';
+                        return (
+                          <option key={tg.index} value={tg.index}>
+                            {tg.name} [{callTypeLabel}] ({tg.contactNumber})
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <p className="text-xs text-cool-gray mt-0.5">TX Contact for this channel (Group/Private/All Call)</p>
                   </div>
                 </div>
 

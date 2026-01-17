@@ -19,6 +19,8 @@ export const METADATA = {
   CALIBRATION: 0x02,        // Frequency adjustment/calibration data
   METADATA_0x44: 0x44,      // Metadata block 0x44 (Talk Groups)
   METADATA_0x06: 0x06,      // Metadata block 0x06 (Config section 4 - contains Talk Groups counter at 0x1FF)
+  TX_CONTACT_LOW: 0x42,     // TX Contact for channels 1-2048 (2 bytes per channel)
+  TX_CONTACT_HIGH: 0x43,    // TX Contact for channels 2049+ and VFOs (2 bytes per channel)
   DMR_RADIO_IDS: 0x67,      // DMR Radio ID list block
   EMPTY: 0x00,              // Empty block
   EMPTY_ALT: 0xFF,          // Alternative empty block marker
@@ -52,6 +54,18 @@ export const OFFSET = {
   DMR_RADIO_ID_COUNT: 0x00,  // Count field at offset 0 (4 bytes, DWORD, little-endian)
   DMR_RADIO_ID_BASE: 0x00,   // Entry base offset (entries start at buffer base)
   TALK_GROUP_COUNTER: 0x1FF, // Talk Groups counter in block 0x06 (offset 511)
+  TX_CONTACT_VFO_A: 0x0FFA,  // VFO A TX Contact offset in block 0x43 (4KB block-relative)
+  TX_CONTACT_VFO_B: 0x0FFC,  // VFO B TX Contact offset in block 0x43 (4KB block-relative)
+} as const;
+
+// TX Contact block constants
+export const TX_CONTACT = {
+  ENTRY_SIZE: 2,              // 2 bytes per channel
+  MAX_CHANNELS_PER_BLOCK: 2048,
+  LOW_BLOCK_CHANNELS: 2048,   // Block 0x42: channels 1-2048
+  HIGH_BLOCK_START: 2049,     // Block 0x43: channels 2049+
+  VFO_A_OFFSET: 0x0FFA,       // Fixed offset for VFO A in block 0x43 (4KB block-relative)
+  VFO_B_OFFSET: 0x0FFC,       // Fixed offset for VFO B in block 0x43 (4KB block-relative)
 } as const;
 
 // V-Frame IDs
