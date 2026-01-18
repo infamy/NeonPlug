@@ -129,13 +129,9 @@ export const Toolbar: React.FC = () => {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       
-      // Format error message for display
+      // Format error message for display - use the error message as-is since we've improved them
+      // The error messages from protocol/connection are now user-friendly
       let displayError = errorMessage;
-      if (errorMessage.includes('timed out') || errorMessage.includes('timeout')) {
-        displayError = `Connection timed out: ${errorMessage}`;
-      } else if (errorMessage.includes('Radio not found')) {
-        displayError = `Radio not found: ${errorMessage}`;
-      }
       
       // Set error state - modal will stay open to show error
       setConnectionError(displayError);
@@ -221,13 +217,9 @@ export const Toolbar: React.FC = () => {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       
-      // Format error message for display
+      // Format error message for display - use the error message as-is since we've improved them
+      // The error messages from protocol/connection are now user-friendly
       let displayError = errorMessage;
-      if (errorMessage.includes('timed out') || errorMessage.includes('timeout')) {
-        displayError = `Write timed out: ${errorMessage}`;
-      } else if (errorMessage.includes('Radio not found')) {
-        displayError = `Radio not found: ${errorMessage}`;
-      }
       
       // Set error state - modal will stay open to show error
       setConnectionError(displayError);
