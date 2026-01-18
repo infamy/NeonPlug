@@ -1,0 +1,13 @@
+{
+  "entryPoints": ["src/index.ts"],
+  "out": "docs",
+  "theme": "default",
+  "includeVersion": true,
+  "readme": "README.md",
+  "name": "NeonPlug Library API",
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "tsconfig": "tsconfig.typedoc.json",
+  "skipErrorChecking": true,
+  "exclude": ["../../src/**/*", "node_modules/**/*"]
+}

@@ -1,0 +1,39 @@
+{
+  "name": "@neonplug/libneonplug",
+  "version": "0.1.0",
+  "description": "Library for writing contacts directly to Baofeng DM-32UV and compatible radios via Web Serial API",
+  "type": "module",
+  "main": "./dist/libneonplug.js",
+  "types": "./dist/libneonplug.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/libneonplug.js",
+      "types": "./dist/libneonplug.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "docs"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "docs": "typedoc",
+    "build:all": "npm run build && npm run docs",
+    "dev": "vite build --watch"
+  },
+  "keywords": [
+    "radio",
+    "contacts",
+    "dmr",
+    "baofeng",
+    "dm-32uv",
+    "web-serial"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.2.2",
+    "typedoc": "^0.25.0",
+    "vite": "^7.3.0"
+  }
+}

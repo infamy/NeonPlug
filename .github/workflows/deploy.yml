@@ -43,6 +43,18 @@ jobs:
           cp src/data/airports_min.json dist/airports_min.json
           cp src/data/radioid-users.csv dist/radioid-users.csv
 
+      - name: Build library
+        run: |
+          cd lib/libneonplug
+          npm ci
+          npm run build:all
+
+      - name: Copy library to dist
+        run: |
+          mkdir -p dist/libneonplug
+          cp -r lib/libneonplug/dist/* dist/libneonplug/
+          cp -r lib/libneonplug/docs dist/libneonplug/
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 

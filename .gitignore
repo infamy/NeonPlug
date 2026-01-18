@@ -51,3 +51,7 @@ colours.png
 
 #Ignore bug data folder
 bugs/*
+
+# Library generated files
+lib/libneonplug/dist
+lib/libneonplug/docs
