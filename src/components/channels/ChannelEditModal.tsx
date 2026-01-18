@@ -85,10 +85,6 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
     onClose();
   };
 
-  const formatFrequency = (freq: number): string => {
-    return freq.toFixed(4);
-  };
-
   const isDigitalMode = (mode: Channel['mode']): boolean => {
     return mode === 'Digital' || mode === 'Fixed Digital';
   };

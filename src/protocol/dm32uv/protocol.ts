@@ -159,7 +159,14 @@ export class DM32UVProtocol implements RadioProtocol {
 
   async getOrSelectPort(forceSelection: boolean = false): Promise<WebSerialPort> {
     // Clear any previous cached data before starting a new connection
-    this.clearCache();
+    // BUT: If we already have cached data (from restoreCacheFromStore), don't clear it
+    // This happens when we're doing a write operation and have restored the cache
+    const hasRestoredCache = this.cachedBlockData.length > 0 || this.discoveredBlocks.length > 0;
+    if (!hasRestoredCache) {
+      this.clearCache();
+    } else {
+      log.debug('Preserved cached data during port selection (write operation with restored cache)', 'Protocol');
+    }
 
     // If forcing selection, skip all reuse logic and go straight to prompt
     if (forceSelection) {
@@ -492,6 +499,7 @@ export class DM32UVProtocol implements RadioProtocol {
       });
     }
     (this as any).allBlockMetadata = blockMetadataMap;
+    // Note: allBlockData will be set after all blocks are read (see end of bulkReadRequiredBlocks)
 
     // Step 2: Determine which blocks we need to read
     const blocksToRead: MemoryBlock[] = [];
@@ -544,10 +552,22 @@ export class DM32UVProtocol implements RadioProtocol {
     for (const metadata of fixedMetadataBlocks) {
       const block = blocks.find(b => b.metadata === metadata);
       if (block) {
+        // Log if block is marked as unknown - we still need to read it
+        if (block.type === 'unknown') {
+          log.info(`Found required metadata block 0x${metadata.toString(16)} at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} (marked as unknown type, but will read)`, 'Protocol');
+        }
         blocksToRead.push(block);
       } else {
-        // Warn if required block is missing (especially 0x04)
-        if (metadata === METADATA.VFO_SETTINGS) {
+        // Warn if required block is missing (especially 0x04, 0x42, 0x43, 0x44, 0x0B)
+        const metadataNum = metadata as number;
+        const isCritical = metadataNum === METADATA.VFO_SETTINGS || 
+                           metadataNum === METADATA.TX_CONTACT_LOW || 
+                           metadataNum === METADATA.TX_CONTACT_HIGH ||
+                           metadataNum === METADATA.METADATA_0x44 ||
+                           metadataNum === METADATA.METADATA_0x0B;
+        if (isCritical) {
+          log.warn(`CRITICAL metadata block 0x${metadata.toString(16)} not found during discovery! This block is required for TG mapping.`, 'Protocol');
+        } else if (metadataNum === METADATA.VFO_SETTINGS) {
           log.warn('Radio Settings block (metadata 0x04) not found during discovery! This block is required.', 'Protocol');
         } else {
           log.debug(`Metadata block 0x${metadata.toString(16)} not found (optional)`, 'Protocol');
@@ -592,34 +612,51 @@ export class DM32UVProtocol implements RadioProtocol {
     for (let i = 0; i < finalBlocksToRead.length; i++) {
       const block = finalBlocksToRead[i];
       const progress = 10 + Math.floor((i / finalBlocksToRead.length) * 85); // 10-95%
-      this.onProgress?.(progress, `Reading block ${i + 1} of ${finalBlocksToRead.length} (metadata 0x${block.metadata.toString(16)})...`);
+      const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
+      const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0')}`;
+      this.onProgress?.(progress, `Reading block ${i + 1} of ${finalBlocksToRead.length} (metadata ${metadataHex} at ${addressHex})...`);
 
-      const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
-      
-      // Verify we got exactly 4096 bytes
-      if (blockData.length !== BLOCK_SIZE.STANDARD) {
-        log.warn(`Block at 0x${block.address.toString(16)} (metadata 0x${block.metadata.toString(16)}) has incorrect length: ${blockData.length} bytes (expected ${BLOCK_SIZE.STANDARD})`, 'Protocol');
-      }
-      
-      // IMPORTANT: Create a copy of the data to prevent corruption if the buffer is reused
-      // Uint8Arrays are views into buffers - we need to copy the actual data
-      const blockDataCopy = new Uint8Array(blockData);
-      
-      // Store as [metadata, address, 4k block data] in array
-      this.cachedBlockData.push({
-        metadata: block.metadata,
-        address: block.address,
-        data: blockDataCopy,
-      });
+      try {
+        const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
+        
+        // Verify we got exactly 4096 bytes
+        if (blockData.length !== BLOCK_SIZE.STANDARD) {
+          log.warn(`Block at ${addressHex} (metadata ${metadataHex}) has incorrect length: ${blockData.length} bytes (expected ${BLOCK_SIZE.STANDARD})`, 'Protocol');
+        }
+        
+        // IMPORTANT: Create a copy of the data to prevent corruption if the buffer is reused
+        // Uint8Arrays are views into buffers - we need to copy the actual data
+        const blockDataCopy = new Uint8Array(blockData);
+        
+        // Store as [metadata, address, 4k block data] in array
+        this.cachedBlockData.push({
+          metadata: block.metadata,
+          address: block.address,
+          data: blockDataCopy,
+        });
 
-      // Also store in blockData map for backward compatibility (use copy here too)
-      this.blockData.set(block.address, blockDataCopy);
+        // Also store in blockData map for backward compatibility (use copy here too)
+        this.blockData.set(block.address, blockDataCopy);
 
-      // IMPORTANT: Set rawRadioSettingsData when we read block 0x04
-      // This is required for writeRadioSettings() to preserve unknown fields
-      if (block.metadata === METADATA.VFO_SETTINGS) {
-        this.rawRadioSettingsData = blockDataCopy;
-        log.debug('Set rawRadioSettingsData from block 0x04 during bulk read', 'Protocol');
+        // IMPORTANT: Set rawRadioSettingsData when we read block 0x04
+        // This is required for writeRadioSettings() to preserve unknown fields
+        if (block.metadata === METADATA.VFO_SETTINGS) {
+          this.rawRadioSettingsData = blockDataCopy;
+          log.debug('Set rawRadioSettingsData from block 0x04 during bulk read', 'Protocol');
+        }
+        
+        log.debug(`Successfully read block at ${addressHex} (metadata ${metadataHex}, type: ${block.type})`, 'Protocol');
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        // For required fixed metadata blocks, this is a critical error
+        const isRequired = (fixedMetadataBlocks as number[]).includes(block.metadata);
+        if (isRequired) {
+          log.error(`Failed to read REQUIRED block at ${addressHex} (metadata ${metadataHex}, type: ${block.type}). Error: ${errorMsg}`, 'Protocol');
+          throw new Error(`Failed to read required metadata block 0x${metadataHex} at ${addressHex}: ${errorMsg}`);
+        } else {
+          log.warn(`Failed to read optional block at ${addressHex} (metadata ${metadataHex}, type: ${block.type}). Error: ${errorMsg}. Continuing...`, 'Protocol');
+          // For optional blocks, continue but log the failure
+        }
       }
 
       // Small delay between reads
@@ -630,7 +667,51 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(100, `Successfully cached ${this.cachedBlockData.length} blocks`);
     log.info(`Bulk read complete: ${this.cachedBlockData.length} blocks cached`, 'Protocol');
+    
+    // Verify critical blocks for TG mapping are cached
+    const txContact42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+    const txContact43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    const talkGroups44 = this.cachedBlockData.find(b => b.metadata === METADATA.METADATA_0x44);
+    const quickAccess0B = this.cachedBlockData.find(b => b.metadata === METADATA.METADATA_0x0B);
+    
+    if (!txContact42) {
+      log.warn('TX Contact block 0x42 (channels 1-2048) not in cache after read! TG mapping may fail.', 'Protocol');
+    } else {
+      log.debug(`TX Contact block 0x42 cached at 0x${txContact42.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    }
+    if (!txContact43) {
+      log.warn('TX Contact block 0x43 (channels 2049+ and VFOs) not in cache after read! TG mapping may fail.', 'Protocol');
+    } else {
+      log.debug(`TX Contact block 0x43 cached at 0x${txContact43.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    }
+    if (!talkGroups44) {
+      log.warn('Talk Groups block 0x44 not in cache after read! TG mapping may fail.', 'Protocol');
+    } else {
+      log.debug(`Talk Groups block 0x44 cached at 0x${talkGroups44.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    }
+    if (!quickAccess0B) {
+      log.warn('Quick Access Contact List block 0x0B not in cache after read! TG mapping may fail.', 'Protocol');
+    } else {
+      log.debug(`Quick Access Contact List block 0x0B cached at 0x${quickAccess0B.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    }
+    
     log.debug('All blocks are now in cache - parsing can proceed without additional radio reads', 'Protocol');
+    
+    // Update allBlockData after all blocks are read (for store persistence)
+    // This is critical - the store needs this data for cache restoration during writes
+    (this as any).allBlockData = new Map(this.blockData); // Create a new Map to ensure it's a copy
+    log.info(`Set allBlockData with ${this.blockData.size} blocks for store persistence (allBlockMetadata has ${(this as any).allBlockMetadata?.size || 0} entries)`, 'Protocol');
+    
+    // Verify critical blocks are in allBlockData
+    const tx42Addr = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_LOW)?.address;
+    const tx43Addr = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_HIGH)?.address;
+    const tg44Addr = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x44)?.address;
+    const qa0BAddr = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x0B)?.address;
+    
+    if (tx42Addr && !this.blockData.has(tx42Addr)) log.warn(`TX Contact 0x42 block at 0x${tx42Addr.toString(16).padStart(6, '0').toUpperCase()} not in blockData!`, 'Protocol');
+    if (tx43Addr && !this.blockData.has(tx43Addr)) log.warn(`TX Contact 0x43 block at 0x${tx43Addr.toString(16).padStart(6, '0').toUpperCase()} not in blockData!`, 'Protocol');
+    if (tg44Addr && !this.blockData.has(tg44Addr)) log.warn(`Talk Groups 0x44 block at 0x${tg44Addr.toString(16).padStart(6, '0').toUpperCase()} not in blockData!`, 'Protocol');
+    if (qa0BAddr && !this.blockData.has(qa0BAddr)) log.warn(`Quick Access 0x0B block at 0x${qa0BAddr.toString(16).padStart(6, '0').toUpperCase()} not in blockData!`, 'Protocol');
     
     // Step 4: Disconnect from radio - we have all the data we need
     // Parsing will happen from cached blocks, no connection needed
@@ -644,12 +725,15 @@ export class DM32UVProtocol implements RadioProtocol {
    * Used when we need to read blocks before writing (connection must stay open)
    */
   async bulkReadRequiredBlocksForWrite(): Promise<void> {
+    log.info(`=== bulkReadRequiredBlocksForWrite START === cachedBlockData.length: ${this.cachedBlockData.length}`, 'Protocol');
     requireConnection(this.connection, this.radioInfo);
+    log.info(`=== After requireConnection === cachedBlockData.length: ${this.cachedBlockData.length}`, 'Protocol');
 
     // Reuse the same logic as bulkReadRequiredBlocks, but don't disconnect
     // We'll copy the block reading logic here
     
     // Step 1: Discover all metadata blocks (if not already discovered)
+    // If we restored from cache, we already have discoveredBlocks, so skip discovery
     if (this.discoveredBlocks.length === 0) {
       this.onProgress?.(0, 'Discovering memory blocks...');
       const blocks = await discoverMemoryBlocks(
@@ -662,6 +746,9 @@ export class DM32UVProtocol implements RadioProtocol {
         }
       );
       this.discoveredBlocks = blocks;
+      log.info(`Discovered ${blocks.length} blocks during write preparation`, 'Protocol');
+    } else {
+      log.info(`Using ${this.discoveredBlocks.length} discovered blocks from cache restoration`, 'Protocol');
     }
 
     // Step 2: Determine which blocks we need to read (same logic as bulkReadRequiredBlocks)
@@ -709,17 +796,26 @@ export class DM32UVProtocol implements RadioProtocol {
     for (const metadata of fixedMetadataBlocks) {
       const block = this.discoveredBlocks.find(b => b.metadata === metadata);
       if (block) {
+        // Skip only empty blocks - we need to read unknown blocks if they have the right metadata
+        // Unknown just means we don't recognize the type, but if it has the metadata we need, try to read it
+        if (block.type === 'empty') {
+          log.warn(`Fixed metadata block 0x${metadata.toString(16)} at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} is empty, skipping`, 'Protocol');
+          continue;
+        }
+        if (block.type === 'unknown') {
+          log.info(`Fixed metadata block 0x${metadata.toString(16)} at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} is marked unknown but has required metadata, will attempt to read`, 'Protocol');
+        }
         blocksToRead.push(block);
       }
     }
 
-    // Step 2c: Add zone and scan list blocks
+    // Step 2c: Add zone and scan list blocks (filter out empty/unknown)
     const zoneBlocks = this.discoveredBlocks.filter(b => b.type === 'zone');
     const scanBlocks = this.discoveredBlocks.filter(b => b.type === 'scan');
     blocksToRead.push(...zoneBlocks);
     blocksToRead.push(...scanBlocks);
 
-    // Step 2d: Add other data type blocks
+    // Step 2d: Add other data type blocks (filter out empty/unknown)
     const messageBlocks = this.discoveredBlocks.filter(b => b.type === 'message');
     const dmrRadioIdBlocks = this.discoveredBlocks.filter(b => b.type === 'dmrradioid');
     const rxGroupBlocks = this.discoveredBlocks.filter(b => b.type === 'rxgroup');
@@ -727,23 +823,70 @@ export class DM32UVProtocol implements RadioProtocol {
     blocksToRead.push(...dmrRadioIdBlocks);
     blocksToRead.push(...rxGroupBlocks);
 
-    // Remove duplicates
+    // Remove duplicates and filter out empty/unknown blocks
+    // BUT: Keep required fixed metadata blocks even if marked unknown (we need them for writes)
+    const requiredMetadataSet = new Set<number>(fixedMetadataBlocks);
     const uniqueBlocks = new Map<number, MemoryBlock>();
     for (const block of blocksToRead) {
+      // Skip empty blocks - they're not readable
+      if (block.type === 'empty') {
+        log.debug(`Skipping empty block at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} (metadata 0x${block.metadata.toString(16)})`, 'Protocol');
+        continue;
+      }
+      // Skip unknown blocks UNLESS they're required fixed metadata blocks (we need them for writes)
+      if (block.type === 'unknown' && !requiredMetadataSet.has(block.metadata)) {
+        log.debug(`Skipping unknown block at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} (metadata 0x${block.metadata.toString(16)})`, 'Protocol');
+        continue;
+      }
       uniqueBlocks.set(block.address, block);
     }
 
     const finalBlocksToRead = Array.from(uniqueBlocks.values());
-    log.info(`Bulk reading ${finalBlocksToRead.length} blocks for write operation`, 'Protocol');
+    
+    // Log all blocks we're planning to read for debugging
+    log.debug(`Blocks to read: ${finalBlocksToRead.map(b => `0x${b.address.toString(16).padStart(6, '0').toUpperCase()} (metadata 0x${b.metadata.toString(16)}, type ${b.type})`).join(', ')}`, 'Protocol');
+    
+    // Step 3: Check which blocks are already cached and only read missing ones
+    const blocksToReadFromRadio: MemoryBlock[] = [];
+    
+    log.info(`=== CACHE CHECK === cachedBlockData.length=${this.cachedBlockData.length}, finalBlocksToRead.length=${finalBlocksToRead.length}`, 'Protocol');
+    
+    if (this.cachedBlockData.length === 0) {
+      log.warn('cachedBlockData is empty! Cache restoration may have failed or cache was cleared.', 'Protocol');
+    }
+    
+    const cachedAddresses = new Set(this.cachedBlockData.map(b => b.address));
+    
+    log.info(`Cache has ${this.cachedBlockData.length} blocks. Cached addresses (first 10): ${Array.from(cachedAddresses).slice(0, 10).map(a => `0x${a.toString(16).padStart(6, '0').toUpperCase()}`).join(', ')}${cachedAddresses.size > 10 ? '...' : ''}`, 'Protocol');
+    log.info(`Checking ${finalBlocksToRead.length} blocks against cache. Blocks to check: ${finalBlocksToRead.slice(0, 5).map(b => `0x${b.address.toString(16).padStart(6, '0').toUpperCase()}`).join(', ')}${finalBlocksToRead.length > 5 ? '...' : ''}`, 'Protocol');
+    
+    for (const block of finalBlocksToRead) {
+      if (!cachedAddresses.has(block.address)) {
+        blocksToReadFromRadio.push(block);
+        log.info(`Block at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} (metadata 0x${block.metadata.toString(16)}) not in cache, will read`, 'Protocol');
+      } else {
+        log.info(`✓ Block at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} (metadata 0x${block.metadata.toString(16)}) already cached, skipping`, 'Protocol');
+      }
+    }
+    
+    if (blocksToReadFromRadio.length === 0) {
+      log.info(`All ${finalBlocksToRead.length} required blocks are already cached, skipping read`, 'Protocol');
+      this.onProgress?.(100, `Using ${this.cachedBlockData.length} cached blocks`);
+      return;
+    }
+    
+    log.info(`Reading ${blocksToReadFromRadio.length} missing blocks (${finalBlocksToRead.length - blocksToReadFromRadio.length} already cached)`, 'Protocol');
 
-    // Step 3: Read all required blocks
-    this.onProgress?.(10, `Reading ${finalBlocksToRead.length} blocks...`);
-    this.cachedBlockData = [];
+    // Step 4: Read only missing blocks
+    this.onProgress?.(10, `Reading ${blocksToReadFromRadio.length} missing blocks...`);
 
-    for (let i = 0; i < finalBlocksToRead.length; i++) {
-      const block = finalBlocksToRead[i];
-      const progress = 10 + Math.floor((i / finalBlocksToRead.length) * 85); // 10-95%
-      this.onProgress?.(progress, `Reading block ${i + 1} of ${finalBlocksToRead.length} (metadata 0x${block.metadata.toString(16)})...`);
+    for (let i = 0; i < blocksToReadFromRadio.length; i++) {
+      const block = blocksToReadFromRadio[i];
+      const progress = 10 + Math.floor((i / blocksToReadFromRadio.length) * 85); // 10-95%
+      const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
+      const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0')}`;
+      log.debug(`Reading block ${i + 1}/${blocksToReadFromRadio.length}: address=${addressHex}, metadata=${metadataHex}, type=${block.type}`, 'Protocol');
+      this.onProgress?.(progress, `Reading block ${i + 1} of ${blocksToReadFromRadio.length} (metadata ${metadataHex} at ${addressHex})...`);
 
       const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
       
@@ -765,15 +908,67 @@ export class DM32UVProtocol implements RadioProtocol {
         log.debug('Set rawRadioSettingsData from block 0x04 during bulk read', 'Protocol');
       }
 
-      if (i < finalBlocksToRead.length - 1) {
+      if (i < blocksToReadFromRadio.length - 1) {
         await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
       }
     }
 
     this.onProgress?.(100, `Successfully cached ${this.cachedBlockData.length} blocks`);
-    log.info(`Bulk read complete: ${this.cachedBlockData.length} blocks cached`, 'Protocol');
+    log.info(`Bulk read complete: ${this.cachedBlockData.length} blocks cached (${blocksToReadFromRadio.length} newly read, ${finalBlocksToRead.length - blocksToReadFromRadio.length} reused from cache)`, 'Protocol');
     log.debug('All blocks are now in cache - connection remains open for writing', 'Protocol');
     // NOTE: We do NOT disconnect here - connection must stay open for writing
+  }
+
+  /**
+   * Restore cached block data from store (blockData and blockMetadata)
+   * Used when creating a new protocol instance for writing after a previous read
+   */
+  restoreCacheFromStore(blockData: Map<number, Uint8Array>, blockMetadata: Map<number, { metadata: number; type: string }>): void {
+    log.info(`=== RESTORE CACHE START === cachedBlockData.length before: ${this.cachedBlockData.length}`, 'Protocol');
+    this.cachedBlockData = [];
+    this.blockData = new Map(blockData);
+    
+    log.info(`Restoring cache from store: blockData has ${blockData.size} entries, blockMetadata has ${blockMetadata.size} entries`, 'Protocol');
+    
+    // Reconstruct cachedBlockData from blockData and blockMetadata
+    for (const [address, data] of blockData.entries()) {
+      const metadata = blockMetadata.get(address);
+      if (metadata) {
+        this.cachedBlockData.push({
+          metadata: metadata.metadata,
+          address: address,
+          data: new Uint8Array(data), // Create a copy
+        });
+      } else {
+        log.warn(`Block at 0x${address.toString(16).padStart(6, '0').toUpperCase()} has data but no metadata in store`, 'Protocol');
+      }
+    }
+    
+    // Also restore discoveredBlocks from blockMetadata
+    this.discoveredBlocks = [];
+    for (const [address, meta] of blockMetadata.entries()) {
+      this.discoveredBlocks.push({
+        address: address,
+        metadata: meta.metadata,
+        type: meta.type as MemoryBlock['type'],
+      });
+    }
+    
+    // Log critical blocks for TG mapping
+    const txContact42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+    const txContact43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    const talkGroups44 = this.cachedBlockData.find(b => b.metadata === METADATA.METADATA_0x44);
+    const quickAccess0B = this.cachedBlockData.find(b => b.metadata === METADATA.METADATA_0x0B);
+    
+    log.info(`Restored ${this.cachedBlockData.length} blocks from store cache. cachedBlockData.length after: ${this.cachedBlockData.length}`, 'Protocol');
+    if (txContact42) log.debug(`  - TX Contact 0x42 at 0x${txContact42.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    if (txContact43) log.debug(`  - TX Contact 0x43 at 0x${txContact43.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    if (talkGroups44) log.debug(`  - Talk Groups 0x44 at 0x${talkGroups44.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    if (quickAccess0B) log.debug(`  - Quick Access 0x0B at 0x${quickAccess0B.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    if (!txContact42 || !txContact43 || !talkGroups44 || !quickAccess0B) {
+      log.warn('Some critical blocks for TG mapping are missing from restored cache!', 'Protocol');
+    }
+    log.info(`=== RESTORE CACHE END === cachedBlockData.length: ${this.cachedBlockData.length}`, 'Protocol');
   }
 
   /**
@@ -1233,22 +1428,46 @@ export class DM32UVProtocol implements RadioProtocol {
    * @param channels Array of channels to write TX Contact for
    */
   private async writeTxContactBlocks(channels: Channel[]): Promise<void> {
-    // Find TX Contact blocks
-    const block42 = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
-    const block43 = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    log.info('Starting TX Contact blocks write...', 'Protocol');
     
-    if (!block42 && !block43) {
-      log.warn('TX Contact blocks (0x42, 0x43) not found - skipping TX Contact write', 'Protocol');
-      return;
-    }
+    // Find TX Contact blocks in discovered blocks
+    let block42 = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+    let block43 = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    
+    log.debug(`TX Contact block 0x42 discovered: ${block42 ? `yes at 0x${block42.address.toString(16)}` : 'NO'}`, 'Protocol');
+    log.debug(`TX Contact block 0x43 discovered: ${block43 ? `yes at 0x${block43.address.toString(16)}` : 'NO'}`, 'Protocol');
     
     // Initialize block data from cache - MUST have cached data to preserve existing TX Contact entries
     const cached42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
     const cached43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
     
+    log.debug(`TX Contact block 0x42 cached: ${cached42 ? `yes (${cached42.data.length} bytes)` : 'NO'}`, 'Protocol');
+    log.debug(`TX Contact block 0x43 cached: ${cached43 ? `yes (${cached43.data.length} bytes)` : 'NO'}`, 'Protocol');
+    
+    // If blocks are cached but not discovered, use the cached address
+    // This can happen if blocks were read during bulkRead but not found in initial discovery
+    if (!block42 && cached42) {
+      block42 = { address: cached42.address, metadata: METADATA.TX_CONTACT_LOW, type: 'unknown' };
+      log.debug(`Using cached address for block 0x42: 0x${cached42.address.toString(16)}`, 'Protocol');
+    }
+    if (!block43 && cached43) {
+      block43 = { address: cached43.address, metadata: METADATA.TX_CONTACT_HIGH, type: 'unknown' };
+      log.debug(`Using cached address for block 0x43: 0x${cached43.address.toString(16)}`, 'Protocol');
+    }
+    
+    if (!block42 && !block43) {
+      log.warn('TX Contact blocks (0x42, 0x43) not found - skipping TX Contact write', 'Protocol');
+      log.warn(`Total discovered blocks: ${this.discoveredBlocks.length}, cached blocks: ${this.cachedBlockData.length}`, 'Protocol');
+      // List all discovered metadata values for debugging
+      const metadataValues = this.discoveredBlocks.map(b => `0x${b.metadata.toString(16)}`).join(', ');
+      log.debug(`Discovered metadata values: ${metadataValues}`, 'Protocol');
+      return;
+    }
+    
     // SAFETY CHECK: We must have cached data to avoid wiping TX Contact entries
     if (!cached42 || !cached43) {
       log.warn('TX Contact blocks not in cache - skipping TX Contact write to avoid data loss. Read from radio first!', 'Protocol');
+      log.warn(`Total cached blocks: ${this.cachedBlockData.length}`, 'Protocol');
       return;
     }
     
@@ -1260,7 +1479,15 @@ export class DM32UVProtocol implements RadioProtocol {
     let updatedCount = 0;
     for (const channel of channels) {
       const isDigital = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
-      const contactId = channel.contactId || 0;
+      // Prefer contactId (what the UI updates) over txContactId (original read value)
+      // If user edited the dropdown, contactId will have the new value
+      // If unchanged, txContactId will have the original value
+      const contactId = channel.contactId ?? channel.txContactId ?? 0;
+      
+      // Log what we're writing for debugging
+      if (isDigital && (channel.contactId !== undefined || channel.txContactId !== undefined)) {
+        log.debug(`Channel ${channel.number}: contactId=${channel.contactId}, txContactId=${channel.txContactId}, using=${contactId}, isDigital=${isDigital}`, 'Protocol');
+      }
       
       // Encode TX Contact for this channel
       encodeTxContactForChannel(

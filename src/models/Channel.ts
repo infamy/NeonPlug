@@ -92,12 +92,15 @@ export interface Channel {
   unknown2A: number;           // 8-bit value (0-255), possibly DMR or signaling related
   
   // Talk Group (TX Contact) - stored in metadata blocks 0x42 and 0x43, NOT byte 0x2B
+  // Reserved byte 0x2B - NOT used for contact/TG mapping
+  reserved2B?: number;         // Reserved byte at 0x2B (preserved on write)
+  
+  // TX Contact / Talk Group Index - stored in SEPARATE metadata blocks (NOT in channel structure)
   // Block 0x42: Channels 1-2048 (2 bytes per channel)
   // Block 0x43: Channels 2049+ and VFOs (4001, 4002)
   // Format: 12-bit index = (byte0 >> 4) * 256 + byte1
   // This is an index into the Talk Groups list (block 0x44) - 0=None, 1+=index
-  // The Talk Groups list contains the full DMR Talk Group ID (24-bit)
-  contactId: number;          // Talk Group index for digital channels (0-4095)
+  contactId: number;          // Talk Group index from blocks 0x42/0x43 (0-4095)
   
   // Digital-only fields (only valid when mode is Digital or Fixed Digital)
   // These fields reuse bytes 0x1D, 0x1E, 0x1F which are used for analog features in analog mode
@@ -108,7 +111,7 @@ export interface Channel {
   tdmaDirectMode?: boolean;    // Byte 0x1D, bit 5 (0x20): TDMA Direct Mode
   shortDataConfirm?: boolean;  // Byte 0x1D, bit 6 (0x40): Short Data Confirm
   privateConfirm?: boolean;     // Byte 0x1F, bit 6 (0x40): Private Confirm
-  txContactId?: number;         // Separate buffer (not in 48-byte structure) - TX Contact ID
+  txContactId?: number;         // Legacy/deprecated - use contactId instead
   
   // Metadata (not in protocol)
   source?: string;            // Source attribution for imported channels

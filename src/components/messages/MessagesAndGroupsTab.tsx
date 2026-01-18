@@ -278,7 +278,7 @@ export const MessagesAndGroupsTab: React.FC = () => {
           <div className="flex items-center gap-4">
             {quickContactsLoaded && (
               <div className="text-cool-gray text-sm">
-                {orderedContacts.length} group{orderedContacts.length !== 1 ? 's' : ''} {block0BData && '(ordered by 0x0B)'}
+                {orderedContacts.length} group{orderedContacts.length !== 1 ? 's' : ''}
               </div>
             )}
             {quickContactsLoaded && (

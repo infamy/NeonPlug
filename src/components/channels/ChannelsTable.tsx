@@ -58,7 +58,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   scrollToChannel,
   onScrollComplete 
 }) => {
-  const { channels: channelsFromStore, updateChannel, deleteChannel } = useChannelsStore();
+  const { channels: channelsFromStore, updateChannel, deleteChannel, addChannel } = useChannelsStore();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
   const { scanLists } = useScanListsStore();
   const { groups: rxGroups } = useRXGroupsStore();
@@ -66,6 +66,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const { contacts: talkGroups } = useQuickContactsStore();
   const channels = channelsProp ?? channelsFromStore;
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
+  const [clonedChannelNumber, setClonedChannelNumber] = useState<number | null>(null);
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
   // Scroll to channel when scrollToChannel changes
@@ -132,13 +133,60 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
     return channelNumber.toString();
   };
 
-  const formatFrequency = (freq: number): string => {
-    return freq.toFixed(4); // Shows 3 digits before decimal, 4 after (e.g., 145.3500)
-  };
-
   const isDigitalMode = (mode: Channel['mode']): boolean => {
     return mode === 'Digital' || mode === 'Fixed Digital';
   };
+
+  const handleCloneChannel = (channel: Channel) => {
+    // Find the next available channel number
+    const existingNumbers = new Set(channelsFromStore.map(ch => ch.number));
+    let nextNumber = 1;
+    while (existingNumbers.has(nextNumber)) {
+      nextNumber++;
+    }
+    
+    // Clone the channel with new number and modified name
+    const clonedChannel: Channel = {
+      ...channel,
+      number: nextNumber,
+      name: channel.name.length > 12 
+        ? channel.name.substring(0, 12) + ' (C)' 
+        : channel.name + ' (C)',
+    };
+    
+    addChannel(clonedChannel);
+    setClonedChannelNumber(nextNumber);
+  };
+
+  // Handle scroll to cloned channel
+  useEffect(() => {
+    if (clonedChannelNumber !== null) {
+      const row = rowRefs.current.get(clonedChannelNumber);
+      if (row) {
+        requestAnimationFrame(() => {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          
+          // Highlight after scroll completes
+          const observer = new IntersectionObserver((entries) => {
+            const entry = entries[0];
+            if (entry.isIntersecting) {
+              observer.disconnect();
+              row.style.backgroundColor = 'rgba(0, 255, 255, 0.2)';
+              setTimeout(() => {
+                row.style.backgroundColor = '';
+                setClonedChannelNumber(null);
+              }, 1500);
+            }
+          }, { threshold: 0.5 });
+          
+          observer.observe(row);
+          setTimeout(() => observer.disconnect(), 3000);
+        });
+      } else {
+        setClonedChannelNumber(null);
+      }
+    }
+  }, [clonedChannelNumber, channelsFromStore]);
 
   if (channels.length === 0) {
     return (
@@ -868,7 +916,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                   )}
                 </td>
                 <td className="px-2 py-2 text-center sticky right-0 bg-deep-gray z-10">
-                  <div className="flex items-center justify-center gap-2">
+                  <div className="flex items-center justify-center gap-1">
                     <button
                       onClick={() => setEditingChannel(channel)}
                       className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
@@ -876,6 +924,15 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     >
                       ✎
                     </button>
+                    {!isVFOChannel(channel.number) && (
+                    <button
+                      onClick={() => handleCloneChannel(channel)}
+                      className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-neon-magenta border border-neon-magenta border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+                      title={`Clone channel ${channel.number}`}
+                    >
+                      ⧉
+                    </button>
+                    )}
                     {!isVFOChannel(channel.number) && (
                     <button
                       onClick={() => {

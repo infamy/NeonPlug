@@ -40,7 +40,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
+  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData, blockData, blockMetadata } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -103,10 +103,26 @@ export function useRadioConnection() {
       }
       // Store all block metadata and data for debug export
       if ((protocol as any).allBlockMetadata) {
-        setBlockMetadata((protocol as any).allBlockMetadata);
+        const metadata = (protocol as any).allBlockMetadata;
+        console.log(`[Connection] Setting blockMetadata in store: ${metadata.size} entries`);
+        // Create a new Map to ensure Zustand stores it properly
+        const metadataCopy = new Map<number, { metadata: number; type: string }>(metadata);
+        setBlockMetadata(metadataCopy);
+        const storeState = useRadioStore.getState();
+        console.log(`[Connection] After setting, store blockMetadata size: ${storeState.blockMetadata.size}`);
+      } else {
+        console.warn('[Connection] allBlockMetadata is not set on protocol instance');
       }
       if ((protocol as any).allBlockData) {
-        setBlockData((protocol as any).allBlockData);
+        const data = (protocol as any).allBlockData;
+        console.log(`[Connection] Setting blockData in store: ${data.size} entries`);
+        // Create a new Map to ensure Zustand stores it properly
+        const dataCopy = new Map<number, Uint8Array>(data);
+        setBlockData(dataCopy);
+        const storeState = useRadioStore.getState();
+        console.log(`[Connection] After setting, store blockData size: ${storeState.blockData.size}`);
+      } else {
+        console.warn('[Connection] allBlockData is not set on protocol instance');
       }
 
       // Step 6: Parse configuration (zones, scan lists, quick messages, etc.)
@@ -595,6 +611,40 @@ export function useRadioConnection() {
       // Create protocol instance
       protocol = new DM32UVProtocol();
       
+      // Restore cache from store if available (from previous read operation)
+      // Read directly from store state to avoid hook reactivity issues
+      const storeState = useRadioStore.getState();
+      const storeBlockData = storeState.blockData;
+      const storeBlockMetadata = storeState.blockMetadata;
+      
+      console.log(`[Connection] === CACHE RESTORATION CHECK ===`);
+      console.log(`[Connection] Store state blockData: size=${storeBlockData?.size || 0}, type=${typeof storeBlockData}, is Map=${storeBlockData instanceof Map}`);
+      console.log(`[Connection] Store state blockMetadata: size=${storeBlockMetadata?.size || 0}, type=${typeof storeBlockMetadata}, is Map=${storeBlockMetadata instanceof Map}`);
+      
+      if (storeBlockData && storeBlockData.size > 0) {
+        const keys = Array.from(storeBlockData.keys());
+        console.log(`[Connection] Store blockData has ${keys.length} keys: ${keys.slice(0, 10).map(k => `0x${k.toString(16).padStart(6, '0').toUpperCase()}`).join(', ')}${keys.length > 10 ? '...' : ''}`);
+      }
+      
+      if (storeBlockMetadata && storeBlockMetadata.size > 0) {
+        const keys = Array.from(storeBlockMetadata.keys());
+        console.log(`[Connection] Store blockMetadata has ${keys.length} keys: ${keys.slice(0, 10).map(k => `0x${k.toString(16).padStart(6, '0').toUpperCase()}`).join(', ')}${keys.length > 10 ? '...' : ''}`);
+      }
+      
+      if (storeBlockData && storeBlockData.size > 0 && storeBlockMetadata && storeBlockMetadata.size > 0) {
+        // Create new Maps to ensure we have proper copies
+        const dataCopy = new Map<number, Uint8Array>(storeBlockData);
+        const metadataCopy = new Map<number, { metadata: number; type: string }>(storeBlockMetadata);
+        console.log(`[Connection] Restoring cache: dataCopy has ${dataCopy.size} entries, metadataCopy has ${metadataCopy.size} entries`);
+        protocol.restoreCacheFromStore(dataCopy, metadataCopy);
+      } else {
+        console.warn('[Connection] Store cache is empty - will need to read all blocks from radio');
+        console.warn(`[Connection] blockData from hook: type=${typeof blockData}, is Map=${blockData instanceof Map}, size=${blockData?.size || 'N/A'}`);
+        console.warn(`[Connection] blockData from state: type=${typeof storeBlockData}, is Map=${storeBlockData instanceof Map}, size=${storeBlockData?.size || 'N/A'}`);
+        console.warn(`[Connection] blockMetadata from hook: type=${typeof blockMetadata}, is Map=${blockMetadata instanceof Map}, size=${blockMetadata?.size || 'N/A'}`);
+        console.warn(`[Connection] blockMetadata from state: type=${typeof storeBlockMetadata}, is Map=${storeBlockMetadata instanceof Map}, size=${storeBlockMetadata?.size || 'N/A'}`);
+      }
+      
       // Set up progress callback that forwards to our callback
       protocol.onProgress = (progress, message) => {
         onProgress?.(progress, message);
@@ -605,18 +655,31 @@ export function useRadioConnection() {
       
       // Step 2: Connect to radio
       onProgress?.(10, 'Connecting to radio...', steps[1]);
+      console.log(`[Connection] Before connect: cachedBlockData.length=${(protocol as any).cachedBlockData?.length || 0}`);
       await protocol.connect();
+      console.log(`[Connection] After connect: cachedBlockData.length=${(protocol as any).cachedBlockData?.length || 0}`);
       
       // Step 3: Get radio info
       onProgress?.(10, 'Reading radio information...', steps[2]);
+      console.log(`[Connection] Before getRadioInfo: cachedBlockData.length=${(protocol as any).cachedBlockData?.length || 0}`);
       const radioInfo = await protocol.getRadioInfo();
+      console.log(`[Connection] After getRadioInfo: cachedBlockData.length=${(protocol as any).cachedBlockData?.length || 0}`);
       
       setRadioInfo(radioInfo);
       setConnected(true);
       
       // Step 4: Write channels, zones, and scan lists
       onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
+      console.log(`[Connection] Before writeAllData: cachedBlockData.length=${(protocol as any).cachedBlockData?.length || 0}`);
+      // Log sample of channel contactId values to verify they're being passed correctly
+      const sampleChannels = channels.filter(c => (c.mode === 'Digital' || c.mode === 'Fixed Digital') && c.contactId !== undefined).slice(0, 5);
+      if (sampleChannels.length > 0) {
+        console.log(`[Connection] Sample channel contactId values being written: ${sampleChannels.map(c => `Ch${c.number}=${c.contactId}`).join(', ')}`);
+      } else {
+        console.log(`[Connection] No digital channels with contactId found in channels array (total channels: ${channels.length})`);
+      }
       await protocol.writeAllData(channels, zones, scanLists);
+      console.log(`[Connection] After writeAllData: cachedBlockData.length=${(protocol as any).cachedBlockData?.length || 0}`);
       
       // Step 5: Write Talk Groups if they have been loaded
       const quickContactsStore = useQuickContactsStore.getState();

@@ -36,6 +36,7 @@ export const DiagnosticsTab: React.FC = () => {
   const [logFilter, setLogFilter] = useState<'ALL' | 'ERROR' | 'WARN' | 'INFO' | 'DEBUG' | 'VERBOSE'>('ALL');
   const [logContextFilter, setLogContextFilter] = useState<string>('');
   const logViewerRef = useRef<HTMLDivElement>(null);
+  const [txContactLookupChannel, setTxContactLookupChannel] = useState<string>('');
   
   const { logs, clearLogs, maxLogs, setMaxLogs } = useLogStore();
 
@@ -157,6 +158,99 @@ export const DiagnosticsTab: React.FC = () => {
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Generate proposed TX Contact write data for block 0x42 (channels 1-2047)
+  const generateProposedTxContact42 = (): Uint8Array | null => {
+    if (!block42.data) return null;
+    
+    // Start with a copy of current block data
+    const proposedData = new Uint8Array(block42.data);
+    
+    // Update with current channel contactId values
+    for (const channel of channels) {
+      if (channel.number >= 1 && channel.number <= 2047) {
+        const isDigital = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
+        const contactId = channel.contactId ?? 0;
+        
+        const offset = (channel.number - 1) * 2;
+        
+        // Encode: high nibble is contact ID high, bit 0 is digital flag
+        const contactIdHigh = (contactId >> 8) & 0x0F;
+        const contactIdLow = contactId & 0xFF;
+        const byte0 = (contactIdHigh << 4) | (isDigital ? 0x01 : 0x00);
+        const byte1 = contactIdLow;
+        
+        proposedData[offset] = byte0;
+        proposedData[offset + 1] = byte1;
+      }
+    }
+    
+    // Set metadata byte
+    proposedData[0xFFF] = 0x42;
+    
+    return proposedData;
+  };
+
+  // Download proposed vs current comparison for a specific channel
+  const downloadTxContactComparison = () => {
+    if (!block42.data) return;
+    
+    const currentData = block42.data;
+    const proposedData = generateProposedTxContact42();
+    if (!proposedData) return;
+    
+    let report = 'TX Contact Block 0x42 - Current vs Proposed Comparison\n';
+    report += '='.repeat(80) + '\n\n';
+    report += 'Channel | Current Bytes | Current TG | Proposed Bytes | Proposed TG | Changed?\n';
+    report += '-'.repeat(80) + '\n';
+    
+    for (const channel of channels) {
+      if (channel.number >= 1 && channel.number <= 2047) {
+        const isDigital = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
+        if (!isDigital) continue; // Only show digital channels
+        
+        const offset = (channel.number - 1) * 2;
+        
+        const currByte0 = currentData[offset];
+        const currByte1 = currentData[offset + 1];
+        const currTg = ((currByte0 >> 4) << 8) | currByte1;
+        
+        const propByte0 = proposedData[offset];
+        const propByte1 = proposedData[offset + 1];
+        const propTg = ((propByte0 >> 4) << 8) | propByte1;
+        
+        const changed = currByte0 !== propByte0 || currByte1 !== propByte1;
+        
+        report += `Ch ${channel.number.toString().padStart(4)} | `;
+        report += `${currByte0.toString(16).padStart(2, '0')} ${currByte1.toString(16).padStart(2, '0')}`.padEnd(13) + ' | ';
+        report += `${currTg}`.padEnd(10) + ' | ';
+        report += `${propByte0.toString(16).padStart(2, '0')} ${propByte1.toString(16).padStart(2, '0')}`.padEnd(14) + ' | ';
+        report += `${propTg}`.padEnd(11) + ' | ';
+        report += changed ? 'YES <<<' : 'no';
+        report += '\n';
+      }
+    }
+    
+    report += '\n\nChannel Store Values:\n';
+    report += '-'.repeat(80) + '\n';
+    for (const channel of channels) {
+      if (channel.number >= 1 && channel.number <= 2047) {
+        const isDigital = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
+        if (!isDigital) continue;
+        report += `Ch ${channel.number}: contactId=${channel.contactId}, txContactId=${channel.txContactId}, mode=${channel.mode}\n`;
+      }
+    }
+    
+    const blob = new Blob([report], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'tx_contact_comparison.txt';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1400,6 +1494,60 @@ export const DiagnosticsTab: React.FC = () => {
                       </ul>
                     </div>
                     <div>
+                      <h4 className="text-yellow-400 font-semibold mb-2">Debug Tools</h4>
+                      <div className="flex items-center gap-2 mb-3">
+                        <button
+                          onClick={downloadTxContactComparison}
+                          className="px-3 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-500 transition-colors text-xs font-semibold"
+                        >
+                          📥 Download Current vs Proposed Comparison
+                        </button>
+                        <button
+                          onClick={() => {
+                            const proposed = generateProposedTxContact42();
+                            if (proposed) downloadBinary(proposed, 'proposed_block_0x42.bin');
+                          }}
+                          className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-500 transition-colors text-xs font-semibold"
+                        >
+                          📥 Download Proposed Block 0x42
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-yellow-400 font-semibold mb-2">Channel Lookup</h4>
+                      <div className="flex items-center gap-2 mb-3">
+                        <input
+                          type="number"
+                          min="1"
+                          max="2047"
+                          placeholder="Enter channel # (1-2047)"
+                          value={txContactLookupChannel}
+                          onChange={(e) => setTxContactLookupChannel(e.target.value)}
+                          className="w-48 bg-dark-charcoal border border-yellow-600/30 rounded px-3 py-1 text-sm text-white focus:outline-none focus:border-yellow-400"
+                        />
+                        {txContactLookupChannel && (() => {
+                          const chNum = parseInt(txContactLookupChannel);
+                          if (chNum >= 1 && chNum <= 2047) {
+                            const offset = (chNum - 1) * 2;
+                            const byte0 = data[offset] ?? 0;
+                            const byte1 = data[offset + 1] ?? 0;
+                            const tgIndex = ((byte0 >> 4) << 8) | byte1;
+                            const isDigital = (byte0 & 0x01) !== 0;
+                            return (
+                              <div className="flex items-center gap-2 font-mono text-xs bg-yellow-900/20 px-3 py-1 rounded">
+                                <span className="text-yellow-400">Ch {chNum}</span>
+                                <span className="text-green-400">0x{offset.toString(16).toUpperCase().padStart(4, '0')}</span>
+                                <span className="text-yellow-300">{byte0.toString(16).toUpperCase().padStart(2, '0')} {byte1.toString(16).toUpperCase().padStart(2, '0')}</span>
+                                <span className="text-white font-bold">TG Index: {tgIndex}</span>
+                                <span className={isDigital ? 'text-green-400 font-bold' : 'text-cool-gray'}>{isDigital ? 'Digital' : 'Analog'}</span>
+                              </div>
+                            );
+                          }
+                          return <span className="text-red-400 text-xs">Invalid channel (1-2047)</span>;
+                        })()}
+                      </div>
+                    </div>
+                    <div>
                       <h4 className="text-yellow-400 font-semibold mb-2">First 10 Channels</h4>
                       <div className="font-mono text-xs space-y-1">
                         {Array.from({ length: 10 }, (_, i) => {
@@ -2412,7 +2560,10 @@ export const DiagnosticsTab: React.FC = () => {
                     if (!f.isDigital) return `0x${f.unknown2A.toString(16).toUpperCase().padStart(2, '0')} (${f.unknown2A}) - Analog: Unknown`;
                     return f.encryptionId !== undefined ? `${f.encryptionId} (0=None, 1-8=Key ID)` : 'N/A';
                   }},
-                  { offset: 0x2B, label: 'Legacy Contact ID (0x2B) - DEPRECATED', getValue: (f: typeof fields1) => `${f.contactId} (TG is in blocks 0x42/0x43)` },
+                  { offset: 0x2B, label: 'Contact ID (0x2B)', getValue: (f: typeof fields1) => {
+                    const rawByte = f.bytes[0x2B];
+                    return `0x${rawByte.toString(16).toUpperCase().padStart(2, '0')} (${rawByte})`;
+                  }},
                   { offset: 0x2C, label: 'Reserved 2C (0x2C)', getValue: (f: typeof fields1) => `0x${f.reserved2C.toString(16).toUpperCase().padStart(2, '0')} (${f.reserved2C})` },
                   { offset: 0x2D, label: 'Reserved 2D (0x2D)', getValue: (f: typeof fields1) => `0x${f.reserved2D.toString(16).toUpperCase().padStart(2, '0')} (${f.reserved2D})` },
                 ].sort((a, b) => a.offset - b.offset);
@@ -2478,35 +2629,44 @@ export const DiagnosticsTab: React.FC = () => {
                               const offsetNum = parseInt(offset);
                               const val2 = fields2?.bytes[offsetNum as keyof typeof fields2.bytes];
                               const isDifferent = fields2 && value !== val2;
-                              const fieldName = offsetNum === 0x1C ? 'Power & APRS' :
-                                offsetNum === 0x1D ? 'Analog Features' :
-                                offsetNum === 0x1E ? 'Squelch Level' :
-                                offsetNum === 0x1F ? 'PTT ID Settings' :
+                              // Field names based on channel structure
+                              const fieldName = 
+                                // Name: bytes 0x00-0x0F (16 bytes)
+                                (offsetNum >= 0x00 && offsetNum <= 0x0F) ? 'Name' :
+                                // RX Frequency: bytes 0x10-0x13 (4 bytes, little-endian)
+                                (offsetNum >= 0x10 && offsetNum <= 0x13) ? 'RX Frequency' :
+                                // TX Frequency: bytes 0x14-0x17 (4 bytes, little-endian)
+                                (offsetNum >= 0x14 && offsetNum <= 0x17) ? 'TX Frequency' :
+                                // Settings bytes
                                 offsetNum === 0x18 ? 'Mode & Flags' :
                                 offsetNum === 0x19 ? 'Scan & Bandwidth' :
                                 offsetNum === 0x1A ? 'Talkaround & APRS' :
                                 offsetNum === 0x1B ? 'Emergency' :
+                                offsetNum === 0x1C ? 'Power & APRS' :
+                                offsetNum === 0x1D ? 'Digital Features / Analog Features' :
+                                offsetNum === 0x1E ? 'Squelch Level' :
+                                offsetNum === 0x1F ? 'RX Group / PTT ID Settings' :
                                 offsetNum === 0x20 ? 'Color Code' :
                                 offsetNum === 0x21 || offsetNum === 0x22 ? 'RX CTCSS/DCS' :
                                 offsetNum === 0x23 || offsetNum === 0x24 ? 'TX CTCSS/DCS' :
                                 offsetNum === 0x25 ? 'Additional Flags' :
                                 offsetNum === 0x26 ? 'RX Squelch & PTT' :
                                 offsetNum === 0x27 ? 'Signaling' :
+                                offsetNum === 0x28 ? 'Scan List' :
                                 offsetNum === 0x29 ? 'PTT ID Type' :
-                                offsetNum === 0x2A ? 'Unknown/Encryption ID' :
-                                offsetNum === 0x2B ? 'Legacy Contact (TG in 0x42/0x43)' :
-                                offsetNum === 0x2C || offsetNum === 0x2D ? 'Reserved' : 'Unknown';
+                                offsetNum === 0x2A ? 'Encryption ID' :
+                                (offsetNum >= 0x2B && offsetNum <= 0x2F) ? 'Reserved' : 'Unknown';
                               return (
                                 <tr 
                                   key={offset} 
                                   className={`border-b border-yellow-600/10 hover:bg-yellow-900/10 ${isDifferent ? 'bg-yellow-900/20' : ''}`}
                                 >
                                   <td className="py-1 px-2 text-cool-gray font-mono">{offset}</td>
-                                  <td className={`py-1 px-2 font-mono ${offsetNum === 0x1C ? 'text-yellow-300 font-bold' : 'text-white'}`}>
+                                  <td className="py-1 px-2 font-mono text-white">
                                     0x{value.toString(16).toUpperCase().padStart(2, '0')} ({value})
                                   </td>
                                   {fields2 && (
-                                    <td className={`py-1 px-2 font-mono ${isDifferent ? 'text-yellow-300' : offsetNum === 0x1C ? 'text-yellow-300 font-bold' : 'text-white'}`}>
+                                    <td className={`py-1 px-2 font-mono ${isDifferent ? 'text-yellow-300' : 'text-white'}`}>
                                       0x{val2!.toString(16).toUpperCase().padStart(2, '0')} ({val2})
                                     </td>
                                   )}

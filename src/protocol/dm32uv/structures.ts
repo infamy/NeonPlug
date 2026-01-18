@@ -380,14 +380,9 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     unknown2A = data[0x2A];
   }
 
-  // Contact ID (0x2B)
-  // 0-249 (displayed as 1-250 in radio UI)
-  // Values >249 reset to 0
-  let contactId = data[0x2B];
-  // Validate: 0-249, reset >249 to 0
-  if (contactId > 249) {
-    contactId = 0;
-  }
+  // Reserved byte 0x2B - NOT used for contact ID
+  // Contact/TG mapping is stored in metadata blocks 0x42/0x43
+  const reserved2B = data[0x2B];
 
   // Reserved (0x2C-0x2F) - Padding/reserved bytes, likely unused
   // const reserved2C_2F = data.slice(0x2C, 0x30);
@@ -436,7 +431,8 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     unknown29_3_2,
     unknown29_1_0,
     unknown2A, // For digital, this is 0 (encryptionId is used instead)
-    contactId,
+    reserved2B, // Reserved byte - TG mapping is in blocks 0x42/0x43
+    contactId: 0, // Placeholder - actual TG comes from blocks 0x42/0x43
     unknown1A_6_4,
     unknown1A_3,
     unknown1C_1_0,
@@ -649,8 +645,10 @@ export function encodeChannel(channel: Channel): Uint8Array {
     data[0x2A] = channel.unknown2A & 0xFF;
   }
 
-  // Contact ID (0x2B)
-  data[0x2B] = channel.contactId & 0xFF;
+  // Reserved byte 0x2B - NOT used for contact ID
+  // TG mapping is stored in metadata blocks 0x42/0x43, not here
+  // Preserve original value if available, otherwise 0
+  data[0x2B] = (channel as { reserved2B?: number }).reserved2B ?? 0;
 
   // Reserved (0x2C-0x2F)
   // Already initialized to 0xFF, which is fine
