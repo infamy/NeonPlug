@@ -1179,14 +1179,100 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   /**
-   * Write channels to the radio
+   * Generate channel blocks for writing
    * 
-   * Encodes channels to binary format and writes them to the appropriate memory blocks.
+   * Encodes channels to binary format and generates the appropriate memory blocks.
    * Updates the channel count in the first block header.
    * 
    * @param channels Array of channels to write
-   * @throws {Error} If not connected
+   * @returns Array of blocks to write (address, data, metadata)
    * @throws {Error} If channel count exceeds maximum (4000)
+   */
+  private generateChannelBlocks(channels: Channel[]): Array<{ address: number; data: Uint8Array; metadata: number }> {
+    if (channels.length === 0) {
+      return [];
+    }
+    
+    if (channels.length > 4000) {
+      throw new Error(`Too many channels: ${channels.length} (maximum 4000)`);
+    }
+
+    // Get channel blocks, sorted by metadata
+    const channelBlocks = this.discoveredBlocks
+      .filter(b => b.type === 'channel')
+      .sort((a, b) => a.metadata - b.metadata);
+
+    if (channelBlocks.length === 0) {
+      throw new Error('No channel blocks found');
+    }
+
+    const firstChannelBlock = channelBlocks.find(b => b.metadata === METADATA.CHANNEL_FIRST);
+    if (!firstChannelBlock) {
+      throw new Error(`First channel block (metadata 0x${METADATA.CHANNEL_FIRST.toString(16)}) not found`);
+    }
+
+    // Encode all channels to binary
+    const encodedChannels = channels.map(ch => encodeChannel(ch));
+    
+    const blocks: Array<{ address: number; data: Uint8Array; metadata: number }> = [];
+    
+    // Generate new block data for each channel block
+    let channelIndex = 0;
+    for (let blockIdx = 0; blockIdx < channelBlocks.length && channelIndex < channels.length; blockIdx++) {
+      const block = channelBlocks[blockIdx];
+      const isFirstBlock = block.metadata === METADATA.CHANNEL_FIRST;
+      
+      // Generate new 4KB block filled with 0xFF
+      const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
+      blockData.fill(0xFF);
+      
+      // Set metadata byte at 0xFFF
+      blockData[0xFFF] = block.metadata;
+      
+      // Update channel count in first block header (bytes 0-3)
+      if (isFirstBlock) {
+        blockData[0] = channels.length & 0xFF;
+        blockData[1] = (channels.length >> 8) & 0xFF;
+        blockData[2] = (channels.length >> 16) & 0xFF;
+        blockData[3] = (channels.length >> 24) & 0xFF;
+      }
+      
+      // Determine start offset and max channels for this block
+      const startOffset = isFirstBlock ? OFFSET.FIRST_CHANNEL : 0x00;
+      const maxChannelsInBlock = isFirstBlock ? 84 : 85;
+      const maxOffset = startOffset + (maxChannelsInBlock * BLOCK_SIZE.CHANNEL);
+      
+      // Write channels to this block
+      for (let offset = startOffset; offset < maxOffset && channelIndex < channels.length; offset += BLOCK_SIZE.CHANNEL) {
+        blockData.set(encodedChannels[channelIndex], offset);
+        channelIndex++;
+      }
+      
+      blocks.push({
+        address: block.address,
+        data: blockData,
+        metadata: block.metadata,
+      });
+      
+      // Update cache with new block data
+      const cacheIndex = this.cachedBlockData.findIndex(b => b.address === block.address);
+      if (cacheIndex >= 0) {
+        this.cachedBlockData[cacheIndex].data = blockData;
+      }
+      
+      // Stop if we've written all channels
+      if (channelIndex >= channels.length) {
+        break;
+      }
+    }
+    
+    return blocks;
+  }
+
+  /**
+   * Write channels to the radio (public interface)
+   * 
+   * @param channels Array of channels to write
    */
   async writeChannels(channels: Channel[]): Promise<void> {
     requireConnection(this.connection, this.radioInfo);
@@ -1201,7 +1287,7 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(0, 'Preparing to write channels...');
 
-    // Discover blocks if not already discovered
+    // Ensure we have discovered blocks
     if (this.discoveredBlocks.length === 0) {
       this.onProgress?.(5, 'Discovering channel blocks...');
       const blocks = await discoverMemoryBlocks(
@@ -1216,193 +1302,24 @@ export class DM32UVProtocol implements RadioProtocol {
       this.discoveredBlocks = blocks;
     }
 
-    // Get channel blocks, sorted by metadata
-    const channelBlocks = this.discoveredBlocks
-      .filter(b => b.type === 'channel')
-      .sort((a, b) => a.metadata - b.metadata);
-
-    if (channelBlocks.length === 0) {
-      throw new Error('No channel blocks found');
+    // Generate channel blocks using shared helper method
+    this.onProgress?.(10, `Generating ${channels.length} channel blocks...`);
+    const channelBlocks = this.generateChannelBlocks(channels);
+    
+    // Write blocks directly
+    this.onProgress?.(20, `Writing ${channels.length} channels to ${channelBlocks.length} blocks...`);
+    log.info(`Writing ${channels.length} channels to ${channelBlocks.length} blocks`, 'Protocol');
+    
+    for (let i = 0; i < channelBlocks.length; i++) {
+      const block = channelBlocks[i];
+      const progress = 20 + Math.floor((i / channelBlocks.length) * 70);
+      this.onProgress?.(progress, `Writing channel block ${i + 1} of ${channelBlocks.length}...`);
+      
+      await this.connection!.writeMemory(block.address, block.data, block.metadata);
+      log.info(`Successfully wrote channel block ${i + 1}/${channelBlocks.length} at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
     }
 
-    // Find first channel block (metadata 0x12)
-    const firstChannelBlock = channelBlocks.find(b => b.metadata === METADATA.CHANNEL_FIRST);
-    if (!firstChannelBlock) {
-      throw new Error(`First channel block (metadata 0x${METADATA.CHANNEL_FIRST.toString(16)}) not found`);
-    }
-
-    this.onProgress?.(10, `Writing ${channels.length} channels to ${channelBlocks.length} blocks...`);
-
-    log.info(`Starting write operation: ${channels.length} channels to ${channelBlocks.length} blocks`, 'Protocol');
-    log.debug(`Block addresses: ${channelBlocks.map(b => `0x${b.address.toString(16).padStart(6, '0').toUpperCase()}`).join(', ')}`, 'Protocol');
-
-    // Encode all channels to binary
-    const encodedChannels = channels.map(ch => encodeChannel(ch));
-    log.debug(`Encoded ${encodedChannels.length} channels to binary format`, 'Protocol');
-    
-    // Step 1: Read metadata bytes from ALL active channel blocks (1 byte per block at offset 0xFFF)
-    // This matches the serial capture pattern: read all metadata first, then write only blocks we change
-    log.debug(`Reading metadata bytes (1 byte each) from all ${channelBlocks.length} active channel blocks...`, 'Protocol');
-    
-    for (let blockIdx = 0; blockIdx < channelBlocks.length; blockIdx++) {
-      const block = channelBlocks[blockIdx];
-      const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
-      const metadataAddr = block.address + 0xFFF; // Read metadata byte at offset 0xFFF
-      const metadataAddrHex = `0x${metadataAddr.toString(16).padStart(6, '0').toUpperCase()}`;
-      
-      try {
-        log.debug(`Reading metadata byte from block ${blockIdx + 1}/${channelBlocks.length} at ${metadataAddrHex} (block address: ${addressHex}, metadata: 0x${block.metadata.toString(16).padStart(2, '0')})`, 'Protocol');
-        
-        // Read only the metadata byte (1 byte at offset 0xFFF)
-        const metadataData = await this.connection!.readMemory(metadataAddr, 1);
-        const metadataValue = metadataData[0];
-        
-        log.debug(`Successfully read metadata byte from ${addressHex}: 0x${metadataValue.toString(16).padStart(2, '0')}`, 'Protocol');
-        
-        // Verify metadata matches what we discovered
-        if (metadataValue !== block.metadata) {
-          log.warn(`Metadata mismatch at ${addressHex}: expected 0x${block.metadata.toString(16).padStart(2, '0')}, got 0x${metadataValue.toString(16).padStart(2, '0')}. Using discovered value.`, 'Protocol');
-        }
-        
-        // Add delay between metadata reads
-        if (blockIdx < channelBlocks.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
-        }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        log.error(`Failed to read metadata from block ${blockIdx + 1}/${channelBlocks.length} at ${addressHex} (metadata address: ${metadataAddrHex})`, 'Protocol', error);
-        log.error(`This was block ${blockIdx + 1} of ${channelBlocks.length} total blocks`, 'Protocol');
-        throw new Error(`Failed to read metadata from block ${blockIdx + 1} at ${addressHex}: ${errorMsg}`);
-      }
-    }
-    
-    log.debug('Metadata read complete, starting write operations...', 'Protocol');
-    
-    // Step 2: Calculate how many blocks we actually need to write
-    // First block: 84 channels (starts at offset 0x10, so (4096 - 0x10) / 48 = 84)
-    // Subsequent blocks: 85 channels each (4096 / 48 = 85)
-    const channelsPerFirstBlock = 84;
-    const channelsPerSubsequentBlock = 85;
-    
-    let blocksNeeded = 0;
-    if (channels.length > 0) {
-      blocksNeeded = 1; // First block
-      const remainingChannels = channels.length - channelsPerFirstBlock;
-      if (remainingChannels > 0) {
-        blocksNeeded += Math.ceil(remainingChannels / channelsPerSubsequentBlock);
-      }
-    }
-    
-    // Only write to the blocks we actually need
-    const blocksToWrite = channelBlocks.slice(0, blocksNeeded);
-    log.info(`Will write to ${blocksToWrite.length} blocks (${channels.length} channels)`, 'Protocol');
-    
-    // Step 3: Create new block data and write only to blocks we need
-    // We create fresh 4KB blocks filled with 0xFF, then write our channel data
-    let channelIndex = 0;
-    for (let blockIdx = 0; blockIdx < blocksToWrite.length && channelIndex < channels.length; blockIdx++) {
-      const block = blocksToWrite[blockIdx];
-      const isFirstBlock = block.metadata === METADATA.CHANNEL_FIRST;
-      const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
-      const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`;
-      
-      log.debug(`Processing block ${blockIdx + 1}/${blocksToWrite.length}: Address=${addressHex}, Metadata=${metadataHex}, IsFirst=${isFirstBlock}`, 'Protocol');
-      
-      // Create a new 4KB block filled with 0xFF (empty marker)
-      const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
-      blockData.fill(0xFF);
-      
-      // Update channel count in first block header (bytes 0-3)
-      if (isFirstBlock) {
-        const channelCountBytes = new Uint8Array(4);
-        channelCountBytes[0] = channels.length & 0xFF;
-        channelCountBytes[1] = (channels.length >> 8) & 0xFF;
-        channelCountBytes[2] = (channels.length >> 16) & 0xFF;
-        channelCountBytes[3] = (channels.length >> 24) & 0xFF;
-        blockData.set(channelCountBytes, 0);
-        log.debug(`Updated channel count in first block header: ${channels.length} (bytes: ${Array.from(channelCountBytes).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ')})`, 'Protocol');
-      }
-      
-      // Determine start offset and max channels for this block
-      const startOffset = isFirstBlock ? OFFSET.FIRST_CHANNEL : 0x00;
-      const maxChannelsInBlock = isFirstBlock ? 84 : 85;
-      const maxOffset = startOffset + (maxChannelsInBlock * BLOCK_SIZE.CHANNEL);
-      
-      log.verbose(`Block channel layout: Start offset=0x${startOffset.toString(16).padStart(2, '0').toUpperCase()}, Max channels=${maxChannelsInBlock}, Max offset=0x${maxOffset.toString(16).padStart(4, '0').toUpperCase()}`, 'Protocol');
-      
-      const channelsInThisBlock: number[] = [];
-      
-      // Write channels to this block
-      for (let offset = startOffset; offset < maxOffset && channelIndex < channels.length; offset += BLOCK_SIZE.CHANNEL) {
-        const channel = channels[channelIndex];
-        
-        // Encode channel to binary
-        const encodedChannel = encodedChannels[channelIndex];
-        blockData.set(encodedChannel, offset);
-        
-        // Forbid TX is now written at fixed position 0x08 within the 48-byte channel data
-        // No need to write separately - it's already in the encoded channel data
-        
-        channelsInThisBlock.push(channel.number);
-        channelIndex++;
-        
-        // Update progress
-        const progress = 10 + Math.floor((channelIndex / channels.length) * 80); // 10-90%
-        if (channelIndex % 10 === 0 || channelIndex === channels.length) {
-          this.onProgress?.(progress, `Encoded ${channelIndex} of ${channels.length} channels...`);
-        }
-      }
-      
-      // CRITICAL: Fill any unused channel slots with 0xFF (empty channel marker)
-      // This ensures the block is properly formatted even if we're writing fewer channels than the block can hold
-      const lastChannelOffset = startOffset + (channelsInThisBlock.length * BLOCK_SIZE.CHANNEL);
-      if (lastChannelOffset < maxOffset) {
-        // Fill remaining channel slots with 0xFF
-        const emptyChannel = new Uint8Array(BLOCK_SIZE.CHANNEL);
-        emptyChannel.fill(0xFF);
-        for (let offset = lastChannelOffset; offset < maxOffset; offset += BLOCK_SIZE.CHANNEL) {
-          blockData.set(emptyChannel, offset);
-        }
-        log.debug(`Filled ${Math.floor((maxOffset - lastChannelOffset) / BLOCK_SIZE.CHANNEL)} unused channel slots with 0xFF`, 'Protocol');
-      }
-      
-      log.debug(`Block ${blockIdx + 1} prepared: ${channelsInThisBlock.length} channels (${channelsInThisBlock.join(', ')}), Total encoded: ${channelIndex}/${channels.length}`, 'Protocol');
-      
-      // CRITICAL: Set metadata byte at offset 0xFFF in the block data
-      // This must match the metadata byte we send at the end of the write command
-      blockData[0xFFF] = block.metadata;
-      log.debug(`Set metadata byte at 0xFFF to ${metadataHex}`, 'Protocol');
-      
-      // Final validation: Ensure block is exactly 4KB before writing
-      if (blockData.length !== BLOCK_SIZE.STANDARD) {
-        throw new Error(`Block data size error at ${addressHex}: must be exactly ${BLOCK_SIZE.STANDARD} bytes (4KB), got ${blockData.length} bytes`);
-      }
-      log.debug(`Block ${blockIdx + 1} validated: ${blockData.length} bytes (4KB)`, 'Protocol');
-      
-      // Write the block back to radio
-      const progress = 90 + Math.floor((blockIdx / blocksToWrite.length) * 10); // 90-100%
-      this.onProgress?.(progress, `Writing block ${blockIdx + 1} of ${blocksToWrite.length}...`);
-      
-      log.debug(`Writing block ${blockIdx + 1}/${blocksToWrite.length} to radio at ${addressHex} (metadata: ${metadataHex})...`, 'Protocol');
-      try {
-        await this.connection!.writeMemory(block.address, blockData, block.metadata);
-        log.info(`Successfully wrote block ${blockIdx + 1}/${blocksToWrite.length} to radio at ${addressHex}`, 'Protocol');
-      } catch (error) {
-        log.error(`Failed to write block ${blockIdx + 1}/${blocksToWrite.length} at ${addressHex} (metadata: ${metadataHex})`, 'Protocol', error);
-        log.error(`This was write attempt ${blockIdx + 1} of ${blocksToWrite.length} total blocks`, 'Protocol');
-        throw error;
-      }
-      
-      // No delay needed - we wait for ACK before proceeding, just like the original C code
-      
-      // Stop if we've written all channels
-      if (channelIndex >= channels.length) {
-        log.debug(`All ${channelIndex} channels have been written, stopping block iteration`, 'Protocol');
-        break;
-      }
-    }
-
-    // Step 4: Write TX Contact blocks (0x42 and 0x43) for digital channels
+    // Write TX Contact blocks (0x42 and 0x43) for digital channels
     this.onProgress?.(92, 'Writing TX Contact data...');
     await this.writeTxContactBlocks(channels);
 
@@ -3093,81 +3010,10 @@ export class DM32UVProtocol implements RadioProtocol {
     // Track which blocks we're replacing (only channels, zones, scan lists)
     const blocksToWrite: Array<{ address: number; data: Uint8Array; metadata: number }> = [];
 
-    // Generate channel blocks
-    const channelBlocks = this.discoveredBlocks
-      .filter(b => b.type === 'channel')
-      .sort((a, b) => a.metadata - b.metadata);
-
-    if (channels.length > 0 && channelBlocks.length === 0) {
-      throw new Error('No channel blocks found');
-    }
-
+    // Generate channel blocks using shared helper method
     if (channels.length > 0) {
-      if (channels.length > 4000) {
-        throw new Error(`Too many channels: ${channels.length} (maximum 4000)`);
-      }
-
-      const firstChannelBlock = channelBlocks.find(b => b.metadata === METADATA.CHANNEL_FIRST);
-      if (!firstChannelBlock) {
-        throw new Error(`First channel block (metadata 0x${METADATA.CHANNEL_FIRST.toString(16)}) not found`);
-      }
-
-      // Encode all channels to binary
-      const encodedChannels = channels.map(ch => encodeChannel(ch));
-      
-      // Generate new block data for each channel block
-      let channelIndex = 0;
-      for (let blockIdx = 0; blockIdx < channelBlocks.length && channelIndex < channels.length; blockIdx++) {
-        const block = channelBlocks[blockIdx];
-        const isFirstBlock = block.metadata === METADATA.CHANNEL_FIRST;
-        
-        // Generate new 4KB block filled with 0xFF
-        const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
-        blockData.fill(0xFF);
-        
-        // Set metadata byte at 0xFFF
-        blockData[0xFFF] = block.metadata;
-        
-        // Update channel count in first block header (bytes 0-3)
-        if (isFirstBlock) {
-          blockData[0] = channels.length & 0xFF;
-          blockData[1] = (channels.length >> 8) & 0xFF;
-          blockData[2] = (channels.length >> 16) & 0xFF;
-          blockData[3] = (channels.length >> 24) & 0xFF;
-        }
-        
-        // Determine start offset and max channels for this block
-        const startOffset = isFirstBlock ? OFFSET.FIRST_CHANNEL : 0x00;
-        const maxChannelsInBlock = isFirstBlock ? 84 : 85;
-        const maxOffset = startOffset + (maxChannelsInBlock * BLOCK_SIZE.CHANNEL);
-        
-        // Write channels to this block
-        for (let offset = startOffset; offset < maxOffset && channelIndex < channels.length; offset += BLOCK_SIZE.CHANNEL) {
-          blockData.set(encodedChannels[channelIndex], offset);
-          
-          // Forbid TX is already written in the encoded channel data at byte 0x18, bit 3
-          // No need to write separately - it's part of the mode flags byte
-          
-          channelIndex++;
-        }
-        
-        blocksToWrite.push({
-          address: block.address,
-          data: blockData,
-          metadata: block.metadata,
-        });
-        
-        // Update cache with new block data
-        const cacheIndex = this.cachedBlockData.findIndex(b => b.address === block.address);
-        if (cacheIndex >= 0) {
-          this.cachedBlockData[cacheIndex].data = blockData;
-        }
-        
-        // Stop if we've written all channels
-        if (channelIndex >= channels.length) {
-          break;
-        }
-      }
+      const channelBlocks = this.generateChannelBlocks(channels);
+      blocksToWrite.push(...channelBlocks);
     }
 
     // Generate zone blocks - ALWAYS write zones when writing channels
