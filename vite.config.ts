@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 import { execSync } from 'child_process'
+import { inlineFavicon } from './vite-plugin-inline-favicon'
 
 // Get commit hash from environment or git
 function getCommitHash(): string {
@@ -30,6 +31,8 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
+      // Inline favicon as base64 data URI during build
+      inlineFavicon(),
       // Only use single-file plugin when building for single-file mode
       ...(isSingleFile ? [viteSingleFile()] : []),
     ],
