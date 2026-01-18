@@ -48,3 +48,6 @@ colours.png
 
 # env file
 .env
+
+#Ignore bug data folder
+bugs/*
