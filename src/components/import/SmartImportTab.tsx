@@ -14,7 +14,6 @@ import { importChannelsFromChirpCSV, exportChannelsToChirpCSV, downloadCSV } fro
 import type { Channel } from '../../models';
 import type { Zone } from '../../models';
 import { Button } from '../ui/Button';
-import { formatBytes } from '../../utils/formatHelpers';
 
 export const SmartImportTab: React.FC = () => {
   const { channels, setChannels } = useChannelsStore();
@@ -34,11 +33,7 @@ export const SmartImportTab: React.FC = () => {
   const [searchDmrRepeaters, setSearchDmrRepeaters] = useState(true);
   const [isSearchingAll, setIsSearchingAll] = useState(false);
   
-  // Generation options
-  const [groupByBand, setGroupByBand] = useState(true);
-  const [groupByDistance, setGroupByDistance] = useState(false);
-  const [maxDistancePerZone, setMaxDistancePerZone] = useState('25');
-  const [isGenerating, setIsGenerating] = useState(false);
+  // Generation result
   const [generationResult, setGenerationResult] = useState<{ channels: number; zones: number } | null>(null);
   
   // Fixed channels state
@@ -47,16 +42,15 @@ export const SmartImportTab: React.FC = () => {
   const [expandedChannelSet, setExpandedChannelSet] = useState<string | null>(null);
   
   // Airport channels state
-  const [airportRadius, setAirportRadius] = useState('50');
+  const [airportRadius] = useState('50');
   const [isAddingAirports, setIsAddingAirports] = useState(false);
   const [isSearchingAirports, setIsSearchingAirports] = useState(false);
   const [airports, setAirports] = useState<AirportData[]>([]);
   const [selectedAirports, setSelectedAirports] = useState<Set<number>>(new Set());
   const [airportZoneGrouping, setAirportZoneGrouping] = useState<'individual' | 'single'>('individual');
-  const [airportLoadProgress, setAirportLoadProgress] = useState<{ percent: number; loaded: number; total: number } | null>(null);
   
   // TAFL channels state
-  const [taflRadius, setTaflRadius] = useState('10'); // Reduced default from 50 to 10
+  const [taflRadius] = useState('10'); // Reduced default from 50 to 10
   const [taflSearchFilter, setTaflSearchFilter] = useState('');
   const [isAddingTafl, setIsAddingTafl] = useState(false);
   const [isSearchingTafl, setIsSearchingTafl] = useState(false);
@@ -66,7 +60,7 @@ export const SmartImportTab: React.FC = () => {
   const [taflLoadProgress, setTaflLoadProgress] = useState<{ percent: number; loaded: number; total: number } | null>(null);
   
   // DMR Repeater (rptrs) channels state
-  const [rptrsRadius, setRptrsRadius] = useState('50');
+  const [rptrsRadius] = useState('50');
   const [rptrsSearchFilter, setRptrsSearchFilter] = useState('');
   const [isAddingRptrs, setIsAddingRptrs] = useState(false);
   const [isSearchingRptrs, setIsSearchingRptrs] = useState(false);
@@ -229,7 +223,6 @@ export const SmartImportTab: React.FC = () => {
       setIsSearchingRptrs(false);
     } finally {
       setIsSearchingAll(false);
-      setAirportLoadProgress(null);
       setTaflLoadProgress(null);
       setRptrsLoadProgress(null);
     }
@@ -322,74 +315,6 @@ export const SmartImportTab: React.FC = () => {
 
   const fixedChannelSets = getAvailableFixedChannelSets();
 
-  const handleSearchAirports = async () => {
-    setIsSearchingAirports(true);
-    setError(null);
-    setAirports([]);
-    setSelectedAirports(new Set());
-    setAirportLoadProgress({ percent: 0, loaded: 0, total: 0 });
-    
-    try {
-      let lat: number;
-      let lon: number;
-      
-      if (locationType === 'current') {
-        const currentLoc = await getCurrentLocation();
-        lat = currentLoc.latitude;
-        lon = currentLoc.longitude;
-      } else if (locationType === 'coordinates') {
-        const parsedLat = parseFloat(latitude);
-        const parsedLon = parseFloat(longitude);
-        
-        if (isNaN(parsedLat) || isNaN(parsedLon)) {
-          throw new Error('Invalid coordinates');
-        }
-        
-        if (parsedLat < -90 || parsedLat > 90) {
-          throw new Error('Latitude must be between -90 and 90');
-        }
-        
-        if (parsedLon < -180 || parsedLon > 180) {
-          throw new Error('Longitude must be between -180 and 180');
-        }
-        
-        lat = parsedLat;
-        lon = parsedLon;
-      } else {
-        // City/State - need to geocode
-        const geocoded = await geocodeLocation(city, state);
-        if (!geocoded) {
-          throw new Error('Could not find location. Please use coordinates instead.');
-        }
-        
-        lat = geocoded.latitude;
-        lon = geocoded.longitude;
-      }
-      
-      // Load airports data with progress tracking
-      const nearbyAirports = await findNearbyAirports(
-        lat, 
-        lon, 
-        parseFloat(airportRadius) || 50,
-        (progress) => {
-          setAirportLoadProgress({
-            percent: progress.percent,
-            loaded: progress.loaded,
-            total: progress.total,
-          });
-        }
-      );
-      setAirports(nearbyAirports);
-      
-      // Auto-select all airports
-      setSelectedAirports(new Set(nearbyAirports.map((_, i) => i)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to search airports');
-    } finally {
-      setIsSearchingAirports(false);
-      setAirportLoadProgress(null);
-    }
-  };
 
   const handleToggleAirport = (index: number) => {
     const newSelected = new Set(selectedAirports);
@@ -469,78 +394,6 @@ export const SmartImportTab: React.FC = () => {
     }
   };
 
-  const handleSearchTafl = async () => {
-    setIsSearchingTafl(true);
-    setError(null);
-    setTaflEntries([]);
-    setSelectedTaflEntries(new Set());
-    setTaflLoadProgress({ percent: 0, loaded: 0, total: 0 });
-    
-    try {
-      let lat: number;
-      let lon: number;
-      
-      if (locationType === 'current') {
-        const currentLoc = await getCurrentLocation();
-        lat = currentLoc.latitude;
-        lon = currentLoc.longitude;
-      } else if (locationType === 'coordinates') {
-        const parsedLat = parseFloat(latitude);
-        const parsedLon = parseFloat(longitude);
-        
-        if (isNaN(parsedLat) || isNaN(parsedLon)) {
-          throw new Error('Invalid coordinates');
-        }
-        
-        if (parsedLat < -90 || parsedLat > 90) {
-          throw new Error('Latitude must be between -90 and 90');
-        }
-        
-        if (parsedLon < -180 || parsedLon > 180) {
-          throw new Error('Longitude must be between -180 and 180');
-        }
-        
-        lat = parsedLat;
-        lon = parsedLon;
-      } else {
-        // City/State - need to geocode
-        const geocoded = await geocodeLocation(city, state);
-        if (!geocoded) {
-          throw new Error('Could not find location. Please use coordinates instead.');
-        }
-        
-        lat = geocoded.latitude;
-        lon = geocoded.longitude;
-      }
-      
-      // Load TAFL data with progress tracking
-      const nearbyTafl = await findNearbyTaflEntries(
-        lat, 
-        lon, 
-        parseFloat(taflRadius) || 10,
-        (progress) => {
-          setTaflLoadProgress({
-            percent: progress.percent,
-            loaded: progress.loaded,
-            total: progress.total,
-          });
-        }
-      );
-      setTaflEntries(nearbyTafl);
-      
-      // Don't auto-select - let user filter and select manually
-      setSelectedTaflEntries(new Set());
-      
-      // Auto-expand all groups by default
-      const groups = groupTaflEntriesByName(nearbyTafl, 2);
-      setExpandedTaflGroups(new Set(groups.keys()));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to search TAFL entries');
-    } finally {
-      setIsSearchingTafl(false);
-      setTaflLoadProgress(null);
-    }
-  };
 
   // Note: handleToggleTafl is now handled inline in the render for deduplicated entries
 
@@ -648,88 +501,6 @@ export const SmartImportTab: React.FC = () => {
     }
   };
 
-  const handleSearchRptrs = async () => {
-    setIsSearchingRptrs(true);
-    setError(null);
-    setRptrs([]);
-    setSelectedRptrs(new Set());
-    setRptrsLoadProgress({ percent: 0, loaded: 0, total: 0 });
-    
-    try {
-      let lat: number;
-      let lon: number;
-      
-      if (locationType === 'current') {
-        const currentLoc = await getCurrentLocation();
-        lat = currentLoc.latitude;
-        lon = currentLoc.longitude;
-      } else if (locationType === 'coordinates') {
-        const parsedLat = parseFloat(latitude);
-        const parsedLon = parseFloat(longitude);
-        
-        if (isNaN(parsedLat) || isNaN(parsedLon) || !latitude.trim() || !longitude.trim()) {
-          throw new Error('Invalid coordinates. Please enter valid latitude and longitude.');
-        }
-        
-        if (parsedLat < -90 || parsedLat > 90) {
-          throw new Error('Latitude must be between -90 and 90');
-        }
-        
-        if (parsedLon < -180 || parsedLon > 180) {
-          throw new Error('Longitude must be between -180 and 180');
-        }
-        
-        lat = parsedLat;
-        lon = parsedLon;
-      } else {
-        // City/State - need to geocode
-        if (!city.trim()) {
-          throw new Error('Please enter a city name or use coordinates.');
-        }
-        const geocoded = await geocodeLocation(city, state);
-        if (!geocoded) {
-          throw new Error('Could not find location. Please use coordinates instead.');
-        }
-        lat = geocoded.latitude;
-        lon = geocoded.longitude;
-      }
-      
-      // Parse radius with validation
-      const searchRadius = parseFloat(rptrsRadius);
-      if (isNaN(searchRadius) || searchRadius <= 0) {
-        throw new Error('Please enter a valid search radius (greater than 0).');
-      }
-      
-      console.log(`Searching for DMR repeaters near ${lat}, ${lon} within ${searchRadius} miles`);
-      
-      // Load DMR repeaters data with progress tracking
-      const nearbyRptrs = await findNearbyRptrs(
-        lat,
-        lon,
-        searchRadius,
-        (progress) => {
-          setRptrsLoadProgress({
-            percent: progress.percent,
-            loaded: progress.loaded,
-            total: progress.total,
-          });
-        }
-      );
-      
-      console.log(`Found ${nearbyRptrs.length} DMR repeaters within ${searchRadius} miles`);
-      
-      setRptrs(nearbyRptrs);
-      
-      // Auto-select all repeaters
-      setSelectedRptrs(new Set(nearbyRptrs.map((_, i) => i)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to search DMR repeaters');
-      console.error('DMR repeater search error:', err);
-    } finally {
-      setIsSearchingRptrs(false);
-      setRptrsLoadProgress(null);
-    }
-  };
 
 
   const handleToggleRptr = (index: number) => {
