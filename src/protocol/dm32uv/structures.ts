@@ -1268,6 +1268,16 @@ export function encodeContactEntry(contact: Contact): Uint8Array {
       const len = Math.min(bytes.length, 15);
       entryData.set(bytes.slice(0, len), field.offset);
       entryData[field.offset + len] = 0x00;
+      // Fill remaining bytes with 0xFF
+      for (let i = len + 1; i < 16; i++) {
+        entryData[field.offset + i] = 0xFF;
+      }
+    } else {
+      // Write empty null-terminated string (0x00 at start, rest 0xFF)
+      entryData[field.offset] = 0x00;
+      for (let i = 1; i < 16; i++) {
+        entryData[field.offset + i] = 0xFF;
+      }
     }
   }
 
