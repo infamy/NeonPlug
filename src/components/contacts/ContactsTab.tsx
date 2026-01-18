@@ -457,7 +457,7 @@ export const ContactsTab: React.FC = () => {
               city: user.city || undefined,
               province: user.state || undefined, // RadioID uses "state" but we call it "province"
               country: user.country || undefined,
-              // callType, repeater, and remark are not available from RadioID API, so they remain undefined
+              // remark is not available from RadioID API, so it remains undefined
             });
           }
         }

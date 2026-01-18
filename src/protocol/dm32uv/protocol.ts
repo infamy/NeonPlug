@@ -141,7 +141,7 @@ export class DM32UVProtocol implements RadioProtocol {
         this.port = null;
         // Close the port if it's open
         try {
-          if (port.readable || port.writable) {
+          if (port && (port.readable || port.writable)) {
             await port.close();
           }
         } catch (closeError) {
