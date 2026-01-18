@@ -3,7 +3,8 @@
  * Exports and imports full codeplug data to/from XLSX format
  */
 
-import * as XLSX from 'xlsx';
+// Use writeFileXLSX instead of writeFile to only include XLSX writer (smaller bundle)
+import { read, writeFileXLSX, utils } from 'xlsx';
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
@@ -33,7 +34,7 @@ const CODEPLUG_VERSION = '1.0.0';
  * Export codeplug data to XLSX file
  */
 export function exportCodeplug(data: CodeplugData): void {
-  const workbook = XLSX.utils.book_new();
+  const workbook = utils.book_new();
 
   // Sheet 1: Channels - Enhanced with more fields and better formatting
   if (data.channels.length > 0) {
@@ -78,7 +79,7 @@ export function exportCodeplug(data: CodeplugData): void {
       'Compander Dup': ch.companderDup ? 'Yes' : 'No',
       'VOX Related': ch.voxRelated ? 'Yes' : 'No',
     }));
-    const channelsSheet = XLSX.utils.json_to_sheet(channelRows);
+    const channelsSheet = utils.json_to_sheet(channelRows);
     
     // Set column widths for better readability
     const channelColWidths = [
@@ -120,7 +121,7 @@ export function exportCodeplug(data: CodeplugData): void {
     ];
     channelsSheet['!cols'] = channelColWidths;
     
-    XLSX.utils.book_append_sheet(workbook, channelsSheet, 'Channels');
+    utils.book_append_sheet(workbook, channelsSheet, 'Channels');
   }
 
   // Sheet 2: Zones
@@ -130,9 +131,9 @@ export function exportCodeplug(data: CodeplugData): void {
       'Channel Count': zone.channels.length,
       'Channels': zone.channels.join(', '),
     }));
-    const zonesSheet = XLSX.utils.json_to_sheet(zoneRows);
+    const zonesSheet = utils.json_to_sheet(zoneRows);
     zonesSheet['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 50 }];
-    XLSX.utils.book_append_sheet(workbook, zonesSheet, 'Zones');
+    utils.book_append_sheet(workbook, zonesSheet, 'Zones');
   }
 
   // Sheet 3: Scan Lists
@@ -143,9 +144,9 @@ export function exportCodeplug(data: CodeplugData): void {
       'Channel Count': sl.channels.length,
       'Channels': sl.channels.join(', '),
     }));
-    const scanListsSheet = XLSX.utils.json_to_sheet(scanListRows);
+    const scanListsSheet = utils.json_to_sheet(scanListRows);
     scanListsSheet['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 50 }];
-    XLSX.utils.book_append_sheet(workbook, scanListsSheet, 'Scan Lists');
+    utils.book_append_sheet(workbook, scanListsSheet, 'Scan Lists');
   }
 
   // Sheet 4: Contacts
@@ -156,9 +157,9 @@ export function exportCodeplug(data: CodeplugData): void {
       'Call Sign': contact.callSign || '',
       'DMR ID': contact.dmrId || '',
     }));
-    const contactsSheet = XLSX.utils.json_to_sheet(contactRows);
+    const contactsSheet = utils.json_to_sheet(contactRows);
     contactsSheet['!cols'] = [{ wch: 8 }, { wch: 25 }, { wch: 15 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(workbook, contactsSheet, 'Contacts');
+    utils.book_append_sheet(workbook, contactsSheet, 'Contacts');
   }
 
   // Sheet 5: Digital Emergency Systems
@@ -168,8 +169,8 @@ export function exportCodeplug(data: CodeplugData): void {
       'Name': de.name,
       'Fields (Hex)': Array.from(de.fields).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase(),
     }));
-    const digitalEmergencySheet = XLSX.utils.json_to_sheet(digitalEmergencyRows);
-    XLSX.utils.book_append_sheet(workbook, digitalEmergencySheet, 'Digital Emergency');
+    const digitalEmergencySheet = utils.json_to_sheet(digitalEmergencyRows);
+    utils.book_append_sheet(workbook, digitalEmergencySheet, 'Digital Emergency');
     
     // Add config as a separate sheet if available
     if (data.digitalEmergencyConfig) {
@@ -188,8 +189,8 @@ export function exportCodeplug(data: CodeplugData): void {
         'Bit Flags': data.digitalEmergencyConfig.bitFlags,
         'Index/Count': data.digitalEmergencyConfig.indexCount,
       }];
-      const configSheet = XLSX.utils.json_to_sheet(configRows);
-      XLSX.utils.book_append_sheet(workbook, configSheet, 'Digital Emergency Config');
+      const configSheet = utils.json_to_sheet(configRows);
+      utils.book_append_sheet(workbook, configSheet, 'Digital Emergency Config');
     }
   }
 
@@ -208,8 +209,8 @@ export function exportCodeplug(data: CodeplugData): void {
       'Flags': ae.flags,
       'Frequency/ID': ae.frequencyId,
     }));
-    const analogEmergencySheet = XLSX.utils.json_to_sheet(analogEmergencyRows);
-    XLSX.utils.book_append_sheet(workbook, analogEmergencySheet, 'Analog Emergency');
+    const analogEmergencySheet = utils.json_to_sheet(analogEmergencyRows);
+    utils.book_append_sheet(workbook, analogEmergencySheet, 'Analog Emergency');
   }
 
   // Sheet 7: Radio Settings - Row layout (field names in column A, values in column B)
@@ -241,7 +242,7 @@ export function exportCodeplug(data: CodeplugData): void {
       ['Zone Enabled', data.radioSettings.zoneEnabled ? 'Yes' : 'No'],
       ['Unknown Value (0x332)', data.radioSettings.unknownValue],
     ];
-    const radioSettingsSheet = XLSX.utils.aoa_to_sheet(radioSettingsRows);
+    const radioSettingsSheet = utils.aoa_to_sheet(radioSettingsRows);
     
     // Set column widths
     radioSettingsSheet['!cols'] = [
@@ -249,7 +250,7 @@ export function exportCodeplug(data: CodeplugData): void {
       { wch: 25 },  // Values
     ];
     
-    XLSX.utils.book_append_sheet(workbook, radioSettingsSheet, 'Radio Settings');
+    utils.book_append_sheet(workbook, radioSettingsSheet, 'Radio Settings');
   }
 
   // Sheet 8: Radio Info (Metadata)
@@ -264,8 +265,8 @@ export function exportCodeplug(data: CodeplugData): void {
       'Config Start': data.radioInfo.memoryLayout?.configStart ? `0x${data.radioInfo.memoryLayout.configStart.toString(16)}` : '',
       'Config End': data.radioInfo.memoryLayout?.configEnd ? `0x${data.radioInfo.memoryLayout.configEnd.toString(16)}` : '',
     }];
-    const radioInfoSheet = XLSX.utils.json_to_sheet(radioInfoRows);
-    XLSX.utils.book_append_sheet(workbook, radioInfoSheet, 'Radio Info');
+    const radioInfoSheet = utils.json_to_sheet(radioInfoRows);
+    utils.book_append_sheet(workbook, radioInfoSheet, 'Radio Info');
   }
 
   // Sheet 9: Export Metadata
@@ -279,15 +280,15 @@ export function exportCodeplug(data: CodeplugData): void {
     'Digital Emergency Count': data.digitalEmergencies.length,
     'Analog Emergency Count': data.analogEmergencies.length,
   }];
-  const metadataSheet = XLSX.utils.json_to_sheet(metadataRows);
-  XLSX.utils.book_append_sheet(workbook, metadataSheet, 'Export Info');
+  const metadataSheet = utils.json_to_sheet(metadataRows);
+  utils.book_append_sheet(workbook, metadataSheet, 'Export Info');
 
   // Generate filename with timestamp
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
   const filename = `codeplug-export-${timestamp}.xlsx`;
 
   // Write file
-  XLSX.writeFile(workbook, filename);
+  writeFileXLSX(workbook, filename);
 }
 
 /**
@@ -300,7 +301,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
+        const workbook = read(data, { type: 'array' });
 
         const result: CodeplugData = {
           channels: [],
@@ -319,7 +320,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
         // Import Channels
         if (workbook.SheetNames.includes('Channels')) {
           const sheet = workbook.Sheets['Channels'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           result.channels = rows.map(row => {
             // Parse CTCSS/DCS
             const parseCTCSSDCS = (str: string) => {
@@ -382,7 +383,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
         // Import Zones
         if (workbook.SheetNames.includes('Zones')) {
           const sheet = workbook.Sheets['Zones'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           result.zones = rows.map(row => ({
             name: row['Zone Name'] || '',
             channels: (row['Channels'] || '').toString().split(',').map((c: string) => parseInt(c.trim())).filter((n: number) => !isNaN(n)),
@@ -392,7 +393,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
         // Import Scan Lists
         if (workbook.SheetNames.includes('Scan Lists')) {
           const sheet = workbook.Sheets['Scan Lists'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           result.scanLists = rows.map(row => ({
             name: row['Scan List Name'] || '',
             ctcScanMode: parseInt(row['CTC Scan Mode']) || 0,
@@ -404,7 +405,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
         // Import Contacts
         if (workbook.SheetNames.includes('Contacts')) {
           const sheet = workbook.Sheets['Contacts'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           result.contacts = rows.map(row => ({
             id: parseInt(row['ID']) || 0,
             name: row['Name'] || '',
@@ -416,7 +417,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
         // Import Digital Emergency Systems
         if (workbook.SheetNames.includes('Digital Emergency')) {
           const sheet = workbook.Sheets['Digital Emergency'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           result.digitalEmergencies = rows.map(row => {
             // Parse hex fields string back to bytes
             const fieldsHex = (row['Fields (Hex)'] || '').toString().replace(/[^0-9A-Fa-f]/g, '').slice(0, 20);
@@ -438,7 +439,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
         // Import Digital Emergency Config
         if (workbook.SheetNames.includes('Digital Emergency Config')) {
           const sheet = workbook.Sheets['Digital Emergency Config'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           if (rows.length > 0) {
             const row = rows[0];
             result.digitalEmergencyConfig = {
@@ -470,7 +471,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
         // Import Analog Emergency Systems
         if (workbook.SheetNames.includes('Analog Emergency')) {
           const sheet = workbook.Sheets['Analog Emergency'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           result.analogEmergencies = rows.map(row => ({
             index: parseInt(row['Index']) || 0,
             name: row['Name'] || '',
@@ -496,7 +497,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
           
           if (firstCell === 'Field') {
             // Row layout: Field names in column A, values in column B
-            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as any[][];
+            const rows = utils.sheet_to_json(sheet, { header: 1, defval: '' }) as any[][];
             for (let i = 1; i < rows.length; i++) {
               const [field, value] = rows[i];
               if (field && value !== undefined && value !== '') {
@@ -587,7 +588,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
         // Import Radio Info
         if (workbook.SheetNames.includes('Radio Info')) {
           const sheet = workbook.Sheets['Radio Info'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           if (rows.length > 0) {
             const row = rows[0];
             const parseHex = (str: string) => {
