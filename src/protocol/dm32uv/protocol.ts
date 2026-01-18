@@ -1019,11 +1019,8 @@ export class DM32UVProtocol implements RadioProtocol {
       throw new Error(`First channel block data not found in cache`);
     }
 
-    // Read channel count from first 4 bytes
-    const channelCount = firstBlockData.data[0] | 
-                         (firstBlockData.data[1] << 8) | 
-                         (firstBlockData.data[2] << 16) | 
-                         (firstBlockData.data[3] << 24);
+    // Read channel count from first 2 bytes (little-endian)
+    const channelCount = firstBlockData.data[0] | (firstBlockData.data[1] << 8);
     log.info(`Channel count: ${channelCount}`, 'Protocol');
 
     // Calculate how many blocks we need based on channel count
@@ -1214,12 +1211,10 @@ export class DM32UVProtocol implements RadioProtocol {
       // Set metadata byte at 0xFFF
       blockData[0xFFF] = block.metadata;
       
-      // Update channel count in first block header (bytes 0-3)
+      // Update channel count in first block header (bytes 0-1, little-endian)
       if (isFirstBlock) {
         blockData[0] = channels.length & 0xFF;
         blockData[1] = (channels.length >> 8) & 0xFF;
-        blockData[2] = (channels.length >> 16) & 0xFF;
-        blockData[3] = (channels.length >> 24) & 0xFF;
       }
       
       // Determine start offset and max channels for this block
