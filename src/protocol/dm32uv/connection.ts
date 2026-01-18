@@ -55,7 +55,18 @@ export class DM32Connection {
     await this.sendCommand('PSEARCH');
     await this.delay(50); // Increased delay to give radio time to respond
     
-    const psearchResponse = await this.readBytes(8);
+    let psearchResponse: Uint8Array;
+    try {
+      psearchResponse = await this.readBytes(8);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      // If we got a timeout, it means the port opened but radio never replied
+      if (errorMsg.includes('timed out') || errorMsg.includes('timeout')) {
+        throw new Error('No reply from the radio. Is the radio connected and turned on?');
+      }
+      // Re-throw other errors
+      throw error;
+    }
     
     // Validate: first byte should be 0x06 (ACK)
     if (psearchResponse[0] !== 0x06) {

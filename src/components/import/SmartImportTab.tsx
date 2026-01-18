@@ -1,8 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
-import { searchRepeaters, getCurrentLocation, geocodeLocation, type Repeater, type LocationInput } from '../../services/repeaterFinder';
-import { generateChannelsAndZones, type GenerationOptions } from '../../services/locationChannelGenerator';
+import { getCurrentLocation, geocodeLocation } from '../../services/repeaterFinder';
 import { getAvailableFixedChannelSets, getChannelsForSet } from '../../services/fixedChannels';
 import { mergeOverlappingChannels } from '../../services/channelMerger';
 import { generateAirportChannels } from '../../services/airportChannels';
@@ -26,11 +25,14 @@ export const SmartImportTab: React.FC = () => {
   const [longitude, setLongitude] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
-  const [radius, setRadius] = useState('50');
-  const [isSearching, setIsSearching] = useState(false);
-  const [repeaters, setRepeaters] = useState<Repeater[]>([]);
-  const [selectedRepeaters, setSelectedRepeaters] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  
+  // Unified location search state
+  const [searchRadius, setSearchRadius] = useState('50');
+  const [searchAirports, setSearchAirports] = useState(true);
+  const [searchTafl, setSearchTafl] = useState(true);
+  const [searchDmrRepeaters, setSearchDmrRepeaters] = useState(true);
+  const [isSearchingAll, setIsSearchingAll] = useState(false);
   
   // Generation options
   const [groupByBand, setGroupByBand] = useState(true);
@@ -83,175 +85,153 @@ export const SmartImportTab: React.FC = () => {
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleUseCurrentLocation = async () => {
-    setIsSearching(true);
-    setError(null);
-    
-    try {
-      const location = await getCurrentLocation();
-      setLatitude(location.latitude.toFixed(6));
-      setLongitude(location.longitude.toFixed(6));
-      setLocationType('coordinates');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get current location');
-    } finally {
-      setIsSearching(false);
-    }
-  };
 
-  const handleGeocodeCityState = async () => {
-    if (!city.trim()) {
-      setError('Please enter a city name');
+  // Unified search handler that searches all selected types
+  const handleSearchAll = async () => {
+    if (!searchAirports && !searchTafl && !searchDmrRepeaters) {
+      setError('Please select at least one search type (Airports, TAFL, or DMR Repeaters)');
       return;
     }
-    
-    setIsSearching(true);
-    setError(null);
-    
-    try {
-      const geocoded = await geocodeLocation(city, state);
-      if (!geocoded) {
-        throw new Error('Could not find location. Please check the city and state names.');
-      }
-      
-      // Populate coordinates
-      setLatitude(geocoded.latitude.toFixed(6));
-      setLongitude(geocoded.longitude.toFixed(6));
-      
-      // Switch to coordinates view so user can see/verify them
-      setLocationType('coordinates');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to geocode location');
-    } finally {
-      setIsSearching(false);
-    }
-  };
 
-  const handleSearch = async () => {
-    setIsSearching(true);
+    setIsSearchingAll(true);
+    setIsSearchingAirports(searchAirports);
+    setIsSearchingTafl(searchTafl);
+    setIsSearchingRptrs(searchDmrRepeaters);
     setError(null);
-    setRepeaters([]);
-    setSelectedRepeaters(new Set());
     
+    // Clear previous results
+    if (searchAirports) {
+      setAirports([]);
+      setSelectedAirports(new Set());
+    }
+    if (searchTafl) {
+      setTaflEntries([]);
+      setSelectedTaflEntries(new Set());
+    }
+    if (searchDmrRepeaters) {
+      setRptrs([]);
+      setSelectedRptrs(new Set());
+    }
+
     try {
-      let location: LocationInput;
+      let lat: number;
+      let lon: number;
       
+      // Get location
       if (locationType === 'current') {
         const currentLoc = await getCurrentLocation();
-        location = {
-          latitude: currentLoc.latitude,
-          longitude: currentLoc.longitude,
-          radius: parseFloat(radius) || 50,
-        };
+        lat = currentLoc.latitude;
+        lon = currentLoc.longitude;
       } else if (locationType === 'coordinates') {
-        const lat = parseFloat(latitude);
-        const lon = parseFloat(longitude);
+        const parsedLat = parseFloat(latitude);
+        const parsedLon = parseFloat(longitude);
         
-        if (isNaN(lat) || isNaN(lon)) {
-          throw new Error('Invalid coordinates');
+        if (isNaN(parsedLat) || isNaN(parsedLon) || !latitude.trim() || !longitude.trim()) {
+          throw new Error('Invalid coordinates. Please enter valid latitude and longitude.');
         }
         
-        if (lat < -90 || lat > 90) {
+        if (parsedLat < -90 || parsedLat > 90) {
           throw new Error('Latitude must be between -90 and 90');
         }
         
-        if (lon < -180 || lon > 180) {
+        if (parsedLon < -180 || parsedLon > 180) {
           throw new Error('Longitude must be between -180 and 180');
         }
         
-        location = {
-          latitude: lat,
-          longitude: lon,
-          radius: parseFloat(radius) || 50,
-        };
+        lat = parsedLat;
+        lon = parsedLon;
       } else {
         // City/State - need to geocode
+        if (!city.trim()) {
+          throw new Error('Please enter a city name.');
+        }
         const geocoded = await geocodeLocation(city, state);
         if (!geocoded) {
-          throw new Error('Could not find location. Please use coordinates instead.');
+          throw new Error('Could not find location. Please check the city and state names, or use coordinates instead.');
         }
-        
-        location = {
-          latitude: geocoded.latitude,
-          longitude: geocoded.longitude,
-          radius: parseFloat(radius) || 50,
-          city,
-          state,
-        };
+        lat = geocoded.latitude;
+        lon = geocoded.longitude;
+        // Optionally update the coordinates fields so user can see them
+        setLatitude(lat.toFixed(6));
+        setLongitude(lon.toFixed(6));
       }
       
-      const result = await searchRepeaters(location);
-      setRepeaters(result.repeaters);
-      
-      // Auto-select all repeaters
-      setSelectedRepeaters(new Set(result.repeaters.map((_, i) => i)));
+      const radius = parseFloat(searchRadius) || 50;
+      if (isNaN(radius) || radius <= 0) {
+        throw new Error('Please enter a valid search radius (greater than 0).');
+      }
+
+      // Search all selected types in parallel
+      const searchPromises: Promise<void>[] = [];
+
+      if (searchAirports) {
+        searchPromises.push(
+          (async () => {
+            const airportRadiusValue = parseFloat(airportRadius) || radius;
+            const nearbyAirports = await findNearbyAirports(lat, lon, airportRadiusValue);
+            setAirports(nearbyAirports);
+            setSelectedAirports(new Set(nearbyAirports.map((_, i) => i)));
+            setIsSearchingAirports(false);
+          })()
+        );
+      }
+
+      if (searchTafl) {
+        searchPromises.push(
+          (async () => {
+            const taflRadiusValue = parseFloat(taflRadius) || 10;
+            const nearbyTafl = await findNearbyTaflEntries(
+              lat,
+              lon,
+              taflRadiusValue,
+              (progress) => {
+                setTaflLoadProgress({
+                  percent: progress.percent,
+                  loaded: progress.loaded,
+                  total: progress.total,
+                });
+              }
+            );
+            setTaflEntries(nearbyTafl);
+            setIsSearchingTafl(false);
+          })()
+        );
+      }
+
+      if (searchDmrRepeaters) {
+        searchPromises.push(
+          (async () => {
+            const rptrsRadiusValue = parseFloat(rptrsRadius) || radius;
+            const nearbyRptrs = await findNearbyRptrs(
+              lat,
+              lon,
+              rptrsRadiusValue,
+              (progress) => {
+                setRptrsLoadProgress({
+                  percent: progress.percent,
+                  loaded: progress.loaded,
+                  total: progress.total,
+                });
+              }
+            );
+            setRptrs(nearbyRptrs);
+            setSelectedRptrs(new Set(nearbyRptrs.map((_, i) => i)));
+            setIsSearchingRptrs(false);
+          })()
+        );
+      }
+
+      await Promise.all(searchPromises);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to search repeaters');
+      setError(err instanceof Error ? err.message : 'Failed to search');
+      setIsSearchingAirports(false);
+      setIsSearchingTafl(false);
+      setIsSearchingRptrs(false);
     } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const handleToggleRepeater = (index: number) => {
-    const newSelected = new Set(selectedRepeaters);
-    if (newSelected.has(index)) {
-      newSelected.delete(index);
-    } else {
-      newSelected.add(index);
-    }
-    setSelectedRepeaters(newSelected);
-  };
-
-  const handleSelectAll = () => {
-    setSelectedRepeaters(new Set(repeaters.map((_, i) => i)));
-  };
-
-  const handleDeselectAll = () => {
-    setSelectedRepeaters(new Set());
-  };
-
-  const handleGenerate = () => {
-    if (selectedRepeaters.size === 0) {
-      setError('Please select at least one repeater');
-      return;
-    }
-    
-    setIsGenerating(true);
-    setError(null);
-    
-    try {
-      const selectedRepeaterList = Array.from(selectedRepeaters)
-        .map(i => repeaters[i])
-        .filter(Boolean);
-      
-      const options: GenerationOptions = {
-        groupByBand,
-        groupByDistance,
-        maxDistancePerZone: parseFloat(maxDistancePerZone) || 25,
-      };
-      
-      const result = generateChannelsAndZones(selectedRepeaterList, channels, options);
-      
-      // Add channels
-      const newChannels = [...channels, ...result.channels];
-      setChannels(newChannels);
-      
-      // Add zones
-      const newZones = [...zones, ...result.zones];
-      setZones(newZones);
-      
-      setGenerationResult({
-        channels: result.channels.length,
-        zones: result.zones.length,
-      });
-      
-      // Clear selection
-      setSelectedRepeaters(new Set());
-      setRepeaters([]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate channels and zones');
-    } finally {
-      setIsGenerating(false);
+      setIsSearchingAll(false);
+      setAirportLoadProgress(null);
+      setTaflLoadProgress(null);
+      setRptrsLoadProgress(null);
     }
   };
 
@@ -751,6 +731,7 @@ export const SmartImportTab: React.FC = () => {
     }
   };
 
+
   const handleToggleRptr = (index: number) => {
     const newSelected = new Set(selectedRptrs);
     if (newSelected.has(index)) {
@@ -862,7 +843,7 @@ export const SmartImportTab: React.FC = () => {
           errors: result.errors,
         });
       } else {
-        setError(result.errors?.join('\n') || 'Failed to import Chirp CSV');
+        setError(result.errors?.join('\n') || 'Failed to import CHIRP CSV');
         setChirpImportResult({
           operation: 'import',
           channels: 0,
@@ -870,7 +851,7 @@ export const SmartImportTab: React.FC = () => {
         });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to import Chirp CSV file');
+      setError(err instanceof Error ? err.message : 'Failed to import CHIRP CSV file');
     } finally {
       setIsImportingChirp(false);
       // Reset file input
@@ -888,7 +869,7 @@ export const SmartImportTab: React.FC = () => {
       );
       
       if (analogChannels.length === 0) {
-        setError('No analog channels to export. Chirp only supports analog channels.');
+        setError('No analog channels to export. CHIRP only supports analog channels.');
         return;
       }
       
@@ -900,7 +881,7 @@ export const SmartImportTab: React.FC = () => {
         setChirpImportResult({
           operation: 'export',
           channels: analogChannels.length,
-          errors: [`Exported ${analogChannels.length} analog channel${analogChannels.length !== 1 ? 's' : ''}. ${digitalCount} digital channel${digitalCount !== 1 ? 's' : ''} excluded (Chirp doesn't support digital).`],
+          errors: [`Exported ${analogChannels.length} analog channel${analogChannels.length !== 1 ? 's' : ''}. ${digitalCount} digital channel${digitalCount !== 1 ? 's' : ''} excluded (CHIRP doesn't support digital).`],
         });
       } else {
         setChirpImportResult({
@@ -910,7 +891,7 @@ export const SmartImportTab: React.FC = () => {
         });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export Chirp CSV');
+      setError(err instanceof Error ? err.message : 'Failed to export CHIRP CSV');
     }
   };
 
@@ -919,22 +900,22 @@ export const SmartImportTab: React.FC = () => {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-neon-cyan mb-2">Smart Import/Export</h2>
         <p className="text-cool-gray">
-          Import channels from Chirp CSV format or export your channels to Chirp CSV format
+          Import channels from CHIRP CSV format or export your channels to CHIRP CSV format
         </p>
       </div>
 
       {/* Chirp CSV Import/Export Section */}
       <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Chirp CSV Import/Export</h3>
+        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Analog CHIRP CSV Import/Export</h3>
         <p className="text-sm text-cool-gray mb-4">
-          Import channels from Chirp CSV format or export your channels to Chirp CSV format for use with other radio programming software.
+          Import or export analog channels in CHIRP CSV format for use with other radio programming software. Digital channels are not supported by CHIRP and will be excluded from exports.
         </p>
 
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
-            <label className="block text-sm text-cool-gray mb-2">Import from Chirp CSV</label>
+            <label className="block text-sm text-cool-gray mb-2">Import from CHIRP CSV</label>
             <p className="text-xs text-cool-gray mb-2">
-              Note: Chirp doesn't support digital channels. Any digital channels in the CSV will be imported as analog.
+              Any digital channels in the CSV will be imported as analog.
             </p>
             <input
               type="file"
@@ -949,20 +930,20 @@ export const SmartImportTab: React.FC = () => {
               disabled={isImportingChirp}
               className="w-full bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright"
             >
-              {isImportingChirp ? 'Importing...' : 'Import Chirp CSV'}
+              {isImportingChirp ? 'Importing...' : 'Import CHIRP CSV'}
             </Button>
           </div>
           <div>
-            <label className="block text-sm text-cool-gray mb-2">Export to Chirp CSV</label>
+            <label className="block text-sm text-cool-gray mb-2">Export to CHIRP CSV</label>
             <p className="text-xs text-cool-gray mb-2">
-              Note: Only analog channels will be exported (Chirp doesn't support digital channels)
+              Only analog channels will be exported. Digital channels are excluded.
             </p>
             <Button
               onClick={handleChirpCSVExport}
               disabled={channels.filter(ch => ch.mode === 'Analog' || ch.mode === 'Fixed Analog').length === 0}
               className="w-full bg-neon-magenta text-white hover:bg-neon-magenta-bright"
             >
-              Export to Chirp CSV ({channels.filter(ch => ch.mode === 'Analog' || ch.mode === 'Fixed Analog').length} analog)
+              Export to CHIRP CSV ({channels.filter(ch => ch.mode === 'Analog' || ch.mode === 'Fixed Analog').length} analog)
             </Button>
           </div>
         </div>
@@ -1011,9 +992,12 @@ export const SmartImportTab: React.FC = () => {
         </p>
       </div>
 
-      {/* Location Input */}
+      {/* Location-Based Search Section */}
       <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Location</h3>
+        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Location-Based Search</h3>
+        <p className="text-sm text-cool-gray mb-4">
+          Search for nearby airports, TAFL entries, and DMR repeaters based on your location
+        </p>
         
         <div className="mb-4">
           <label className="block text-sm text-cool-gray mb-2">Location Type</label>
@@ -1080,7 +1064,7 @@ export const SmartImportTab: React.FC = () => {
 
         {locationType === 'city' && (
           <div className="mb-4">
-            <div className="grid grid-cols-2 gap-4 mb-3">
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-cool-gray mb-2">City</label>
                 <input
@@ -1090,8 +1074,8 @@ export const SmartImportTab: React.FC = () => {
                   placeholder="Boston"
                   className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && city.trim()) {
-                      handleGeocodeCityState();
+                    if (e.key === 'Enter' && city.trim() && !isSearchingAll) {
+                      handleSearchAll();
                     }
                   }}
                 />
@@ -1105,23 +1089,13 @@ export const SmartImportTab: React.FC = () => {
                   placeholder="MA"
                   className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && city.trim()) {
-                      handleGeocodeCityState();
+                    if (e.key === 'Enter' && city.trim() && !isSearchingAll) {
+                      handleSearchAll();
                     }
                   }}
                 />
               </div>
             </div>
-            <Button
-              onClick={handleGeocodeCityState}
-              disabled={isSearching || !city.trim()}
-              className="w-full mb-3"
-            >
-              {isSearching ? 'Getting Coordinates...' : 'Get Coordinates'}
-            </Button>
-            <p className="text-xs text-cool-gray">
-              Click to convert city/state to coordinates. The view will switch to coordinates after geocoding.
-            </p>
           </div>
         )}
 
@@ -1129,89 +1103,105 @@ export const SmartImportTab: React.FC = () => {
           <label className="block text-sm text-cool-gray mb-2">Search Radius (miles)</label>
           <input
             type="number"
-            value={radius}
-            onChange={(e) => setRadius(e.target.value)}
+            value={searchRadius}
+            onChange={(e) => setSearchRadius(e.target.value)}
             min="1"
             max="200"
             className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
           />
         </div>
 
-        <div className="flex gap-2">
-          {locationType === 'current' && (
-            <Button
-              onClick={handleUseCurrentLocation}
-              disabled={isSearching}
-              className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright"
-            >
-              Get Current Location
-            </Button>
-          )}
-          <Button
-            onClick={handleSearch}
-            disabled={true}
-            className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright opacity-50 cursor-not-allowed"
-            title="Repeater search is not yet implemented"
-          >
-            Search Repeaters (Not Implemented)
-          </Button>
-        </div>
-      </div>
-
-      {/* Airport Search Section */}
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Local Airports</h3>
-        <p className="text-sm text-cool-gray mb-4">
-          Search for nearby airports and add their frequencies as channels (readonly data from airports_min.json)
-        </p>
-
         <div className="mb-4">
-          <label className="block text-sm text-cool-gray mb-2">Search Radius (miles)</label>
-          <input
-            type="number"
-            value={airportRadius}
-            onChange={(e) => setAirportRadius(e.target.value)}
-            min="1"
-            max="200"
-            className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white mb-2"
-          />
+          <label className="block text-sm text-cool-gray mb-2">Search Types</label>
+          <div className="space-y-2">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={searchAirports}
+                onChange={(e) => setSearchAirports(e.target.checked)}
+                className="mr-2"
+              />
+              <span className="text-cool-gray">Airports</span>
+            </label>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={searchTafl}
+                onChange={(e) => setSearchTafl(e.target.checked)}
+                className="mr-2"
+              />
+              <span className="text-cool-gray">TAFL (Transport Canada)</span>
+            </label>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={searchDmrRepeaters}
+                onChange={(e) => setSearchDmrRepeaters(e.target.checked)}
+                className="mr-2"
+              />
+              <span className="text-cool-gray">DMR Repeaters</span>
+            </label>
+          </div>
         </div>
 
         <Button
-          onClick={handleSearchAirports}
-          disabled={isSearchingAirports}
-          className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright w-full mb-4"
+          onClick={handleSearchAll}
+          disabled={isSearchingAll || (!searchAirports && !searchTafl && !searchDmrRepeaters)}
+          className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright w-full"
         >
-          {isSearchingAirports ? 'Loading...' : 'Search Airports'}
+          {isSearchingAll 
+            ? (locationType === 'current' 
+                ? 'Getting location and searching...' 
+                : 'Searching...')
+            : (locationType === 'current'
+                ? 'Use Current Location & Search'
+                : locationType === 'coordinates'
+                ? 'Search at Coordinates'
+                : 'Search at Location')}
         </Button>
 
-        {/* Progress Bar */}
-        {airportLoadProgress && (
-          <div className="mb-4">
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-sm text-cool-gray">
-                Loading airport data...
-              </span>
-              <span className="text-sm text-cool-gray">
-                {airportLoadProgress.percent.toFixed(1)}%
-              </span>
-            </div>
-            <div className="w-full bg-black rounded-full h-2 border border-neon-cyan overflow-hidden">
-              <div
-                className="h-full bg-neon-cyan transition-all duration-300"
-                style={{ width: `${airportLoadProgress.percent}%` }}
-              />
-            </div>
-            {airportLoadProgress.total > 0 && (
-              <div className="text-xs text-cool-gray mt-1">
-                {formatBytes(airportLoadProgress.loaded)} / {formatBytes(airportLoadProgress.total)}
+        {/* Progress indicators */}
+        {(isSearchingAirports || isSearchingTafl || isSearchingRptrs) && (
+          <div className="mt-4 space-y-2">
+            {isSearchingAirports && (
+              <div className="text-sm text-cool-gray">Searching airports...</div>
+            )}
+            {isSearchingTafl && taflLoadProgress && (
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-sm text-cool-gray">Loading TAFL data...</span>
+                  <span className="text-sm text-cool-gray">{taflLoadProgress.percent.toFixed(1)}%</span>
+                </div>
+                <div className="w-full bg-black rounded-full h-2 border border-neon-cyan">
+                  <div
+                    className="h-full bg-neon-cyan transition-all"
+                    style={{ width: `${taflLoadProgress.percent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {isSearchingRptrs && rptrsLoadProgress && (
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-sm text-cool-gray">Loading DMR repeater data...</span>
+                  <span className="text-sm text-cool-gray">{rptrsLoadProgress.percent.toFixed(1)}%</span>
+                </div>
+                <div className="w-full bg-black rounded-full h-2 border border-neon-cyan">
+                  <div
+                    className="h-full bg-neon-cyan transition-all"
+                    style={{ width: `${rptrsLoadProgress.percent}%` }}
+                  />
+                </div>
               </div>
             )}
           </div>
         )}
+      </div>
 
-        {/* Airport Results */}
-        {airports.length > 0 && (
+      {/* Airport Results */}
+      {airports.length > 0 && (
+      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
+        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Airports</h3>
           <>
             <div className="flex justify-between items-center mb-4">
               <h4 className="text-md font-semibold text-neon-cyan">
@@ -1324,78 +1314,24 @@ export const SmartImportTab: React.FC = () => {
               </>
             )}
           </>
-        )}
       </div>
+      )}
 
-      {/* TAFL Search Section */}
+      {/* TAFL Results */}
+      {taflEntries.length > 0 && (
       <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Local TAFL Entries</h3>
-        <p className="text-sm text-cool-gray mb-4">
-          Search for nearby TAFL (Technical Acceptance and Frequency List) entries and add their frequencies as channels (readonly data from tafl_min.json)
-        </p>
-
-        <div className="mb-4 space-y-3">
-          <div className="flex items-end gap-3">
-            <div>
-              <label className="block text-sm text-cool-gray mb-2">Search Radius (miles)</label>
-              <input
-                type="number"
-                value={taflRadius}
-                onChange={(e) => setTaflRadius(e.target.value)}
-                min="1"
-                max="50"
-                className="w-32 bg-black border border-neon-cyan rounded px-3 py-2 text-white"
-              />
-            </div>
-            <Button
-              onClick={handleSearchTafl}
-              disabled={isSearchingTafl}
-              className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright"
-            >
-              {isSearchingTafl ? 'Loading...' : 'Search by Location'}
-            </Button>
-          </div>
-
-          {/* Progress Bar */}
-          {taflLoadProgress && (
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-sm text-cool-gray">
-                  Loading TAFL data...
-                </span>
-                <span className="text-sm text-cool-gray">
-                  {taflLoadProgress.percent.toFixed(1)}%
-                </span>
-              </div>
-              <div className="w-full bg-black rounded-full h-2 border border-neon-magenta overflow-hidden">
-                <div
-                  className="h-full bg-neon-magenta transition-all duration-300"
-                  style={{ width: `${taflLoadProgress.percent}%` }}
-                />
-              </div>
-              {taflLoadProgress.total > 0 && (
-                <div className="text-xs text-cool-gray mt-1">
-                  {formatBytes(taflLoadProgress.loaded)} / {formatBytes(taflLoadProgress.total)}
-                </div>
-              )}
-            </div>
-          )}
-          
-          {taflEntries.length > 0 && (
-            <div>
-              <label className="block text-sm text-cool-gray mb-2">Filter by Name/Code</label>
-              <input
-                type="text"
-                value={taflSearchFilter}
-                onChange={(e) => setTaflSearchFilter(e.target.value)}
-                placeholder="Search entries..."
-                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
-              />
-            </div>
-          )}
+        <h3 className="text-lg font-semibold text-neon-cyan mb-4">TAFL Entries</h3>
+        
+        <div className="mb-4">
+          <label className="block text-sm text-cool-gray mb-2">Filter by Name/Code</label>
+          <input
+            type="text"
+            value={taflSearchFilter}
+            onChange={(e) => setTaflSearchFilter(e.target.value)}
+            placeholder="Search entries..."
+            className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+          />
         </div>
-
-        {taflEntries.length > 0 && (
           <>
             <div className="flex justify-between items-center mb-4">
               <h4 className="text-md font-semibold text-neon-cyan">
@@ -1586,8 +1522,8 @@ export const SmartImportTab: React.FC = () => {
               </Button>
             )}
           </>
-        )}
       </div>
+      )}
 
       {/* Error Display */}
       {error && (
@@ -1603,197 +1539,11 @@ export const SmartImportTab: React.FC = () => {
         </div>
       )}
 
-      {/* Repeater Results */}
-      {repeaters.length > 0 && (
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-neon-cyan">
-              Found {repeaters.length} Repeater{repeaters.length !== 1 ? 's' : ''}
-            </h3>
-            <div className="flex gap-2">
-              <button
-                onClick={handleSelectAll}
-                className="text-sm text-neon-cyan hover:text-neon-cyan-bright"
-              >
-                Select All
-              </button>
-              <button
-                onClick={handleDeselectAll}
-                className="text-sm text-neon-cyan hover:text-neon-cyan-bright"
-              >
-                Deselect All
-              </button>
-            </div>
-          </div>
 
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {repeaters.map((repeater, index) => (
-              <div
-                key={index}
-                className={`border rounded p-3 cursor-pointer transition-colors ${
-                  selectedRepeaters.has(index)
-                    ? 'border-neon-cyan bg-neon-cyan bg-opacity-10'
-                    : 'border-gray-600 hover:border-gray-500'
-                }`}
-                onClick={() => handleToggleRepeater(index)}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <input
-                        type="checkbox"
-                        checked={selectedRepeaters.has(index)}
-                        onChange={() => handleToggleRepeater(index)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mr-2"
-                      />
-                      <span className="font-semibold text-neon-cyan">{repeater.callsign}</span>
-                      <span className="text-cool-gray text-sm">{repeater.band.toUpperCase()}</span>
-                      <span className="text-cool-gray text-sm">{repeater.mode}</span>
-                    </div>
-                    <div className="text-sm text-cool-gray">
-                      <div>
-                        {repeater.frequency.toFixed(3)} MHz
-                        {repeater.ctcss && ` (CTCSS ${repeater.ctcss} Hz)`}
-                        {repeater.dcs && ` (DCS ${repeater.dcs})`}
-                      </div>
-                      <div>
-                        {repeater.location}
-                        {repeater.city && `, ${repeater.city}`}
-                        {repeater.state && `, ${repeater.state}`}
-                        {repeater.distance && ` (${repeater.distance.toFixed(1)} mi)`}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Generation Options */}
-      {repeaters.length > 0 && (
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Zone Generation Options</h3>
-          
-          <div className="space-y-3">
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={groupByBand}
-                onChange={(e) => {
-                  setGroupByBand(e.target.checked);
-                  if (e.target.checked) setGroupByDistance(false);
-                }}
-                className="mr-2"
-              />
-              <span className="text-cool-gray">Group by Band (2m, 70cm, etc.)</span>
-            </label>
-            
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={groupByDistance}
-                onChange={(e) => {
-                  setGroupByDistance(e.target.checked);
-                  if (e.target.checked) setGroupByBand(false);
-                }}
-                className="mr-2"
-              />
-              <span className="text-cool-gray">Group by Distance</span>
-            </label>
-            
-            {groupByDistance && (
-              <div className="ml-6">
-                <label className="block text-sm text-cool-gray mb-2">
-                  Max Distance per Zone (miles)
-                </label>
-                <input
-                  type="number"
-                  value={maxDistancePerZone}
-                  onChange={(e) => setMaxDistancePerZone(e.target.value)}
-                  min="5"
-                  max="100"
-                  className="w-32 bg-black border border-neon-cyan rounded px-3 py-2 text-white"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Generate Button */}
-      {selectedRepeaters.size > 0 && (
-        <div className="mb-4">
-          <Button
-            onClick={handleGenerate}
-            disabled={isGenerating}
-            className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
-          >
-            {isGenerating
-              ? 'Generating...'
-              : `Generate ${selectedRepeaters.size} Channel${selectedRepeaters.size !== 1 ? 's' : ''} and Zones`}
-          </Button>
-        </div>
-      )}
-
-      {/* DMR Repeater Search Section */}
+      {/* DMR Repeater Results */}
+      {rptrs.length > 0 && (
       <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
         <h3 className="text-lg font-semibold text-neon-cyan mb-4">DMR Repeaters</h3>
-        <p className="text-cool-gray text-sm mb-4">
-          Search for nearby DMR repeaters and add their frequencies as channels (readonly data from rptrs.json)
-        </p>
-        
-        <div className="mb-4 space-y-3">
-          <div className="flex items-end gap-3">
-            <div>
-              <label className="block text-sm text-cool-gray mb-2">Search Radius (miles)</label>
-              <input
-                type="number"
-                value={rptrsRadius}
-                onChange={(e) => setRptrsRadius(e.target.value)}
-                min="1"
-                max="500"
-                className="w-32 bg-black border border-neon-cyan rounded px-3 py-2 text-white"
-              />
-            </div>
-            <Button
-              onClick={handleSearchRptrs}
-              disabled={isSearchingRptrs}
-              className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright"
-            >
-              {isSearchingRptrs ? 'Loading...' : 'Search DMR Repeaters'}
-            </Button>
-          </div>
-        </div>
-
-        {rptrsLoadProgress && (
-          <div className="mb-4">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm text-cool-gray">
-                Loading DMR repeater data...
-              </span>
-              <span className="text-sm text-neon-cyan">
-                {rptrsLoadProgress.percent.toFixed(1)}%
-              </span>
-            </div>
-            <div className="w-full bg-dark-gray rounded-full h-2">
-              <div
-                className="bg-neon-cyan h-2 rounded-full transition-all"
-                style={{ width: `${rptrsLoadProgress.percent}%` }}
-              />
-            </div>
-            {rptrsLoadProgress.total > 0 && (
-              <div className="text-xs text-cool-gray mt-1">
-                {formatBytes(rptrsLoadProgress.loaded)} / {formatBytes(rptrsLoadProgress.total)}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* DMR Repeater Results */}
-        {rptrs.length > 0 && (
           <>
             <div className="mb-4">
               <input
@@ -1935,8 +1685,8 @@ export const SmartImportTab: React.FC = () => {
               </div>
             )}
           </>
-        )}
       </div>
+      )}
 
       {/* Fixed Channels Section */}
       <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">

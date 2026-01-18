@@ -280,6 +280,10 @@ export class DM32UVProtocol implements RadioProtocol {
         if (error.message && (error.message.includes('No port selected') || error.message.includes('cancelled') || error.name === 'NotFoundError')) {
           throw new Error('Port selection cancelled. Please select a port to continue.');
         }
+        // If it's a user gesture error, provide a helpful message
+        if (error.message && error.message.includes('user gesture')) {
+          throw new Error('Please click the button directly to connect. The browser requires a direct user action to access the serial port.');
+        }
         // Otherwise, rethrow the original error
         throw error;
       }
