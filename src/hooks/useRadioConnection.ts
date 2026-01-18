@@ -104,25 +104,15 @@ export function useRadioConnection() {
       // Store all block metadata and data for debug export
       if ((protocol as any).allBlockMetadata) {
         const metadata = (protocol as any).allBlockMetadata;
-        console.log(`[Connection] Setting blockMetadata in store: ${metadata.size} entries`);
         // Create a new Map to ensure Zustand stores it properly
         const metadataCopy = new Map<number, { metadata: number; type: string }>(metadata);
         setBlockMetadata(metadataCopy);
-        const storeState = useRadioStore.getState();
-        console.log(`[Connection] After setting, store blockMetadata size: ${storeState.blockMetadata.size}`);
-      } else {
-        console.warn('[Connection] allBlockMetadata is not set on protocol instance');
       }
       if ((protocol as any).allBlockData) {
         const data = (protocol as any).allBlockData;
-        console.log(`[Connection] Setting blockData in store: ${data.size} entries`);
         // Create a new Map to ensure Zustand stores it properly
         const dataCopy = new Map<number, Uint8Array>(data);
         setBlockData(dataCopy);
-        const storeState = useRadioStore.getState();
-        console.log(`[Connection] After setting, store blockData size: ${storeState.blockData.size}`);
-      } else {
-        console.warn('[Connection] allBlockData is not set on protocol instance');
       }
 
       // Step 6: Parse configuration (zones, scan lists, quick messages, etc.)

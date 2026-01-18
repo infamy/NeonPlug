@@ -744,9 +744,6 @@ export class DM32UVProtocol implements RadioProtocol {
         }
       );
       this.discoveredBlocks = blocks;
-      log.info(`Discovered ${blocks.length} blocks during write preparation`, 'Protocol');
-    } else {
-      log.info(`Using ${this.discoveredBlocks.length} discovered blocks from cache restoration`, 'Protocol');
     }
 
     // Step 2: Determine which blocks we need to read (same logic as bulkReadRequiredBlocks)
@@ -847,23 +844,11 @@ export class DM32UVProtocol implements RadioProtocol {
     // Step 3: Check which blocks are already cached and only read missing ones
     const blocksToReadFromRadio: MemoryBlock[] = [];
     
-    log.info(`=== CACHE CHECK === cachedBlockData.length=${this.cachedBlockData.length}, finalBlocksToRead.length=${finalBlocksToRead.length}`, 'Protocol');
-    
-    if (this.cachedBlockData.length === 0) {
-      log.warn('cachedBlockData is empty! Cache restoration may have failed or cache was cleared.', 'Protocol');
-    }
-    
     const cachedAddresses = new Set(this.cachedBlockData.map(b => b.address));
-    
-    log.info(`Cache has ${this.cachedBlockData.length} blocks. Cached addresses (first 10): ${Array.from(cachedAddresses).slice(0, 10).map(a => `0x${a.toString(16).padStart(6, '0').toUpperCase()}`).join(', ')}${cachedAddresses.size > 10 ? '...' : ''}`, 'Protocol');
-    log.info(`Checking ${finalBlocksToRead.length} blocks against cache. Blocks to check: ${finalBlocksToRead.slice(0, 5).map(b => `0x${b.address.toString(16).padStart(6, '0').toUpperCase()}`).join(', ')}${finalBlocksToRead.length > 5 ? '...' : ''}`, 'Protocol');
     
     for (const block of finalBlocksToRead) {
       if (!cachedAddresses.has(block.address)) {
         blocksToReadFromRadio.push(block);
-        log.info(`Block at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} (metadata 0x${block.metadata.toString(16)}) not in cache, will read`, 'Protocol');
-      } else {
-        log.info(`✓ Block at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} (metadata 0x${block.metadata.toString(16)}) already cached, skipping`, 'Protocol');
       }
     }
     
@@ -1337,8 +1322,6 @@ export class DM32UVProtocol implements RadioProtocol {
    * @param channels Array of channels to write TX Contact for
    */
   private async writeTxContactBlocks(channels: Channel[]): Promise<void> {
-    log.info('Starting TX Contact blocks write...', 'Protocol');
-    
     // Step 1: Confirm metadata block locations by re-discovering if needed
     // Block locations can change, so we need to verify them before writing
     if (this.discoveredBlocks.length === 0) {
@@ -1356,9 +1339,6 @@ export class DM32UVProtocol implements RadioProtocol {
     let block42 = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
     let block43 = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
     
-    log.info(`TX Contact block 0x42: ${block42 ? `found at 0x${block42.address.toString(16).padStart(6, '0').toUpperCase()}` : 'NOT FOUND'}`, 'Protocol');
-    log.info(`TX Contact block 0x43: ${block43 ? `found at 0x${block43.address.toString(16).padStart(6, '0').toUpperCase()}` : 'NOT FOUND'}`, 'Protocol');
-    
     // Initialize block data from cache - MUST have cached data to preserve existing TX Contact entries
     const cached42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
     const cached43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
@@ -1367,21 +1347,17 @@ export class DM32UVProtocol implements RadioProtocol {
     // This can happen if blocks were read during bulkRead but not found in initial discovery
     if (!block42 && cached42) {
       block42 = { address: cached42.address, metadata: METADATA.TX_CONTACT_LOW, type: 'unknown' };
-      log.info(`Using cached address for block 0x42: 0x${cached42.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
     }
     if (!block43 && cached43) {
       block43 = { address: cached43.address, metadata: METADATA.TX_CONTACT_HIGH, type: 'unknown' };
-      log.info(`Using cached address for block 0x43: 0x${cached43.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
     }
     
     // Verify block locations match cache (they shouldn't change, but confirm anyway)
     if (block42 && cached42 && block42.address !== cached42.address) {
       log.warn(`TX Contact block 0x42 address changed: cached=0x${cached42.address.toString(16).padStart(6, '0').toUpperCase()}, discovered=0x${block42.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
-      log.warn('Using discovered address (block may have moved)', 'Protocol');
     }
     if (block43 && cached43 && block43.address !== cached43.address) {
       log.warn(`TX Contact block 0x43 address changed: cached=0x${cached43.address.toString(16).padStart(6, '0').toUpperCase()}, discovered=0x${block43.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
-      log.warn('Using discovered address (block may have moved)', 'Protocol');
     }
     
     if (!block42 && !block43) {
@@ -1413,11 +1389,6 @@ export class DM32UVProtocol implements RadioProtocol {
       // If unchanged, txContactId will have the original value
       const contactId = channel.contactId ?? channel.txContactId ?? 0;
       
-      // Log what we're writing for debugging (only for channels with non-zero contactId)
-      if (isDigital && contactId > 0) {
-        log.debug(`Channel ${channel.number}: contactId=${channel.contactId ?? 'undefined'}, txContactId=${channel.txContactId ?? 'undefined'}, using=${contactId}`, 'Protocol');
-      }
-      
       // Encode TX Contact for this channel
       encodeTxContactForChannel(
         channel.number,
@@ -1440,13 +1411,11 @@ export class DM32UVProtocol implements RadioProtocol {
     
     // Write blocks to radio
     if (block42) {
-      log.info(`Writing TX Contact block 0x42 to address 0x${block42.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
       await this.connection!.writeMemory(block42.address, block42Data, METADATA.TX_CONTACT_LOW);
       log.info('Successfully wrote TX Contact block 0x42', 'Protocol');
     }
     
     if (block43) {
-      log.info(`Writing TX Contact block 0x43 to address 0x${block43.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
       await this.connection!.writeMemory(block43.address, block43Data, METADATA.TX_CONTACT_HIGH);
       log.info('Successfully wrote TX Contact block 0x43', 'Protocol');
     }
