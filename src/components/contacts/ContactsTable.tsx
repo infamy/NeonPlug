@@ -90,8 +90,7 @@ export const ContactsTable: React.FC = () => {
               <tr className="bg-dark-charcoal border-b border-neon-cyan">
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[150px]">Name</th>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">TG/DMR ID</th>
-                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Call Type</th>
-                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Repeater</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Callsign</th>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">City</th>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Province</th>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Country</th>
@@ -107,8 +106,7 @@ export const ContactsTable: React.FC = () => {
                 >
                   <td className="px-2 py-2 text-white">{contact.name}</td>
                   <td className="px-2 py-2 text-white text-center">{contact.dmrId}</td>
-                  <td className="px-2 py-2 text-white">{contact.callType || '-'}</td>
-                  <td className="px-2 py-2 text-white">{contact.repeater || '-'}</td>
+                  <td className="px-2 py-2 text-white">{contact.callSign || '-'}</td>
                   <td className="px-2 py-2 text-white">{contact.city || '-'}</td>
                   <td className="px-2 py-2 text-white">{contact.province || '-'}</td>
                   <td className="px-2 py-2 text-white">{contact.country || '-'}</td>

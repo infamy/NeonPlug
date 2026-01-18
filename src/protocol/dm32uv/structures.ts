@@ -1092,7 +1092,7 @@ export function parseContactEntry(entryData: Uint8Array, contactIndex: number): 
   // Fixed structure for Contact 1+:
   // +0x00-0x0F: Name (16 bytes, null-terminated)
   // +0x10-0x13: ID (4 bytes, uint32 LE)
-  // +0x14-0x1B: Padding (8 bytes, 0xFF)
+  // +0x14-0x1B: Callsign (8 bytes, null-terminated, max 7 chars)
   // +0x1C-0x2B: City (16 bytes, null-terminated)
   // +0x2C-0x3B: Province (16 bytes, null-terminated)
   // +0x3C-0x4B: Country (16 bytes, null-terminated)
@@ -1128,6 +1128,27 @@ export function parseContactEntry(entryData: Uint8Array, contactIndex: number): 
     return null;
   }
   
+  // Parse callsign (0x14-0x1B, 8 bytes, null-terminated, max 7 chars)
+  const CALLSIGN_OFFSET = 0x14;
+  const CALLSIGN_SIZE = 8;
+  let callSign: string | undefined = undefined;
+  if (CALLSIGN_OFFSET + CALLSIGN_SIZE <= entryData.length) {
+    const callsignBytes = entryData.slice(CALLSIGN_OFFSET, CALLSIGN_OFFSET + CALLSIGN_SIZE);
+    let dataStart = 0;
+    while (dataStart < callsignBytes.length && callsignBytes[dataStart] === 0xFF) dataStart++;
+    if (dataStart < callsignBytes.length && callsignBytes[dataStart] !== 0x00) {
+      const nullIdx = callsignBytes.indexOf(0x00, dataStart);
+      const valueBytes = nullIdx >= 0 
+        ? callsignBytes.slice(dataStart, nullIdx)
+        : callsignBytes.slice(dataStart).filter(b => b !== 0xFF && b !== 0x00);
+      
+      if (valueBytes.length > 0) {
+        const value = decoder.decode(valueBytes).trim();
+        callSign = value || undefined;
+      }
+    }
+  }
+  
   // Parse fixed-width fields (16 bytes each, null-terminated, may have 0xFF padding)
   const parseFixedField = (offset: number): string | undefined => {
     if (offset + FIELD_SIZE > entryData.length) return undefined;
@@ -1151,9 +1172,7 @@ export function parseContactEntry(entryData: Uint8Array, contactIndex: number): 
     id: contactIndex + 1,
     name,
     dmrId: id,
-    callSign: undefined,
-    callType: 'Private Call',
-    repeater: undefined,
+    callSign,
     city: parseFixedField(0x1C),
     province: parseFixedField(0x2C),
     country: parseFixedField(0x3C),
@@ -1215,6 +1234,25 @@ export function encodeContactEntry(contact: Contact): Uint8Array {
   entryData[0x11] = (contact.dmrId >> 8) & 0xFF;
   entryData[0x12] = (contact.dmrId >> 16) & 0xFF;
   entryData[0x13] = (contact.dmrId >> 24) & 0xFF;
+
+  // Callsign (0x14-0x1B, 8 bytes, null-terminated, max 7 chars)
+  const CALLSIGN_OFFSET = 0x14;
+  const CALLSIGN_SIZE = 8;
+  if (contact.callSign) {
+    const callsignBytes = encoder.encode(contact.callSign);
+    const len = Math.min(callsignBytes.length, CALLSIGN_SIZE - 1); // Leave room for null terminator
+    entryData.set(callsignBytes.slice(0, len), CALLSIGN_OFFSET);
+    entryData[CALLSIGN_OFFSET + len] = 0x00;
+    // Fill remaining bytes with 0xFF
+    for (let i = len + 1; i < CALLSIGN_SIZE; i++) {
+      entryData[CALLSIGN_OFFSET + i] = 0xFF;
+    }
+  } else {
+    // Fill with 0xFF if no callsign
+    for (let i = 0; i < CALLSIGN_SIZE; i++) {
+      entryData[CALLSIGN_OFFSET + i] = 0xFF;
+    }
+  }
 
   // Optional fields (16 bytes each, null-terminated)
   const fields = [
