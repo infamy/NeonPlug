@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { ChannelsTable } from './ChannelsTable';
@@ -9,6 +9,7 @@ export const ChannelsTab: React.FC = () => {
   const { channels, addChannel } = useChannelsStore();
   const { settings: radioSettings } = useRadioSettingsStore();
   const [searchQuery, setSearchQuery] = useState('');
+  const [scrollToChannel, setScrollToChannel] = useState<number | null>(null);
 
   const handleAddChannel = () => {
     // Find the next available channel number
@@ -25,7 +26,14 @@ export const ChannelsTab: React.FC = () => {
     });
     
     addChannel(newChannel);
+    
+    // Scroll to the new channel after adding
+    setScrollToChannel(nextNumber);
   };
+
+  const handleScrollComplete = useCallback(() => {
+    setScrollToChannel(null);
+  }, []);
 
   // Create VFO channels with channel numbers 4001 and 4002
   const vfoChannels = useMemo(() => {
@@ -118,7 +126,11 @@ export const ChannelsTab: React.FC = () => {
           )}
         </div>
       </div>
-      <ChannelsTable channels={filteredChannels} />
+      <ChannelsTable 
+        channels={filteredChannels} 
+        scrollToChannel={scrollToChannel}
+        onScrollComplete={handleScrollComplete}
+      />
     </div>
   );
 };

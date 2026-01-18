@@ -103,10 +103,16 @@ export function useRadioConnection() {
       }
       // Store all block metadata and data for debug export
       if ((protocol as any).allBlockMetadata) {
-        setBlockMetadata((protocol as any).allBlockMetadata);
+        const metadata = (protocol as any).allBlockMetadata;
+        // Create a new Map to ensure Zustand stores it properly
+        const metadataCopy = new Map<number, { metadata: number; type: string }>(metadata);
+        setBlockMetadata(metadataCopy);
       }
       if ((protocol as any).allBlockData) {
-        setBlockData((protocol as any).allBlockData);
+        const data = (protocol as any).allBlockData;
+        // Create a new Map to ensure Zustand stores it properly
+        const dataCopy = new Map<number, Uint8Array>(data);
+        setBlockData(dataCopy);
       }
 
       // Step 6: Parse configuration (zones, scan lists, quick messages, etc.)
@@ -594,6 +600,21 @@ export function useRadioConnection() {
     try {
       // Create protocol instance
       protocol = new DM32UVProtocol();
+      
+      // Restore cache from store if available (from previous read operation)
+      // Read directly from store state to avoid hook reactivity issues
+      const storeState = useRadioStore.getState();
+      const storeBlockData = storeState.blockData;
+      const storeBlockMetadata = storeState.blockMetadata;
+      
+      if (storeBlockData && storeBlockData.size > 0 && storeBlockMetadata && storeBlockMetadata.size > 0) {
+        // Create new Maps to ensure we have proper copies
+        const dataCopy = new Map<number, Uint8Array>(storeBlockData);
+        const metadataCopy = new Map<number, { metadata: number; type: string }>(storeBlockMetadata);
+        protocol.restoreCacheFromStore(dataCopy, metadataCopy);
+      } else {
+        console.warn('[Connection] Store cache is empty - will need to read all blocks from radio');
+      }
       
       // Set up progress callback that forwards to our callback
       protocol.onProgress = (progress, message) => {

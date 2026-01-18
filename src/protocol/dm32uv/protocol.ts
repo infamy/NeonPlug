@@ -5,7 +5,7 @@
 
 import { DM32Connection } from './connection';
 import { discoverMemoryBlocks, readChannelCount, type MemoryBlock } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, parseTxContactForChannel, encodeTxContactForChannel } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
@@ -159,7 +159,14 @@ export class DM32UVProtocol implements RadioProtocol {
 
   async getOrSelectPort(forceSelection: boolean = false): Promise<WebSerialPort> {
     // Clear any previous cached data before starting a new connection
-    this.clearCache();
+    // BUT: If we already have cached data (from restoreCacheFromStore), don't clear it
+    // This happens when we're doing a write operation and have restored the cache
+    const hasRestoredCache = this.cachedBlockData.length > 0 || this.discoveredBlocks.length > 0;
+    if (!hasRestoredCache) {
+      this.clearCache();
+    } else {
+      log.debug('Preserved cached data during port selection (write operation with restored cache)', 'Protocol');
+    }
 
     // If forcing selection, skip all reuse logic and go straight to prompt
     if (forceSelection) {
@@ -492,6 +499,7 @@ export class DM32UVProtocol implements RadioProtocol {
       });
     }
     (this as any).allBlockMetadata = blockMetadataMap;
+    // Note: allBlockData will be set after all blocks are read (see end of bulkReadRequiredBlocks)
 
     // Step 2: Determine which blocks we need to read
     const blocksToRead: MemoryBlock[] = [];
@@ -537,15 +545,29 @@ export class DM32UVProtocol implements RadioProtocol {
       METADATA.RX_GROUPS,            // RX Groups (0x0F)
       METADATA.METADATA_0x44,        // Metadata block 0x44 (Talk Groups data)
       METADATA.METADATA_0x06,        // Metadata block 0x06 (Config section 4 - Talk Groups counter)
+      METADATA.TX_CONTACT_LOW,       // TX Contact block 0x42 (channels 1-2048)
+      METADATA.TX_CONTACT_HIGH,      // TX Contact block 0x43 (channels 2049+ and VFOs)
     ];
 
     for (const metadata of fixedMetadataBlocks) {
       const block = blocks.find(b => b.metadata === metadata);
       if (block) {
+        // Log if block is marked as unknown - we still need to read it
+        if (block.type === 'unknown') {
+          log.info(`Found required metadata block 0x${metadata.toString(16)} at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} (marked as unknown type, but will read)`, 'Protocol');
+        }
         blocksToRead.push(block);
       } else {
-        // Warn if required block is missing (especially 0x04)
-        if (metadata === METADATA.VFO_SETTINGS) {
+        // Warn if required block is missing (especially 0x04, 0x42, 0x43, 0x44, 0x0B)
+        const metadataNum = metadata as number;
+        const isCritical = metadataNum === METADATA.VFO_SETTINGS || 
+                           metadataNum === METADATA.TX_CONTACT_LOW || 
+                           metadataNum === METADATA.TX_CONTACT_HIGH ||
+                           metadataNum === METADATA.METADATA_0x44 ||
+                           metadataNum === METADATA.METADATA_0x0B;
+        if (isCritical) {
+          log.warn(`CRITICAL metadata block 0x${metadata.toString(16)} not found during discovery! This block is required for TG mapping.`, 'Protocol');
+        } else if (metadataNum === METADATA.VFO_SETTINGS) {
           log.warn('Radio Settings block (metadata 0x04) not found during discovery! This block is required.', 'Protocol');
         } else {
           log.debug(`Metadata block 0x${metadata.toString(16)} not found (optional)`, 'Protocol');
@@ -590,28 +612,52 @@ export class DM32UVProtocol implements RadioProtocol {
     for (let i = 0; i < finalBlocksToRead.length; i++) {
       const block = finalBlocksToRead[i];
       const progress = 10 + Math.floor((i / finalBlocksToRead.length) * 85); // 10-95%
-      this.onProgress?.(progress, `Reading block ${i + 1} of ${finalBlocksToRead.length} (metadata 0x${block.metadata.toString(16)})...`);
+      const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
+      const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0')}`;
+      this.onProgress?.(progress, `Reading block ${i + 1} of ${finalBlocksToRead.length} (metadata ${metadataHex} at ${addressHex})...`);
 
-      const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
-      
-      // Verify we got exactly 4096 bytes
-      if (blockData.length !== BLOCK_SIZE.STANDARD) {
-        log.warn(`Block at 0x${block.address.toString(16)} (metadata 0x${block.metadata.toString(16)}) has incorrect length: ${blockData.length} bytes (expected ${BLOCK_SIZE.STANDARD})`, 'Protocol');
+      try {
+        const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
+        
+        // Verify we got exactly 4096 bytes
+        if (blockData.length !== BLOCK_SIZE.STANDARD) {
+          log.warn(`Block at ${addressHex} (metadata ${metadataHex}) has incorrect length: ${blockData.length} bytes (expected ${BLOCK_SIZE.STANDARD})`, 'Protocol');
+        }
+        
+        // IMPORTANT: Create a copy of the data to prevent corruption if the buffer is reused
+        // Uint8Arrays are views into buffers - we need to copy the actual data
+        const blockDataCopy = new Uint8Array(blockData);
+        
+        // Store as [metadata, address, 4k block data] in array
+        this.cachedBlockData.push({
+          metadata: block.metadata,
+          address: block.address,
+          data: blockDataCopy,
+        });
+
+        // Also store in blockData map for backward compatibility (use copy here too)
+        this.blockData.set(block.address, blockDataCopy);
+
+        // IMPORTANT: Set rawRadioSettingsData when we read block 0x04
+        // This is required for writeRadioSettings() to preserve unknown fields
+        if (block.metadata === METADATA.VFO_SETTINGS) {
+          this.rawRadioSettingsData = blockDataCopy;
+          log.debug('Set rawRadioSettingsData from block 0x04 during bulk read', 'Protocol');
+        }
+        
+        log.debug(`Successfully read block at ${addressHex} (metadata ${metadataHex}, type: ${block.type})`, 'Protocol');
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        // For required fixed metadata blocks, this is a critical error
+        const isRequired = (fixedMetadataBlocks as number[]).includes(block.metadata);
+        if (isRequired) {
+          log.error(`Failed to read REQUIRED block at ${addressHex} (metadata ${metadataHex}, type: ${block.type}). Error: ${errorMsg}`, 'Protocol');
+          throw new Error(`Failed to read required metadata block 0x${metadataHex} at ${addressHex}: ${errorMsg}`);
+        } else {
+          log.warn(`Failed to read optional block at ${addressHex} (metadata ${metadataHex}, type: ${block.type}). Error: ${errorMsg}. Continuing...`, 'Protocol');
+          // For optional blocks, continue but log the failure
+        }
       }
-      
-      // IMPORTANT: Create a copy of the data to prevent corruption if the buffer is reused
-      // Uint8Arrays are views into buffers - we need to copy the actual data
-      const blockDataCopy = new Uint8Array(blockData);
-      
-      // Store as [metadata, address, 4k block data] in array
-      this.cachedBlockData.push({
-        metadata: block.metadata,
-        address: block.address,
-        data: blockDataCopy,
-      });
-
-      // Also store in blockData map for backward compatibility (use copy here too)
-      this.blockData.set(block.address, blockDataCopy);
 
       // Small delay between reads
       if (i < finalBlocksToRead.length - 1) {
@@ -621,7 +667,51 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(100, `Successfully cached ${this.cachedBlockData.length} blocks`);
     log.info(`Bulk read complete: ${this.cachedBlockData.length} blocks cached`, 'Protocol');
+    
+    // Verify critical blocks for TG mapping are cached
+    const txContact42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+    const txContact43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    const talkGroups44 = this.cachedBlockData.find(b => b.metadata === METADATA.METADATA_0x44);
+    const quickAccess0B = this.cachedBlockData.find(b => b.metadata === METADATA.METADATA_0x0B);
+    
+    if (!txContact42) {
+      log.warn('TX Contact block 0x42 (channels 1-2048) not in cache after read! TG mapping may fail.', 'Protocol');
+    } else {
+      log.debug(`TX Contact block 0x42 cached at 0x${txContact42.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    }
+    if (!txContact43) {
+      log.warn('TX Contact block 0x43 (channels 2049+ and VFOs) not in cache after read! TG mapping may fail.', 'Protocol');
+    } else {
+      log.debug(`TX Contact block 0x43 cached at 0x${txContact43.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    }
+    if (!talkGroups44) {
+      log.warn('Talk Groups block 0x44 not in cache after read! TG mapping may fail.', 'Protocol');
+    } else {
+      log.debug(`Talk Groups block 0x44 cached at 0x${talkGroups44.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    }
+    if (!quickAccess0B) {
+      log.warn('Quick Access Contact List block 0x0B not in cache after read! TG mapping may fail.', 'Protocol');
+    } else {
+      log.debug(`Quick Access Contact List block 0x0B cached at 0x${quickAccess0B.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    }
+    
     log.debug('All blocks are now in cache - parsing can proceed without additional radio reads', 'Protocol');
+    
+    // Update allBlockData after all blocks are read (for store persistence)
+    // This is critical - the store needs this data for cache restoration during writes
+    (this as any).allBlockData = new Map(this.blockData); // Create a new Map to ensure it's a copy
+    log.info(`Set allBlockData with ${this.blockData.size} blocks for store persistence (allBlockMetadata has ${(this as any).allBlockMetadata?.size || 0} entries)`, 'Protocol');
+    
+    // Verify critical blocks are in allBlockData
+    const tx42Addr = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_LOW)?.address;
+    const tx43Addr = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_HIGH)?.address;
+    const tg44Addr = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x44)?.address;
+    const qa0BAddr = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x0B)?.address;
+    
+    if (tx42Addr && !this.blockData.has(tx42Addr)) log.warn(`TX Contact 0x42 block at 0x${tx42Addr.toString(16).padStart(6, '0').toUpperCase()} not in blockData!`, 'Protocol');
+    if (tx43Addr && !this.blockData.has(tx43Addr)) log.warn(`TX Contact 0x43 block at 0x${tx43Addr.toString(16).padStart(6, '0').toUpperCase()} not in blockData!`, 'Protocol');
+    if (tg44Addr && !this.blockData.has(tg44Addr)) log.warn(`Talk Groups 0x44 block at 0x${tg44Addr.toString(16).padStart(6, '0').toUpperCase()} not in blockData!`, 'Protocol');
+    if (qa0BAddr && !this.blockData.has(qa0BAddr)) log.warn(`Quick Access 0x0B block at 0x${qa0BAddr.toString(16).padStart(6, '0').toUpperCase()} not in blockData!`, 'Protocol');
     
     // Step 4: Disconnect from radio - we have all the data we need
     // Parsing will happen from cached blocks, no connection needed
@@ -641,6 +731,7 @@ export class DM32UVProtocol implements RadioProtocol {
     // We'll copy the block reading logic here
     
     // Step 1: Discover all metadata blocks (if not already discovered)
+    // If we restored from cache, we already have discoveredBlocks, so skip discovery
     if (this.discoveredBlocks.length === 0) {
       this.onProgress?.(0, 'Discovering memory blocks...');
       const blocks = await discoverMemoryBlocks(
@@ -693,22 +784,33 @@ export class DM32UVProtocol implements RadioProtocol {
       METADATA.RX_GROUPS,
       METADATA.METADATA_0x44,        // Talk Groups data
       METADATA.METADATA_0x06,        // Talk Groups counter
+      METADATA.TX_CONTACT_LOW,       // TX Contact block 0x42 (channels 1-2048)
+      METADATA.TX_CONTACT_HIGH,      // TX Contact block 0x43 (channels 2049+ and VFOs)
     ];
 
     for (const metadata of fixedMetadataBlocks) {
       const block = this.discoveredBlocks.find(b => b.metadata === metadata);
       if (block) {
+        // Skip only empty blocks - we need to read unknown blocks if they have the right metadata
+        // Unknown just means we don't recognize the type, but if it has the metadata we need, try to read it
+        if (block.type === 'empty') {
+          log.warn(`Fixed metadata block 0x${metadata.toString(16)} at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} is empty, skipping`, 'Protocol');
+          continue;
+        }
+        if (block.type === 'unknown') {
+          log.info(`Fixed metadata block 0x${metadata.toString(16)} at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} is marked unknown but has required metadata, will attempt to read`, 'Protocol');
+        }
         blocksToRead.push(block);
       }
     }
 
-    // Step 2c: Add zone and scan list blocks
+    // Step 2c: Add zone and scan list blocks (filter out empty/unknown)
     const zoneBlocks = this.discoveredBlocks.filter(b => b.type === 'zone');
     const scanBlocks = this.discoveredBlocks.filter(b => b.type === 'scan');
     blocksToRead.push(...zoneBlocks);
     blocksToRead.push(...scanBlocks);
 
-    // Step 2d: Add other data type blocks
+    // Step 2d: Add other data type blocks (filter out empty/unknown)
     const messageBlocks = this.discoveredBlocks.filter(b => b.type === 'message');
     const dmrRadioIdBlocks = this.discoveredBlocks.filter(b => b.type === 'dmrradioid');
     const rxGroupBlocks = this.discoveredBlocks.filter(b => b.type === 'rxgroup');
@@ -716,43 +818,134 @@ export class DM32UVProtocol implements RadioProtocol {
     blocksToRead.push(...dmrRadioIdBlocks);
     blocksToRead.push(...rxGroupBlocks);
 
-    // Remove duplicates
+    // Remove duplicates and filter out empty/unknown blocks
+    // BUT: Keep required fixed metadata blocks even if marked unknown (we need them for writes)
+    const requiredMetadataSet = new Set<number>(fixedMetadataBlocks);
     const uniqueBlocks = new Map<number, MemoryBlock>();
     for (const block of blocksToRead) {
+      // Skip empty blocks - they're not readable
+      if (block.type === 'empty') {
+        log.debug(`Skipping empty block at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} (metadata 0x${block.metadata.toString(16)})`, 'Protocol');
+        continue;
+      }
+      // Skip unknown blocks UNLESS they're required fixed metadata blocks (we need them for writes)
+      if (block.type === 'unknown' && !requiredMetadataSet.has(block.metadata)) {
+        log.debug(`Skipping unknown block at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()} (metadata 0x${block.metadata.toString(16)})`, 'Protocol');
+        continue;
+      }
       uniqueBlocks.set(block.address, block);
     }
 
     const finalBlocksToRead = Array.from(uniqueBlocks.values());
-    log.info(`Bulk reading ${finalBlocksToRead.length} blocks for write operation`, 'Protocol');
+    
+    // Log all blocks we're planning to read for debugging
+    log.debug(`Blocks to read: ${finalBlocksToRead.map(b => `0x${b.address.toString(16).padStart(6, '0').toUpperCase()} (metadata 0x${b.metadata.toString(16)}, type ${b.type})`).join(', ')}`, 'Protocol');
+    
+    // Step 3: Check which blocks are already cached and only read missing ones
+    const blocksToReadFromRadio: MemoryBlock[] = [];
+    
+    const cachedAddresses = new Set(this.cachedBlockData.map(b => b.address));
+    
+    for (const block of finalBlocksToRead) {
+      if (!cachedAddresses.has(block.address)) {
+        blocksToReadFromRadio.push(block);
+      }
+    }
+    
+    if (blocksToReadFromRadio.length === 0) {
+      log.info(`All ${finalBlocksToRead.length} required blocks are already cached, skipping read`, 'Protocol');
+      this.onProgress?.(100, `Using ${this.cachedBlockData.length} cached blocks`);
+      return;
+    }
+    
+    log.info(`Reading ${blocksToReadFromRadio.length} missing blocks (${finalBlocksToRead.length - blocksToReadFromRadio.length} already cached)`, 'Protocol');
 
-    // Step 3: Read all required blocks
-    this.onProgress?.(10, `Reading ${finalBlocksToRead.length} blocks...`);
-    this.cachedBlockData = [];
+    // Step 4: Read only missing blocks
+    this.onProgress?.(10, `Reading ${blocksToReadFromRadio.length} missing blocks...`);
 
-    for (let i = 0; i < finalBlocksToRead.length; i++) {
-      const block = finalBlocksToRead[i];
-      const progress = 10 + Math.floor((i / finalBlocksToRead.length) * 85); // 10-95%
-      this.onProgress?.(progress, `Reading block ${i + 1} of ${finalBlocksToRead.length} (metadata 0x${block.metadata.toString(16)})...`);
+    for (let i = 0; i < blocksToReadFromRadio.length; i++) {
+      const block = blocksToReadFromRadio[i];
+      const progress = 10 + Math.floor((i / blocksToReadFromRadio.length) * 85); // 10-95%
+      const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
+      const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0')}`;
+      log.debug(`Reading block ${i + 1}/${blocksToReadFromRadio.length}: address=${addressHex}, metadata=${metadataHex}, type=${block.type}`, 'Protocol');
+      this.onProgress?.(progress, `Reading block ${i + 1} of ${blocksToReadFromRadio.length} (metadata ${metadataHex} at ${addressHex})...`);
 
       const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
+      
+      // IMPORTANT: Create a copy of the data to prevent corruption if the buffer is reused
+      const blockDataCopy = new Uint8Array(blockData);
       
       this.cachedBlockData.push({
         metadata: block.metadata,
         address: block.address,
-        data: blockData,
+        data: blockDataCopy,
       });
 
-      this.blockData.set(block.address, blockData);
+      this.blockData.set(block.address, blockDataCopy);
 
-      if (i < finalBlocksToRead.length - 1) {
+      // IMPORTANT: Set rawRadioSettingsData when we read block 0x04
+      // This is required for writeRadioSettings() to preserve unknown fields
+      if (block.metadata === METADATA.VFO_SETTINGS) {
+        this.rawRadioSettingsData = blockDataCopy;
+        log.debug('Set rawRadioSettingsData from block 0x04 during bulk read', 'Protocol');
+      }
+
+      if (i < blocksToReadFromRadio.length - 1) {
         await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
       }
     }
 
     this.onProgress?.(100, `Successfully cached ${this.cachedBlockData.length} blocks`);
-    log.info(`Bulk read complete: ${this.cachedBlockData.length} blocks cached`, 'Protocol');
+    log.info(`Bulk read complete: ${this.cachedBlockData.length} blocks cached (${blocksToReadFromRadio.length} newly read, ${finalBlocksToRead.length - blocksToReadFromRadio.length} reused from cache)`, 'Protocol');
     log.debug('All blocks are now in cache - connection remains open for writing', 'Protocol');
     // NOTE: We do NOT disconnect here - connection must stay open for writing
+  }
+
+  /**
+   * Restore cached block data from store (blockData and blockMetadata)
+   * Used when creating a new protocol instance for writing after a previous read
+   */
+  restoreCacheFromStore(blockData: Map<number, Uint8Array>, blockMetadata: Map<number, { metadata: number; type: string }>): void {
+    this.cachedBlockData = [];
+    this.blockData = new Map(blockData);
+    
+    log.info(`Restoring cache from store: ${blockData.size} block data entries, ${blockMetadata.size} metadata entries`, 'Protocol');
+    
+    // Reconstruct cachedBlockData from blockData and blockMetadata
+    for (const [address, data] of blockData.entries()) {
+      const metadata = blockMetadata.get(address);
+      if (metadata) {
+        this.cachedBlockData.push({
+          metadata: metadata.metadata,
+          address: address,
+          data: new Uint8Array(data), // Create a copy
+        });
+      } else {
+        log.warn(`Block at 0x${address.toString(16).padStart(6, '0').toUpperCase()} has data but no metadata in store`, 'Protocol');
+      }
+    }
+    
+    // Also restore discoveredBlocks from blockMetadata
+    this.discoveredBlocks = [];
+    for (const [address, meta] of blockMetadata.entries()) {
+      this.discoveredBlocks.push({
+        address: address,
+        metadata: meta.metadata,
+        type: meta.type as MemoryBlock['type'],
+      });
+    }
+    
+    // Verify critical blocks for TG mapping
+    const txContact42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+    const txContact43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    const talkGroups44 = this.cachedBlockData.find(b => b.metadata === METADATA.METADATA_0x44);
+    const quickAccess0B = this.cachedBlockData.find(b => b.metadata === METADATA.METADATA_0x0B);
+    
+    log.info(`Restored ${this.cachedBlockData.length} blocks from store cache`, 'Protocol');
+    if (!txContact42 || !txContact43 || !talkGroups44 || !quickAccess0B) {
+      log.warn('Some critical blocks for TG mapping are missing from restored cache!', 'Protocol');
+    }
   }
 
   /**
@@ -850,6 +1043,23 @@ export class DM32UVProtocol implements RadioProtocol {
     
     log.info(`Parsing ${blocksToParse.length} cached channel blocks for ${channelCount} channels`, 'Protocol');
 
+    // Get TX Contact blocks (0x42 and 0x43) for setting talkGroupId on digital channels
+    const txContactBlock42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+    const txContactBlock43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    const block42Data = txContactBlock42?.data || null;
+    const block43Data = txContactBlock43?.data || null;
+    
+    if (block42Data) {
+      log.debug(`Found TX Contact block 0x42 (${block42Data.length} bytes)`, 'Protocol');
+    } else {
+      log.debug('TX Contact block 0x42 not found - contactId will use legacy byte 0x2B', 'Protocol');
+    }
+    if (block43Data) {
+      log.debug(`Found TX Contact block 0x43 (${block43Data.length} bytes)`, 'Protocol');
+    } else {
+      log.debug('TX Contact block 0x43 not found - contactId for high channels/VFOs will use legacy', 'Protocol');
+    }
+
     // Parse channels - process blocks in metadata order (0x12, 0x13, 0x14, ...)
     // All data comes from cachedBlockData - no radio reads here
     const channels: Channel[] = [];
@@ -909,6 +1119,18 @@ export class DM32UVProtocol implements RadioProtocol {
 
           // Parse channel (forbid TX is at byte 0x18, bit 3)
           const channel = parseChannel(channelData, channelIndex);
+          
+          // Apply TX Contact from blocks 0x42/0x43 for digital channels
+          // This overrides the legacy contactId from byte 0x2B
+          const isDigitalMode = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
+          if (isDigitalMode && (block42Data || block43Data)) {
+            const txContact = parseTxContactForChannel(channelIndex, block42Data, block43Data);
+            if (txContact) {
+              channel.contactId = txContact.contactId;
+              log.verbose?.(`Channel ${channelIndex}: TX Contact from block = ${txContact.contactId}`, 'Protocol');
+            }
+          }
+          
           channels.push(channel);
           channelIndex++;
 
@@ -942,14 +1164,100 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   /**
-   * Write channels to the radio
+   * Generate channel blocks for writing
    * 
-   * Encodes channels to binary format and writes them to the appropriate memory blocks.
+   * Encodes channels to binary format and generates the appropriate memory blocks.
    * Updates the channel count in the first block header.
    * 
    * @param channels Array of channels to write
-   * @throws {Error} If not connected
+   * @returns Array of blocks to write (address, data, metadata)
    * @throws {Error} If channel count exceeds maximum (4000)
+   */
+  private generateChannelBlocks(channels: Channel[]): Array<{ address: number; data: Uint8Array; metadata: number }> {
+    if (channels.length === 0) {
+      return [];
+    }
+    
+    if (channels.length > 4000) {
+      throw new Error(`Too many channels: ${channels.length} (maximum 4000)`);
+    }
+
+    // Get channel blocks, sorted by metadata
+    const channelBlocks = this.discoveredBlocks
+      .filter(b => b.type === 'channel')
+      .sort((a, b) => a.metadata - b.metadata);
+
+    if (channelBlocks.length === 0) {
+      throw new Error('No channel blocks found');
+    }
+
+    const firstChannelBlock = channelBlocks.find(b => b.metadata === METADATA.CHANNEL_FIRST);
+    if (!firstChannelBlock) {
+      throw new Error(`First channel block (metadata 0x${METADATA.CHANNEL_FIRST.toString(16)}) not found`);
+    }
+
+    // Encode all channels to binary
+    const encodedChannels = channels.map(ch => encodeChannel(ch));
+    
+    const blocks: Array<{ address: number; data: Uint8Array; metadata: number }> = [];
+    
+    // Generate new block data for each channel block
+    let channelIndex = 0;
+    for (let blockIdx = 0; blockIdx < channelBlocks.length && channelIndex < channels.length; blockIdx++) {
+      const block = channelBlocks[blockIdx];
+      const isFirstBlock = block.metadata === METADATA.CHANNEL_FIRST;
+      
+      // Generate new 4KB block filled with 0xFF
+      const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
+      blockData.fill(0xFF);
+      
+      // Set metadata byte at 0xFFF
+      blockData[0xFFF] = block.metadata;
+      
+      // Update channel count in first block header (bytes 0-3)
+      if (isFirstBlock) {
+        blockData[0] = channels.length & 0xFF;
+        blockData[1] = (channels.length >> 8) & 0xFF;
+        blockData[2] = (channels.length >> 16) & 0xFF;
+        blockData[3] = (channels.length >> 24) & 0xFF;
+      }
+      
+      // Determine start offset and max channels for this block
+      const startOffset = isFirstBlock ? OFFSET.FIRST_CHANNEL : 0x00;
+      const maxChannelsInBlock = isFirstBlock ? 84 : 85;
+      const maxOffset = startOffset + (maxChannelsInBlock * BLOCK_SIZE.CHANNEL);
+      
+      // Write channels to this block
+      for (let offset = startOffset; offset < maxOffset && channelIndex < channels.length; offset += BLOCK_SIZE.CHANNEL) {
+        blockData.set(encodedChannels[channelIndex], offset);
+        channelIndex++;
+      }
+      
+      blocks.push({
+        address: block.address,
+        data: blockData,
+        metadata: block.metadata,
+      });
+      
+      // Update cache with new block data
+      const cacheIndex = this.cachedBlockData.findIndex(b => b.address === block.address);
+      if (cacheIndex >= 0) {
+        this.cachedBlockData[cacheIndex].data = blockData;
+      }
+      
+      // Stop if we've written all channels
+      if (channelIndex >= channels.length) {
+        break;
+      }
+    }
+    
+    return blocks;
+  }
+
+  /**
+   * Write channels to the radio (public interface)
+   * 
+   * @param channels Array of channels to write
    */
   async writeChannels(channels: Channel[]): Promise<void> {
     requireConnection(this.connection, this.radioInfo);
@@ -964,7 +1272,7 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(0, 'Preparing to write channels...');
 
-    // Discover blocks if not already discovered
+    // Ensure we have discovered blocks
     if (this.discoveredBlocks.length === 0) {
       this.onProgress?.(5, 'Discovering channel blocks...');
       const blocks = await discoverMemoryBlocks(
@@ -979,194 +1287,138 @@ export class DM32UVProtocol implements RadioProtocol {
       this.discoveredBlocks = blocks;
     }
 
-    // Get channel blocks, sorted by metadata
-    const channelBlocks = this.discoveredBlocks
-      .filter(b => b.type === 'channel')
-      .sort((a, b) => a.metadata - b.metadata);
-
-    if (channelBlocks.length === 0) {
-      throw new Error('No channel blocks found');
+    // Generate channel blocks using shared helper method
+    this.onProgress?.(10, `Generating ${channels.length} channel blocks...`);
+    const channelBlocks = this.generateChannelBlocks(channels);
+    
+    // Write blocks directly
+    this.onProgress?.(20, `Writing ${channels.length} channels to ${channelBlocks.length} blocks...`);
+    log.info(`Writing ${channels.length} channels to ${channelBlocks.length} blocks`, 'Protocol');
+    
+    for (let i = 0; i < channelBlocks.length; i++) {
+      const block = channelBlocks[i];
+      const progress = 20 + Math.floor((i / channelBlocks.length) * 70);
+      this.onProgress?.(progress, `Writing channel block ${i + 1} of ${channelBlocks.length}...`);
+      
+      await this.connection!.writeMemory(block.address, block.data, block.metadata);
+      log.info(`Successfully wrote channel block ${i + 1}/${channelBlocks.length} at 0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
     }
 
-    // Find first channel block (metadata 0x12)
-    const firstChannelBlock = channelBlocks.find(b => b.metadata === METADATA.CHANNEL_FIRST);
-    if (!firstChannelBlock) {
-      throw new Error(`First channel block (metadata 0x${METADATA.CHANNEL_FIRST.toString(16)}) not found`);
-    }
-
-    this.onProgress?.(10, `Writing ${channels.length} channels to ${channelBlocks.length} blocks...`);
-
-    log.info(`Starting write operation: ${channels.length} channels to ${channelBlocks.length} blocks`, 'Protocol');
-    log.debug(`Block addresses: ${channelBlocks.map(b => `0x${b.address.toString(16).padStart(6, '0').toUpperCase()}`).join(', ')}`, 'Protocol');
-
-    // Encode all channels to binary
-    const encodedChannels = channels.map(ch => encodeChannel(ch));
-    log.debug(`Encoded ${encodedChannels.length} channels to binary format`, 'Protocol');
-    
-    // Step 1: Read metadata bytes from ALL active channel blocks (1 byte per block at offset 0xFFF)
-    // This matches the serial capture pattern: read all metadata first, then write only blocks we change
-    log.debug(`Reading metadata bytes (1 byte each) from all ${channelBlocks.length} active channel blocks...`, 'Protocol');
-    
-    for (let blockIdx = 0; blockIdx < channelBlocks.length; blockIdx++) {
-      const block = channelBlocks[blockIdx];
-      const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
-      const metadataAddr = block.address + 0xFFF; // Read metadata byte at offset 0xFFF
-      const metadataAddrHex = `0x${metadataAddr.toString(16).padStart(6, '0').toUpperCase()}`;
-      
-      try {
-        log.debug(`Reading metadata byte from block ${blockIdx + 1}/${channelBlocks.length} at ${metadataAddrHex} (block address: ${addressHex}, metadata: 0x${block.metadata.toString(16).padStart(2, '0')})`, 'Protocol');
-        
-        // Read only the metadata byte (1 byte at offset 0xFFF)
-        const metadataData = await this.connection!.readMemory(metadataAddr, 1);
-        const metadataValue = metadataData[0];
-        
-        log.debug(`Successfully read metadata byte from ${addressHex}: 0x${metadataValue.toString(16).padStart(2, '0')}`, 'Protocol');
-        
-        // Verify metadata matches what we discovered
-        if (metadataValue !== block.metadata) {
-          log.warn(`Metadata mismatch at ${addressHex}: expected 0x${block.metadata.toString(16).padStart(2, '0')}, got 0x${metadataValue.toString(16).padStart(2, '0')}. Using discovered value.`, 'Protocol');
-        }
-        
-        // Add delay between metadata reads
-        if (blockIdx < channelBlocks.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
-        }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        log.error(`Failed to read metadata from block ${blockIdx + 1}/${channelBlocks.length} at ${addressHex} (metadata address: ${metadataAddrHex})`, 'Protocol', error);
-        log.error(`This was block ${blockIdx + 1} of ${channelBlocks.length} total blocks`, 'Protocol');
-        throw new Error(`Failed to read metadata from block ${blockIdx + 1} at ${addressHex}: ${errorMsg}`);
-      }
-    }
-    
-    log.debug('Metadata read complete, starting write operations...', 'Protocol');
-    
-    // Step 2: Calculate how many blocks we actually need to write
-    // First block: 84 channels (starts at offset 0x10, so (4096 - 0x10) / 48 = 84)
-    // Subsequent blocks: 85 channels each (4096 / 48 = 85)
-    const channelsPerFirstBlock = 84;
-    const channelsPerSubsequentBlock = 85;
-    
-    let blocksNeeded = 0;
-    if (channels.length > 0) {
-      blocksNeeded = 1; // First block
-      const remainingChannels = channels.length - channelsPerFirstBlock;
-      if (remainingChannels > 0) {
-        blocksNeeded += Math.ceil(remainingChannels / channelsPerSubsequentBlock);
-      }
-    }
-    
-    // Only write to the blocks we actually need
-    const blocksToWrite = channelBlocks.slice(0, blocksNeeded);
-    log.info(`Will write to ${blocksToWrite.length} blocks (${channels.length} channels)`, 'Protocol');
-    
-    // Step 3: Create new block data and write only to blocks we need
-    // We create fresh 4KB blocks filled with 0xFF, then write our channel data
-    let channelIndex = 0;
-    for (let blockIdx = 0; blockIdx < blocksToWrite.length && channelIndex < channels.length; blockIdx++) {
-      const block = blocksToWrite[blockIdx];
-      const isFirstBlock = block.metadata === METADATA.CHANNEL_FIRST;
-      const addressHex = `0x${block.address.toString(16).padStart(6, '0').toUpperCase()}`;
-      const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`;
-      
-      log.debug(`Processing block ${blockIdx + 1}/${blocksToWrite.length}: Address=${addressHex}, Metadata=${metadataHex}, IsFirst=${isFirstBlock}`, 'Protocol');
-      
-      // Create a new 4KB block filled with 0xFF (empty marker)
-      const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
-      blockData.fill(0xFF);
-      
-      // Update channel count in first block header (bytes 0-3)
-      if (isFirstBlock) {
-        const channelCountBytes = new Uint8Array(4);
-        channelCountBytes[0] = channels.length & 0xFF;
-        channelCountBytes[1] = (channels.length >> 8) & 0xFF;
-        channelCountBytes[2] = (channels.length >> 16) & 0xFF;
-        channelCountBytes[3] = (channels.length >> 24) & 0xFF;
-        blockData.set(channelCountBytes, 0);
-        log.debug(`Updated channel count in first block header: ${channels.length} (bytes: ${Array.from(channelCountBytes).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ')})`, 'Protocol');
-      }
-      
-      // Determine start offset and max channels for this block
-      const startOffset = isFirstBlock ? OFFSET.FIRST_CHANNEL : 0x00;
-      const maxChannelsInBlock = isFirstBlock ? 84 : 85;
-      const maxOffset = startOffset + (maxChannelsInBlock * BLOCK_SIZE.CHANNEL);
-      
-      log.verbose(`Block channel layout: Start offset=0x${startOffset.toString(16).padStart(2, '0').toUpperCase()}, Max channels=${maxChannelsInBlock}, Max offset=0x${maxOffset.toString(16).padStart(4, '0').toUpperCase()}`, 'Protocol');
-      
-      const channelsInThisBlock: number[] = [];
-      
-      // Write channels to this block
-      for (let offset = startOffset; offset < maxOffset && channelIndex < channels.length; offset += BLOCK_SIZE.CHANNEL) {
-        const channel = channels[channelIndex];
-        
-        // Encode channel to binary
-        const encodedChannel = encodedChannels[channelIndex];
-        blockData.set(encodedChannel, offset);
-        
-        // Forbid TX is now written at fixed position 0x08 within the 48-byte channel data
-        // No need to write separately - it's already in the encoded channel data
-        
-        channelsInThisBlock.push(channel.number);
-        channelIndex++;
-        
-        // Update progress
-        const progress = 10 + Math.floor((channelIndex / channels.length) * 80); // 10-90%
-        if (channelIndex % 10 === 0 || channelIndex === channels.length) {
-          this.onProgress?.(progress, `Encoded ${channelIndex} of ${channels.length} channels...`);
-        }
-      }
-      
-      // CRITICAL: Fill any unused channel slots with 0xFF (empty channel marker)
-      // This ensures the block is properly formatted even if we're writing fewer channels than the block can hold
-      const lastChannelOffset = startOffset + (channelsInThisBlock.length * BLOCK_SIZE.CHANNEL);
-      if (lastChannelOffset < maxOffset) {
-        // Fill remaining channel slots with 0xFF
-        const emptyChannel = new Uint8Array(BLOCK_SIZE.CHANNEL);
-        emptyChannel.fill(0xFF);
-        for (let offset = lastChannelOffset; offset < maxOffset; offset += BLOCK_SIZE.CHANNEL) {
-          blockData.set(emptyChannel, offset);
-        }
-        log.debug(`Filled ${Math.floor((maxOffset - lastChannelOffset) / BLOCK_SIZE.CHANNEL)} unused channel slots with 0xFF`, 'Protocol');
-      }
-      
-      log.debug(`Block ${blockIdx + 1} prepared: ${channelsInThisBlock.length} channels (${channelsInThisBlock.join(', ')}), Total encoded: ${channelIndex}/${channels.length}`, 'Protocol');
-      
-      // CRITICAL: Set metadata byte at offset 0xFFF in the block data
-      // This must match the metadata byte we send at the end of the write command
-      blockData[0xFFF] = block.metadata;
-      log.debug(`Set metadata byte at 0xFFF to ${metadataHex}`, 'Protocol');
-      
-      // Final validation: Ensure block is exactly 4KB before writing
-      if (blockData.length !== BLOCK_SIZE.STANDARD) {
-        throw new Error(`Block data size error at ${addressHex}: must be exactly ${BLOCK_SIZE.STANDARD} bytes (4KB), got ${blockData.length} bytes`);
-      }
-      log.debug(`Block ${blockIdx + 1} validated: ${blockData.length} bytes (4KB)`, 'Protocol');
-      
-      // Write the block back to radio
-      const progress = 90 + Math.floor((blockIdx / blocksToWrite.length) * 10); // 90-100%
-      this.onProgress?.(progress, `Writing block ${blockIdx + 1} of ${blocksToWrite.length}...`);
-      
-      log.debug(`Writing block ${blockIdx + 1}/${blocksToWrite.length} to radio at ${addressHex} (metadata: ${metadataHex})...`, 'Protocol');
-      try {
-        await this.connection!.writeMemory(block.address, blockData, block.metadata);
-        log.info(`Successfully wrote block ${blockIdx + 1}/${blocksToWrite.length} to radio at ${addressHex}`, 'Protocol');
-      } catch (error) {
-        log.error(`Failed to write block ${blockIdx + 1}/${blocksToWrite.length} at ${addressHex} (metadata: ${metadataHex})`, 'Protocol', error);
-        log.error(`This was write attempt ${blockIdx + 1} of ${blocksToWrite.length} total blocks`, 'Protocol');
-        throw error;
-      }
-      
-      // No delay needed - we wait for ACK before proceeding, just like the original C code
-      
-      // Stop if we've written all channels
-      if (channelIndex >= channels.length) {
-        log.debug(`All ${channelIndex} channels have been written, stopping block iteration`, 'Protocol');
-        break;
-      }
-    }
+    // Write TX Contact blocks (0x42 and 0x43) for digital channels
+    this.onProgress?.(92, 'Writing TX Contact data...');
+    await this.writeTxContactBlocks(channels);
 
     this.onProgress?.(100, `Successfully wrote ${channels.length} channels`);
     log.info(`Successfully wrote ${channels.length} channels to radio`, 'Protocol');
+  }
+
+  /**
+   * Write TX Contact blocks (0x42 and 0x43) for digital channels
+   * 
+   * TX Contact is stored separately from channel data in metadata blocks 0x42 and 0x43.
+   * Block 0x42: Channels 1-2048
+   * Block 0x43: Channels 2049+ and VFOs (4001, 4002)
+   * 
+   * @param channels Array of channels to write TX Contact for
+   */
+  private async writeTxContactBlocks(channels: Channel[]): Promise<void> {
+    // Step 1: Confirm metadata block locations by re-discovering if needed
+    // Block locations can change, so we need to verify them before writing
+    if (this.discoveredBlocks.length === 0) {
+      log.warn('No discovered blocks - re-discovering to confirm TX Contact block locations', 'Protocol');
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo!.memoryLayout.configStart,
+        this.radioInfo!.memoryLayout.configEnd,
+        () => {} // No progress callback needed
+      );
+      this.discoveredBlocks = blocks;
+    }
+    
+    // Find TX Contact blocks in discovered blocks
+    let block42 = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+    let block43 = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    
+    // Initialize block data from cache - MUST have cached data to preserve existing TX Contact entries
+    const cached42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+    const cached43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+    
+    // If blocks are cached but not discovered, use the cached address
+    // This can happen if blocks were read during bulkRead but not found in initial discovery
+    if (!block42 && cached42) {
+      block42 = { address: cached42.address, metadata: METADATA.TX_CONTACT_LOW, type: 'unknown' };
+    }
+    if (!block43 && cached43) {
+      block43 = { address: cached43.address, metadata: METADATA.TX_CONTACT_HIGH, type: 'unknown' };
+    }
+    
+    // Verify block locations match cache (they shouldn't change, but confirm anyway)
+    if (block42 && cached42 && block42.address !== cached42.address) {
+      log.warn(`TX Contact block 0x42 address changed: cached=0x${cached42.address.toString(16).padStart(6, '0').toUpperCase()}, discovered=0x${block42.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    }
+    if (block43 && cached43 && block43.address !== cached43.address) {
+      log.warn(`TX Contact block 0x43 address changed: cached=0x${cached43.address.toString(16).padStart(6, '0').toUpperCase()}, discovered=0x${block43.address.toString(16).padStart(6, '0').toUpperCase()}`, 'Protocol');
+    }
+    
+    if (!block42 && !block43) {
+      log.warn('TX Contact blocks (0x42, 0x43) not found - skipping TX Contact write', 'Protocol');
+      log.warn(`Total discovered blocks: ${this.discoveredBlocks.length}, cached blocks: ${this.cachedBlockData.length}`, 'Protocol');
+      // List all discovered metadata values for debugging
+      const metadataValues = this.discoveredBlocks.map(b => `0x${b.metadata.toString(16)}`).join(', ');
+      log.debug(`Discovered metadata values: ${metadataValues}`, 'Protocol');
+      return;
+    }
+    
+    // SAFETY CHECK: We must have cached data to avoid wiping TX Contact entries
+    if (!cached42 || !cached43) {
+      log.warn('TX Contact blocks not in cache - skipping TX Contact write to avoid data loss. Read from radio first!', 'Protocol');
+      log.warn(`Total cached blocks: ${this.cachedBlockData.length}`, 'Protocol');
+      return;
+    }
+    
+    // Copy cached data to avoid modifying the original
+    const block42Data = new Uint8Array(cached42.data);
+    const block43Data = new Uint8Array(cached43.data);
+    
+    // Update TX Contact for each channel
+    let updatedCount = 0;
+    for (const channel of channels) {
+      const isDigital = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
+      // Prefer contactId (what the UI updates) over txContactId (original read value)
+      // If user edited the dropdown, contactId will have the new value
+      // If unchanged, txContactId will have the original value
+      const contactId = channel.contactId ?? channel.txContactId ?? 0;
+      
+      // Encode TX Contact for this channel
+      encodeTxContactForChannel(
+        channel.number,
+        contactId,
+        isDigital,
+        block42Data,
+        block43Data
+      );
+      
+      if (isDigital && contactId > 0) {
+        updatedCount++;
+      }
+    }
+    
+    log.info(`Updated TX Contact for ${updatedCount} digital channels with TG assignments`, 'Protocol');
+    
+    // Set metadata bytes
+    block42Data[0xFFF] = METADATA.TX_CONTACT_LOW;
+    block43Data[0xFFF] = METADATA.TX_CONTACT_HIGH;
+    
+    // Write blocks to radio
+    if (block42) {
+      await this.connection!.writeMemory(block42.address, block42Data, METADATA.TX_CONTACT_LOW);
+      log.info('Successfully wrote TX Contact block 0x42', 'Protocol');
+    }
+    
+    if (block43) {
+      await this.connection!.writeMemory(block43.address, block43Data, METADATA.TX_CONTACT_HIGH);
+      log.info('Successfully wrote TX Contact block 0x43', 'Protocol');
+    }
   }
 
   /**
@@ -2163,9 +2415,11 @@ export class DM32UVProtocol implements RadioProtocol {
       quickAccessData[i] = 0xFF;
     }
 
-    // Build sorted index lists using the actual contact.index values
-    const contactsWithIndices = contacts.map((contact) => ({
-      contactIndex: contact.index, // Use the actual contact index (1-based)
+    // Build sorted index lists using physical position (1-based) in block 0x44
+    // The index stored in 0x0B must match the physical position in block 0x44,
+    // NOT the contact.index value (which may have gaps after deletions)
+    const contactsWithIndices = contacts.map((contact, arrayIndex) => ({
+      contactIndex: arrayIndex + 1, // Physical position in block 0x44 (1-based)
       name: contact.name,
       callType: contact.callType,
       typeByte: contact.callType === 0x05 ? 0x30 : // All Call
@@ -2306,6 +2560,30 @@ export class DM32UVProtocol implements RadioProtocol {
         }
       }
 
+      // Get TX Contact blocks (0x42 and 0x43) for VFO Talk Group IDs
+      const txContactBlock42 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_LOW);
+      const txContactBlock43 = this.cachedBlockData.find(b => b.metadata === METADATA.TX_CONTACT_HIGH);
+      const block42Data = txContactBlock42?.data || null;
+      const block43Data = txContactBlock43?.data || null;
+
+      // Apply TX Contact to VFO A (channel 4001) if it's digital
+      if (vfoA && (vfoA.mode === 'Digital' || vfoA.mode === 'Fixed Digital') && (block42Data || block43Data)) {
+        const txContact = parseTxContactForChannel(4001, block42Data, block43Data);
+        if (txContact) {
+          vfoA.contactId = txContact.contactId;
+          log.debug(`VFO A (4001): TX Contact from block 0x43 = ${txContact.contactId}`, 'Protocol');
+        }
+      }
+
+      // Apply TX Contact to VFO B (channel 4002) if it's digital
+      if (vfoB && (vfoB.mode === 'Digital' || vfoB.mode === 'Fixed Digital') && (block42Data || block43Data)) {
+        const txContact = parseTxContactForChannel(4002, block42Data, block43Data);
+        if (txContact) {
+          vfoB.contactId = txContact.contactId;
+          log.debug(`VFO B (4002): TX Contact from block 0x43 = ${txContact.contactId}`, 'Protocol');
+        }
+      }
+
       const radioSettings = parseRadioSettings(cachedBlock.data);
       
       // Override VFO A and VFO B with data from block 0x41
@@ -2360,9 +2638,16 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(0, 'Writing Radio Settings...');
 
-    // Encode settings to 4KB block, preserving original data if available
+    // SAFETY CHECK: Ensure we have valid original data to preserve unknown bytes
+    // Without original data, we would fill with 0xFF which wipes the block!
+    if (!this.rawRadioSettingsData || this.rawRadioSettingsData.length < 0x1000) {
+      log.error('Cannot write Radio Settings: No valid original data cached. Read from radio first!', 'Protocol');
+      throw new Error('Cannot write Radio Settings without reading from radio first. Original block data is required to preserve unknown fields.');
+    }
+
+    // Encode settings to 4KB block, preserving original data
     // If changedFields is provided, only encode those specific fields
-    const blockData = encodeRadioSettings(settings, this.rawRadioSettingsData || undefined, changedFields);
+    const blockData = encodeRadioSettings(settings, this.rawRadioSettingsData, changedFields);
 
     // Write the entire block (writeMemory takes address, data, and metadata)
     await this.connection!.writeMemory(radioSettingsBlock.address, blockData, METADATA.VFO_SETTINGS);
@@ -2414,6 +2699,11 @@ export class DM32UVProtocol implements RadioProtocol {
         // Update cache
         this.blockData.set(block41.address, block41DataCopy);
       }
+
+      // NOTE: TX Contact for VFOs is stored in block 0x43, but we don't write it here
+      // to avoid potential corruption. VFO TX Contact write is disabled until properly debugged.
+      // The TX Contact data is read-only for now - VFO Talk Group changes won't persist.
+      // TODO: Implement safe VFO TX Contact write after verifying block structure
     }
 
     this.onProgress?.(100, 'Radio Settings written');
@@ -2656,27 +2946,61 @@ export class DM32UVProtocol implements RadioProtocol {
     
     this.onProgress?.(0, 'Preparing to write data to radio...');
 
-    // Step 1: Ensure we have discovered blocks and cached data
-    // If not, we need to read them first
-    if (this.discoveredBlocks.length === 0 || this.cachedBlockData.length === 0) {
-      this.onProgress?.(5, 'Reading blocks from radio (required for smart write)...');
-      
-      // Discover blocks
-      const blocks = await discoverMemoryBlocks(
-        this.connection!,
-        this.radioInfo!.memoryLayout.configStart,
-        this.radioInfo!.memoryLayout.configEnd,
-        (current, total) => {
-          const progress = 5 + Math.floor((current / total) * 5); // 5-10%
-          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+    // Step 1: Follow the EXACT same steps as read operation for verification
+    // connect() already queried V-frames and entered programming mode, so we use that radioInfo
+    // Then we discover blocks (same as bulkReadRequiredBlocks does after connect)
+    this.onProgress?.(2, 'Verifying radio memory map and block locations...');
+    
+    // Use radioInfo from connect() - it already queried V-frames and verified memory layout
+    if (!this.radioInfo) {
+      throw new Error('Radio info not available - connect() must be called first');
+    }
+    
+    const startAddr = this.radioInfo.memoryLayout.configStart;
+    const endAddr = this.radioInfo.memoryLayout.configEnd;
+    
+    // Step 1a: Discover all metadata blocks (same as bulkReadRequiredBlocks)
+    // We're already in programming mode from connect(), so we can discover blocks directly
+    this.onProgress?.(3, 'Discovering metadata block locations (200 blocks)...');
+    const blocks = await discoverMemoryBlocks(
+      this.connection!,
+      startAddr,
+      endAddr,
+      (current, total) => {
+        const progress = 3 + Math.floor((current / total) * 5); // 3-8%
+        this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+      }
+    );
+    
+    // Compare discovered blocks with cached blocks and warn if locations changed
+    const previousDiscoveredBlocks = this.discoveredBlocks.length > 0 ? [...this.discoveredBlocks] : [];
+    if (previousDiscoveredBlocks.length > 0) {
+      const cachedBlocksMap = new Map(previousDiscoveredBlocks.map(b => [b.address, b]));
+      let locationChanges = 0;
+      for (const newBlock of blocks) {
+        const cachedBlock = cachedBlocksMap.get(newBlock.address);
+        if (cachedBlock && cachedBlock.metadata !== newBlock.metadata) {
+          log.warn(`⚠️ Block at 0x${newBlock.address.toString(16).padStart(6, '0').toUpperCase()} metadata changed: cached=0x${cachedBlock.metadata.toString(16)}, radio=0x${newBlock.metadata.toString(16)}`, 'Protocol');
+          locationChanges++;
         }
-      );
-      this.discoveredBlocks = blocks;
+      }
+      if (locationChanges > 0) {
+        log.warn(`⚠️ ${locationChanges} metadata block locations changed - this might indicate a different radio!`, 'Protocol');
+      }
+    }
+    
+    // Update discovered blocks with current radio state (always use fresh discovery)
+    this.discoveredBlocks = blocks;
+    
+    // Step 2: Ensure we have cached block data
+    // If not, we need to read them first
+    if (this.cachedBlockData.length === 0) {
+      this.onProgress?.(8, 'Reading blocks from radio (required for smart write)...');
       
       // Read all blocks into cache (but don't disconnect - we need connection for writing)
       await this.bulkReadRequiredBlocksForWrite();
     } else {
-      this.onProgress?.(5, 'Using cached blocks for smart write...');
+      this.onProgress?.(8, 'Using cached blocks for smart write...');
     }
     
     // Verify connection is still valid before proceeding
@@ -2689,81 +3013,10 @@ export class DM32UVProtocol implements RadioProtocol {
     // Track which blocks we're replacing (only channels, zones, scan lists)
     const blocksToWrite: Array<{ address: number; data: Uint8Array; metadata: number }> = [];
 
-    // Generate channel blocks
-    const channelBlocks = this.discoveredBlocks
-      .filter(b => b.type === 'channel')
-      .sort((a, b) => a.metadata - b.metadata);
-
-    if (channels.length > 0 && channelBlocks.length === 0) {
-      throw new Error('No channel blocks found');
-    }
-
+    // Generate channel blocks using shared helper method
     if (channels.length > 0) {
-      if (channels.length > 4000) {
-        throw new Error(`Too many channels: ${channels.length} (maximum 4000)`);
-      }
-
-      const firstChannelBlock = channelBlocks.find(b => b.metadata === METADATA.CHANNEL_FIRST);
-      if (!firstChannelBlock) {
-        throw new Error(`First channel block (metadata 0x${METADATA.CHANNEL_FIRST.toString(16)}) not found`);
-      }
-
-      // Encode all channels to binary
-      const encodedChannels = channels.map(ch => encodeChannel(ch));
-      
-      // Generate new block data for each channel block
-      let channelIndex = 0;
-      for (let blockIdx = 0; blockIdx < channelBlocks.length && channelIndex < channels.length; blockIdx++) {
-        const block = channelBlocks[blockIdx];
-        const isFirstBlock = block.metadata === METADATA.CHANNEL_FIRST;
-        
-        // Generate new 4KB block filled with 0xFF
-        const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
-        blockData.fill(0xFF);
-        
-        // Set metadata byte at 0xFFF
-        blockData[0xFFF] = block.metadata;
-        
-        // Update channel count in first block header (bytes 0-3)
-        if (isFirstBlock) {
-          blockData[0] = channels.length & 0xFF;
-          blockData[1] = (channels.length >> 8) & 0xFF;
-          blockData[2] = (channels.length >> 16) & 0xFF;
-          blockData[3] = (channels.length >> 24) & 0xFF;
-        }
-        
-        // Determine start offset and max channels for this block
-        const startOffset = isFirstBlock ? OFFSET.FIRST_CHANNEL : 0x00;
-        const maxChannelsInBlock = isFirstBlock ? 84 : 85;
-        const maxOffset = startOffset + (maxChannelsInBlock * BLOCK_SIZE.CHANNEL);
-        
-        // Write channels to this block
-        for (let offset = startOffset; offset < maxOffset && channelIndex < channels.length; offset += BLOCK_SIZE.CHANNEL) {
-          blockData.set(encodedChannels[channelIndex], offset);
-          
-          // Forbid TX is already written in the encoded channel data at byte 0x18, bit 3
-          // No need to write separately - it's part of the mode flags byte
-          
-          channelIndex++;
-        }
-        
-        blocksToWrite.push({
-          address: block.address,
-          data: blockData,
-          metadata: block.metadata,
-        });
-        
-        // Update cache with new block data
-        const cacheIndex = this.cachedBlockData.findIndex(b => b.address === block.address);
-        if (cacheIndex >= 0) {
-          this.cachedBlockData[cacheIndex].data = blockData;
-        }
-        
-        // Stop if we've written all channels
-        if (channelIndex >= channels.length) {
-          break;
-        }
-      }
+      const channelBlocks = this.generateChannelBlocks(channels);
+      blocksToWrite.push(...channelBlocks);
     }
 
     // Generate zone blocks - ALWAYS write zones when writing channels
@@ -3174,6 +3427,13 @@ export class DM32UVProtocol implements RadioProtocol {
     const totalCount = finalBlocksToWrite.length;
     log.info(`Smart write complete: Wrote ${totalCount} blocks total (${changedCount} changed, ${totalCount - changedCount} from cache)`, 'Protocol');
     log.info(`- ${channels.length} channels, ${zones.length} zones, ${scanLists.length} scan lists`, 'Protocol');
+    
+    // Step 6: Write TX Contact blocks (0x42 and 0x43) for digital channels
+    // This must be done after writing channels, and we need to confirm block locations first
+    if (channels.length > 0) {
+      this.onProgress?.(95, 'Writing TX Contact data...');
+      await this.writeTxContactBlocks(channels);
+    }
   }
 }
 
