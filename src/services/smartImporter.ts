@@ -3,7 +3,8 @@
  * Enhanced importer with validation, error reporting, and flexible field matching
  */
 
-import * as XLSX from 'xlsx';
+import { read, utils } from 'xlsx';
+import type { WorkSheet } from 'xlsx';
 import type { Channel, Zone, ScanList, Contact } from '../models';
 import type { CodeplugData } from './codeplugExport';
 
@@ -78,12 +79,12 @@ function findColumn(columns: string[], patterns: string[]): string | null {
 /**
  * Get all column names from a sheet
  */
-function getColumnNames(sheet: XLSX.WorkSheet): string[] {
-  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+function getColumnNames(sheet: WorkSheet): string[] {
+  const range = utils.decode_range(sheet['!ref'] || 'A1');
   const columns: string[] = [];
   
   for (let col = range.s.c; col <= range.e.c; col++) {
-    const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+    const cellAddress = utils.encode_cell({ r: 0, c: col });
     const cell = sheet[cellAddress];
     if (cell && cell.v) {
       columns.push(String(cell.v));
@@ -192,7 +193,7 @@ export async function smartImportCodeplug(
       try {
         onProgress?.(10, 'Parsing Excel file...');
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
+        const workbook = read(data, { type: 'array' });
         
         const result: CodeplugData = {
           channels: [],
@@ -236,7 +237,7 @@ export async function smartImportCodeplug(
         if (workbook.SheetNames.includes('Channels')) {
           const sheet = workbook.Sheets['Channels'];
           const columns = getColumnNames(sheet);
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           
           summary.channels.total = rows.length;
           
@@ -424,7 +425,7 @@ export async function smartImportCodeplug(
         // Import Zones (simplified for now)
         if (workbook.SheetNames.includes('Zones')) {
           const sheet = workbook.Sheets['Zones'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           summary.zones.total = rows.length;
           
           for (const row of rows) {
@@ -444,7 +445,7 @@ export async function smartImportCodeplug(
         // Import Scan Lists (simplified for now)
         if (workbook.SheetNames.includes('Scan Lists')) {
           const sheet = workbook.Sheets['Scan Lists'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           summary.scanLists.total = rows.length;
           
           for (const row of rows) {
@@ -468,7 +469,7 @@ export async function smartImportCodeplug(
         // Import Contacts (simplified for now)
         if (workbook.SheetNames.includes('Contacts')) {
           const sheet = workbook.Sheets['Contacts'];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const rows = utils.sheet_to_json(sheet) as any[];
           summary.contacts.total = rows.length;
           
           for (const row of rows) {
