@@ -42,6 +42,18 @@ export default defineConfig(({ mode }) => {
       minify: 'esbuild',
       chunkSizeWarningLimit: isSingleFile ? 5000 : 1000,
       rollupOptions: isSingleFile ? undefined : {
+        treeshake: {
+          moduleSideEffects: (id) => {
+            // Allow tree-shaking for xlsx - it has sideEffects: false in package.json
+            if (id.includes('xlsx')) {
+              return false;
+            }
+            // Default behavior for other modules
+            return null;
+          },
+          propertyReadSideEffects: false,
+          tryCatchDeoptimization: false,
+        },
         output: {
           manualChunks: (id) => {
             // Split vendor libraries

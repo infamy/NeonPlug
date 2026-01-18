@@ -3,7 +3,8 @@
  * Exports and imports full codeplug data to/from XLSX format
  */
 
-import { read, writeFile, utils } from 'xlsx';
+// Use writeFileXLSX instead of writeFile to only include XLSX writer (smaller bundle)
+import { read, writeFileXLSX, utils } from 'xlsx';
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
@@ -287,7 +288,7 @@ export function exportCodeplug(data: CodeplugData): void {
   const filename = `codeplug-export-${timestamp}.xlsx`;
 
   // Write file
-  writeFile(workbook, filename);
+  writeFileXLSX(workbook, filename);
 }
 
 /**
