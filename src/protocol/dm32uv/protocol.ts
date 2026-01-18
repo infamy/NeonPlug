@@ -2946,27 +2946,61 @@ export class DM32UVProtocol implements RadioProtocol {
     
     this.onProgress?.(0, 'Preparing to write data to radio...');
 
-    // Step 1: Ensure we have discovered blocks and cached data
-    // If not, we need to read them first
-    if (this.discoveredBlocks.length === 0 || this.cachedBlockData.length === 0) {
-      this.onProgress?.(5, 'Reading blocks from radio (required for smart write)...');
-      
-      // Discover blocks
-      const blocks = await discoverMemoryBlocks(
-        this.connection!,
-        this.radioInfo!.memoryLayout.configStart,
-        this.radioInfo!.memoryLayout.configEnd,
-        (current, total) => {
-          const progress = 5 + Math.floor((current / total) * 5); // 5-10%
-          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+    // Step 1: Follow the EXACT same steps as read operation for verification
+    // connect() already queried V-frames and entered programming mode, so we use that radioInfo
+    // Then we discover blocks (same as bulkReadRequiredBlocks does after connect)
+    this.onProgress?.(2, 'Verifying radio memory map and block locations...');
+    
+    // Use radioInfo from connect() - it already queried V-frames and verified memory layout
+    if (!this.radioInfo) {
+      throw new Error('Radio info not available - connect() must be called first');
+    }
+    
+    const startAddr = this.radioInfo.memoryLayout.configStart;
+    const endAddr = this.radioInfo.memoryLayout.configEnd;
+    
+    // Step 1a: Discover all metadata blocks (same as bulkReadRequiredBlocks)
+    // We're already in programming mode from connect(), so we can discover blocks directly
+    this.onProgress?.(3, 'Discovering metadata block locations (200 blocks)...');
+    const blocks = await discoverMemoryBlocks(
+      this.connection!,
+      startAddr,
+      endAddr,
+      (current, total) => {
+        const progress = 3 + Math.floor((current / total) * 5); // 3-8%
+        this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+      }
+    );
+    
+    // Compare discovered blocks with cached blocks and warn if locations changed
+    const previousDiscoveredBlocks = this.discoveredBlocks.length > 0 ? [...this.discoveredBlocks] : [];
+    if (previousDiscoveredBlocks.length > 0) {
+      const cachedBlocksMap = new Map(previousDiscoveredBlocks.map(b => [b.address, b]));
+      let locationChanges = 0;
+      for (const newBlock of blocks) {
+        const cachedBlock = cachedBlocksMap.get(newBlock.address);
+        if (cachedBlock && cachedBlock.metadata !== newBlock.metadata) {
+          log.warn(`⚠️ Block at 0x${newBlock.address.toString(16).padStart(6, '0').toUpperCase()} metadata changed: cached=0x${cachedBlock.metadata.toString(16)}, radio=0x${newBlock.metadata.toString(16)}`, 'Protocol');
+          locationChanges++;
         }
-      );
-      this.discoveredBlocks = blocks;
+      }
+      if (locationChanges > 0) {
+        log.warn(`⚠️ ${locationChanges} metadata block locations changed - this might indicate a different radio!`, 'Protocol');
+      }
+    }
+    
+    // Update discovered blocks with current radio state (always use fresh discovery)
+    this.discoveredBlocks = blocks;
+    
+    // Step 2: Ensure we have cached block data
+    // If not, we need to read them first
+    if (this.cachedBlockData.length === 0) {
+      this.onProgress?.(8, 'Reading blocks from radio (required for smart write)...');
       
       // Read all blocks into cache (but don't disconnect - we need connection for writing)
       await this.bulkReadRequiredBlocksForWrite();
     } else {
-      this.onProgress?.(5, 'Using cached blocks for smart write...');
+      this.onProgress?.(8, 'Using cached blocks for smart write...');
     }
     
     // Verify connection is still valid before proceeding
