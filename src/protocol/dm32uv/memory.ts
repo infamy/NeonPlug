@@ -113,9 +113,9 @@ export async function readChannelCount(
   connection: DM32Connection,
   firstChannelBlockAddr: number
 ): Promise<number> {
-  // Channel count is in first 4 bytes of first channel block
-  const data = await connection.readMemory(firstChannelBlockAddr, 4);
-  const count = data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24);
+  // Channel count is in first 2 bytes of first channel block (little-endian)
+  const data = await connection.readMemory(firstChannelBlockAddr, 2);
+  const count = data[0] | (data[1] << 8);
   return count;
 }
 
