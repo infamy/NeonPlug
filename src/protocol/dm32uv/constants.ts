@@ -9,7 +9,7 @@ export const METADATA = {
   CHANNEL_LAST: 0x41,       // Last channel block (max)
   ZONE: 0x5c,               // Zone block
   SCAN_LIST: 0x11,          // Scan list block
-  DIGITAL_EMERGENCY: 0x03,  // Digital Emergency Systems
+  DIGITAL_EMERGENCY: 0x10,  // Digital Emergency Systems (same block as encryption keys, offset 0x000)
   VFO_SETTINGS: 0x04,       // Radio Settings / Radio Names / Embedded Information
   ANALOG_EMERGENCY: 0x10,   // Analog Emergency Systems
   METADATA_0x41: 0x41,      // Metadata block 0x41
@@ -50,7 +50,8 @@ export const OFFSET = {
   SCAN_LIST_START: 16,      // Scan lists start at offset 16 (for first 44)
   METADATA_BYTE: 0xFFF,     // Offset to read metadata byte (last byte of 4KB block)
   QUICK_MESSAGE_COUNT: 0x00, // Count field at offset 0
-  QUICK_MESSAGE_BASE: 0x80,  // Entry base offset (128) for entry 0
+  QUICK_MESSAGE_HEADER_SIZE: 0x10, // Header size (16 bytes: 1 byte count + 15 bytes padding)
+  QUICK_MESSAGE_ENTRY_START: 0x10, // Entries start at offset 0x10
   DMR_RADIO_ID_COUNT: 0x00,  // Count field at offset 0 (4 bytes, DWORD, little-endian)
   DMR_RADIO_ID_BASE: 0x00,   // Entry base offset (entries start at buffer base)
   TALK_GROUP_COUNTER: 0x1FF, // Talk Groups counter in block 0x06 (offset 511)
@@ -109,7 +110,7 @@ export const LIMITS = {
   SCAN_LIST_CHANNELS_MAX: 16,
   DIGITAL_EMERGENCY_MAX: 37, // (4096 - 0x218) / 40 ≈ 37
   ANALOG_EMERGENCY_MAX: 108, // (4096 - 0xAC) / 36 ≈ 108
-  QUICK_MESSAGES_MAX: 30,   // floor((4096 - 128) / 129) = 30
+  QUICK_MESSAGES_MAX: 31,   // floor((4096 - 16) / 129) = 31
   RX_GROUPS_MAX: 37,        // floor(4096 / 109) = 37
   DMR_RADIO_IDS_MAX: 256,   // 4096 / 16 = 256
 } as const;

@@ -40,7 +40,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
+  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -511,6 +511,10 @@ export function useRadioConnection() {
       if ((protocol as any).rawContactBlockData) {
         setRawContactBlockData((protocol as any).rawContactBlockData, (protocol as any).rawContactBlockAddress || null);
       }
+      // Store all contact blocks for diagnostics
+      if ((protocol as any).rawContactBlocks) {
+        setRawContactBlocks((protocol as any).rawContactBlocks);
+      }
       
       onProgress?.(100, `Successfully read ${contacts.length} contacts`);
     } catch (err) {
@@ -647,6 +651,14 @@ export function useRadioConnection() {
         await protocol.writeQuickContacts(quickContacts);
       }
 
+      // Step 5.5: Write Quick Messages if they have been loaded
+      const quickMessagesStore = useQuickMessagesStore.getState();
+      const quickMessages = quickMessagesStore.messages;
+      if (quickMessages && quickMessages.length > 0) {
+        onProgress?.(92, `Writing ${quickMessages.length} quick message(s) to radio...`, steps[4]);
+        await protocol.writeQuickMessages(quickMessages);
+      }
+
       // Step 6: Write radio settings only if they have been modified
       const radioSettingsStore = useRadioSettingsStore.getState();
       const radioSettings = radioSettingsStore.settings;
@@ -671,6 +683,7 @@ export function useRadioConnection() {
         zones.length > 0 ? `${zones.length} zones` : null,
         scanLists.length > 0 ? `${scanLists.length} scan lists` : null,
         quickContacts && quickContacts.length > 0 ? `${quickContacts.length} talk group(s)` : null,
+        quickMessages && quickMessages.length > 0 ? `${quickMessages.length} quick message(s)` : null,
         radioSettings && changedFields.length > 0 ? `${changedFields.length} setting(s)` : null,
       ].filter(Boolean).join(', ');
       

@@ -5,7 +5,7 @@
 
 import { DM32Connection } from './connection';
 import { discoverMemoryBlocks, readChannelCount, type MemoryBlock } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, parseTxContactForChannel, encodeTxContactForChannel } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
@@ -51,6 +51,7 @@ export class DM32UVProtocol implements RadioProtocol {
   public rawZoneData: Map<string, { data: Uint8Array; zoneNum: number; offset: number }> = new Map();
   public rawContactBlockData: Uint8Array | null = null;
   public rawContactBlockAddress: number | null = null;
+  public rawContactBlocks: Map<number, Uint8Array> = new Map(); // All contact blocks by address
   public rawScanListData: Map<string, { data: Uint8Array; listNum: number; offset: number }> = new Map();
   public rawRadioSettingsData: Uint8Array | null = null;
   public rawDigitalEmergencyData: Uint8Array | null = null;
@@ -426,6 +427,7 @@ export class DM32UVProtocol implements RadioProtocol {
       rawZoneData: this.rawZoneData,
       rawContactBlockData: this.rawContactBlockData,
       rawContactBlockAddress: this.rawContactBlockAddress,
+      rawContactBlocks: this.rawContactBlocks,
       rawScanListData: this.rawScanListData,
       rawRadioSettingsData: this.rawRadioSettingsData,
       rawDigitalEmergencyData: this.rawDigitalEmergencyData,
@@ -539,7 +541,7 @@ export class DM32UVProtocol implements RadioProtocol {
     // Step 2b: Add fixed metadata blocks we always need
     const fixedMetadataBlocks = [
       METADATA.VFO_SETTINGS,        // Radio Settings (0x04) - ALWAYS REQUIRED
-      METADATA.DIGITAL_EMERGENCY,    // Digital Emergency Systems (0x03)
+      METADATA.DIGITAL_EMERGENCY,    // Digital Emergency Systems (0x10, same block as encryption keys)
       METADATA.ANALOG_EMERGENCY,     // Analog Emergency Systems (0x10)
       METADATA.METADATA_0x41,        // Metadata block 0x41 - REQUIRED
       METADATA.QUICK_MESSAGES,       // Quick Messages (0x0A)
@@ -1805,6 +1807,9 @@ export class DM32UVProtocol implements RadioProtocol {
         ? firstBlockData 
         : await this.connection!.readMemory(blockAddr, BLOCK_SIZE.STANDARD);
       
+      // Store all contact blocks for diagnostics
+      this.rawContactBlocks.set(blockAddr, new Uint8Array(blockData));
+      
       const blockOffset = blockStartAddr - blockAddr;
       
       // Parse contacts in this block
@@ -1899,8 +1904,6 @@ export class DM32UVProtocol implements RadioProtocol {
     }
     
     const ENTRY_SIZE = 0x5C; // 92 bytes per contact
-    const CONTACTS_PER_BLOCK = Math.floor(BLOCK_SIZE.STANDARD / ENTRY_SIZE);
-    const totalBlocks = Math.ceil(contacts.length / CONTACTS_PER_BLOCK);
     
     // Write contact count in first 16 bytes (4 bytes count + 12 bytes padding)
     // Count is at baseAddr, contacts start at baseAddr + 0x10
@@ -1936,25 +1939,27 @@ export class DM32UVProtocol implements RadioProtocol {
     // Write first block with count header
     await this.connection!.writeMemory(firstBlockAddr, firstBlockData, existingMetadata);
     
-    this.onProgress?.(10, `Writing ${contacts.length} contacts in ${totalBlocks} block(s)...`);
+    // Contact block structure:
+    // - Block 0: 16-byte header (count + padding), then 44 entries starting at offset 0x10
+    // - Block 1+: 44 entries starting at offset 0x00 (no header)
+    // Formula for entry N (0-based contactIndex):
+    //   blockNum = contactIndex / 44
+    //   indexInBlock = contactIndex % 44
+    //   if blockNum == 0: offset = 0x10 + (indexInBlock * 0x5C)  // Block 0: header at 0x00-0x0F
+    //   else: offset = indexInBlock * 0x5C                      // Block 1+: start at 0x00
+    const CONTACTS_PER_BLOCK = 44; // 44 contacts per 4KB block (4096 - 16 header) / 92 = 44.3...
     
-    // ALL contacts start at baseAddr + 0x10 + (contactIndex * ENTRY_SIZE)
-    // The count header (16 bytes) is at baseAddr (0x00-0x0F), separate from contact entries
-    // Contact 0 is at baseAddr + 0x10, Contact 1 is at baseAddr + 0x10 + 0x5C, etc.
-    const contactsStartAddr = baseAddr + 0x10;
+    // Calculate how many blocks we need
+    const totalBlocks = Math.ceil(contacts.length / CONTACTS_PER_BLOCK);
     
-    for (let blockIdx = 0; blockIdx < totalBlocks; blockIdx++) {
-      const blockStartContact = blockIdx * CONTACTS_PER_BLOCK;
+    this.onProgress?.(10, `Writing ${contacts.length} contacts across ${totalBlocks} block(s)...`);
+    
+    // Iterate through each block
+    for (let blockNum = 0; blockNum < totalBlocks; blockNum++) {
+      const blockAddr = firstBlockAddr + (blockNum * BLOCK_SIZE.STANDARD);
       
-      // Calculate the absolute address where the first contact in this block should be written
-      // Contact 0 is at baseAddr + 0x10, Contact 1 is at baseAddr + 0x10 + 0x5C, etc.
-      const blockStartAddr = contactsStartAddr + (blockStartContact * ENTRY_SIZE);
-      
-      // Align to 4KB block boundary for reading/writing
-      const blockAddr = Math.floor(blockStartAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD;
-      
-      const progress = 10 + Math.floor((blockIdx / totalBlocks) * 85); // 10-95%
-      this.onProgress?.(progress, `Writing contact block ${blockIdx + 1}/${totalBlocks} (address 0x${blockStartAddr.toString(16).toUpperCase()})...`);
+      const progress = 10 + Math.floor((blockNum / totalBlocks) * 85); // 10-95%
+      this.onProgress?.(progress, `Writing contact block ${blockNum + 1}/${totalBlocks} (address 0x${blockAddr.toString(16).toUpperCase()})...`);
       
       // Read existing block to preserve other data
       // Note: Contacts are in a raw data region (no metadata blocks), so we just preserve whatever is at 0xFFF
@@ -1965,30 +1970,44 @@ export class DM32UVProtocol implements RadioProtocol {
         // Preserve existing metadata byte (raw data region, not structured metadata blocks)
         existingMetadata = blockData[0xFFF];
       } catch (error) {
-        // If read fails, create empty block filled with 0xFF
+        // If read fails, create empty block filled with 0xFF (padding)
         blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
         blockData.fill(0xFF);
       }
       
-      // Encode contacts into block - write them sequentially in address space
-      // Each contact is at: baseAddr + 0x10 + (contactIndex * ENTRY_SIZE)
-      for (let i = 0; i < CONTACTS_PER_BLOCK; i++) {
-        const contactIndex = blockStartContact + i;
-        if (contactIndex >= contacts.length) break;
+      // Block structure:
+      // - Block 0: 16-byte header (count + padding), then entries start at offset 0x10
+      // - Block 1+: Entries start at offset 0 (no header)
+      // - Empty fields: 0xFF
+      // - Padding at end of block: 0xFF
+      const isFirstBlock = blockNum === 0;
+      
+      // If this is Block 1+, ensure entries start at offset 0 (no header)
+      // Clear any potential header area (offset 0-15) to 0xFF padding
+      if (!isFirstBlock) {
+        for (let i = 0; i < 0x10; i++) {
+          blockData[i] = 0xFF;
+        }
+      }
+      
+      // Calculate which contacts are in this block
+      const firstContactIndex = blockNum * CONTACTS_PER_BLOCK;
+      const lastContactIndex = Math.min(contacts.length - 1, (blockNum + 1) * CONTACTS_PER_BLOCK - 1);
+      
+      // Write contacts in this block
+      for (let contactIndex = firstContactIndex; contactIndex <= lastContactIndex; contactIndex++) {
+        const indexInBlock = contactIndex % CONTACTS_PER_BLOCK;
         
-        // Calculate absolute address where this contact should be written
-        // Contact 0 is at baseAddr + 0x10, Contact 1 is at baseAddr + 0x10 + 0x5C, etc.
-        const contactAddr = contactsStartAddr + (contactIndex * ENTRY_SIZE);
+        // Calculate offset within this block
+        // Block 0: offset = 0x10 + (indexInBlock * 0x5C)  // After 16-byte header
+        // Block 1+: offset = 0x00 + (indexInBlock * 0x5C) // Start at beginning
+        const entryOffset = isFirstBlock 
+          ? 0x10 + (indexInBlock * ENTRY_SIZE)  // Block 0: after header
+          : indexInBlock * ENTRY_SIZE;          // Block 1+: at offset 0
         
-        // Calculate offset within this 4KB block
-        const entryOffset = contactAddr - blockAddr;
-        
-        if (entryOffset + ENTRY_SIZE > blockData.length) break;
-        if (entryOffset < 0) continue; // Shouldn't happen, but safety check
-        
-        // Skip if this entry would overlap with the header (only in first block)
-        // Header is at baseAddr (0-15), contacts start at baseAddr + 0x10 (16+)
-        if (blockAddr === firstBlockAddr && contactAddr < baseAddr + 0x10) {
+        // Safety checks
+        if (entryOffset < 0 || entryOffset + ENTRY_SIZE > blockData.length) {
+          log.warn(`Contact ${contactIndex} at offset 0x${entryOffset.toString(16)} doesn't fit in block ${blockNum} at 0x${blockAddr.toString(16)}`, 'Protocol');
           continue;
         }
         
@@ -1997,14 +2016,36 @@ export class DM32UVProtocol implements RadioProtocol {
         blockData.set(entryData, entryOffset);
       }
       
+      // Ensure padding at end of block is 0xFF (except metadata byte at 0xFFF)
+      // Fill any unused space between last contact and metadata byte with 0xFF
+      if (lastContactIndex >= firstContactIndex) {
+        const lastIndexInBlock = lastContactIndex % CONTACTS_PER_BLOCK;
+        const lastEntryOffset = isFirstBlock 
+          ? 0x10 + (lastIndexInBlock * ENTRY_SIZE) + ENTRY_SIZE  // Block 0: after header
+          : (lastIndexInBlock + 1) * ENTRY_SIZE;                  // Block 1+: at offset 0
+        
+        if (lastEntryOffset < 0xFFF) {
+          for (let i = lastEntryOffset; i < 0xFFF; i++) {
+            blockData[i] = 0xFF;
+          }
+        }
+      }
+      
       // Preserve existing metadata byte (raw data region - no structured metadata blocks)
       blockData[0xFFF] = existingMetadata;
+      
+      // Store block data for diagnostics/debugging
+      this.writeBlockData.set(blockAddr, {
+        address: blockAddr,
+        data: new Uint8Array(blockData), // Copy the data
+        metadata: existingMetadata
+      });
       
       // Write block (writeMemory requires metadata parameter, but this is just raw data)
       await this.connection!.writeMemory(blockAddr, blockData, existingMetadata);
       
       // Delay between writes
-      if (blockIdx < totalBlocks - 1) {
+      if (blockNum < totalBlocks - 1) {
         await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
       }
     }
@@ -2048,10 +2089,13 @@ export class DM32UVProtocol implements RadioProtocol {
       }
       
       const parsedMessages = parseQuickMessages(cachedBlock.data, (messageIndex, rawData) => {
+        // Calculate offset: entry N (1-based) status at (N * 0x81) - 0x71
+        const entryNum = messageIndex + 1;
+        const statusOffset = (entryNum * 0x81) - 0x71;
         this.rawMessageData.set(messageIndex, {
           data: new Uint8Array(rawData),
           messageIndex,
-          offset: OFFSET.QUICK_MESSAGE_BASE * (messageIndex + 1),
+          offset: statusOffset,
         });
       });
 
@@ -2498,6 +2542,83 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   /**
+   * Write Quick Messages to radio
+   * 
+   * @param messages - Array of quick messages to write
+   * @throws {Error} If not connected or block not found
+   */
+  async writeQuickMessages(messages: QuickTextMessage[]): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+
+    this.onProgress?.(0, 'Preparing to write Quick Messages...');
+
+    // Discover blocks if not already discovered
+    if (this.discoveredBlocks.length === 0) {
+      if (!this.radioInfo) {
+        throw new Error('Radio info not available. Connect and read radio info first.');
+      }
+      this.onProgress?.(5, 'Discovering blocks...');
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo.memoryLayout.configStart,
+        this.radioInfo.memoryLayout.configEnd,
+        (current, total) => {
+          const progress = 5 + Math.floor((current / total) * 5); // 5-10%
+          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+
+    // Find metadata block 0x0A (Quick Messages)
+    const quickMessagesBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.QUICK_MESSAGES);
+    if (!quickMessagesBlock) {
+      throw new Error('Quick Messages block (metadata 0x0A) not found');
+    }
+
+    this.onProgress?.(10, 'Encoding Quick Messages...');
+
+    // Get existing block data from cache or read it fresh to preserve existing data
+    let blockData: Uint8Array;
+    const cachedBlock = this.getCachedBlockByAddress(quickMessagesBlock.address);
+    if (cachedBlock) {
+      // Use cached data (make a copy to avoid modifying the cache)
+      blockData = new Uint8Array(cachedBlock.data);
+      log.debug('Using cached Quick Messages block data', 'Protocol');
+    } else {
+      // Read from radio if not cached
+      log.debug('Reading Quick Messages block from radio (not in cache)', 'Protocol');
+      blockData = await this.connection!.readMemory(quickMessagesBlock.address, BLOCK_SIZE.STANDARD);
+    }
+
+    // Encode messages into the existing block (preserves other data)
+    encodeQuickMessages(messages, blockData);
+
+    // Write the Quick Messages data block
+    this.onProgress?.(50, 'Writing Quick Messages to radio...');
+    await this.connection!.writeMemory(quickMessagesBlock.address, blockData, METADATA.QUICK_MESSAGES);
+
+    // Update cache (store the written data)
+    const cachedBlockIndex = this.cachedBlockData.findIndex(b => b.address === quickMessagesBlock.address);
+    if (cachedBlockIndex >= 0) {
+      this.cachedBlockData[cachedBlockIndex] = {
+        metadata: METADATA.QUICK_MESSAGES,
+        address: quickMessagesBlock.address,
+        data: blockData,
+      };
+    } else {
+      this.cachedBlockData.push({
+        metadata: METADATA.QUICK_MESSAGES,
+        address: quickMessagesBlock.address,
+        data: blockData,
+      });
+    }
+
+    this.onProgress?.(100, `Successfully wrote ${messages.length} quick message(s)`);
+    log.info(`Successfully wrote ${messages.length} quick message(s) to block 0x0A`, 'Protocol');
+  }
+
+  /**
    * Parse Radio Settings from cached blocks
    * Blocks must be read first via bulkReadRequiredBlocks()
    * This method ONLY parses - it does NOT read from the radio
@@ -2732,11 +2853,11 @@ export class DM32UVProtocol implements RadioProtocol {
       throw new Error('Blocks must be read first. Call bulkReadRequiredBlocks() before processing.');
     }
 
-    // Find Digital Emergency Systems block (metadata 0x03)
+    // Find Digital Emergency Systems block (metadata 0x10, same block as encryption keys)
     const emergencyBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.DIGITAL_EMERGENCY);
 
     if (!emergencyBlock) {
-      log.debug('Digital Emergency Systems block (metadata 0x03) not found', 'Protocol');
+      log.debug('Digital Emergency Systems block (metadata 0x10) not found', 'Protocol');
       return null;
     }
 
@@ -2765,7 +2886,7 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   /**
-   * Write Digital Emergency Systems to metadata 0x03 block
+   * Write Digital Emergency Systems to metadata 0x10 block (same block as encryption keys, offset 0x000)
    */
   async writeDigitalEmergencies(systems: DigitalEmergency[], config: DigitalEmergencyConfig): Promise<void> {
     requireConnection(this.connection, this.radioInfo);
@@ -2789,11 +2910,11 @@ export class DM32UVProtocol implements RadioProtocol {
     
     requireDiscoveredBlocks(this.discoveredBlocks);
 
-    // Find Digital Emergency Systems block (metadata 0x03)
+    // Find Digital Emergency Systems block (metadata 0x10, same block as encryption keys)
     const emergencyBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.DIGITAL_EMERGENCY);
 
     if (!emergencyBlock) {
-      throw new Error('Digital Emergency Systems block (metadata 0x03) not found');
+      throw new Error('Digital Emergency Systems block (metadata 0x10) not found');
     }
 
     this.onProgress?.(0, 'Writing Digital Emergency Systems...');

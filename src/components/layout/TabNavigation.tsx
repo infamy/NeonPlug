@@ -11,7 +11,6 @@ const tabs = [
   { id: 'zones', label: 'Zones' },
   { id: 'scanlists', label: 'Scan Lists' },
   { id: 'contacts', label: 'CSV Contacts' },
-  { id: 'messages', label: 'Groups & Messages' },
   { id: 'digital', label: 'Digital' },
   { id: 'settings', label: 'Settings' },
   { id: 'import', label: 'Channel Wizard' },

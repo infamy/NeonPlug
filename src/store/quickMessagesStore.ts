@@ -33,9 +33,15 @@ export const useQuickMessagesStore = create<QuickMessagesState>((set) => ({
       i === index ? { ...m, ...updates } : m
     )
   })),
-  deleteMessage: (index) => set((state) => ({
-    messages: state.messages.filter((_, i) => i !== index)
-  })),
+  deleteMessage: (index) => set((state) => {
+    const filtered = state.messages.filter((_, i) => i !== index);
+    // Re-index remaining messages to match their array positions
+    const reindexed = filtered.map((msg, i) => ({
+      ...msg,
+      index: i,
+    }));
+    return { messages: reindexed };
+  }),
   setMessagesLoaded: (loaded) => set({ messagesLoaded: loaded }),
 }));
 
