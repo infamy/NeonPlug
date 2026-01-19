@@ -2119,18 +2119,19 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
 /**
  * Parse quick text messages from message block data
  * 
- * Quick Message structure (from spec):
- * - Count field: Offset 0 (1 byte)
+ * Quick Message structure (from format spec):
+ * - Header: Offset 0x00 (1 byte count), 0x01-0x0F (15 bytes padding)
  * - Entry size: 129 bytes per message (0x81)
- * - Entry base: Offset 0x80 (128) for entry 0
- * - Max entries: ~30 messages (floor((4096 - 128) / 129) = 30)
+ * - Entries start at offset 0x10
+ * - Max entries: 31 (floor((4096 - 16) / 129) = 31)
  * 
- * Entry calculation: buffer + 0x80 + entry_num * 0x80 = buffer + 0x80 * (entry_num + 1)
+ * Entry N (1-based):
+ * - Status byte: (N * 0x81) - 0x71
+ * - Message text: (N * 0x81) - 0x70 (128 bytes, ASCII, terminated with 0xFF)
  * 
- * Entry structure (129 bytes):
- * - Offset +0x70 (112): Check value (2 bytes)
- * - Offset +0x70+2 (114): Message text (null-terminated, 0xFF indicates end)
- * - Offset +0xF (15): Flag/status (1 byte, set to 0 when message is set)
+ * Example:
+ * - Entry 1: Status at 0x10, Message at 0x11-0x90
+ * - Entry 2: Status at 0x91, Message at 0x92-0x111
  */
 export function parseQuickMessages(
   data: Uint8Array,
@@ -2142,49 +2143,36 @@ export function parseQuickMessages(
   const messageCount = data.length > 0 ? data[0] : 0;
   const maxMessages = Math.min(messageCount, LIMITS.QUICK_MESSAGES_MAX);
 
-  // Parse each message entry
-  for (let entryNum = 0; entryNum < maxMessages; entryNum++) {
-    // Entry offset: 0x80 * (entryNum + 1)
-    const entryOffset = OFFSET.QUICK_MESSAGE_BASE * (entryNum + 1);
+  // Parse each message entry (1-based indexing)
+  for (let entryNum = 1; entryNum <= maxMessages; entryNum++) {
+    // Calculate offsets using formula: (N * 0x81) - 0x71 for status, (N * 0x81) - 0x70 for message
+    const statusOffset = (entryNum * 0x81) - 0x71;
+    const messageOffset = (entryNum * 0x81) - 0x70;
+    const messageEndOffset = messageOffset + 128; // 128 bytes for message text
     
-    if (entryOffset + BLOCK_SIZE.QUICK_MESSAGE > data.length) {
-      log.debug(`Message ${entryNum} would be at offset ${entryOffset}, but data length is only ${data.length}`, 'Structures');
+    if (messageEndOffset > data.length) {
+      log.debug(`Message ${entryNum} would extend to offset ${messageEndOffset}, but data length is only ${data.length}`, 'Structures');
       break;
     }
 
-    const entryData = data.slice(entryOffset, entryOffset + BLOCK_SIZE.QUICK_MESSAGE);
+    // Read status/flag byte
+    const flag = data[statusOffset];
 
-    // Check if entry is empty (all 0xFF or all 0x00)
-    const isAllEmpty = entryData.every(b => b === 0xFF || b === 0x00);
-    if (isAllEmpty) {
-      continue;
-    }
-
-    // Read flag/status at offset +0xF (15)
-    const flag = entryData[0x0F];
-
-    // Read check value at offset +0x70 (112) - 2 bytes
-    const checkValueOffset = 0x70;
-    const checkValue = entryData[checkValueOffset] | (entryData[checkValueOffset + 1] << 8);
-
-    // Read message text starting at offset +0x70+2 (114)
-    // Text is null-terminated, 0xFF indicates end
-    const textStartOffset = 0x70 + 2;
-    let textEndOffset = textStartOffset;
+    // Read message text (128 bytes, terminated with 0xFF)
+    const messageBytes = data.slice(messageOffset, messageEndOffset);
     
-    // Find end of text (null terminator or 0xFF)
-    for (let i = textStartOffset; i < entryData.length; i++) {
-      if (entryData[i] === 0x00 || entryData[i] === 0xFF) {
+    // Find end of text (0xFF terminator)
+    let textEndOffset = messageBytes.length;
+    for (let i = 0; i < messageBytes.length; i++) {
+      if (messageBytes[i] === 0xFF) {
         textEndOffset = i;
         break;
       }
     }
 
-    const textBytes = entryData.slice(textStartOffset, textEndOffset);
+    const textBytes = messageBytes.slice(0, textEndOffset);
     const text = new TextDecoder('ascii', { fatal: false })
       .decode(textBytes)
-      .replace(/\x00/g, '')
-      .replace(/\xFF/g, '')
       .trim();
 
     // Skip empty messages
@@ -2192,17 +2180,22 @@ export function parseQuickMessages(
       continue;
     }
 
+    // Extract entry data for callback (129 bytes: status + message)
+    const entryData = new Uint8Array(129);
+    entryData[0] = flag;
+    entryData.set(messageBytes, 1);
+
     const message: QuickTextMessage = {
-      index: entryNum,
+      index: entryNum - 1, // 0-based for UI
       text,
       flag,
-      checkValue,
+      checkValue: 0, // Check value not in this format
     };
 
     messages.push(message);
 
     // Call callback to store raw data
-    onRawMessageParsed?.(entryNum, entryData);
+    onRawMessageParsed?.(entryNum - 1, entryData);
   }
 
   return messages;
@@ -2211,45 +2204,98 @@ export function parseQuickMessages(
 /**
  * Encode a quick text message into binary format
  * 
+ * Format:
+ * - Status byte at offset (N * 0x81) - 0x71
+ * - Message text at offset (N * 0x81) - 0x70 (128 bytes, ASCII, terminated with 0xFF)
+ * 
  * @param message - Quick text message to encode
- * @param messageIndex - 0-based index of the message
- * @returns 129-byte encoded message entry
+ * @param messageIndex - 0-based index of the message (will be converted to 1-based for calculation)
+ * @param buffer - Full 4KB buffer to write into (will be modified)
+ * @returns Updated buffer with message encoded
  */
-export function encodeQuickMessage(message: QuickTextMessage): Uint8Array {
-  const data = new Uint8Array(BLOCK_SIZE.QUICK_MESSAGE);
+export function encodeQuickMessage(message: QuickTextMessage, buffer: Uint8Array): Uint8Array {
+  // Convert 0-based index to 1-based for formula
+  const entryNum = message.index + 1;
   
-  // Initialize to 0xFF (empty/padding)
-  data.fill(0xFF);
-
-  // Flag/status at offset +0xF (15) - set to 0 when message is set
-  data[0x0F] = message.flag;
-
-  // Check value at offset +0x70 (112) - 2 bytes, little-endian
-  data[0x70] = message.checkValue & 0xFF;
-  data[0x71] = (message.checkValue >> 8) & 0xFF;
-
-  // Message text starting at offset +0x70+2 (114)
-  // Text is null-terminated, 0xFF indicates end
-  const textStartOffset = 0x70 + 2;
+  // Calculate offsets using formula: (N * 0x81) - 0x71 for status, (N * 0x81) - 0x70 for message
+  const statusOffset = (entryNum * 0x81) - 0x71;
+  const messageOffset = (entryNum * 0x81) - 0x70;
+  
+  // Write status/flag byte (character count)
+  buffer[statusOffset] = message.flag;
+  
+  // Encode message text (max 128 bytes, ASCII)
   const textBytes = new TextEncoder().encode(message.text);
+  const textLength = Math.min(textBytes.length, 128);
   
-  // Copy text bytes (up to available space)
-  const maxTextLength = data.length - textStartOffset - 1; // -1 for null terminator
-  const textLength = Math.min(textBytes.length, maxTextLength);
-  
+  // Write message text
   for (let i = 0; i < textLength; i++) {
-    data[textStartOffset + i] = textBytes[i];
+    buffer[messageOffset + i] = textBytes[i];
   }
   
-  // Null terminator
-  if (textLength < maxTextLength) {
-    data[textStartOffset + textLength] = 0x00;
+  // Terminate with 0xFF and pad remaining with 0xFF
+  if (textLength < 128) {
+    buffer[messageOffset + textLength] = 0xFF;
+    // Pad remaining bytes with 0xFF
+    for (let i = textLength + 1; i < 128; i++) {
+      buffer[messageOffset + i] = 0xFF;
+    }
   } else {
-    // If text fills the space, mark end with 0xFF
-    data[textStartOffset + textLength] = 0xFF;
+    // If text is exactly 128 bytes, last byte should be 0xFF
+    buffer[messageOffset + 127] = 0xFF;
   }
+  
+  return buffer;
+}
 
-  return data;
+/**
+ * Encode all quick messages into a 4KB block
+ * 
+ * Format:
+ * - Header: Offset 0x00 (1 byte count), 0x01-0x0F (15 bytes padding)
+ * - Entries start at offset 0x10
+ * - Each entry: Status byte + 128 bytes message text
+ * 
+ * @param messages - Array of quick messages to encode
+ * @param buffer - Existing 4KB block buffer to modify (preserves other data)
+ * @returns Updated buffer with messages encoded
+ */
+export function encodeQuickMessages(messages: QuickTextMessage[], buffer: Uint8Array): Uint8Array {
+  // Write message count at offset 0x00
+  const messageCount = Math.min(messages.length, LIMITS.QUICK_MESSAGES_MAX);
+  buffer[0x00] = messageCount;
+  
+  // Clear all message entries first (entries 1-31) to 0xFF
+  for (let entryNum = 1; entryNum <= LIMITS.QUICK_MESSAGES_MAX; entryNum++) {
+    const statusOffset = (entryNum * 0x81) - 0x71;
+    const messageOffset = (entryNum * 0x81) - 0x70;
+    
+    // Clear status byte
+    if (statusOffset < buffer.length) {
+      buffer[statusOffset] = 0xFF;
+    }
+    
+    // Clear message text area (128 bytes)
+    if (messageOffset < buffer.length) {
+      for (let i = 0; i < 128 && (messageOffset + i) < buffer.length; i++) {
+        buffer[messageOffset + i] = 0xFF;
+      }
+    }
+  }
+  
+  // Encode each message using the helper function
+  for (let i = 0; i < messageCount; i++) {
+    const message = messages[i];
+    // Ensure message has correct index and flag is set to text length
+    const textLength = new TextEncoder().encode(message.text).length;
+    encodeQuickMessage({ 
+      ...message, 
+      index: i,
+      flag: textLength  // Ensure flag is set to character count
+    }, buffer);
+  }
+  
+  return buffer;
 }
 
 

@@ -12,7 +12,6 @@ const DigitalTab = lazy(() => import('./components/digital/DigitalTab').then(m =
 const SettingsTab = lazy(() => import('./components/settings/SettingsTab').then(m => ({ default: m.SettingsTab })));
 const SmartImportTab = lazy(() => import('./components/import/SmartImportTab').then(m => ({ default: m.SmartImportTab })));
 const AboutTab = lazy(() => import('./components/about/AboutTab').then(m => ({ default: m.AboutTab })));
-const MessagesAndGroupsTab = lazy(() => import('./components/messages/MessagesAndGroupsTab').then(m => ({ default: m.MessagesAndGroupsTab })));
 const DiagnosticsTab = lazy(() => import('./components/diagnostics/DiagnosticsTab').then(m => ({ default: m.DiagnosticsTab })));
 import { useChannelsStore } from './store/channelsStore';
 import { useContactsStore } from './store/contactsStore';
@@ -177,7 +176,6 @@ function App() {
         case 'zones': return ZonesTab;
         case 'scanlists': return ScanListsTab;
         case 'contacts': return ContactsTab;
-        case 'messages': return MessagesAndGroupsTab;
         case 'digital': return DigitalTab;
         case 'settings': return SettingsTab;
         case 'import': return SmartImportTab;

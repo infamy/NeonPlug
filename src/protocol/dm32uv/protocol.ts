@@ -5,7 +5,7 @@
 
 import { DM32Connection } from './connection';
 import { discoverMemoryBlocks, readChannelCount, type MemoryBlock } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, parseTxContactForChannel, encodeTxContactForChannel } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
@@ -2048,10 +2048,13 @@ export class DM32UVProtocol implements RadioProtocol {
       }
       
       const parsedMessages = parseQuickMessages(cachedBlock.data, (messageIndex, rawData) => {
+        // Calculate offset: entry N (1-based) status at (N * 0x81) - 0x71
+        const entryNum = messageIndex + 1;
+        const statusOffset = (entryNum * 0x81) - 0x71;
         this.rawMessageData.set(messageIndex, {
           data: new Uint8Array(rawData),
           messageIndex,
-          offset: OFFSET.QUICK_MESSAGE_BASE * (messageIndex + 1),
+          offset: statusOffset,
         });
       });
 
@@ -2495,6 +2498,83 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(100, `Successfully wrote ${contacts.length} talk groups`);
     log.info(`Successfully wrote ${contacts.length} talk groups to blocks 0x44, 0x06, and 0x0B`, 'Protocol');
+  }
+
+  /**
+   * Write Quick Messages to radio
+   * 
+   * @param messages - Array of quick messages to write
+   * @throws {Error} If not connected or block not found
+   */
+  async writeQuickMessages(messages: QuickTextMessage[]): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+
+    this.onProgress?.(0, 'Preparing to write Quick Messages...');
+
+    // Discover blocks if not already discovered
+    if (this.discoveredBlocks.length === 0) {
+      if (!this.radioInfo) {
+        throw new Error('Radio info not available. Connect and read radio info first.');
+      }
+      this.onProgress?.(5, 'Discovering blocks...');
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo.memoryLayout.configStart,
+        this.radioInfo.memoryLayout.configEnd,
+        (current, total) => {
+          const progress = 5 + Math.floor((current / total) * 5); // 5-10%
+          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+
+    // Find metadata block 0x0A (Quick Messages)
+    const quickMessagesBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.QUICK_MESSAGES);
+    if (!quickMessagesBlock) {
+      throw new Error('Quick Messages block (metadata 0x0A) not found');
+    }
+
+    this.onProgress?.(10, 'Encoding Quick Messages...');
+
+    // Get existing block data from cache or read it fresh to preserve existing data
+    let blockData: Uint8Array;
+    const cachedBlock = this.getCachedBlockByAddress(quickMessagesBlock.address);
+    if (cachedBlock) {
+      // Use cached data (make a copy to avoid modifying the cache)
+      blockData = new Uint8Array(cachedBlock.data);
+      log.debug('Using cached Quick Messages block data', 'Protocol');
+    } else {
+      // Read from radio if not cached
+      log.debug('Reading Quick Messages block from radio (not in cache)', 'Protocol');
+      blockData = await this.connection!.readMemory(quickMessagesBlock.address, BLOCK_SIZE.STANDARD);
+    }
+
+    // Encode messages into the existing block (preserves other data)
+    encodeQuickMessages(messages, blockData);
+
+    // Write the Quick Messages data block
+    this.onProgress?.(50, 'Writing Quick Messages to radio...');
+    await this.connection!.writeMemory(quickMessagesBlock.address, blockData, METADATA.QUICK_MESSAGES);
+
+    // Update cache (store the written data)
+    const cachedBlockIndex = this.cachedBlockData.findIndex(b => b.address === quickMessagesBlock.address);
+    if (cachedBlockIndex >= 0) {
+      this.cachedBlockData[cachedBlockIndex] = {
+        metadata: METADATA.QUICK_MESSAGES,
+        address: quickMessagesBlock.address,
+        data: blockData,
+      };
+    } else {
+      this.cachedBlockData.push({
+        metadata: METADATA.QUICK_MESSAGES,
+        address: quickMessagesBlock.address,
+        data: blockData,
+      });
+    }
+
+    this.onProgress?.(100, `Successfully wrote ${messages.length} quick message(s)`);
+    log.info(`Successfully wrote ${messages.length} quick message(s) to block 0x0A`, 'Protocol');
   }
 
   /**

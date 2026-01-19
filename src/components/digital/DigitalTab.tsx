@@ -2,12 +2,20 @@ import React, { useEffect, useMemo } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
+import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
+import { useQuickContactsStore } from '../../store/quickContactsStore';
+import { useRXGroupsStore } from '../../store/rxGroupsStore';
+import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { parseEncryptionKeys, parseDigitalEmergencies } from '../../protocol/dm32uv/structures';
 
 export const DigitalTab: React.FC = () => {
   const { blockMetadata, blockData } = useRadioStore();
   const { keys, setKeys, updateKey } = useEncryptionKeysStore();
   const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem } = useDigitalEmergencyStore();
+  const { radioIds, radioIdsLoaded, updateRadioId } = useDMRRadioIDsStore();
+  const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact } = useQuickContactsStore();
+  const { groups: rxGroups, groupsLoaded: rxGroupsLoaded, updateGroup } = useRXGroupsStore();
+  const { messages, messagesLoaded, updateMessage, addMessage, deleteMessage } = useQuickMessagesStore();
 
   // Find block with metadata 0x10 (Encryption Keys)
   const block10Address = useMemo(() => {
@@ -52,13 +60,355 @@ export const DigitalTab: React.FC = () => {
     updateKey(entryNumber, { [field]: value });
   };
 
+  const handleContactChange = (
+    contactIndex: number,
+    field: 'name' | 'contactNumber' | 'callType',
+    value: string | number
+  ) => {
+    const contact = quickContacts.find(c => c.index === contactIndex);
+    if (!contact) return;
+
+    let updateData: Partial<typeof quickContacts[0]> = {};
+
+    if (field === 'name') {
+      updateData.name = value as string;
+    } else if (field === 'contactNumber') {
+      const numValue = typeof value === 'string' ? parseInt(value, 10) : value;
+      if (!isNaN(numValue) && numValue >= 0 && numValue <= 16777215) {
+        updateData.contactNumber = numValue;
+      }
+    } else if (field === 'callType') {
+      const callTypeValue = typeof value === 'string' ? parseInt(value, 10) : value;
+      updateData.callType = callTypeValue;
+      // If All Call, lock contact number to 16777215
+      if (callTypeValue === 0x05) {
+        updateData.contactNumber = 16777215;
+      }
+    }
+
+    updateContact(contactIndex, updateData);
+  };
+
+  const handleAddContact = () => {
+    addContact({
+      name: 'New Talk Group',
+      contactNumber: 0,
+      callType: 0x04, // Default to Group Call
+      flag: 0,
+    });
+  };
+
+  const handleDeleteContact = (index: number) => {
+    if (confirm(`Are you sure you want to delete this contact?`)) {
+      deleteContact(index);
+    }
+  };
+
+  const handleAddMessage = () => {
+    if (messages.length >= 31) {
+      alert('Maximum of 31 quick messages allowed.');
+      return;
+    }
+    const newIndex = messages.length;
+    addMessage({
+      index: newIndex,
+      text: '',
+      flag: 0, // Will be updated automatically when text is entered
+      checkValue: 0,
+    });
+  };
+
+  const handleDeleteMessage = (index: number) => {
+    if (confirm(`Are you sure you want to delete this message?`)) {
+      deleteMessage(index);
+    }
+  };
+
   return (
     <div className="p-6">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-neon-cyan mb-2">Digital Settings</h2>
         <p className="text-cool-gray text-sm">
-          Manage encryption keys and digital emergency systems.
+          Manage encryption keys, digital emergency systems, DMR radio IDs, talk groups, RX groups, and quick messages.
         </p>
+      </div>
+
+      {/* DMR Radio IDs Section */}
+      <div className="mb-8">
+        <div className="mb-4">
+          <h3 className="text-xl font-semibold text-neon-cyan mb-2">DMR Radio IDs</h3>
+          <p className="text-cool-gray text-sm">
+            Manage DMR Radio IDs. Up to 5 IDs can be configured.
+          </p>
+        </div>
+
+        {!radioIdsLoaded ? (
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
+            <p className="text-cool-gray text-sm">
+              DMR Radio IDs will be loaded when you read from the radio.
+            </p>
+          </div>
+        ) : radioIds.length === 0 ? (
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
+            <p className="text-cool-gray text-sm">No DMR Radio IDs found on the radio.</p>
+          </div>
+        ) : (
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-400px)] flex flex-col">
+            <div className="flex-1 overflow-auto">
+              <div className="inline-block min-w-full">
+                <table className="w-full border-collapse text-xs">
+                  <thead className="sticky top-0 z-20">
+                    <tr className="bg-dark-charcoal border-b border-neon-cyan">
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">DMR ID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {radioIds.slice(0, 5).map((radioId) => (
+                      <tr
+                        key={radioId.index}
+                        className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
+                      >
+                        <td className="px-2 py-2">
+                          <input
+                            type="text"
+                            value={radioId.name}
+                            onChange={(e) => {
+                              const newName = e.target.value.slice(0, 12);
+                              updateRadioId(radioId.index, { name: newName });
+                            }}
+                            maxLength={12}
+                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                            placeholder="Enter name"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="number"
+                            value={radioId.dmrId}
+                            onChange={(e) => {
+                              const dmrIdValue = parseInt(e.target.value, 10);
+                              if (!isNaN(dmrIdValue) && dmrIdValue >= 0 && dmrIdValue <= 0xFFFFFF) {
+                                updateRadioId(radioId.index, {
+                                  dmrId: e.target.value,
+                                  dmrIdValue: dmrIdValue,
+                                  dmrIdBytes: new Uint8Array([
+                                    dmrIdValue & 0xFF,
+                                    (dmrIdValue >> 8) & 0xFF,
+                                    (dmrIdValue >> 16) & 0xFF,
+                                  ]),
+                                });
+                              }
+                            }}
+                            min="0"
+                            max="16777215"
+                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono"
+                            placeholder="DMR ID (0-16777215)"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    {radioIds.length === 0 && (
+                      <tr>
+                        <td colSpan={2} className="px-2 py-2 text-cool-gray text-center">
+                          No DMR Radio IDs found on the radio.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {radioIds.length > 5 && (
+              <div className="px-4 py-2 bg-yellow-900/20 border-t border-yellow-600/30">
+                <p className="text-yellow-400 text-sm">
+                  Warning: Radio only supports 5 DMR Radio IDs. Only the first 5 are shown.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Talk Groups Section */}
+      <div className="mb-8">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-semibold text-neon-cyan mb-2">Talk Groups</h3>
+            <p className="text-cool-gray text-sm">
+              Manage DMR talk groups (contacts) for group calls, private calls, and all calls.
+            </p>
+          </div>
+          {quickContactsLoaded && (
+            <button
+              onClick={handleAddContact}
+              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
+            >
+              + Add Group
+            </button>
+          )}
+        </div>
+
+        {!quickContactsLoaded ? (
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
+            <p className="text-cool-gray text-sm">
+              Talk groups will be loaded when you read from the radio.
+            </p>
+          </div>
+        ) : quickContacts.length === 0 ? (
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
+            <p className="text-cool-gray text-sm">No talk groups found on the radio.</p>
+          </div>
+        ) : (
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-400px)] flex flex-col">
+            <div className="flex-1 overflow-auto">
+              <div className="inline-block min-w-full">
+                <table className="w-full border-collapse text-xs">
+                  <thead className="sticky top-0 z-20">
+                    <tr className="bg-dark-charcoal border-b border-neon-cyan">
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">ID</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Call Type</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {quickContacts.map((contact, displayIndex) => {
+                      const isAllCall = contact.callType === 0x05;
+                      return (
+                        <tr
+                          key={contact.index}
+                          className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
+                        >
+                          <td className="px-2 py-2">
+                            <input
+                              type="text"
+                              value={contact.name}
+                              onChange={(e) => handleContactChange(contact.index, 'name', e.target.value)}
+                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                            />
+                          </td>
+                          <td className="px-2 py-2">
+                            <input
+                              type="number"
+                              value={contact.contactNumber}
+                              onChange={(e) => handleContactChange(contact.index, 'contactNumber', e.target.value)}
+                              min="0"
+                              max="16777215"
+                              disabled={isAllCall}
+                              className={`bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono ${
+                                isAllCall ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
+                              title={isAllCall ? 'ID is locked to 16777215 for All Call' : ''}
+                            />
+                          </td>
+                          <td className="px-2 py-2">
+                            <select
+                              value={contact.callType}
+                              onChange={(e) => handleContactChange(contact.index, 'callType', parseInt(e.target.value, 10))}
+                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                            >
+                              <option value={0x03}>Private Call</option>
+                              <option value={0x04}>Group Call</option>
+                              <option value={0x05}>All Call</option>
+                            </select>
+                          </td>
+                          <td className="px-2 py-2">
+                            <button
+                              onClick={() => handleDeleteContact(contact.index)}
+                              className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* DMR RX Groups Section */}
+      <div className="mb-8">
+        <div className="mb-4">
+          <h3 className="text-xl font-semibold text-neon-cyan mb-2">DMR RX Groups</h3>
+          <p className="text-cool-gray text-sm">
+            Manage DMR RX Groups (receive groups) that filter which talk groups the radio will receive.
+          </p>
+        </div>
+
+        {!rxGroupsLoaded ? (
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
+            <p className="text-cool-gray text-sm">
+              DMR RX Groups will be loaded when you read from the radio.
+            </p>
+          </div>
+        ) : rxGroups.length === 0 ? (
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
+            <p className="text-cool-gray text-sm">No DMR RX Groups found on the radio.</p>
+          </div>
+        ) : (
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-400px)] flex flex-col">
+            <div className="flex-1 overflow-auto">
+              <div className="inline-block min-w-full">
+                <table className="w-full border-collapse text-xs">
+                  <thead className="sticky top-0 z-20">
+                    <tr className="bg-dark-charcoal border-b border-neon-cyan">
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Bitmask</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[200px]">Contact IDs</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rxGroups.map((group) => (
+                      <tr
+                        key={group.index}
+                        className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
+                      >
+                        <td className="px-2 py-2">
+                          <input
+                            type="text"
+                            value={group.name}
+                            onChange={(e) => updateGroup(group.index, { name: e.target.value.slice(0, 11) })}
+                            maxLength={11}
+                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                            placeholder="Enter name"
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-cool-gray font-mono">0x{group.bitmask.toString(16).padStart(8, '0')}</td>
+                        <td className="px-2 py-2 text-white">
+                          {group.contactIds.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {group.contactIds.map((id, idx) => (
+                                <span key={idx} className="px-2 py-1 bg-dark-charcoal rounded text-xs font-mono">
+                                  {id}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-cool-gray">None</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-cool-gray">
+                          <div className="text-xs">
+                            <div>Flag: 0x{group.entryFlag.toString(16).padStart(2, '0')}</div>
+                            <div>Status: 0x{group.statusFlag.toString(16).padStart(2, '0')}</div>
+                            <div>Valid: 0x{group.validationFlag.toString(16).padStart(2, '0')}</div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Digital Emergency Systems Section */}
@@ -169,7 +519,6 @@ export const DigitalTab: React.FC = () => {
                 <table className="w-full border-collapse text-xs">
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-dark-charcoal border-b border-neon-cyan">
-                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]">ID</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Encryption Type</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[300px]">Key (Hex)</th>
@@ -181,19 +530,6 @@ export const DigitalTab: React.FC = () => {
                         key={key.entryNumber}
                         className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
                       >
-                        <td className="px-2 py-2">
-                          <select
-                            value={key.id || key.entryNumber}
-                            onChange={(e) => handleKeyChange(key.entryNumber, 'id', parseInt(e.target.value) || key.entryNumber)}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
-                          >
-                            {[1, 2, 3, 4, 5, 6, 7, 8].map((val) => (
-                              <option key={val} value={val}>
-                                {val}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
                         <td className="px-2 py-2">
                           <input
                             type="text"
@@ -234,6 +570,88 @@ export const DigitalTab: React.FC = () => {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Quick Messages Section */}
+      <div className="mb-8">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-semibold text-neon-cyan mb-2">Quick Text Messages</h3>
+            <p className="text-cool-gray text-sm">
+              Manage quick text messages. Maximum 128 bytes per message, up to 31 messages.
+            </p>
+          </div>
+          {messagesLoaded && messages.length < 31 && (
+            <button
+              onClick={handleAddMessage}
+              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
+            >
+              + Add Message
+            </button>
+          )}
+        </div>
+
+        {!messagesLoaded ? (
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
+            <p className="text-cool-gray text-sm">
+              Quick messages will be loaded when you read from the radio.
+            </p>
+          </div>
+        ) : (
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-400px)] flex flex-col">
+            <div className="flex-1 overflow-auto">
+              <div className="inline-block min-w-full">
+                <table className="w-full border-collapse text-xs">
+                  <thead className="sticky top-0 z-20">
+                    <tr className="bg-dark-charcoal border-b border-neon-cyan">
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[300px]">Message</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {messages.length === 0 ? (
+                      <tr>
+                        <td colSpan={2} className="px-2 py-2 text-cool-gray text-center">
+                          No quick messages found on the radio.
+                        </td>
+                      </tr>
+                    ) : (
+                      messages.map((message, arrayIndex) => (
+                        <tr
+                          key={message.index}
+                          className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
+                        >
+                          <td className="px-2 py-2">
+                            <input
+                              type="text"
+                              value={message.text}
+                              onChange={(e) => {
+                                const newText = e.target.value.slice(0, 128);
+                                const textLength = new TextEncoder().encode(newText).length;
+                                updateMessage(arrayIndex, { text: newText, flag: textLength });
+                              }}
+                              maxLength={128}
+                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                              placeholder="Enter message text"
+                            />
+                          </td>
+                          <td className="px-2 py-2">
+                            <button
+                              onClick={() => handleDeleteMessage(arrayIndex)}
+                              className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
