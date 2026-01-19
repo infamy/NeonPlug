@@ -91,9 +91,13 @@ export interface Channel {
   // Unknown Setting (0x2A)
   unknown2A: number;           // 8-bit value (0-255), possibly DMR or signaling related
   
+  // DMR Radio ID Index for TX (0x2B)
+  // Uses 0-based indexing: 0=first entry (array index 0), 1=second entry (array index 1), etc.
+  // undefined or 255 = None (no DMR Radio ID)
+  // This is the DMR radio ID used when transmitting on this channel
+  dmrRadioIdIndex?: number;    // DMR Radio ID index at 0x2B (0-254=0-based index into DMR Radio IDs list, undefined/255=None)
+  
   // Talk Group (TX Contact) - stored in metadata blocks 0x42 and 0x43, NOT byte 0x2B
-  // Reserved byte 0x2B - NOT used for contact/TG mapping
-  reserved2B?: number;         // Reserved byte at 0x2B (preserved on write)
   
   // TX Contact / Talk Group Index - stored in SEPARATE metadata blocks (NOT in channel structure)
   // Block 0x42: Channels 1-2048 (2 bytes per channel)

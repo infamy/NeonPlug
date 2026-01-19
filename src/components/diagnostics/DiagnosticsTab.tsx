@@ -2294,7 +2294,7 @@ export const DiagnosticsTab: React.FC = () => {
                   const pttIdType = pttIdTypeMap[pttIdTypeValue] || 'Off';
 
                   const unknown2A = channelBytes[0x2A];
-                  const contactId = channelBytes[0x2B];
+                  const dmrRadioIdIndex = channelBytes[0x2B]; // DMR Radio ID Index for TX (0-255, 0=None)
                   const reserved2C = channelBytes[0x2C];
                   const reserved2D = channelBytes[0x2D];
 
@@ -2363,7 +2363,8 @@ export const DiagnosticsTab: React.FC = () => {
                     signalingType,
                     pttIdType,
                     unknown2A,
-                    contactId,
+                    dmrRadioIdIndex,
+                    contactId: 0, // Contact ID comes from blocks 0x42/0x43, not from channel bytes
                     reserved2C,
                     reserved2D,
                     // Digital-only fields
@@ -2560,9 +2561,11 @@ export const DiagnosticsTab: React.FC = () => {
                     if (!f.isDigital) return `0x${f.unknown2A.toString(16).toUpperCase().padStart(2, '0')} (${f.unknown2A}) - Analog: Unknown`;
                     return f.encryptionId !== undefined ? `${f.encryptionId} (0=None, 1-8=Key ID)` : 'N/A';
                   }},
-                  { offset: 0x2B, label: 'Contact ID (0x2B)', getValue: (f: typeof fields1) => {
+                  { offset: 0x2B, label: 'DMR Radio ID Index (TX) (0x2B)', getValue: (f: typeof fields1) => {
                     const rawByte = f.bytes[0x2B];
-                    return `0x${rawByte.toString(16).toUpperCase().padStart(2, '0')} (${rawByte})`;
+                    return rawByte === 0 
+                      ? `0x${rawByte.toString(16).toUpperCase().padStart(2, '0')} (${rawByte}) - None`
+                      : `0x${rawByte.toString(16).toUpperCase().padStart(2, '0')} (${rawByte}) - Index into DMR Radio IDs list`;
                   }},
                   { offset: 0x2C, label: 'Reserved 2C (0x2C)', getValue: (f: typeof fields1) => `0x${f.reserved2C.toString(16).toUpperCase().padStart(2, '0')} (${f.reserved2C})` },
                   { offset: 0x2D, label: 'Reserved 2D (0x2D)', getValue: (f: typeof fields1) => `0x${f.reserved2D.toString(16).toUpperCase().padStart(2, '0')} (${f.reserved2D})` },
@@ -2655,7 +2658,8 @@ export const DiagnosticsTab: React.FC = () => {
                                 offsetNum === 0x28 ? 'Scan List' :
                                 offsetNum === 0x29 ? 'PTT ID Type' :
                                 offsetNum === 0x2A ? 'Encryption ID' :
-                                (offsetNum >= 0x2B && offsetNum <= 0x2F) ? 'Reserved' : 'Unknown';
+                                offsetNum === 0x2B ? 'DMR Radio ID Index (TX)' :
+                                (offsetNum >= 0x2C && offsetNum <= 0x2F) ? 'Reserved' : 'Unknown';
                               return (
                                 <tr 
                                   key={offset} 
@@ -2977,7 +2981,7 @@ export const DiagnosticsTab: React.FC = () => {
                     const pttIdTypeMap = ['Off', 'BOT', 'EOT', 'Both'];
                     const pttIdType = pttIdTypeMap[pttIdTypeValue] || 'Off';
 
-                    const contactId = channelBytes[0x2B];
+                    const dmrRadioIdIndex = channelBytes[0x2B]; // DMR Radio ID Index for TX (0-255, 0=None)
 
                     return {
                       name, rxFreq, txFreq, mode, forbidTx, busyLock, loneWorker,
@@ -2986,7 +2990,8 @@ export const DiagnosticsTab: React.FC = () => {
                       power, aprsReportMode, squelchLevel, colorCode,
                       rxCtcssDcs, txCtcssDcs, companderDup, voxRelated,
                       pttIdDisplay2, rxSquelchMode, stepFrequency, signalingType,
-                      pttIdType, contactId
+                      pttIdType, dmrRadioIdIndex,
+                      contactId: 0 // Contact ID comes from blocks 0x42/0x43, not from channel bytes
                     };
                   };
 
@@ -3052,7 +3057,7 @@ export const DiagnosticsTab: React.FC = () => {
                       const scrambleByte = rawData.data[0x1D];
                       return (scrambleByte & 0x40) !== 0 ? '1' : '0';
                     }, getCpsValue: () => cpsChannel['Scramble'] === 'None' ? '0' : '1' },
-                    { cpsField: 'TX Contact', ourField: 'contactId', offset: '0x2B', getOurValue: () => ourFields.contactId.toString(), getCpsValue: () => {
+                    { cpsField: 'TX Contact', ourField: 'contactId', offset: 'blocks 0x42/0x43', getOurValue: () => ourFields.contactId.toString(), getCpsValue: () => {
                       const txContact = cpsChannel['TX Contact'];
                       return txContact === 'None' ? '0' : txContact.replace('Contacts ', '');
                     }},

@@ -5,6 +5,7 @@ import { useScanListsStore } from '../../store/scanListsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
+import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import type { Channel } from '../../models/Channel';
 import { ChannelEditModal } from './ChannelEditModal';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
@@ -64,6 +65,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const { groups: rxGroups } = useRXGroupsStore();
   const { keys: encryptionKeys } = useEncryptionKeysStore();
   const { contacts: talkGroups } = useQuickContactsStore();
+  const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
   const channels = channelsProp ?? channelsFromStore;
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [clonedChannelNumber, setClonedChannelNumber] = useState<number | null>(null);
@@ -249,6 +251,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="TDMA Direct Mode">TDMA</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Short Data Confirm">SDC</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Private Confirm">Priv</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="DMR Radio ID Index for TX (0=None, 1-255=Index into DMR Radio IDs list)">TX DMR ID</th>
             {/* Common fields - work for both */}
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="TX Contact (Group/Private/All Call - index into Contacts list)">TG</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px] sticky right-0 bg-dark-charcoal z-30">Actions</th>
@@ -891,6 +894,38 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     />
                   ) : (
                     <span className="text-cool-gray text-xs">-</span>
+                  )}
+                </td>
+                <td className="px-2 py-2">
+                  {showColorCode ? (
+                    <select
+                      value={String(channel.dmrRadioIdIndex ?? 255)}
+                      onChange={(e) => {
+                        const value = parseInt(e.target.value);
+                        // 255 = None, store as 255 (will be converted to 0xFF when encoding)
+                        handleCellChange(channel.number, 'dmrRadioIdIndex', value);
+                      }}
+                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+                      title="DMR Radio ID Index for TX"
+                    >
+                      <option value="255">None</option>
+                      {dmrRadioIds.map((radioId) => {
+                        // Use 0-based index directly (0=first entry, 1=second entry, etc.)
+                        return (
+                          <option key={radioId.index} value={String(radioId.index)}>
+                            {radioId.name} (ID: {radioId.dmrId})
+                          </option>
+                        );
+                      })}
+                      {/* Show current value even if it's not in the list (e.g., deleted radio ID) */}
+                      {channel.dmrRadioIdIndex !== undefined && channel.dmrRadioIdIndex !== 255 && !dmrRadioIds.find(r => r.index === channel.dmrRadioIdIndex) && (
+                        <option value={String(channel.dmrRadioIdIndex)} disabled>
+                          Index {channel.dmrRadioIdIndex} (not found)
+                        </option>
+                      )}
+                    </select>
+                  ) : (
+                    <span className="text-cool-gray text-xs text-center block">-</span>
                   )}
                 </td>
                 {/* Common fields - work for both */}
