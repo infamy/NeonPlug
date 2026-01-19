@@ -78,7 +78,7 @@ export const DiagnosticsTab: React.FC = () => {
   };
 
   const block02 = getBlockByMetadata(0x02);
-  const block03 = getBlockByMetadata(0x03);
+  const block10 = getBlockByMetadata(0x10); // Digital Emergency Systems and Encryption Keys
   const block06 = getBlockByMetadata(0x06);
   const block0A = getBlockByMetadata(0x0A);
   const block0B = getBlockByMetadata(0x0B);
@@ -384,12 +384,12 @@ export const DiagnosticsTab: React.FC = () => {
         downloadBinary={downloadBinary}
       />
 
-      {/* Metadata Block 0x03 (Digital Emergency Systems) */}
+      {/* Metadata Block 0x10 (Digital Emergency Systems and Encryption Keys) */}
       <MetadataBlockDisplay
-        metadata={0x03}
-        blockData={block03.data}
-        blockAddress={block03.address}
-        description="Digital Emergency Systems"
+        metadata={0x10}
+        blockData={block10.data}
+        blockAddress={block10.address}
+        description="Digital Emergency Systems and Encryption Keys"
         downloadHexDump={downloadHexDump}
         downloadBinary={downloadBinary}
       />

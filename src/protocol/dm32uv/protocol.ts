@@ -539,7 +539,7 @@ export class DM32UVProtocol implements RadioProtocol {
     // Step 2b: Add fixed metadata blocks we always need
     const fixedMetadataBlocks = [
       METADATA.VFO_SETTINGS,        // Radio Settings (0x04) - ALWAYS REQUIRED
-      METADATA.DIGITAL_EMERGENCY,    // Digital Emergency Systems (0x03)
+      METADATA.DIGITAL_EMERGENCY,    // Digital Emergency Systems (0x10, same block as encryption keys)
       METADATA.ANALOG_EMERGENCY,     // Analog Emergency Systems (0x10)
       METADATA.METADATA_0x41,        // Metadata block 0x41 - REQUIRED
       METADATA.QUICK_MESSAGES,       // Quick Messages (0x0A)
@@ -2812,11 +2812,11 @@ export class DM32UVProtocol implements RadioProtocol {
       throw new Error('Blocks must be read first. Call bulkReadRequiredBlocks() before processing.');
     }
 
-    // Find Digital Emergency Systems block (metadata 0x03)
+    // Find Digital Emergency Systems block (metadata 0x10, same block as encryption keys)
     const emergencyBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.DIGITAL_EMERGENCY);
 
     if (!emergencyBlock) {
-      log.debug('Digital Emergency Systems block (metadata 0x03) not found', 'Protocol');
+      log.debug('Digital Emergency Systems block (metadata 0x10) not found', 'Protocol');
       return null;
     }
 
@@ -2845,7 +2845,7 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   /**
-   * Write Digital Emergency Systems to metadata 0x03 block
+   * Write Digital Emergency Systems to metadata 0x10 block (same block as encryption keys, offset 0x000)
    */
   async writeDigitalEmergencies(systems: DigitalEmergency[], config: DigitalEmergencyConfig): Promise<void> {
     requireConnection(this.connection, this.radioInfo);
@@ -2869,11 +2869,11 @@ export class DM32UVProtocol implements RadioProtocol {
     
     requireDiscoveredBlocks(this.discoveredBlocks);
 
-    // Find Digital Emergency Systems block (metadata 0x03)
+    // Find Digital Emergency Systems block (metadata 0x10, same block as encryption keys)
     const emergencyBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.DIGITAL_EMERGENCY);
 
     if (!emergencyBlock) {
-      throw new Error('Digital Emergency Systems block (metadata 0x03) not found');
+      throw new Error('Digital Emergency Systems block (metadata 0x10) not found');
     }
 
     this.onProgress?.(0, 'Writing Digital Emergency Systems...');
