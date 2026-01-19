@@ -273,7 +273,7 @@ export const DigitalTab: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {quickContacts.map((contact, displayIndex) => {
+                    {quickContacts.map((contact) => {
                       const isAllCall = contact.callType === 0x05;
                       return (
                         <tr
