@@ -946,6 +946,16 @@ export class DM32UVProtocol implements RadioProtocol {
     const talkGroups44 = this.cachedBlockData.find(b => b.metadata === METADATA.METADATA_0x44);
     const quickAccess0B = this.cachedBlockData.find(b => b.metadata === METADATA.METADATA_0x0B);
     
+    // IMPORTANT: Restore rawRadioSettingsData from block 0x04 (VFO_SETTINGS)
+    // This is required for writeRadioSettings() to preserve unknown fields
+    const radioSettingsBlock = this.cachedBlockData.find(b => b.metadata === METADATA.VFO_SETTINGS);
+    if (radioSettingsBlock && radioSettingsBlock.data.length >= 0x1000) {
+      this.rawRadioSettingsData = new Uint8Array(radioSettingsBlock.data); // Create a copy
+      log.debug('Restored rawRadioSettingsData from block 0x04 during cache restore', 'Protocol');
+    } else {
+      log.warn('Radio Settings block (0x04) not found in restored cache - writeRadioSettings will fail if called', 'Protocol');
+    }
+    
     log.info(`Restored ${this.cachedBlockData.length} blocks from store cache`, 'Protocol');
     if (!txContact42 || !txContact43 || !talkGroups44 || !quickAccess0B) {
       log.warn('Some critical blocks for TG mapping are missing from restored cache!', 'Protocol');
@@ -1053,7 +1063,7 @@ export class DM32UVProtocol implements RadioProtocol {
     if (block42Data) {
       log.debug(`Found TX Contact block 0x42 (${block42Data.length} bytes)`, 'Protocol');
     } else {
-      log.debug('TX Contact block 0x42 not found - contactId will use legacy byte 0x2B', 'Protocol');
+      log.debug('TX Contact block 0x42 not found - contactId will be 0', 'Protocol');
     }
     if (block43Data) {
       log.debug(`Found TX Contact block 0x43 (${block43Data.length} bytes)`, 'Protocol');
@@ -1122,7 +1132,7 @@ export class DM32UVProtocol implements RadioProtocol {
           const channel = parseChannel(channelData, channelIndex);
           
           // Apply TX Contact from blocks 0x42/0x43 for digital channels
-          // This overrides the legacy contactId from byte 0x2B
+          // Note: Byte 0x2B is the DMR Radio ID Index for TX, not the contact ID
           const isDigitalMode = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
           if (isDigitalMode && (block42Data || block43Data)) {
             const txContact = parseTxContactForChannel(channelIndex, block42Data, block43Data);

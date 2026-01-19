@@ -380,9 +380,18 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     unknown2A = data[0x2A];
   }
 
-  // Reserved byte 0x2B - NOT used for contact ID
-  // Contact/TG mapping is stored in metadata blocks 0x42/0x43
-  const reserved2B = data[0x2B];
+  // DMR Radio ID Index for TX (0x2B)
+  // Radio uses 0-based indexing: 0=first entry (array index 0), 1=second entry (array index 1), etc.
+  // 0xFF (255) = None (no DMR Radio ID)
+  let radioByteValue = data[0x2B];
+  let dmrRadioIdIndex: number | undefined;
+  if (radioByteValue === 0xFF || radioByteValue === 255) {
+    // 0xFF = None
+    dmrRadioIdIndex = undefined; // Use undefined to represent None
+  } else {
+    // Radio byte value is 0-based index directly (0=first entry, 1=second entry, etc.)
+    dmrRadioIdIndex = radioByteValue;
+  }
 
   // Reserved (0x2C-0x2F) - Padding/reserved bytes, likely unused
   // const reserved2C_2F = data.slice(0x2C, 0x30);
@@ -431,7 +440,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     unknown29_3_2,
     unknown29_1_0,
     unknown2A, // For digital, this is 0 (encryptionId is used instead)
-    reserved2B, // Reserved byte - TG mapping is in blocks 0x42/0x43
+    dmrRadioIdIndex, // DMR Radio ID index for TX (0-255, 0=None)
     contactId: 0, // Placeholder - actual TG comes from blocks 0x42/0x43
     unknown1A_6_4,
     unknown1A_3,
@@ -645,10 +654,16 @@ export function encodeChannel(channel: Channel): Uint8Array {
     data[0x2A] = channel.unknown2A & 0xFF;
   }
 
-  // Reserved byte 0x2B - NOT used for contact ID
-  // TG mapping is stored in metadata blocks 0x42/0x43, not here
-  // Preserve original value if available, otherwise 0
-  data[0x2B] = (channel as { reserved2B?: number }).reserved2B ?? 0;
+  // DMR Radio ID Index for TX (0x2B)
+  // Radio uses 0-based indexing: 0=first entry (array index 0), 1=second entry (array index 1), etc.
+  // 0xFF (255) = None (no DMR Radio ID)
+  // Channel's dmrRadioIdIndex is 0-based (0=first entry, 1=second entry, etc.), undefined/255=None
+  const radioIdIndex = channel.dmrRadioIdIndex ?? 255;
+  if (radioIdIndex === 255) {
+    data[0x2B] = 0xFF; // None
+  } else {
+    data[0x2B] = radioIdIndex & 0xFF;
+  }
 
   // Reserved (0x2C-0x2F)
   // Already initialized to 0xFF, which is fine
