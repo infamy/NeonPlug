@@ -85,6 +85,7 @@ export interface ProtocolDebugData {
   rawZoneData: Map<string, { data: Uint8Array; zoneNum: number; offset: number }>;
   rawContactBlockData: Uint8Array | null;
   rawContactBlockAddress: number | null;
+  rawContactBlocks: Map<number, Uint8Array>;
   rawScanListData: Map<string, { data: Uint8Array; listNum: number; offset: number }>;
   rawRadioSettingsData: Uint8Array | null;
   rawDigitalEmergencyData: Uint8Array | null;

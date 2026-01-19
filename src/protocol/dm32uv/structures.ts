@@ -1257,14 +1257,15 @@ export function encodeContactEntry(contact: Contact): Uint8Array {
     const callsignBytes = encoder.encode(contact.callSign);
     const len = Math.min(callsignBytes.length, CALLSIGN_SIZE - 1); // Leave room for null terminator
     entryData.set(callsignBytes.slice(0, len), CALLSIGN_OFFSET);
-    entryData[CALLSIGN_OFFSET + len] = 0x00;
+    entryData[CALLSIGN_OFFSET + len] = 0x00; // Null terminator
     // Fill remaining bytes with 0xFF
     for (let i = len + 1; i < CALLSIGN_SIZE; i++) {
       entryData[CALLSIGN_OFFSET + i] = 0xFF;
     }
   } else {
-    // Fill with 0xFF if no callsign
-    for (let i = 0; i < CALLSIGN_SIZE; i++) {
+    // Write empty null-terminated string (0x00 at start, rest 0xFF)
+    entryData[CALLSIGN_OFFSET] = 0x00;
+    for (let i = 1; i < CALLSIGN_SIZE; i++) {
       entryData[CALLSIGN_OFFSET + i] = 0xFF;
     }
   }

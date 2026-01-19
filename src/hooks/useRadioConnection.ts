@@ -40,7 +40,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
+  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -510,6 +510,10 @@ export function useRadioConnection() {
       // Store first contact block for debugging
       if ((protocol as any).rawContactBlockData) {
         setRawContactBlockData((protocol as any).rawContactBlockData, (protocol as any).rawContactBlockAddress || null);
+      }
+      // Store all contact blocks for diagnostics
+      if ((protocol as any).rawContactBlocks) {
+        setRawContactBlocks((protocol as any).rawContactBlocks);
       }
       
       onProgress?.(100, `Successfully read ${contacts.length} contacts`);

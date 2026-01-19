@@ -16,18 +16,30 @@ import { CollapsibleSection } from './CollapsibleSection';
 import JSZip from 'jszip';
 
 export const DiagnosticsTab: React.FC = () => {
-  const { rawRadioSettingsData, rawContactBlockData, rawContactBlockAddress, blockMetadata, blockData } = useRadioStore();
+  const { rawRadioSettingsData, rawContactBlockAddress, rawContactBlocks, blockMetadata, blockData, writeBlockData } = useRadioStore();
   const { settings: radioSettings } = useRadioSettingsStore();
   const { channels, rawChannelData } = useChannelsStore();
   const [showMetadataBlock, setShowMetadataBlock] = useState(false);
   const [showMetadataBlock10, setShowMetadataBlock10] = useState(false);
   const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
-  const [showContactBlock, setShowContactBlock] = useState(false);
+  const [showContactBlock, setShowContactBlock] = useState(true);
   const [showChannelParser, setShowChannelParser] = useState(false);
   const [inspectOffset, setInspectOffset] = useState<string>('');
   const [inspectOffset10, setInspectOffset10] = useState<string>('');
   const [inspectOffset41, setInspectOffset41] = useState<string>('');
   const [inspectContactOffset, setInspectContactOffset] = useState<string>('');
+  const [showContactWriteBlocks, setShowContactWriteBlocks] = useState(false);
+  const [expandedContactBlocks, setExpandedContactBlocks] = useState<Set<number>>(new Set());
+  const [contactBlockOffsets, setContactBlockOffsets] = useState<Map<number, string>>(new Map());
+  const [selectedContactBlock, setSelectedContactBlock] = useState<number | null>(null);
+
+  // Initialize selected block to first block if available
+  React.useEffect(() => {
+    if (rawContactBlocks.size > 0 && selectedContactBlock === null) {
+      const firstBlockAddr = Array.from(rawContactBlocks.keys()).sort((a, b) => a - b)[0];
+      setSelectedContactBlock(firstBlockAddr);
+    }
+  }, [rawContactBlocks, selectedContactBlock]);
   const [selectedChannelNumber, setSelectedChannelNumber] = useState<number>(1);
   const [selectedChannelNumber2, setSelectedChannelNumber2] = useState<number | null>(null);
   const [showCpsComparison, setShowCpsComparison] = useState(false);
@@ -310,12 +322,15 @@ export const DiagnosticsTab: React.FC = () => {
       }
     }
 
-    // Add contact block if available
-    if (rawContactBlockData) {
-      const hexDump = generateHexDump(rawContactBlockData, 'CONTACTS');
-      zip.file('contact-block-first-4kb.txt', hexDump);
-      zip.file('contact-block-first-4kb.bin', rawContactBlockData);
-      blocksAdded++;
+    // Add all contact blocks if available
+    if (rawContactBlocks.size > 0) {
+      for (const [blockAddr, blockData] of rawContactBlocks.entries()) {
+        const hexDump = generateHexDump(blockData, 'CONTACTS');
+        const blockAddrHex = blockAddr.toString(16).toUpperCase().padStart(6, '0');
+        zip.file(`contact-block-0x${blockAddrHex}.txt`, hexDump);
+        zip.file(`contact-block-0x${blockAddrHex}.bin`, blockData);
+        blocksAdded++;
+      }
     }
 
     if (blocksAdded === 0) {
@@ -1937,50 +1952,83 @@ export const DiagnosticsTab: React.FC = () => {
         downloadBinary={downloadBinary}
       />
 
-      {/* First Contact Block */}
-      {rawContactBlockData && (
+      {/* Contact Blocks */}
+      {rawContactBlocks.size > 0 && (
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <h3 className="text-xl font-semibold text-yellow-400">DMR Contact Block</h3>
+              <h3 className="text-xl font-semibold text-yellow-400">DMR Contact Blocks</h3>
               <span className="px-2 py-1 bg-yellow-900/30 text-yellow-400 text-xs rounded border border-yellow-600/30">
-                Contact Database
+                {rawContactBlocks.size} Block(s)
               </span>
-              {rawContactBlockAddress !== null && (
-                <span className="px-2 py-1 bg-yellow-900/20 text-cool-gray text-xs rounded border border-yellow-600/20">
-                  Address: 0x{rawContactBlockAddress.toString(16).toUpperCase()}
-                </span>
-              )}
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (rawContactBlockData) {
-                    downloadHexDump(rawContactBlockData, 'contact-block-0-hexdump.txt');
-                  }
-                }}
-                className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
-                title="Download hex dump"
-              >
-                📥 Hex
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (rawContactBlockData) {
-                    downloadBinary(rawContactBlockData, 'contact-block-0.bin');
-                  }
-                }}
-                className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
-                title="Download binary"
-              >
-                📥 Bin
-              </button>
+              {rawContactBlocks.size > 0 && (
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const zip = new JSZip();
+                    
+                    // Helper to generate hex dump
+                    const generateHexDump = (data: Uint8Array, prefix: string): string => {
+                      const bytesPerRow = 16;
+                      let hexDump = `${prefix} Block Hex Dump\n`;
+                      hexDump += `Length: ${data.length} bytes (0x${data.length.toString(16).toUpperCase()})\n`;
+                      hexDump += '='.repeat(80) + '\n\n';
+                      
+                      for (let i = 0; i < data.length; i += bytesPerRow) {
+                        const offset = i;
+                        const rowBytes = data.slice(i, i + bytesPerRow);
+                        const offsetHex = offset.toString(16).toUpperCase().padStart(4, '0');
+                        const hexBytes = Array.from(rowBytes)
+                          .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
+                          .join(' ');
+                        const hexPadding = '   '.repeat(bytesPerRow - rowBytes.length);
+                        const ascii = Array.from(rowBytes)
+                          .map(b => {
+                            const char = String.fromCharCode(b);
+                            return (b >= 32 && b <= 126) ? char : '.';
+                          })
+                          .join('');
+                        hexDump += `${offsetHex}  ${hexBytes}${hexPadding}  ${ascii}\n`;
+                      }
+                      
+                      return hexDump;
+                    };
+                    
+                    // Add all contact blocks to zip
+                    for (const [blockAddr, blockData] of rawContactBlocks.entries()) {
+                      const hexDump = generateHexDump(blockData, 'CONTACTS');
+                      const blockAddrHex = blockAddr.toString(16).toUpperCase().padStart(6, '0');
+                      zip.file(`contact-block-0x${blockAddrHex}.txt`, hexDump);
+                      zip.file(`contact-block-0x${blockAddrHex}.bin`, blockData);
+                    }
+                    
+                    // Generate and download zip
+                    try {
+                      const blob = await zip.generateAsync({ type: 'blob' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                      a.download = `contact-blocks-${timestamp}.zip`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (error) {
+                      console.error('Error generating zip:', error);
+                      alert('Failed to generate zip file');
+                    }
+                  }}
+                  className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+                  title="Download all contact blocks as zip"
+                >
+                  📦 Download All Blocks
+                </button>
+              )}
               <button
                 type="button"
                 onClick={(e) => {
@@ -1995,77 +2043,308 @@ export const DiagnosticsTab: React.FC = () => {
             </div>
           </div>
           <p className="text-cool-gray text-sm mb-4">
-            First 4KB block from contact database. Each contact is 92 bytes (0x5C). 
+            All contact blocks from contact database. Each contact is 92 bytes (0x5C). 
             Use this to manually inspect the contact structure and fix parsing.
           </p>
 
           <div className={`space-y-6 ${showContactBlock ? '' : 'hidden'}`}>
-            {/* Hex Dump Viewer for Contact Block */}
-            <CollapsibleSection title="Hex Dump (Full Contact Block)">
-              <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
-                <div className="mb-4">
-                  <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={inspectContactOffset}
-                      onChange={(e) => setInspectContactOffset(e.target.value)}
-                      placeholder="0x000"
-                      className="flex-1 px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm font-mono focus:outline-none focus:border-yellow-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const offset = parseInt(inspectContactOffset.replace(/^0x/i, ''), 16);
-                        if (!isNaN(offset) && offset >= 0 && offset < rawContactBlockData.length) {
-                          const element = document.getElementById(`contact-offset-${offset}`);
-                          element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
-                      }}
-                      className="px-4 py-2 bg-yellow-900/30 text-yellow-400 text-sm rounded border border-yellow-600/30 hover:bg-yellow-900/50"
-                    >
-                      Go
-                    </button>
+            {/* Block Selector */}
+            <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
+              <label className="block text-sm text-cool-gray mb-2">Select Block</label>
+              <select
+                value={selectedContactBlock !== null ? selectedContactBlock : (rawContactBlockAddress !== null ? rawContactBlockAddress : '')}
+                onChange={(e) => setSelectedContactBlock(parseInt(e.target.value))}
+                className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm font-mono focus:outline-none focus:border-yellow-400"
+              >
+                {Array.from(rawContactBlocks.entries())
+                  .sort(([addrA], [addrB]) => addrA - addrB)
+                  .map(([blockAddr]) => (
+                    <option key={blockAddr} value={blockAddr}>
+                      0x{blockAddr.toString(16).toUpperCase().padStart(6, '0')}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* Hex Dump Viewer for Selected Contact Block */}
+            {selectedContactBlock !== null && rawContactBlocks.has(selectedContactBlock) && (
+              <CollapsibleSection title={`Hex Dump - Block 0x${selectedContactBlock.toString(16).toUpperCase().padStart(6, '0')}`}>
+                <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
+                  <div className="mb-4 flex items-center gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={inspectContactOffset}
+                          onChange={(e) => setInspectContactOffset(e.target.value)}
+                          placeholder="0x000"
+                          className="flex-1 px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm font-mono focus:outline-none focus:border-yellow-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const offset = parseInt(inspectContactOffset.replace(/^0x/i, ''), 16);
+                            const blockData = rawContactBlocks.get(selectedContactBlock);
+                            if (blockData && !isNaN(offset) && offset >= 0 && offset < blockData.length) {
+                              const element = document.getElementById(`contact-offset-${selectedContactBlock}-${offset}`);
+                              element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                          }}
+                          className="px-4 py-2 bg-yellow-900/30 text-yellow-400 text-sm rounded border border-yellow-600/30 hover:bg-yellow-900/50"
+                        >
+                          Go
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const blockData = rawContactBlocks.get(selectedContactBlock);
+                          if (blockData) {
+                            downloadHexDump(blockData, `contact-block-0x${selectedContactBlock.toString(16).toUpperCase()}-hexdump.txt`);
+                          }
+                        }}
+                        className="px-3 py-2 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+                        title="Download hex dump"
+                      >
+                        📥 Hex
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const blockData = rawContactBlocks.get(selectedContactBlock);
+                          if (blockData) {
+                            downloadBinary(blockData, `contact-block-0x${selectedContactBlock.toString(16).toUpperCase()}.bin`);
+                          }
+                        }}
+                        className="px-3 py-2 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+                        title="Download binary"
+                      >
+                        📥 Bin
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto max-h-96 overflow-y-auto font-mono text-xs">
+                    {(() => {
+                      const blockData = rawContactBlocks.get(selectedContactBlock);
+                      if (!blockData) return null;
+                      return Array.from({ length: Math.ceil(blockData.length / 16) }, (_, row) => {
+                        const offset = row * 16;
+                        const rowBytes = blockData.slice(offset, offset + 16);
+                        const offsetHex = offset.toString(16).toUpperCase().padStart(4, '0');
+                        const hexBytes = Array.from(rowBytes)
+                          .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
+                          .join(' ');
+                        const hexPadding = '   '.repeat(16 - rowBytes.length);
+                        const ascii = Array.from(rowBytes)
+                          .map(b => {
+                            const char = String.fromCharCode(b);
+                            return (b >= 32 && b <= 126) ? char : '.';
+                          })
+                          .join('');
+                        
+                        return (
+                          <div
+                            key={offset}
+                            id={`contact-offset-${selectedContactBlock}-${offset}`}
+                            className="flex gap-4 py-0.5 hover:bg-yellow-900/5"
+                          >
+                            <span className="text-yellow-400 w-16 font-mono text-xs">{offsetHex}</span>
+                            <span className="text-white flex-1 font-mono text-xs">{hexBytes}{hexPadding}</span>
+                            <span className="text-cool-gray w-16 font-mono text-xs">{ascii}</span>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
-                <div className="overflow-x-auto max-h-96 overflow-y-auto font-mono text-xs">
-                  {Array.from({ length: Math.ceil(rawContactBlockData.length / 16) }, (_, row) => {
-                    const offset = row * 16;
-                    const rowBytes = rawContactBlockData.slice(offset, offset + 16);
-                    const offsetHex = offset.toString(16).toUpperCase().padStart(4, '0');
-                    const hexBytes = Array.from(rowBytes)
-                      .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
-                      .join(' ');
-                    const hexPadding = '   '.repeat(16 - rowBytes.length);
-                    const ascii = Array.from(rowBytes)
-                      .map(b => {
-                        const char = String.fromCharCode(b);
-                        return (b >= 32 && b <= 126) ? char : '.';
-                      })
-                      .join('');
-                    
-                    // Highlight contact boundaries (every 92 bytes / 0x5C)
-                    const isContactBoundary = offset % 0x5C === 0;
-                    const contactNum = Math.floor(offset / 0x5C);
-                    
-                    return (
-                      <div
-                        key={offset}
-                        id={`contact-offset-${offset}`}
-                        className={`flex gap-4 py-1 ${isContactBoundary ? 'bg-yellow-900/20 border-t border-yellow-600/30' : ''} hover:bg-yellow-900/10`}
-                      >
-                        <span className="text-yellow-400 w-16">{offsetHex}</span>
-                        <span className="text-white flex-1">{hexBytes}{hexPadding}</span>
-                        <span className="text-cool-gray w-16">{ascii}</span>
-                        {isContactBoundary && (
-                          <span className="text-yellow-500 text-xs ml-2">Contact {contactNum}</span>
+              </CollapsibleSection>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Contact Write Blocks */}
+      {writeBlockData.size > 0 && rawContactBlockAddress !== null && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-semibold text-yellow-400">Contact Write Blocks</h3>
+              <span className="px-2 py-1 bg-yellow-900/30 text-yellow-400 text-xs rounded border border-yellow-600/30">
+                {writeBlockData.size} Block(s)
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowContactWriteBlocks(!showContactWriteBlocks);
+              }}
+              className="text-sm text-yellow-400 hover:text-yellow-300"
+            >
+              {showContactWriteBlocks ? '▼ Hide' : '▶ Show'}
+            </button>
+          </div>
+          <p className="text-cool-gray text-sm mb-4">
+            All contact blocks that were written to the radio. Each block is 4KB (0x1000 bytes). 
+            Use this to verify contact data is being written correctly.
+          </p>
+
+          <div className={`space-y-4 ${showContactWriteBlocks ? '' : 'hidden'}`}>
+            {Array.from(writeBlockData.entries())
+              .sort(([addrA], [addrB]) => addrA - addrB)
+              .map(([blockAddr, blockInfo]) => {
+                const isExpanded = expandedContactBlocks.has(blockAddr);
+                const ENTRY_SIZE = 0x5C; // 92 bytes per contact
+                const BLOCK_SIZE = 0x1000; // 4KB
+                
+                // Calculate which contacts are in this block
+                // Contacts start at baseAddr + 0x10, where baseAddr is the first contact block address
+                // But we need to account for the fact that contacts can span blocks
+                const contactsStartAddr = rawContactBlockAddress + 0x10;
+                const blockEndAddr = blockAddr + BLOCK_SIZE;
+                
+                // Calculate contact indices in this block
+                const firstContactInBlock = Math.max(0, Math.ceil((blockAddr - contactsStartAddr) / ENTRY_SIZE));
+                const lastContactInBlock = Math.floor((blockEndAddr - contactsStartAddr - 1) / ENTRY_SIZE);
+                
+                return (
+                  <div key={blockAddr} className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-lg font-semibold text-yellow-400">
+                          Block at 0x{blockAddr.toString(16).toUpperCase()}
+                        </h4>
+                        <span className="px-2 py-1 bg-yellow-900/20 text-cool-gray text-xs rounded border border-yellow-600/20">
+                          Metadata: 0x{blockInfo.metadata.toString(16).toUpperCase().padStart(2, '0')}
+                        </span>
+                        {firstContactInBlock <= lastContactInBlock && (
+                          <span className="px-2 py-1 bg-yellow-900/20 text-cool-gray text-xs rounded border border-yellow-600/20">
+                            Contacts: {firstContactInBlock} - {lastContactInBlock}
+                          </span>
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </CollapsibleSection>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            downloadHexDump(blockInfo.data, `contact-write-block-0x${blockAddr.toString(16).toUpperCase()}-hexdump.txt`);
+                          }}
+                          className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+                          title="Download hex dump"
+                        >
+                          📥 Hex
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            downloadBinary(blockInfo.data, `contact-write-block-0x${blockAddr.toString(16).toUpperCase()}.bin`);
+                          }}
+                          className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+                          title="Download binary"
+                        >
+                          📥 Bin
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const newExpanded = new Set(expandedContactBlocks);
+                            if (isExpanded) {
+                              newExpanded.delete(blockAddr);
+                            } else {
+                              newExpanded.add(blockAddr);
+                            }
+                            setExpandedContactBlocks(newExpanded);
+                          }}
+                          className="text-sm text-yellow-400 hover:text-yellow-300"
+                        >
+                          {isExpanded ? '▼ Hide' : '▶ Show'} Hex
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {isExpanded && (
+                      <div className="mt-4 space-y-4">
+                        {/* Hex Dump Viewer */}
+                        <div className="bg-deep-gray rounded-lg border border-yellow-600/20 p-4">
+                          <div className="mb-4">
+                            <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={contactBlockOffsets.get(blockAddr) || ''}
+                                onChange={(e) => {
+                                  const newOffsets = new Map(contactBlockOffsets);
+                                  newOffsets.set(blockAddr, e.target.value);
+                                  setContactBlockOffsets(newOffsets);
+                                }}
+                                placeholder="0x000"
+                                className="flex-1 px-3 py-2 bg-dark-charcoal border border-yellow-600/30 rounded text-white text-sm font-mono focus:outline-none focus:border-yellow-400"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const offsetStr = contactBlockOffsets.get(blockAddr) || '';
+                                  const offset = parseInt(offsetStr.replace(/^0x/i, ''), 16);
+                                  if (!isNaN(offset) && offset >= 0 && offset < blockInfo.data.length) {
+                                    const element = document.getElementById(`contact-write-offset-${blockAddr}-${offset}`);
+                                    element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  }
+                                }}
+                                className="px-4 py-2 bg-yellow-900/30 text-yellow-400 text-sm rounded border border-yellow-600/30 hover:bg-yellow-900/50"
+                              >
+                                Go
+                              </button>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto max-h-96 overflow-y-auto font-mono text-xs">
+                            {Array.from({ length: Math.ceil(blockInfo.data.length / 16) }, (_, row) => {
+                              const offset = row * 16;
+                              const rowBytes = blockInfo.data.slice(offset, offset + 16);
+                              const offsetHex = offset.toString(16).toUpperCase().padStart(4, '0');
+                              const hexBytes = Array.from(rowBytes)
+                                .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
+                                .join(' ');
+                              const hexPadding = '   '.repeat(16 - rowBytes.length);
+                              const ascii = Array.from(rowBytes)
+                                .map(b => {
+                                  const char = String.fromCharCode(b);
+                                  return (b >= 32 && b <= 126) ? char : '.';
+                                })
+                                .join('');
+                              
+                              return (
+                                <div
+                                  key={offset}
+                                  id={`contact-write-offset-${blockAddr}-${offset}`}
+                                  className="flex gap-4 py-0.5 hover:bg-yellow-900/5"
+                                >
+                                  <span className="text-yellow-400 w-16 font-mono text-xs">{offsetHex}</span>
+                                  <span className="text-white flex-1 font-mono text-xs">{hexBytes}{hexPadding}</span>
+                                  <span className="text-cool-gray w-16 font-mono text-xs">{ascii}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}
