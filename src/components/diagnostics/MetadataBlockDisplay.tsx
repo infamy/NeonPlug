@@ -53,8 +53,8 @@ export const MetadataBlockDisplay: React.FC<MetadataBlockDisplayProps> = ({
       rows.push(
         <div key={offset} id={`${blockId}-${offset}`} className="flex border-b border-yellow-600/10 hover:bg-yellow-900/10 py-1">
           <div className="w-20 text-yellow-400 px-2">{offsetHex}</div>
-          <div className="flex-1 text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
-          <div className="w-16 text-green-400 px-2">{ascii}</div>
+          <div className="w-[52ch] text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
+          <div className="w-16 text-green-400 px-2 ml-4">{ascii}</div>
         </div>
       );
     }

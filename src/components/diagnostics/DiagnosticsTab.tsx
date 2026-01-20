@@ -13,6 +13,8 @@ import {
 } from './diagnosticsConstants';
 import { MetadataBlockDisplay } from './MetadataBlockDisplay';
 import { CollapsibleSection } from './CollapsibleSection';
+import { OffsetInspector } from './OffsetInspector';
+import { FieldVerificationTable } from './FieldVerificationTable';
 import JSZip from 'jszip';
 
 export const DiagnosticsTab: React.FC = () => {
@@ -24,7 +26,6 @@ export const DiagnosticsTab: React.FC = () => {
   const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
   const [showContactBlock, setShowContactBlock] = useState(true);
   const [showChannelParser, setShowChannelParser] = useState(false);
-  const [inspectOffset, setInspectOffset] = useState<string>('');
   const [inspectOffset10, setInspectOffset10] = useState<string>('');
   const [inspectOffset41, setInspectOffset41] = useState<string>('');
   const [inspectContactOffset, setInspectContactOffset] = useState<string>('');
@@ -466,236 +467,102 @@ export const DiagnosticsTab: React.FC = () => {
       <div className={`space-y-6 ${showMetadataBlock ? '' : 'hidden'}`}>
         {/* Offset Inspector */}
         <CollapsibleSection title="Offset Inspector">
-          <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
-              <div className="mb-4">
-                <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={inspectOffset}
-                    onChange={(e) => setInspectOffset(e.target.value)}
-                    placeholder="0x120"
-                    className="flex-1 px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm font-mono focus:outline-none focus:border-yellow-400"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const offset = parseInt(inspectOffset.replace(/^0x/i, ''), 16);
-                      if (!isNaN(offset) && offset >= 0 && offset < rawRadioSettingsData.length) {
-                        const element = document.getElementById(`offset-${offset}`);
-                        element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      }
-                    }}
-                    className="px-4 py-2 bg-yellow-900/30 text-yellow-400 text-sm rounded border border-yellow-600/30 hover:bg-yellow-900/50"
-                  >
-                    Go
-                  </button>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-yellow-600/30">
-                      <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Offset</th>
-                      <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Hex</th>
-                      <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Decimal</th>
-                      <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Field</th>
-                      <th className="text-left py-2 px-3 text-yellow-400 font-semibold">UI Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      const knownOffsets = [
-                        { offset: 0x00, field: 'Power On Interface' },
-                        { offset: 0x30, field: 'Backlight Brightness' },
-                        { offset: 0x34, field: 'Callsign Color' },
-                        { offset: 0x35, field: 'Standby Text Color' },
-                        { offset: 0x38, field: 'Channel A Color' },
-                        { offset: 0x39, field: 'Channel B Color' },
-                        { offset: 0x3A, field: 'Zone A Color' },
-                        { offset: 0x3B, field: 'Zone B Color' },
-                        { offset: 0x41, field: 'UTC Zone' },
-                        { offset: 0x85, field: 'Lock Key (bit 0), Knob Lock (bit 1), Side Key Lock (bit 2)' },
-                        { offset: 0x86, field: 'Auto Keypad Lock Delay Time' },
-                        { offset: 0x87, field: 'SK1 Short' },
-                        { offset: 0x88, field: 'SK1 Long' },
-                        { offset: 0x89, field: 'SK2 Short' },
-                        { offset: 0x8A, field: 'SK2 Long' },
-                        { offset: 0x8D, field: 'P1 Short' },
-                        { offset: 0x8E, field: 'P1 Long' },
-                        { offset: 0x8F, field: 'P2 Short' },
-                        { offset: 0x90, field: 'P2 Long' },
-                        { offset: 0x93, field: 'Long Press Time' },
-                        { offset: 0x120, field: 'Analog Call 1 - Call Type' },
-                        { offset: 0x121, field: 'Analog Call 1 - Call ID' },
-                        { offset: 0x122, field: 'Analog Call 2 - Call Type' },
-                        { offset: 0x123, field: 'Analog Call 2 - Call ID' },
-                        { offset: 0x124, field: 'Analog Call 3 - Call Type' },
-                        { offset: 0x125, field: 'Analog Call 3 - Call ID' },
-                        { offset: 0x126, field: 'Analog Call 4 - Call Type' },
-                        { offset: 0x127, field: 'Analog Call 4 - Call ID' },
-                        { offset: 0x200, field: 'One Touch Call 1 - Call Type' },
-                        { offset: 0x201, field: 'One Touch Call 1 - Call Object (low)' },
-                        { offset: 0x202, field: 'One Touch Call 1 - Call Object (high)' },
-                        { offset: 0x203, field: 'One Touch Call 1 - Digital Call Type' },
-                        { offset: 0x204, field: 'One Touch Call 1 - SMS' },
-                        { offset: 0x230, field: 'Fun+0 - Number Key' },
-                        { offset: 0x231, field: 'Fun+0 - Operate Mode' },
-                        { offset: 0x232, field: 'Fun+0 - Menu Select' },
-                        { offset: 0x233, field: 'Fun+0 - Call Way' },
-                        { offset: 0x234, field: 'Fun+0 - Call Object' },
-                        { offset: 0x235, field: 'Fun+0 - Digital Call Type' },
-                        { offset: 0x236, field: 'Fun+0 - SMS' },
-                      ];
-                      
-                      return knownOffsets.map(({ offset, field }) => {
-                        if (offset >= rawRadioSettingsData.length) return null;
-                        const hexValue = rawRadioSettingsData[offset];
-                        const decimalValue = hexValue;
-                        let uiValue = '';
-                        
-                        if (offset === 0x00) uiValue = POWER_ON_INTERFACE_OPTIONS.find(o => o.value === decimalValue)?.label || `${decimalValue}`;
-                        else if (offset === 0x30) uiValue = `${decimalValue + 1}`; // Backlight: stored 0-5, displayed 1-6
-                        else if (offset === 0x34) uiValue = COLOR_OPTIONS.find(o => o.value === (decimalValue & 0x0F))?.label || `${decimalValue & 0x0F}`;
-                        else if (offset === 0x35) uiValue = COLOR_OPTIONS.find(o => o.value === (decimalValue & 0x0F))?.label || `${decimalValue & 0x0F}`;
-                        else if (offset === 0x38) uiValue = COLOR_OPTIONS.find(o => o.value === (decimalValue & 0x0F))?.label || `${decimalValue & 0x0F}`;
-                        else if (offset === 0x39) uiValue = COLOR_OPTIONS.find(o => o.value === (decimalValue & 0x0F))?.label || `${decimalValue & 0x0F}`;
-                        else if (offset === 0x3A) uiValue = COLOR_OPTIONS.find(o => o.value === (decimalValue & 0x0F))?.label || `${decimalValue & 0x0F}`;
-                        else if (offset === 0x3B) uiValue = COLOR_OPTIONS.find(o => o.value === (decimalValue & 0x0F))?.label || `${decimalValue & 0x0F}`;
-                        else if (offset === 0x41) uiValue = UTC_ZONE_OPTIONS.find(o => o.value === decimalValue)?.label || `${decimalValue}`;
-                        else if (offset === 0x85) {
-                          const bits = [];
-                          if ((decimalValue & 0x01) === 0) bits.push('Manual');
-                          else bits.push('Auto');
-                          if ((decimalValue & 0x02) !== 0) bits.push('Knob On');
-                          if ((decimalValue & 0x04) !== 0) bits.push('Side Key On');
-                          uiValue = bits.join(', ') || 'Off';
-                        }
-                        else if (offset === 0x86) uiValue = `${decimalValue}s`;
-                        else if (offset === 0x87 || offset === 0x88 || offset === 0x89 || offset === 0x8A || offset === 0x8D || offset === 0x8E || offset === 0x8F || offset === 0x90) {
-                          uiValue = BUTTON_FUNCTION_OPTIONS.find(o => o.value === decimalValue)?.label || `${decimalValue}`;
-                        }
-                        else if (offset === 0x93) uiValue = `${decimalValue + 1}`; // +1 for display
-                        else uiValue = `${decimalValue}`;
-                        
-                        return (
-                          <tr
-                            key={offset}
-                            id={`offset-${offset}`}
-                            className="border-b border-yellow-600/10 hover:bg-yellow-900/10"
-                          >
-                            <td className="py-2 px-3 text-cool-gray font-mono">0x{offset.toString(16).toUpperCase().padStart(3, '0')}</td>
-                            <td className="py-2 px-3 text-yellow-300 font-mono">0x{hexValue.toString(16).toUpperCase().padStart(2, '0')}</td>
-                            <td className="py-2 px-3 text-white">{decimalValue}</td>
-                            <td className="py-2 px-3 text-cool-gray">{field}</td>
-                            <td className="py-2 px-3 text-white">{uiValue}</td>
-                          </tr>
-                        );
-                      }).filter(Boolean);
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-          </div>
+          {rawRadioSettingsData && (
+            <OffsetInspector
+              data={rawRadioSettingsData}
+              idPrefix="offset"
+              placeholder="0x120"
+              knownOffsets={[
+                { offset: 0x00, field: 'Power On Interface', getUIValue: (hex) => POWER_ON_INTERFACE_OPTIONS.find(o => o.value === hex)?.label || `${hex}` },
+                { offset: 0x30, field: 'Backlight Brightness', getUIValue: (hex) => `${hex + 1}` }, // Backlight: stored 0-5, displayed 1-6
+                { offset: 0x34, field: 'Callsign Color', getUIValue: (hex) => COLOR_OPTIONS.find(o => o.value === (hex & 0x0F))?.label || `${hex & 0x0F}` },
+                { offset: 0x35, field: 'Standby Text Color', getUIValue: (hex) => COLOR_OPTIONS.find(o => o.value === (hex & 0x0F))?.label || `${hex & 0x0F}` },
+                { offset: 0x38, field: 'Channel A Color', getUIValue: (hex) => COLOR_OPTIONS.find(o => o.value === (hex & 0x0F))?.label || `${hex & 0x0F}` },
+                { offset: 0x39, field: 'Channel B Color', getUIValue: (hex) => COLOR_OPTIONS.find(o => o.value === (hex & 0x0F))?.label || `${hex & 0x0F}` },
+                { offset: 0x3A, field: 'Zone A Color', getUIValue: (hex) => COLOR_OPTIONS.find(o => o.value === (hex & 0x0F))?.label || `${hex & 0x0F}` },
+                { offset: 0x3B, field: 'Zone B Color', getUIValue: (hex) => COLOR_OPTIONS.find(o => o.value === (hex & 0x0F))?.label || `${hex & 0x0F}` },
+                { offset: 0x41, field: 'UTC Zone', getUIValue: (hex) => UTC_ZONE_OPTIONS.find(o => o.value === hex)?.label || `${hex}` },
+                { offset: 0x85, field: 'Lock Key (bit 0), Knob Lock (bit 1), Side Key Lock (bit 2)', getUIValue: (hex) => {
+                  const bits = [];
+                  if ((hex & 0x01) === 0) bits.push('Manual');
+                  else bits.push('Auto');
+                  if ((hex & 0x02) !== 0) bits.push('Knob On');
+                  if ((hex & 0x04) !== 0) bits.push('Side Key On');
+                  return bits.join(', ') || 'Off';
+                }},
+                { offset: 0x86, field: 'Auto Keypad Lock Delay Time', getUIValue: (hex) => `${hex}s` },
+                { offset: 0x87, field: 'SK1 Short', getUIValue: (hex) => BUTTON_FUNCTION_OPTIONS.find(o => o.value === hex)?.label || `${hex}` },
+                { offset: 0x88, field: 'SK1 Long', getUIValue: (hex) => BUTTON_FUNCTION_OPTIONS.find(o => o.value === hex)?.label || `${hex}` },
+                { offset: 0x89, field: 'SK2 Short', getUIValue: (hex) => BUTTON_FUNCTION_OPTIONS.find(o => o.value === hex)?.label || `${hex}` },
+                { offset: 0x8A, field: 'SK2 Long', getUIValue: (hex) => BUTTON_FUNCTION_OPTIONS.find(o => o.value === hex)?.label || `${hex}` },
+                { offset: 0x8D, field: 'P1 Short', getUIValue: (hex) => BUTTON_FUNCTION_OPTIONS.find(o => o.value === hex)?.label || `${hex}` },
+                { offset: 0x8E, field: 'P1 Long', getUIValue: (hex) => BUTTON_FUNCTION_OPTIONS.find(o => o.value === hex)?.label || `${hex}` },
+                { offset: 0x8F, field: 'P2 Short', getUIValue: (hex) => BUTTON_FUNCTION_OPTIONS.find(o => o.value === hex)?.label || `${hex}` },
+                { offset: 0x90, field: 'P2 Long', getUIValue: (hex) => BUTTON_FUNCTION_OPTIONS.find(o => o.value === hex)?.label || `${hex}` },
+                { offset: 0x93, field: 'Long Press Time', getUIValue: (hex) => `${hex + 1}` }, // +1 for display
+                { offset: 0x120, field: 'Analog Call 1 - Call Type', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x121, field: 'Analog Call 1 - Call ID', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x122, field: 'Analog Call 2 - Call Type', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x123, field: 'Analog Call 2 - Call ID', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x124, field: 'Analog Call 3 - Call Type', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x125, field: 'Analog Call 3 - Call ID', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x126, field: 'Analog Call 4 - Call Type', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x127, field: 'Analog Call 4 - Call ID', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x200, field: 'One Touch Call 1 - Call Type', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x201, field: 'One Touch Call 1 - Call Object (low)', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x202, field: 'One Touch Call 1 - Call Object (high)', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x203, field: 'One Touch Call 1 - Digital Call Type', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x204, field: 'One Touch Call 1 - SMS', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x230, field: 'Fun+0 - Number Key', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x231, field: 'Fun+0 - Operate Mode', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x232, field: 'Fun+0 - Menu Select', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x233, field: 'Fun+0 - Call Way', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x234, field: 'Fun+0 - Call Object', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x235, field: 'Fun+0 - Digital Call Type', getUIValue: (_hex) => `${_hex}` },
+                { offset: 0x236, field: 'Fun+0 - SMS', getUIValue: (_hex) => `${_hex}` },
+              ]}
+            />
+          )}
         </CollapsibleSection>
 
         {/* Field Verification Table */}
         <CollapsibleSection title="Field Verification">
-          <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-yellow-600/30">
-                      <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Field</th>
-                      <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Offset</th>
-                      <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Raw Hex</th>
-                      <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Parsed Value</th>
-                      <th className="text-left py-2 px-3 text-yellow-400 font-semibold">UI Value</th>
-                      <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      if (!rawRadioSettingsData) return [];
-                      
-                      try {
-                        const parsed = parseRadioSettings(rawRadioSettingsData);
-                        const fields: Array<{
-                          name: string;
-                          offset: number;
-                          parsed: any;
-                          ui: any;
-                          isBit?: boolean;
-                          note?: string;
-                        }> = [
-                          { name: 'Power On Interface', offset: 0x00, parsed: parsed.powerOnInterface, ui: radioSettings?.powerOnInterface },
-                          { name: 'Backlight Brightness', offset: 0x30, parsed: parsed.backlightBrightness, ui: radioSettings?.backlightBrightness },
-                          { name: 'Callsign Color', offset: 0x34, parsed: parsed.callsignColor, ui: radioSettings?.callsignColor },
-                          { name: 'Standby Text Color', offset: 0x35, parsed: parsed.standbyTextColor, ui: radioSettings?.standbyTextColor },
-                          { name: 'Channel A Color', offset: 0x38, parsed: parsed.channelAColor, ui: radioSettings?.channelAColor },
-                          { name: 'Channel B Color', offset: 0x39, parsed: parsed.channelBColor, ui: radioSettings?.channelBColor },
-                          { name: 'Zone A Color', offset: 0x3A, parsed: parsed.zoneAColor, ui: radioSettings?.zoneAColor },
-                          { name: 'Zone B Color', offset: 0x3B, parsed: parsed.zoneBColor, ui: radioSettings?.zoneBColor },
-                          { name: 'UTC Zone', offset: 0x41, parsed: parsed.utcZone, ui: radioSettings?.utcZone },
-                          { name: 'Lock Key', offset: 0x85, parsed: parsed.lockKey, ui: radioSettings?.lockKey, isBit: true },
-                          { name: 'Auto Keypad Lock Delay', offset: 0x86, parsed: parsed.autoKeypadLockDelayTime, ui: radioSettings?.autoKeypadLockDelayTime },
-                          { name: 'SK1 Short', offset: 0x87, parsed: parsed.sk1Short, ui: radioSettings?.sk1Short },
-                          { name: 'SK1 Long', offset: 0x88, parsed: parsed.sk1Long, ui: radioSettings?.sk1Long },
-                          { name: 'SK2 Short', offset: 0x89, parsed: parsed.sk2Short, ui: radioSettings?.sk2Short },
-                          { name: 'SK2 Long', offset: 0x8A, parsed: parsed.sk2Long, ui: radioSettings?.sk2Long },
-                          { name: 'P1 Short', offset: 0x8D, parsed: parsed.p1Short, ui: radioSettings?.p1Short },
-                          { name: 'P1 Long', offset: 0x8E, parsed: parsed.p1Long, ui: radioSettings?.p1Long },
-                          { name: 'P2 Short', offset: 0x8F, parsed: parsed.p2Short, ui: radioSettings?.p2Short },
-                          { name: 'P2 Long', offset: 0x90, parsed: parsed.p2Long, ui: radioSettings?.p2Long },
-                          { name: 'Long Press Time', offset: 0x93, parsed: parsed.longPressTime, ui: radioSettings?.longPressTime },
-                        ];
-                        
-                        return fields.map((field) => {
-                          // For VFO fields, get data from block 0x41 instead of block 0x04
-                          let rawHex = 0;
-                          if (field.note === 'Block 0x41' && block41Data) {
-                            rawHex = block41Data[field.offset] || 0;
-                          } else {
-                            rawHex = rawRadioSettingsData[field.offset];
-                          }
-                          const matches = field.isBit 
-                            ? String(field.parsed) === String(field.ui)
-                            : field.parsed === field.ui;
-                          
-                          return (
-                            <tr
-                              key={field.name}
-                              className={`border-b border-yellow-600/10 hover:bg-yellow-900/10 ${!matches ? 'bg-red-900/20' : ''}`}
-                            >
-                              <td className="py-2 px-3 text-cool-gray">{field.name}{field.note ? ` (${field.note})` : ''}</td>
-                              <td className="py-2 px-3 text-cool-gray font-mono">0x{field.offset.toString(16).toUpperCase().padStart(3, '0')}</td>
-                              <td className="py-2 px-3 text-yellow-300 font-mono">0x{rawHex.toString(16).toUpperCase().padStart(2, '0')}</td>
-                              <td className="py-2 px-3 text-white">{String(field.parsed)}</td>
-                              <td className="py-2 px-3 text-white">{String(field.ui ?? 'N/A')}</td>
-                              <td className="py-2 px-3">
-                                {matches ? (
-                                  <span className="text-green-400">✓</span>
-                                ) : (
-                                  <span className="text-red-400">✗</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        });
-                      } catch (err) {
-                        return (
-                          <tr>
-                            <td colSpan={6} className="py-4 px-3 text-red-400 text-center">
-                              Error parsing: {err instanceof Error ? err.message : String(err)}
-                            </td>
-                          </tr>
-                        );
-                      }
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-          </div>
+          {rawRadioSettingsData && (() => {
+            try {
+              const parsed = parseRadioSettings(rawRadioSettingsData);
+              const fields = [
+                { name: 'Power On Interface', offset: 0x00, parsed: parsed.powerOnInterface, ui: radioSettings?.powerOnInterface, rawHex: rawRadioSettingsData[0x00] },
+                { name: 'Backlight Brightness', offset: 0x30, parsed: parsed.backlightBrightness, ui: radioSettings?.backlightBrightness, rawHex: rawRadioSettingsData[0x30] },
+                { name: 'Callsign Color', offset: 0x34, parsed: parsed.callsignColor, ui: radioSettings?.callsignColor, rawHex: rawRadioSettingsData[0x34] },
+                { name: 'Standby Text Color', offset: 0x35, parsed: parsed.standbyTextColor, ui: radioSettings?.standbyTextColor, rawHex: rawRadioSettingsData[0x35] },
+                { name: 'Channel A Color', offset: 0x38, parsed: parsed.channelAColor, ui: radioSettings?.channelAColor, rawHex: rawRadioSettingsData[0x38] },
+                { name: 'Channel B Color', offset: 0x39, parsed: parsed.channelBColor, ui: radioSettings?.channelBColor, rawHex: rawRadioSettingsData[0x39] },
+                { name: 'Zone A Color', offset: 0x3A, parsed: parsed.zoneAColor, ui: radioSettings?.zoneAColor, rawHex: rawRadioSettingsData[0x3A] },
+                { name: 'Zone B Color', offset: 0x3B, parsed: parsed.zoneBColor, ui: radioSettings?.zoneBColor, rawHex: rawRadioSettingsData[0x3B] },
+                { name: 'UTC Zone', offset: 0x41, parsed: parsed.utcZone, ui: radioSettings?.utcZone, rawHex: rawRadioSettingsData[0x41] },
+                { name: 'Lock Key', offset: 0x85, parsed: parsed.lockKey, ui: radioSettings?.lockKey, isBit: true, rawHex: rawRadioSettingsData[0x85] },
+                { name: 'Auto Keypad Lock Delay', offset: 0x86, parsed: parsed.autoKeypadLockDelayTime, ui: radioSettings?.autoKeypadLockDelayTime, rawHex: rawRadioSettingsData[0x86] },
+                { name: 'SK1 Short', offset: 0x87, parsed: parsed.sk1Short, ui: radioSettings?.sk1Short, rawHex: rawRadioSettingsData[0x87] },
+                { name: 'SK1 Long', offset: 0x88, parsed: parsed.sk1Long, ui: radioSettings?.sk1Long, rawHex: rawRadioSettingsData[0x88] },
+                { name: 'SK2 Short', offset: 0x89, parsed: parsed.sk2Short, ui: radioSettings?.sk2Short, rawHex: rawRadioSettingsData[0x89] },
+                { name: 'SK2 Long', offset: 0x8A, parsed: parsed.sk2Long, ui: radioSettings?.sk2Long, rawHex: rawRadioSettingsData[0x8A] },
+                { name: 'P1 Short', offset: 0x8D, parsed: parsed.p1Short, ui: radioSettings?.p1Short, rawHex: rawRadioSettingsData[0x8D] },
+                { name: 'P1 Long', offset: 0x8E, parsed: parsed.p1Long, ui: radioSettings?.p1Long, rawHex: rawRadioSettingsData[0x8E] },
+                { name: 'P2 Short', offset: 0x8F, parsed: parsed.p2Short, ui: radioSettings?.p2Short, rawHex: rawRadioSettingsData[0x8F] },
+                { name: 'P2 Long', offset: 0x90, parsed: parsed.p2Long, ui: radioSettings?.p2Long, rawHex: rawRadioSettingsData[0x90] },
+                { name: 'Long Press Time', offset: 0x93, parsed: parsed.longPressTime, ui: radioSettings?.longPressTime, rawHex: rawRadioSettingsData[0x93] },
+              ];
+              return <FieldVerificationTable fields={fields} data={rawRadioSettingsData} />;
+            } catch (err) {
+              return (
+                <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
+                  <div className="text-red-400 text-center">
+                    Error parsing: {err instanceof Error ? err.message : String(err)}
+                  </div>
+                </div>
+              );
+            }
+          })()}
         </CollapsibleSection>
 
         {/* Hex Dump Viewer */}
@@ -726,8 +593,8 @@ export const DiagnosticsTab: React.FC = () => {
                     rows.push(
                       <div key={offset} className="flex border-b border-yellow-600/10 hover:bg-yellow-900/10 py-1">
                         <div className="w-20 text-yellow-400 px-2">{offsetHex}</div>
-                        <div className="flex-1 text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
-                        <div className="w-16 text-green-400 px-2">{ascii}</div>
+                        <div className="w-[52ch] text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
+                        <div className="w-16 text-green-400 px-2 ml-4">{ascii}</div>
                       </div>
                     );
                   }
@@ -1125,8 +992,8 @@ export const DiagnosticsTab: React.FC = () => {
                         rows.push(
                           <div key={offset} id={`offset10-${offset}`} className="flex border-b border-yellow-600/10 hover:bg-yellow-900/10 py-1">
                             <div className="w-20 text-yellow-400 px-2">{offsetHex}</div>
-                            <div className="flex-1 text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
-                            <div className="w-16 text-green-400 px-2">{ascii}</div>
+                            <div className="w-[52ch] text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
+                            <div className="w-16 text-green-400 px-2 ml-4">{ascii}</div>
                           </div>
                         );
                       }
@@ -1212,183 +1079,100 @@ export const DiagnosticsTab: React.FC = () => {
           <div className={`space-y-6 ${showMetadataBlock41 ? '' : 'hidden'}`}>
             {/* Offset Inspector for Block 0x41 */}
             <CollapsibleSection title="Offset Inspector (Block 0x41)">
-              <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
-                <div className="mb-4">
-                  <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={inspectOffset41}
-                      onChange={(e) => setInspectOffset41(e.target.value)}
-                      placeholder="0x000"
-                      className="flex-1 px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm font-mono focus:outline-none focus:border-yellow-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const offset = parseInt(inspectOffset41.replace(/^0x/i, ''), 16);
-                        if (!isNaN(offset) && offset >= 0 && offset < block41Data.length) {
-                          const element = document.getElementById(`offset41-${offset}`);
-                          element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
-                      }}
-                      className="px-4 py-2 bg-yellow-900/30 text-yellow-400 text-sm rounded border border-yellow-600/30 hover:bg-yellow-900/50"
-                    >
-                      Go
-                    </button>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-yellow-600/30">
-                        <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Offset</th>
-                        <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Hex</th>
-                        <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Decimal</th>
-                        <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Field</th>
-                        <th className="text-left py-2 px-3 text-yellow-400 font-semibold">UI Value</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        const knownOffsets = [
-                          { offset: 0x0F9F, field: 'VFO A Channel (4001) - Start' },
-                          { offset: 0x0FAF, field: 'VFO A - RX Frequency (BCD)' },
-                          { offset: 0x0FB3, field: 'VFO A - TX Frequency (BCD)' },
-                          { offset: 0x0FB7, field: 'VFO A - Mode Flags' },
-                          { offset: 0x0FCF, field: 'VFO B Channel (4002) - Start' },
-                          { offset: 0x0FDF, field: 'VFO B - RX Frequency (BCD)' },
-                          { offset: 0x0FE3, field: 'VFO B - TX Frequency (BCD)' },
-                          { offset: 0x0FE7, field: 'VFO B - Mode Flags' },
-                        ];
-                        
-                        return knownOffsets.map(({ offset, field }) => {
-                          if (offset >= block41Data.length) return null;
-                          const hexValue = block41Data[offset];
-                          const decimalValue = hexValue;
-                          let uiValue = '';
-                          
-                          if (offset === 0x0F9F || offset === 0x0FCF) {
-                            // Channel name - try to decode
-                            const nameBytes = block41Data.slice(offset, offset + 16);
-                            const nullIndex = nameBytes.indexOf(0);
-                            const name = new TextDecoder('ascii', { fatal: false })
-                              .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : 16))
-                              .replace(/\x00/g, '')
-                              .trim();
-                            uiValue = name || 'Empty';
-                          } else {
-                            uiValue = `${decimalValue}`;
-                          }
-                          
-                          return (
-                            <tr
-                              key={offset}
-                              id={`offset41-${offset}`}
-                              className="border-b border-yellow-600/10 hover:bg-yellow-900/10"
-                            >
-                              <td className="py-2 px-3 text-cool-gray font-mono">0x{offset.toString(16).toUpperCase().padStart(3, '0')}</td>
-                              <td className="py-2 px-3 text-yellow-300 font-mono">0x{hexValue.toString(16).toUpperCase().padStart(2, '0')}</td>
-                              <td className="py-2 px-3 text-white">{decimalValue}</td>
-                              <td className="py-2 px-3 text-cool-gray">{field}</td>
-                              <td className="py-2 px-3 text-white">{uiValue}</td>
-                            </tr>
-                          );
-                        }).filter(Boolean);
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              {block41Data && (
+                <OffsetInspector
+                  data={block41Data}
+                  idPrefix="offset41"
+                  placeholder="0x000"
+                  knownOffsets={[
+                    { 
+                      offset: 0x0F9F, 
+                      field: 'VFO A Channel (4001) - Start',
+                      getUIValue: (_hex, data, offset) => {
+                        const nameBytes = data.slice(offset, offset + 16);
+                        const nullIndex = nameBytes.indexOf(0);
+                        const name = new TextDecoder('ascii', { fatal: false })
+                          .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : 16))
+                          .replace(/\x00/g, '')
+                          .trim();
+                        return name || 'Empty';
+                      }
+                    },
+                    { offset: 0x0FAF, field: 'VFO A - RX Frequency (BCD)' },
+                    { offset: 0x0FB3, field: 'VFO A - TX Frequency (BCD)' },
+                    { offset: 0x0FB7, field: 'VFO A - Mode Flags' },
+                    { 
+                      offset: 0x0FCF, 
+                      field: 'VFO B Channel (4002) - Start',
+                      getUIValue: (_hex, data, offset) => {
+                        const nameBytes = data.slice(offset, offset + 16);
+                        const nullIndex = nameBytes.indexOf(0);
+                        const name = new TextDecoder('ascii', { fatal: false })
+                          .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : 16))
+                          .replace(/\x00/g, '')
+                          .trim();
+                        return name || 'Empty';
+                      }
+                    },
+                    { offset: 0x0FDF, field: 'VFO B - RX Frequency (BCD)' },
+                    { offset: 0x0FE3, field: 'VFO B - TX Frequency (BCD)' },
+                    { offset: 0x0FE7, field: 'VFO B - Mode Flags' },
+                  ]}
+                />
+              )}
             </CollapsibleSection>
 
             {/* Field Verification for Block 0x41 */}
             <CollapsibleSection title="Field Verification (Block 0x41)">
-              <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-yellow-600/30">
-                        <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Field</th>
-                        <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Offset</th>
-                        <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Raw Hex</th>
-                        <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Parsed Value</th>
-                        <th className="text-left py-2 px-3 text-yellow-400 font-semibold">UI Value</th>
-                        <th className="text-left py-2 px-3 text-yellow-400 font-semibold">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        if (!block41Data || !radioSettings) return [];
-                        
-                        const fields = [
-                          { 
-                            name: 'VFO A Channel (4001)', 
-                            offset: 0x0F9F, 
-                            parsed: radioSettings.vfoA?.name || 'N/A', 
-                            ui: radioSettings.vfoA?.name || 'N/A' 
-                          },
-                          { 
-                            name: 'VFO A RX Frequency', 
-                            offset: 0x0FAF, 
-                            parsed: radioSettings.vfoA?.rxFrequency?.toFixed(4) || 'N/A', 
-                            ui: radioSettings.vfoA?.rxFrequency?.toFixed(4) || 'N/A' 
-                          },
-                          { 
-                            name: 'VFO A TX Frequency', 
-                            offset: 0x0FB3, 
-                            parsed: radioSettings.vfoA?.txFrequency?.toFixed(4) || 'N/A', 
-                            ui: radioSettings.vfoA?.txFrequency?.toFixed(4) || 'N/A' 
-                          },
-                          { 
-                            name: 'VFO B Channel (4002)', 
-                            offset: 0x0FCF, 
-                            parsed: radioSettings.vfoB?.name || 'N/A', 
-                            ui: radioSettings.vfoB?.name || 'N/A' 
-                          },
-                          { 
-                            name: 'VFO B RX Frequency', 
-                            offset: 0x0FDF, 
-                            parsed: radioSettings.vfoB?.rxFrequency?.toFixed(4) || 'N/A', 
-                            ui: radioSettings.vfoB?.rxFrequency?.toFixed(4) || 'N/A' 
-                          },
-                          { 
-                            name: 'VFO B TX Frequency', 
-                            offset: 0x0FE3, 
-                            parsed: radioSettings.vfoB?.txFrequency?.toFixed(4) || 'N/A', 
-                            ui: radioSettings.vfoB?.txFrequency?.toFixed(4) || 'N/A' 
-                          },
-                        ];
-                        
-                        return fields.map((field) => {
-                          const rawHex = block41Data[field.offset] || 0;
-                          const matches = field.parsed === field.ui;
-                          
-                          return (
-                            <tr
-                              key={field.name}
-                              className={`border-b border-yellow-600/10 hover:bg-yellow-900/10 ${!matches ? 'bg-red-900/20' : ''}`}
-                            >
-                              <td className="py-2 px-3 text-cool-gray">{field.name}</td>
-                              <td className="py-2 px-3 text-cool-gray font-mono">0x{field.offset.toString(16).toUpperCase().padStart(3, '0')}</td>
-                              <td className="py-2 px-3 text-yellow-300 font-mono">0x{rawHex.toString(16).toUpperCase().padStart(2, '0')}</td>
-                              <td className="py-2 px-3 text-white">{String(field.parsed)}</td>
-                              <td className="py-2 px-3 text-white">{String(field.ui ?? 'N/A')}</td>
-                              <td className="py-2 px-3">
-                                {matches ? (
-                                  <span className="text-green-400">✓</span>
-                                ) : (
-                                  <span className="text-red-400">✗</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        });
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              {block41Data && radioSettings && (
+                <FieldVerificationTable
+                  fields={[
+                    { 
+                      name: 'VFO A Channel (4001)', 
+                      offset: 0x0F9F, 
+                      parsed: radioSettings.vfoA?.name || 'N/A', 
+                      ui: radioSettings.vfoA?.name || 'N/A',
+                      rawHex: block41Data[0x0F9F] || 0
+                    },
+                    { 
+                      name: 'VFO A RX Frequency', 
+                      offset: 0x0FAF, 
+                      parsed: radioSettings.vfoA?.rxFrequency?.toFixed(4) || 'N/A', 
+                      ui: radioSettings.vfoA?.rxFrequency?.toFixed(4) || 'N/A',
+                      rawHex: block41Data[0x0FAF] || 0
+                    },
+                    { 
+                      name: 'VFO A TX Frequency', 
+                      offset: 0x0FB3, 
+                      parsed: radioSettings.vfoA?.txFrequency?.toFixed(4) || 'N/A', 
+                      ui: radioSettings.vfoA?.txFrequency?.toFixed(4) || 'N/A',
+                      rawHex: block41Data[0x0FB3] || 0
+                    },
+                    { 
+                      name: 'VFO B Channel (4002)', 
+                      offset: 0x0FCF, 
+                      parsed: radioSettings.vfoB?.name || 'N/A', 
+                      ui: radioSettings.vfoB?.name || 'N/A',
+                      rawHex: block41Data[0x0FCF] || 0
+                    },
+                    { 
+                      name: 'VFO B RX Frequency', 
+                      offset: 0x0FDF, 
+                      parsed: radioSettings.vfoB?.rxFrequency?.toFixed(4) || 'N/A', 
+                      ui: radioSettings.vfoB?.rxFrequency?.toFixed(4) || 'N/A',
+                      rawHex: block41Data[0x0FDF] || 0
+                    },
+                    { 
+                      name: 'VFO B TX Frequency', 
+                      offset: 0x0FE3, 
+                      parsed: radioSettings.vfoB?.txFrequency?.toFixed(4) || 'N/A', 
+                      ui: radioSettings.vfoB?.txFrequency?.toFixed(4) || 'N/A',
+                      rawHex: block41Data[0x0FE3] || 0
+                    },
+                  ]}
+                  data={block41Data}
+                />
+              )}
             </CollapsibleSection>
 
             {/* Hex Dump Viewer for Block 0x41 */}
@@ -1451,8 +1235,8 @@ export const DiagnosticsTab: React.FC = () => {
                         rows.push(
                           <div key={offset} id={`offset41-${offset}`} className="flex border-b border-yellow-600/10 hover:bg-yellow-900/10 py-1">
                             <div className="w-20 text-yellow-400 px-2">{offsetHex}</div>
-                            <div className="flex-1 text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
-                            <div className="w-16 text-green-400 px-2">{ascii}</div>
+                            <div className="w-[52ch] text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
+                            <div className="w-16 text-green-400 px-2 ml-4">{ascii}</div>
                           </div>
                         );
                       }
@@ -2156,8 +1940,8 @@ export const DiagnosticsTab: React.FC = () => {
                             className="flex gap-4 py-0.5 hover:bg-yellow-900/5"
                           >
                             <span className="text-yellow-400 w-16 font-mono text-xs">{offsetHex}</span>
-                            <span className="text-white flex-1 font-mono text-xs">{hexBytes}{hexPadding}</span>
-                            <span className="text-cool-gray w-16 font-mono text-xs">{ascii}</span>
+                            <span className="text-white w-[52ch] font-mono text-xs">{hexBytes}{hexPadding}</span>
+                            <span className="text-cool-gray w-16 font-mono text-xs ml-4">{ascii}</span>
                           </div>
                         );
                       });
@@ -2333,8 +2117,8 @@ export const DiagnosticsTab: React.FC = () => {
                                   className="flex gap-4 py-0.5 hover:bg-yellow-900/5"
                                 >
                                   <span className="text-yellow-400 w-16 font-mono text-xs">{offsetHex}</span>
-                                  <span className="text-white flex-1 font-mono text-xs">{hexBytes}{hexPadding}</span>
-                                  <span className="text-cool-gray w-16 font-mono text-xs">{ascii}</span>
+                                  <span className="text-white w-[52ch] font-mono text-xs">{hexBytes}{hexPadding}</span>
+                                  <span className="text-cool-gray w-16 font-mono text-xs ml-4">{ascii}</span>
                                 </div>
                               );
                             })}
@@ -3005,8 +2789,8 @@ export const DiagnosticsTab: React.FC = () => {
                               rows.push(
                                 <div key={row} className="flex hover:bg-yellow-900/10 py-1">
                                   <div className="w-16 text-yellow-400">0x{startOffset.toString(16).toUpperCase().padStart(2, '0')}</div>
-                                  <div className="flex-1">{hexBytes}</div>
-                                  <div className="w-36 text-green-400 text-center">{ascii}</div>
+                                  <div className="w-[52ch]">{hexBytes}</div>
+                                  <div className="w-36 text-green-400 text-center ml-4">{ascii}</div>
                                 </div>
                               );
                             }
@@ -3042,8 +2826,8 @@ export const DiagnosticsTab: React.FC = () => {
                                   rows.push(
                                     <div key={row} className="flex hover:bg-yellow-900/10 py-1">
                                       <div className="w-16 text-yellow-400">0x{startOffset.toString(16).toUpperCase().padStart(2, '0')}</div>
-                                      <div className="flex-1">{hexBytes}</div>
-                                      <div className="w-36 text-green-400 text-center">{ascii}</div>
+                                      <div className="w-[52ch]">{hexBytes}</div>
+                                      <div className="w-36 text-green-400 text-center ml-4">{ascii}</div>
                                     </div>
                                   );
                                 }

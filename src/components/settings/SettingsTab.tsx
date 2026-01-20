@@ -28,7 +28,7 @@ export const SettingsTab: React.FC = () => {
   const { radioInfo } = useRadioStore();
   const { channels } = useChannelsStore();
   const { zones } = useZonesStore();
-  const { contacts } = useContactsStore();
+  const { contacts, contactsLoaded } = useContactsStore();
   const { settings: radioSettings, updateSettings: updateRadioSettings } = useRadioSettingsStore();
   const { calibration, calibrationLoaded } = useCalibrationStore();
   const [showCalibration, setShowCalibration] = useState(false);
@@ -63,7 +63,8 @@ export const SettingsTab: React.FC = () => {
   const contactUsage = {
     used: contacts.length,
     total: contactCapacity,
-    percent: Math.round((contacts.length / contactCapacity) * 100),
+    percent: contactsLoaded ? Math.round((contacts.length / contactCapacity) * 100) : 0,
+    loaded: contactsLoaded,
   };
 
 
@@ -187,15 +188,20 @@ export const SettingsTab: React.FC = () => {
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-cool-gray">CSV Contacts</span>
                       <span className="text-white font-mono text-sm">
-                        {contactUsage.used} / {contactUsage.total.toLocaleString()} ({contactUsage.percent}%)
+                        {contactUsage.loaded 
+                          ? `${contactUsage.used} / ${contactUsage.total.toLocaleString()} (${contactUsage.percent}%)`
+                          : `unknown / ${contactUsage.total.toLocaleString()}`
+                        }
                       </span>
                     </div>
-                    <div className="w-full bg-dark-charcoal rounded-full h-2.5">
-                      <div
-                        className="bg-neon-cyan h-2.5 rounded-full transition-all"
-                        style={{ width: `${contactUsage.percent}%` }}
-                      />
-                    </div>
+                    {contactUsage.loaded && (
+                      <div className="w-full bg-dark-charcoal rounded-full h-2.5">
+                        <div
+                          className="bg-neon-cyan h-2.5 rounded-full transition-all"
+                          style={{ width: `${contactUsage.percent}%` }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
