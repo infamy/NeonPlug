@@ -659,6 +659,14 @@ export function useRadioConnection() {
         await protocol.writeQuickMessages(quickMessages);
       }
 
+      // Step 5.6: Write RX Groups if they have been loaded
+      const rxGroupsStore = useRXGroupsStore.getState();
+      const rxGroups = rxGroupsStore.groups;
+      if (rxGroups && rxGroups.length > 0 && rxGroupsStore.groupsLoaded) {
+        onProgress?.(93, `Writing ${rxGroups.length} RX group(s) to radio...`, steps[4]);
+        await protocol.writeRXGroups(rxGroups);
+      }
+
       // Step 6: Write radio settings only if they have been modified
       const radioSettingsStore = useRadioSettingsStore.getState();
       const radioSettings = radioSettingsStore.settings;
@@ -684,6 +692,7 @@ export function useRadioConnection() {
         scanLists.length > 0 ? `${scanLists.length} scan lists` : null,
         quickContacts && quickContacts.length > 0 ? `${quickContacts.length} talk group(s)` : null,
         quickMessages && quickMessages.length > 0 ? `${quickMessages.length} quick message(s)` : null,
+        rxGroups && rxGroups.length > 0 && rxGroupsStore.groupsLoaded ? `${rxGroups.length} RX group(s)` : null,
         radioSettings && changedFields.length > 0 ? `${changedFields.length} setting(s)` : null,
       ].filter(Boolean).join(', ');
       

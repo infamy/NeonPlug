@@ -5,7 +5,7 @@
 
 import { DM32Connection } from './connection';
 import { discoverMemoryBlocks, readChannelCount, type MemoryBlock } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
@@ -2250,6 +2250,71 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   /**
+   * Write DMR RX Groups to the radio
+   * 
+   * @param groups - Array of RX Groups to write
+   * @throws {Error} If not connected or block not found
+   */
+  async writeRXGroups(groups: RXGroup[]): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+
+    this.onProgress?.(0, 'Preparing to write DMR RX Groups...');
+
+    // Discover blocks if not already discovered
+    if (this.discoveredBlocks.length === 0) {
+      if (!this.radioInfo) {
+        throw new Error('Radio info not available. Connect and read radio info first.');
+      }
+      this.onProgress?.(5, 'Discovering blocks...');
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo.memoryLayout.configStart,
+        this.radioInfo.memoryLayout.configEnd,
+        (current, total) => {
+          const progress = 5 + Math.floor((current / total) * 5); // 5-10%
+          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+
+    // Find metadata block 0x0F (RX Groups)
+    const rxGroupBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.RX_GROUPS);
+    if (!rxGroupBlock) {
+      throw new Error('RX Groups block (metadata 0x0F) not found');
+    }
+
+    this.onProgress?.(10, 'Encoding DMR RX Groups...');
+
+    // Get existing block data from cache or read it fresh to preserve existing data
+    let blockData: Uint8Array;
+    const cachedBlock = this.getCachedBlockByAddress(rxGroupBlock.address);
+    if (cachedBlock) {
+      // Use cached data (make a copy to avoid modifying the cache)
+      blockData = new Uint8Array(cachedBlock.data);
+      log.debug('Using cached RX Groups block data', 'Protocol');
+    } else {
+      // Read from radio if not cached
+      log.debug('Reading RX Groups block from radio (not in cache)', 'Protocol');
+      this.onProgress?.(15, 'Reading existing RX Groups block...');
+      blockData = await this.connection!.readMemory(rxGroupBlock.address, BLOCK_SIZE.STANDARD);
+    }
+
+    // Encode all RX Groups into the block
+    const encodedData = encodeRXGroups(groups, blockData);
+
+    // Preserve metadata byte
+    encodedData[0xFFF] = blockData[0xFFF];
+
+    this.onProgress?.(90, 'Writing RX Groups block to radio...');
+
+    // Write the block back to the radio
+    await this.connection!.writeMemory(rxGroupBlock.address, encodedData, METADATA.RX_GROUPS);
+
+    this.onProgress?.(100, `Successfully wrote ${groups.length} DMR RX groups`);
+  }
+
+  /**
    * Parse Talk Groups from cached blocks (metadata 0x44)
    * Blocks must be read first via bulkReadRequiredBlocks()
    * This method ONLY parses - it does NOT read from the radio
@@ -2475,15 +2540,19 @@ export class DM32UVProtocol implements RadioProtocol {
       contactIndex: arrayIndex + 1, // Physical position in block 0x44 (1-based)
       name: contact.name,
       callType: contact.callType,
-      typeByte: contact.callType === 0x05 ? 0x30 : // All Call
+      contactNumber: contact.contactNumber, // DMR ID
+      typeByte: contact.callType === 0x03 ? 0x30 : // Private Call
                 contact.callType === 0x04 ? 0x40 : // Group Call
-                contact.callType === 0x03 ? 0x50 : // Private Call
+                contact.callType === 0x05 ? 0x50 : // All Call
                 0x40 // Default to Group Call
     }));
 
-    // Index Table 1: Name-sorted (appended in order)
-    // Use the original order from the contacts array
-    contactsWithIndices.forEach((item, displayIndex) => {
+    // Index Table 1 (@ 0x100): Sort entries alphabetically by Talk Group name (ASCII string comparison)
+    const sortedByName = [...contactsWithIndices].sort((a, b) => 
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
+    );
+    
+    sortedByName.forEach((item, displayIndex) => {
       const offset = 0x100 + (displayIndex * 2);
       if (offset < 0x700) {
         quickAccessData[offset] = item.contactIndex;
@@ -2499,12 +2568,12 @@ export class DM32UVProtocol implements RadioProtocol {
       }
     });
 
-    // Index Table 2: Alphabetically sorted
-    const sortedByName = [...contactsWithIndices].sort((a, b) => 
-      a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+    // Index Table 2 (@ 0x740): Sort entries by DMR ID numerically (lowest ID first)
+    const sortedByDmrId = [...contactsWithIndices].sort((a, b) => 
+      a.contactNumber - b.contactNumber
     );
     
-    sortedByName.forEach((item, displayIndex) => {
+    sortedByDmrId.forEach((item, displayIndex) => {
       const offset = 0x740 + (displayIndex * 2);
       if (offset < 0xD00) {
         quickAccessData[offset] = item.contactIndex;
