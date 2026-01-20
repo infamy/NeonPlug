@@ -2982,101 +2982,95 @@ export function parseRXGroups(
 ): RXGroup[] {
   const groups: RXGroup[] = [];
 
-  // Parse each entry (109 bytes each)
-  for (let entryNum = 0; entryNum < LIMITS.RX_GROUPS_MAX; entryNum++) {
-    const entryOffset = entryNum * BLOCK_SIZE.RX_GROUP;
+  if (data.length < 0x11) {
+    return groups; // Need at least header
+  }
+
+  // Read header (17 bytes at 0x00-0x10)
+  // Bitmask (4 bytes, little-endian) at 0x00-0x03
+  const bitmask = (data[0] | 
+                   (data[1] << 8) | 
+                   (data[2] << 16) | 
+                   (data[3] << 24)) >>> 0; // Unsigned 32-bit
+  
+  // Flag (1 byte) at 0x10, should be 0x01
+  const headerFlag = data[0x10];
+
+  // Count active groups from bitmask (bits 0-N set = N+1 groups exist)
+  let activeGroupCount = 0;
+  for (let i = 0; i < 32; i++) {
+    if ((bitmask & (1 << i)) !== 0) {
+      activeGroupCount = i + 1;
+    }
+  }
+
+  // Parse entries starting at 0x11 (each entry is 109 bytes)
+  const ENTRY_START = 0x11;
+  const ENTRY_SIZE = 109;
+  
+  for (let entryNum = 0; entryNum < activeGroupCount && entryNum < LIMITS.RX_GROUPS_MAX; entryNum++) {
+    const entryOffset = ENTRY_START + (entryNum * ENTRY_SIZE);
     
-    if (entryOffset + BLOCK_SIZE.RX_GROUP > data.length) {
+    if (entryOffset + ENTRY_SIZE > data.length) {
       break;
     }
 
-    const entryData = data.slice(entryOffset, entryOffset + BLOCK_SIZE.RX_GROUP);
+    const entryData = data.slice(entryOffset, entryOffset + ENTRY_SIZE);
 
-    // Check if entry is empty (all 0xFF or all 0x00)
-    const isAllEmpty = entryData.every(b => b === 0xFF || b === 0x00);
+    // Check if entry is empty (all 0xFF)
+    const isAllEmpty = entryData.every(b => b === 0xFF);
     if (isAllEmpty) {
       continue;
     }
 
-    // Read bitmask (4 bytes, little-endian, at offset +0x00)
-    const bitmask = (entryData[0] | 
-                     (entryData[1] << 8) | 
-                     (entryData[2] << 16) | 
-                     (entryData[3] << 24)) >>> 0; // Unsigned 32-bit
+    // Read name (11 bytes at 0x00-0x0A within entry)
+    const nameBytes = entryData.slice(0, 11);
+    const nullIndex = nameBytes.indexOf(0);
+    const endIndex = nullIndex >= 0 ? nullIndex : 11;
+    const name = new TextDecoder('ascii', { fatal: false })
+      .decode(nameBytes.slice(0, endIndex))
+      .replace(/\x00/g, '')
+      .trim();
 
-    // Read status flag (1 byte at offset +0x04)
-    const statusFlag = entryData[0x04];
+    // Read Talk Group indices (96 bytes at 0x0B-0x6A, up to 32 × 3-byte little-endian)
+    const talkGroupIndices: number[] = [];
+    const CONTACT_IDS_START = 0x0B;
+    const CONTACT_ID_SIZE = 3;
+    const MAX_CONTACTS = 32;
 
-    // Read entry flag (1 byte at offset +0x0F)
-    const entryFlag = entryData[0x0F];
-
-    // Try to find contact name and IDs
-    // The spec says these are stored "before entry base", which might mean:
-    // - In a header area before the entries
-    // - Or in the previous entry's space
-    // For now, let's try looking in the block before this entry's start
-    let name = '';
-    let validationFlag = 0;
-    const contactIds: number[] = [];
-
-    // Try to read name from offset entry_base - 0x5C (entryOffset - 0x5C)
-    // But if entryOffset < 0x5C, we can't read before the buffer start
-    if (entryOffset >= 0x5C) {
-      const nameOffset = entryOffset - 0x5C;
-      if (nameOffset + 11 <= data.length) {
-        const nameBytes = data.slice(nameOffset, nameOffset + 11);
-        const nullIndex = nameBytes.indexOf(0);
-        const ffIndex = nameBytes.indexOf(0xFF);
-        const endIndex = nullIndex >= 0 ? nullIndex : (ffIndex >= 0 ? ffIndex : 11);
-        name = new TextDecoder('ascii', { fatal: false })
-          .decode(nameBytes.slice(0, endIndex))
-          .replace(/\x00/g, '')
-          .replace(/\xFF/g, '')
-          .trim();
+    for (let slot = 0; slot < MAX_CONTACTS; slot++) {
+      const idOffset = CONTACT_IDS_START + (slot * CONTACT_ID_SIZE);
+      if (idOffset + CONTACT_ID_SIZE > entryData.length) {
+        break;
       }
 
-      // Read validation flag from entry_base - 0x5D
-      const validationOffset = entryOffset - 0x5D;
-      if (validationOffset >= 0 && validationOffset < data.length) {
-        validationFlag = data[validationOffset];
+      // Read 3-byte little-endian DMR ID (contactNumber)
+      const dmrId = entryData[idOffset] | 
+                   (entryData[idOffset + 1] << 8) | 
+                   (entryData[idOffset + 2] << 16);
+      
+      if (dmrId === 0 || dmrId === 0xFFFFFF) {
+        // Empty slot, stop reading
+        break;
       }
-
-      // Try to read contact IDs from entry_base - 0x54
-      // Contact IDs are 3 bytes each, stored as little-endian DMR IDs
-      // We'll try to read a reasonable number (up to 10 slots = 30 bytes)
-      const idsStartOffset = entryOffset - 0x54;
-      if (idsStartOffset >= 0) {
-        for (let slot = 0; slot < 10; slot++) {
-          const idOffset = idsStartOffset + (slot * 3);
-          if (idOffset + 3 <= data.length && idOffset + 3 <= entryOffset) {
-            // Read 3-byte little-endian DMR ID
-            const idValue = data[idOffset] | 
-                           (data[idOffset + 1] << 8) | 
-                           (data[idOffset + 2] << 16);
-            if (idValue !== 0 && idValue !== 0xFFFFFF) {
-              contactIds.push(idValue);
-            } else {
-              // Stop at first empty slot
-              break;
-            }
-          }
-        }
-      }
+      
+      // Store DMR ID (contactNumber) - radio format
+      talkGroupIndices.push(dmrId);
     }
 
-    // Skip entries with empty names and zero bitmasks
-    if (name.length === 0 && bitmask === 0 && contactIds.length === 0) {
+    // Skip entries with empty names
+    if (name.length === 0 && talkGroupIndices.length === 0) {
       continue;
     }
 
     const group: RXGroup = {
       index: entryNum,
-      name: name || `DMR RX Group ${entryNum + 1}`,
-      bitmask,
-      statusFlag,
-      entryFlag,
-      validationFlag,
-      contactIds,
+      name: name || `RX Group ${entryNum + 1}`,
+      bitmask: 0, // Individual entry doesn't store bitmask, it's in header
+      statusFlag: 0,
+      entryFlag: headerFlag, // Use header flag
+      validationFlag: 0,
+      talkGroupIndices,
     };
 
     groups.push(group);
@@ -3089,7 +3083,7 @@ export function parseRXGroups(
 }
 
 /**
- * Encode a DMR RX Group into binary format
+ * Encode a single DMR RX Group entry into binary format
  * 
  * @param group - DMR RX Group to encode
  * @returns 109-byte encoded group entry
@@ -3097,26 +3091,114 @@ export function parseRXGroups(
 export function encodeRXGroup(group: RXGroup): Uint8Array {
   const data = new Uint8Array(BLOCK_SIZE.RX_GROUP);
   
-  // Initialize to 0xFF (empty/padding)
-  data.fill(0xFF);
+  // Initialize to 0x00 (padding for empty slots)
+  data.fill(0x00);
 
-  // Bitmask (4 bytes, little-endian, at offset +0x00)
-  data[0] = group.bitmask & 0xFF;
-  data[1] = (group.bitmask >> 8) & 0xFF;
-  data[2] = (group.bitmask >> 16) & 0xFF;
-  data[3] = (group.bitmask >> 24) & 0xFF;
+  // Name (11 bytes at 0x00-0x0A, ASCII, null-terminated, 0x00 padded)
+  const nameBytes = new TextEncoder().encode(group.name.slice(0, 10));
+  for (let i = 0; i < 11; i++) {
+    if (i < nameBytes.length) {
+      data[i] = nameBytes[i];
+    } else {
+      data[i] = 0x00; // Null-terminate and pad with 0x00
+    }
+  }
 
-  // Status flag (1 byte at offset +0x04)
-  data[0x04] = group.statusFlag & 0xFF;
+  // Talk Group indices (96 bytes at 0x0B-0x6A, up to 32 × 3-byte little-endian)
+  const CONTACT_IDS_START = 0x0B;
+  const CONTACT_ID_SIZE = 3;
+  const MAX_CONTACTS = 32;
 
-  // Reserved (10 bytes at offset +0x05) - already 0xFF from fill
+  for (let slot = 0; slot < MAX_CONTACTS && slot < group.talkGroupIndices.length; slot++) {
+    const idOffset = CONTACT_IDS_START + (slot * CONTACT_ID_SIZE);
+    const dmrId = group.talkGroupIndices[slot]; // DMR ID (contactNumber)
+    
+    // Write 3-byte little-endian DMR ID
+    data[idOffset] = dmrId & 0xFF;
+    data[idOffset + 1] = (dmrId >> 8) & 0xFF;
+    data[idOffset + 2] = (dmrId >> 16) & 0xFF;
+  }
+  // Empty contact slots after the last valid contact are already 0x00 from fill
 
-  // Entry flag (1 byte at offset +0x0F)
-  data[0x0F] = group.entryFlag & 0xFF;
+  // Padding (2 bytes at 0x6B-0x6C) - 0x00 (already set from fill)
+  // No need to set explicitly, already 0x00
 
-  // Note: Name, validation flag, and contact IDs would need to be written
-  // to the "before entry base" area, which requires knowing the entry's position
-  // in the block. This encoding function only handles the main 109-byte entry.
+  return data;
+}
+
+/**
+ * Encode all DMR RX Groups into a 4KB block
+ * 
+ * @param groups - Array of RX Groups to encode
+ * @param existingData - Optional existing block data to preserve
+ * @returns 4KB encoded block
+ */
+export function encodeRXGroups(
+  groups: RXGroup[],
+  existingData?: Uint8Array
+): Uint8Array {
+  const BLOCK_SIZE_BYTES = 4096;
+  const data = existingData ? new Uint8Array(existingData) : new Uint8Array(BLOCK_SIZE_BYTES);
+  
+  // Initialize to 0xFF if new block
+  if (!existingData) {
+    data.fill(0xFF);
+  }
+
+  // Header (17 bytes at 0x00-0x10)
+  // Calculate bitmask: bits 0-N set = N+1 groups exist
+  let bitmask = 0;
+  const activeGroupCount = Math.min(groups.length, LIMITS.RX_GROUPS_MAX);
+  for (let i = 0; i < activeGroupCount; i++) {
+    bitmask |= (1 << i);
+  }
+
+  // Write bitmask (4 bytes, little-endian) at 0x00-0x03
+  data[0] = bitmask & 0xFF;
+  data[1] = (bitmask >> 8) & 0xFF;
+  data[2] = (bitmask >> 16) & 0xFF;
+  data[3] = (bitmask >> 24) & 0xFF;
+
+  // Reserved (12 bytes at 0x04-0x0F) - fill with 0x00
+  for (let i = 0x04; i < 0x10; i++) {
+    data[i] = 0x00;
+  }
+
+  // Flag (1 byte at 0x10) - always 0x01
+  data[0x10] = 0x01;
+
+  // Entries start at 0x11, each 109 bytes
+  const ENTRY_START = 0x11;
+  const ENTRY_SIZE = 109;
+
+  // Clear all entry slots to 0x00 first (for valid entries, empty slots will be 0x00)
+  for (let i = 0; i < LIMITS.RX_GROUPS_MAX; i++) {
+    const entryOffset = ENTRY_START + (i * ENTRY_SIZE);
+    if (entryOffset + ENTRY_SIZE <= data.length) {
+      data.fill(0x00, entryOffset, entryOffset + ENTRY_SIZE);
+    }
+  }
+
+  // Write each group entry
+  for (let i = 0; i < activeGroupCount; i++) {
+    const group = groups[i];
+    const entryOffset = ENTRY_START + (i * ENTRY_SIZE);
+    
+    if (entryOffset + ENTRY_SIZE > data.length) {
+      break;
+    }
+
+    const entryData = encodeRXGroup(group);
+    data.set(entryData, entryOffset);
+  }
+
+  // Fill unused entries at the END with 0xFF (only completely unused entries)
+  for (let i = activeGroupCount; i < LIMITS.RX_GROUPS_MAX; i++) {
+    const entryOffset = ENTRY_START + (i * ENTRY_SIZE);
+    if (entryOffset + ENTRY_SIZE <= data.length) {
+      data.fill(0xFF, entryOffset, entryOffset + ENTRY_SIZE);
+    }
+  }
 
   return data;
 }

@@ -111,7 +111,7 @@ export const LIMITS = {
   DIGITAL_EMERGENCY_MAX: 37, // (4096 - 0x218) / 40 ≈ 37
   ANALOG_EMERGENCY_MAX: 108, // (4096 - 0xAC) / 36 ≈ 108
   QUICK_MESSAGES_MAX: 31,   // floor((4096 - 16) / 129) = 31
-  RX_GROUPS_MAX: 37,        // floor(4096 / 109) = 37
+  RX_GROUPS_MAX: 32,        // Max 32 groups (limited by 32-bit bitmask in header)
   DMR_RADIO_IDS_MAX: 256,   // 4096 / 16 = 256
 } as const;
 

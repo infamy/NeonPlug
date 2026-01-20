@@ -12,15 +12,16 @@ interface QuickContactsState {
 }
 
 // Helper function to clean contact names (remove non-ASCII printable characters)
+// Allows spaces (0x20) - only filters out control characters and non-printable chars
 const cleanContactName = (name: string): string => {
   return name
     .split('')
     .filter(char => {
       const code = char.charCodeAt(0);
-      return code >= 0x20 && code <= 0x7E; // Only ASCII printable characters
+      return code >= 0x20 && code <= 0x7E; // Only ASCII printable characters (includes space 0x20)
     })
-    .join('')
-    .trim();
+    .join('');
+  // Note: Removed .trim() to allow leading/trailing spaces if user wants them
 };
 
 export const useQuickContactsStore = create<QuickContactsState>((set, get) => ({

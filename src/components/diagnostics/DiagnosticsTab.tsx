@@ -751,9 +751,9 @@ export const DiagnosticsTab: React.FC = () => {
                       // Skip if both bytes are 0xFF (empty entry)
                       if (contactIndex === 0xFF && typeByte === 0xFF) return null;
                       
-                      const callType = typeByte === 0x30 ? 'All Call' :
+                      const callType = typeByte === 0x30 ? 'Private Call' :
                                      typeByte === 0x40 ? 'Group Call' :
-                                     typeByte === 0x50 ? 'Private Call' :
+                                     typeByte === 0x50 ? 'All Call' :
                                      `Unknown (0x${typeByte.toString(16).toUpperCase()})`;
                       
                       return (
@@ -795,9 +795,9 @@ export const DiagnosticsTab: React.FC = () => {
                       // Skip if both bytes are 0xFF (empty entry)
                       if (contactIndex === 0xFF && typeByte === 0xFF) return null;
                       
-                      const callType = typeByte === 0x30 ? 'All Call' :
+                      const callType = typeByte === 0x30 ? 'Private Call' :
                                      typeByte === 0x40 ? 'Group Call' :
-                                     typeByte === 0x50 ? 'Private Call' :
+                                     typeByte === 0x50 ? 'All Call' :
                                      `Unknown (0x${typeByte.toString(16).toUpperCase()})`;
                       
                       return (
@@ -833,9 +833,9 @@ export const DiagnosticsTab: React.FC = () => {
                   <div>
                     <h4 className="text-yellow-400 font-semibold mb-2">Type Byte Values</h4>
                     <ul className="list-disc list-inside text-cool-gray space-y-1">
-                      <li><span className="text-yellow-300 font-mono">0x30</span>: All Call</li>
+                      <li><span className="text-yellow-300 font-mono">0x30</span>: Private Call</li>
                       <li><span className="text-yellow-300 font-mono">0x40</span>: Group Call</li>
-                      <li><span className="text-yellow-300 font-mono">0x50</span>: Private Call</li>
+                      <li><span className="text-yellow-300 font-mono">0x50</span>: All Call</li>
                     </ul>
                   </div>
                   <div>

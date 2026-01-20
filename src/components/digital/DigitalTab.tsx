@@ -7,6 +7,7 @@ import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { parseEncryptionKeys, parseDigitalEmergencies } from '../../protocol/dm32uv/structures';
+import { RXGroupsList } from '../rxgroups/RXGroupsList';
 
 export const DigitalTab: React.FC = () => {
   const { blockMetadata, blockData } = useRadioStore();
@@ -14,7 +15,7 @@ export const DigitalTab: React.FC = () => {
   const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem } = useDigitalEmergencyStore();
   const { radioIds, radioIdsLoaded, updateRadioId } = useDMRRadioIDsStore();
   const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact } = useQuickContactsStore();
-  const { groups: rxGroups, groupsLoaded: rxGroupsLoaded, updateGroup } = useRXGroupsStore();
+  const { groupsLoaded: rxGroupsLoaded } = useRXGroupsStore();
   const { messages, messagesLoaded, updateMessage, addMessage, deleteMessage } = useQuickMessagesStore();
 
   // Find block with metadata 0x10 (Encryption Keys)
@@ -337,7 +338,7 @@ export const DigitalTab: React.FC = () => {
         <div className="mb-4">
           <h3 className="text-xl font-semibold text-neon-cyan mb-2">DMR RX Groups</h3>
           <p className="text-cool-gray text-sm">
-            Manage DMR RX Groups (receive groups) that filter which talk groups the radio will receive.
+            Manage DMR RX Groups
           </p>
         </div>
 
@@ -347,67 +348,8 @@ export const DigitalTab: React.FC = () => {
               DMR RX Groups will be loaded when you read from the radio.
             </p>
           </div>
-        ) : rxGroups.length === 0 ? (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
-            <p className="text-cool-gray text-sm">No DMR RX Groups found on the radio.</p>
-          </div>
         ) : (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-400px)] flex flex-col">
-            <div className="flex-1 overflow-auto">
-              <div className="inline-block min-w-full">
-                <table className="w-full border-collapse text-xs">
-                  <thead className="sticky top-0 z-20">
-                    <tr className="bg-dark-charcoal border-b border-neon-cyan">
-                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
-                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Bitmask</th>
-                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[200px]">Contact IDs</th>
-                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rxGroups.map((group) => (
-                      <tr
-                        key={group.index}
-                        className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
-                      >
-                        <td className="px-2 py-2">
-                          <input
-                            type="text"
-                            value={group.name}
-                            onChange={(e) => updateGroup(group.index, { name: e.target.value.slice(0, 11) })}
-                            maxLength={11}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
-                            placeholder="Enter name"
-                          />
-                        </td>
-                        <td className="px-2 py-2 text-cool-gray font-mono">0x{group.bitmask.toString(16).padStart(8, '0')}</td>
-                        <td className="px-2 py-2 text-white">
-                          {group.contactIds.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {group.contactIds.map((id, idx) => (
-                                <span key={idx} className="px-2 py-1 bg-dark-charcoal rounded text-xs font-mono">
-                                  {id}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-cool-gray">None</span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2 text-cool-gray">
-                          <div className="text-xs">
-                            <div>Flag: 0x{group.entryFlag.toString(16).padStart(2, '0')}</div>
-                            <div>Status: 0x{group.statusFlag.toString(16).padStart(2, '0')}</div>
-                            <div>Valid: 0x{group.validationFlag.toString(16).padStart(2, '0')}</div>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+          <RXGroupsList />
         )}
       </div>
 
