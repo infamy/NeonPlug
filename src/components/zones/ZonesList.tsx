@@ -23,7 +23,10 @@ export const ZonesList: React.FC = () => {
     <div className="grid grid-cols-2 gap-4 h-full">
       <div className="bg-deep-gray rounded-lg border border-neon-cyan flex flex-col h-full">
         <div className="p-4 border-b border-neon-cyan border-opacity-30 flex justify-between items-center flex-shrink-0">
-          <h3 className="text-neon-cyan font-bold">Zones</h3>
+          <div>
+            <h3 className="text-neon-cyan font-bold">Zones</h3>
+            <p className="text-cool-gray text-xs mt-1">{zones.length}/250 zones</p>
+          </div>
           <div className="flex gap-2">
             <input
               type="text"
@@ -33,10 +36,12 @@ export const ZonesList: React.FC = () => {
               placeholder="Zone name..."
               className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-32"
               maxLength={11}
+              disabled={zones.length >= 250}
             />
             <button
               onClick={handleAddZone}
-              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded font-medium hover:bg-opacity-90 text-xs"
+              disabled={zones.length >= 250 || !newZoneName.trim()}
+              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded font-medium hover:bg-opacity-90 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Add
             </button>
@@ -128,6 +133,10 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleAddChannel = (channelNumber: number) => {
+    if (zone.channels.length >= 64) {
+      alert('Maximum of 64 channels per zone allowed.');
+      return;
+    }
     if (!zone.channels.includes(channelNumber)) {
       updateZone(zone.name, {
         channels: [...zone.channels, channelNumber].sort((a, b) => a - b),
@@ -191,7 +200,7 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone }) => {
   return (
     <div className="p-4 space-y-4 flex flex-col h-full">
       <div className="flex-shrink-0">
-        <h4 className="text-white font-medium mb-2">Channels in Zone ({zone.channels.length})</h4>
+        <h4 className="text-white font-medium mb-2">Channels in Zone ({zone.channels.length}/64)</h4>
         {zone.channels.length === 0 ? (
           <p className="text-cool-gray text-sm">No channels in this zone</p>
         ) : (
@@ -245,6 +254,8 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone }) => {
         </h4>
         {availableChannels.length === 0 ? (
           <p className="text-cool-gray text-sm">All channels are in this zone</p>
+        ) : zone.channels.length >= 64 ? (
+          <p className="text-cool-gray text-sm">Zone is full (64 channels maximum)</p>
         ) : (
           <>
             <div className="mb-3 flex-shrink-0">

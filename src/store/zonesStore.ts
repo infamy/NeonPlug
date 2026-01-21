@@ -25,13 +25,28 @@ export const useZonesStore = create<ZonesState>((set) => ({
   rawZoneData: new Map(),
   setZones: (zones) => set({ zones }),
   setRawZoneData: (rawData) => set({ rawZoneData: rawData }),
-  addZone: (zone) => set((state) => ({
-    zones: [...state.zones, zone]
-  })),
+  addZone: (zone) => set((state) => {
+    if (state.zones.length >= 250) {
+      console.warn('Maximum of 250 zones allowed');
+      return state;
+    }
+    // Enforce limit: max 64 channels per zone
+    const channels = zone.channels ? zone.channels.slice(0, 64) : [];
+    return {
+      zones: [...state.zones, { ...zone, channels }]
+    };
+  }),
   updateZone: (name, updates) => set((state) => ({
-    zones: state.zones.map(z => 
-      z.name === name ? { ...z, ...updates } : z
-    )
+    zones: state.zones.map(z => {
+      if (z.name === name) {
+        // Enforce limit: max 64 channels per zone
+        if (updates.channels && updates.channels.length > 64) {
+          updates.channels = updates.channels.slice(0, 64);
+        }
+        return { ...z, ...updates };
+      }
+      return z;
+    })
   })),
   deleteZone: (name) => set((state) => ({
     zones: state.zones.filter(z => z.name !== name)

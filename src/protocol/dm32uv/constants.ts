@@ -105,7 +105,9 @@ export const CONNECTION = {
 export const LIMITS = {
   CHANNEL_MAX: 4000,
   CHANNEL_MIN: 1,
+  ZONES_MAX: 250,           // Maximum of 250 zones
   ZONES_PER_BLOCK: 28,      // Approximate (4096 - 16) / 145
+  ZONE_CHANNELS_MAX: 64,    // Max 64 channels per zone
   SCAN_LISTS_PER_BLOCK: 44, // First 44 start at offset 16
   SCAN_LISTS_MAX: 32,        // Maximum of 32 scan lists
   SCAN_LIST_CHANNELS_MAX: 15,    // Max 15 channels per scan list (30 bytes / 2)
