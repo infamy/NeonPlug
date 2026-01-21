@@ -111,7 +111,6 @@ export function generateTaflChannels(
         bandwidth: '25kHz', // Default bandwidth
         power: 'High',
         scanAdd: true,
-        busyLock: 'Off',
       });
       channelMap.set(channelKey, channel);
       channels.push(channel);

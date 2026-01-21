@@ -144,9 +144,6 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     powerValue === 1 ? 'Medium' : 
     powerValue === 2 ? 'High' : 'Low';
   
-  // Busy Lock - need to find where this is actually stored
-  // For now, set to default
-  const busyLock: Channel['busyLock'] = 'Off';
   const loneWorker = (modeFlags & 0x01) !== 0;
 
   // Debug logging for VECTOR channels to diagnose forbid TX issues
@@ -403,7 +400,6 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     txFrequency: txFreq,
     mode,
     forbidTx,
-    busyLock,
     loneWorker,
     bandwidth,
     scanAdd,

@@ -56,7 +56,6 @@ export function exportCodeplug(data: CodeplugData): void {
       'Contact ID': ch.contactId || 0,
       'Scan Add': ch.scanAdd ? 'Yes' : 'No',
       'Scan List': ch.scanListId,
-      'Busy Lock': ch.busyLock,
       'Forbid TX': ch.forbidTx ? 'Yes' : 'No',
       'Forbid Talkaround': ch.forbidTalkaround ? 'Yes' : 'No',
       'Lone Worker': ch.loneWorker ? 'Yes' : 'No',
@@ -96,7 +95,6 @@ export function exportCodeplug(data: CodeplugData): void {
       { wch: 10 },  // Contact ID
       { wch: 10 },  // Scan Add
       { wch: 10 },  // Scan List
-      { wch: 12 },  // Busy Lock
       { wch: 10 },  // Forbid TX
       { wch: 15 },  // Forbid Talkaround
       { wch: 12 },  // Lone Worker
@@ -349,7 +347,6 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
               rxCtcssDcs: rxCTCSSDCS,
               txCtcssDcs: txCTCSSDCS,
               power: row['Power'] || 'High',
-              busyLock: row['Busy Lock'] || 'Off',
               scanAdd: row['Scan Add'] === 'Yes',
               scanListId: parseInt(row['Scan List'] || row['Scan List ID']) || 0,
               forbidTalkaround: row['Forbid Talkaround'] === 'Yes',

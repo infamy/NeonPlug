@@ -217,9 +217,6 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Forbid TX</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]">RX Tone</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]">TX Tone</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[75px]">
-              <div className="leading-tight">Busy<br />Lock</div>
-            </th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Lone Worker">LW</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Scan Add</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[50px]">Scan List</th>
@@ -523,17 +520,6 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     )}
                     </div>
                   )}
-                </td>
-                <td className="px-2 py-2">
-                  <select
-                    value={channel.busyLock}
-                    onChange={(e) => handleCellChange(channel.number, 'busyLock', e.target.value)}
-                    className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
-                  >
-                    <option value="Off">Off</option>
-                    <option value="Carrier">CXR</option>
-                    <option value="Repeater">RPT</option>
-                  </select>
                 </td>
                 <td className="px-2 py-2 text-center" title="Lone Worker">
                   <input

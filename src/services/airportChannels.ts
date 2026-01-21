@@ -125,7 +125,6 @@ export function generateAirportChannels(
         bandwidth: '25kHz', // Aviation uses 25kHz spacing
         power: 'High',
         scanAdd: true,
-        busyLock: 'Off',
       });
       
       channels.push(channel);

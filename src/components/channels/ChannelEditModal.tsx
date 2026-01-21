@@ -594,22 +594,6 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 <p className="text-xs text-cool-gray mt-0.5">Scan list to add this channel to (0-15)</p>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-cool-gray mb-1">
-                  Busy Lock
-                </label>
-                <select
-                  value={editedChannel.busyLock}
-                  onChange={(e) => handleChange('busyLock', e.target.value)}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                >
-                  <option value="Off">Off</option>
-                  <option value="Carrier">CXR</option>
-                  <option value="Repeater">RPT</option>
-                </select>
-                <p className="text-xs text-cool-gray mt-0.5">Lock transmit when channel is busy</p>
-              </div>
-
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"

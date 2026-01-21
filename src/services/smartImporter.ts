@@ -349,7 +349,6 @@ export async function smartImportCodeplug(
                 rxCtcssDcs: rxCTCSSDCS.result,
                 txCtcssDcs: txCTCSSDCS.result,
                 power: row['Power'] || 'High',
-                busyLock: row['Busy Lock'] || 'Off',
                 scanAdd: row['Scan Add'] === 'Yes' || row['Scan Add'] === true,
                 scanListId: parseInt(row['Scan List'] || row['Scan List ID'] || '0') || 0,
                 forbidTalkaround: row['Forbid Talkaround'] === 'Yes' || row['Forbid Talkaround'] === true,
