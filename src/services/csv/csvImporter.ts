@@ -122,7 +122,7 @@ export function importChannelsFromCSV(content: string): ImportResult {
           power: (getValue('power') as Channel['power']) || 'High',
           forbidTx: getBool('forbid tx'),
           loneWorker: getBool('lone worker'),
-          scanAdd: getBool('scan add'),
+          scanAdd: false, // Not used in UI, default to false
           scanListId: getNumber('scan list', 0),
           forbidTalkaround: getBool('forbid talkaround'),
           unknown1A_6_4: getNumber('unknown1a_6_4', 0),

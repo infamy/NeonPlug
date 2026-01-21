@@ -54,7 +54,6 @@ export function exportCodeplug(data: CodeplugData): void {
                      ch.txCtcssDcs.type === 'DCS' ? `DCS ${ch.txCtcssDcs.value || 0}${ch.txCtcssDcs.polarity === 'P' ? 'P' : 'N'}` : 'None',
       'Color Code': ch.colorCode || 0,
       'Contact ID': ch.contactId || 0,
-      'Scan Add': ch.scanAdd ? 'Yes' : 'No',
       'Scan List': ch.scanListId,
       'Forbid TX': ch.forbidTx ? 'Yes' : 'No',
       'Forbid Talkaround': ch.forbidTalkaround ? 'Yes' : 'No',
@@ -93,7 +92,6 @@ export function exportCodeplug(data: CodeplugData): void {
       { wch: 15 },  // TX CTCSS/DCS
       { wch: 10 },  // Color Code
       { wch: 10 },  // Contact ID
-      { wch: 10 },  // Scan Add
       { wch: 10 },  // Scan List
       { wch: 10 },  // Forbid TX
       { wch: 15 },  // Forbid Talkaround
@@ -139,11 +137,17 @@ export function exportCodeplug(data: CodeplugData): void {
     const scanListRows = data.scanLists.map(sl => ({
       'Scan List Name': sl.name,
       'CTC Scan Mode': sl.ctcScanMode,
+      'Scan TX Mode': sl.scanTxMode,
+      'Hang Time': sl.hangTime || '',
+      'Priority Channel 1': sl.priorityChannel1 || '',
+      'Priority Channel 2': sl.priorityChannel2 || '',
+      'Designated TX Channel': sl.designatedTxChannel || '',
+      'Priority Sweep Time': sl.prioritySweepTime || '',
       'Channel Count': sl.channels.length,
       'Channels': sl.channels.join(', '),
     }));
     const scanListsSheet = utils.json_to_sheet(scanListRows);
-    scanListsSheet['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 50 }];
+    scanListsSheet['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 50 }];
     utils.book_append_sheet(workbook, scanListsSheet, 'Scan Lists');
   }
 
@@ -347,7 +351,6 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
               rxCtcssDcs: rxCTCSSDCS,
               txCtcssDcs: txCTCSSDCS,
               power: row['Power'] || 'High',
-              scanAdd: row['Scan Add'] === 'Yes',
               scanListId: parseInt(row['Scan List'] || row['Scan List ID']) || 0,
               forbidTalkaround: row['Forbid Talkaround'] === 'Yes',
               forbidTx: row['Forbid TX'] === 'Yes',
@@ -373,6 +376,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
               stepFrequency: parseInt(row['Step Frequency']) || 0,
               signalingType: row['Signaling Type'] || 'None',
               pttIdType: row['PTT ID Type'] || 'Off',
+              scanAdd: false, // Not used in UI, default to false
             } as Channel;
           });
         }
@@ -391,12 +395,23 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
         if (workbook.SheetNames.includes('Scan Lists')) {
           const sheet = workbook.Sheets['Scan Lists'];
           const rows = utils.sheet_to_json(sheet) as any[];
-          result.scanLists = rows.map(row => ({
-            name: row['Scan List Name'] || '',
-            ctcScanMode: parseInt(row['CTC Scan Mode']) || 0,
-            scanTxMode: 0,
-            channels: (row['Channels'] || '').toString().split(',').map((c: string) => parseInt(c.trim())).filter((n: number) => !isNaN(n)),
-          } as ScanList));
+          result.scanLists = rows.map(row => {
+            const priorityCh1 = row['Priority Channel 1'];
+            const priorityCh2 = row['Priority Channel 2'];
+            const designatedTx = row['Designated TX Channel'];
+            
+            return {
+              name: row['Scan List Name'] || '',
+              ctcScanMode: parseInt(row['CTC Scan Mode']) || 0,
+              scanTxMode: parseInt(row['Scan TX Mode']) || 0,
+              hangTime: row['Hang Time'] || undefined,
+              priorityChannel1: priorityCh1 && priorityCh1 !== '' ? parseInt(priorityCh1) : undefined,
+              priorityChannel2: priorityCh2 && priorityCh2 !== '' ? parseInt(priorityCh2) : undefined,
+              designatedTxChannel: designatedTx && designatedTx !== '' ? parseInt(designatedTx) : undefined,
+              prioritySweepTime: row['Priority Sweep Time'] || undefined,
+              channels: (row['Channels'] || '').toString().split(',').map((c: string) => parseInt(c.trim())).filter((n: number) => !isNaN(n)),
+            } as ScanList;
+          });
         }
 
         // Import Contacts

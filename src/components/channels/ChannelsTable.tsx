@@ -218,7 +218,6 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]">RX Tone</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]">TX Tone</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Lone Worker">LW</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Scan Add</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[50px]">Scan List</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">FTA</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]">Emerg</th>
@@ -528,14 +527,6 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     onChange={(e) => handleCellChange(channel.number, 'loneWorker', e.target.checked)}
                     className="w-4 h-4 accent-neon-cyan"
                     title="Lone Worker"
-                  />
-                </td>
-                <td className="px-2 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    checked={channel.scanAdd}
-                    onChange={(e) => handleCellChange(channel.number, 'scanAdd', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
                   />
                 </td>
                 <td className="px-2 py-2">

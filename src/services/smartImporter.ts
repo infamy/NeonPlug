@@ -349,7 +349,7 @@ export async function smartImportCodeplug(
                 rxCtcssDcs: rxCTCSSDCS.result,
                 txCtcssDcs: txCTCSSDCS.result,
                 power: row['Power'] || 'High',
-                scanAdd: row['Scan Add'] === 'Yes' || row['Scan Add'] === true,
+                scanAdd: false, // Not used in UI, default to false
                 scanListId: parseInt(row['Scan List'] || row['Scan List ID'] || '0') || 0,
                 forbidTalkaround: row['Forbid Talkaround'] === 'Yes' || row['Forbid Talkaround'] === true,
                 forbidTx: row['Forbid TX'] === 'Yes' || row['Forbid TX'] === true,
@@ -449,10 +449,19 @@ export async function smartImportCodeplug(
           
           for (const row of rows) {
             try {
+              const priorityCh1 = row['Priority Channel 1'];
+              const priorityCh2 = row['Priority Channel 2'];
+              const designatedTx = row['Designated TX Channel'];
+              
               const scanList: ScanList = {
                 name: row['Scan List Name'] || '',
                 ctcScanMode: parseInt(row['CTC Scan Mode'] || '0') || 0,
-                scanTxMode: 0,
+                scanTxMode: parseInt(row['Scan TX Mode'] || '0') || 0,
+                hangTime: row['Hang Time'] || undefined,
+                priorityChannel1: priorityCh1 && priorityCh1 !== '' ? parseInt(priorityCh1) : undefined,
+                priorityChannel2: priorityCh2 && priorityCh2 !== '' ? parseInt(priorityCh2) : undefined,
+                designatedTxChannel: designatedTx && designatedTx !== '' ? parseInt(designatedTx) : undefined,
+                prioritySweepTime: row['Priority Sweep Time'] || undefined,
                 channels: (row['Channels'] || '').toString().split(',').map((c: string) => parseInt(c.trim())).filter((n: number) => !isNaN(n)),
               };
               result.scanLists.push(scanList);

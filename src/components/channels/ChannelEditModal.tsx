@@ -566,19 +566,6 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 </div>
               </label>
 
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={editedChannel.scanAdd}
-                  onChange={(e) => handleChange('scanAdd', e.target.checked)}
-                  className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                />
-                <div>
-                  <span className="text-sm text-white font-medium">Scan Add</span>
-                  <p className="text-xs text-cool-gray">Include this channel in scan lists</p>
-                </div>
-              </label>
-
               <div>
                 <label className="block text-xs font-medium text-cool-gray mb-1">
                   Scan List ID
