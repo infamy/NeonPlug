@@ -1792,11 +1792,13 @@ export class DM32UVProtocol implements RadioProtocol {
       : Math.min(maxContacts, maxContactsInRange);
     
     // Read blocks until we've read all contacts or hit an empty entry
-    // All contacts start at baseAddr + 0x10 + (contactIndex * ENTRY_SIZE)
+    // Block 0: contacts start at baseAddr + 0x10 (after 16-byte header), 44 contacts
+    // Block 1+: contacts start at offset 0 of the block, 44 contacts per block
     while (!foundEmptyEntry && contactIndex < contactsToRead) {
       const blockStartContact = blockIdx * CONTACTS_PER_BLOCK;
-      const blockStartAddr = baseAddr + 0x10 + (blockStartContact * ENTRY_SIZE);
-      const blockAddr = Math.floor(blockStartAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD;
+      
+      // Calculate block address: first block is at firstBlockAddr, subsequent blocks are sequential
+      const blockAddr = firstBlockAddr + (blockIdx * BLOCK_SIZE.STANDARD);
       
       if (blockAddr >= endAddr) break;
       
@@ -1810,7 +1812,7 @@ export class DM32UVProtocol implements RadioProtocol {
       // Store all contact blocks for diagnostics
       this.rawContactBlocks.set(blockAddr, new Uint8Array(blockData));
       
-      const blockOffset = blockStartAddr - blockAddr;
+      const isFirstBlock = blockIdx === 0;
       
       // Parse contacts in this block
       for (let i = 0; i < CONTACTS_PER_BLOCK; i++) {
@@ -1822,7 +1824,12 @@ export class DM32UVProtocol implements RadioProtocol {
           break;
         }
         
-        const entryOffset = blockOffset + (i * ENTRY_SIZE);
+        // Calculate offset within this block
+        // Block 0: offset = 0x10 + (i * ENTRY_SIZE)  // After 16-byte header
+        // Block 1+: offset = 0x00 + (i * ENTRY_SIZE) // Start at beginning
+        const entryOffset = isFirstBlock 
+          ? 0x10 + (i * ENTRY_SIZE)  // Block 0: after header
+          : i * ENTRY_SIZE;          // Block 1+: at offset 0
         
         // Check if we've exceeded the block or range
         if (entryOffset + ENTRY_SIZE > blockData.length) break;
