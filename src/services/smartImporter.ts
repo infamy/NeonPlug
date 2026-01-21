@@ -452,7 +452,7 @@ export async function smartImportCodeplug(
               const scanList: ScanList = {
                 name: row['Scan List Name'] || '',
                 ctcScanMode: parseInt(row['CTC Scan Mode'] || '0') || 0,
-                settings: [],
+                scanTxMode: 0,
                 channels: (row['Channels'] || '').toString().split(',').map((c: string) => parseInt(c.trim())).filter((n: number) => !isNaN(n)),
               };
               result.scanLists.push(scanList);

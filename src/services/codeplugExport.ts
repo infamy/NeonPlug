@@ -394,7 +394,7 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
           result.scanLists = rows.map(row => ({
             name: row['Scan List Name'] || '',
             ctcScanMode: parseInt(row['CTC Scan Mode']) || 0,
-            settings: [],
+            scanTxMode: 0,
             channels: (row['Channels'] || '').toString().split(',').map((c: string) => parseInt(c.trim())).filter((n: number) => !isNaN(n)),
           } as ScanList));
         }
