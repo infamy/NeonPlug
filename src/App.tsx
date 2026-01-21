@@ -47,6 +47,49 @@ function App() {
     });
   }, [logStore]);
 
+  // Tell password managers (LastPass, 1Password, Bitwarden) to ignore all input fields in this app
+  useEffect(() => {
+    const addPasswordManagerIgnore = (input: HTMLInputElement) => {
+      // Add all three attributes to ignore password managers
+      if (!input.hasAttribute('data-lpignore')) {
+        input.setAttribute('data-lpignore', 'true');
+      }
+      if (!input.hasAttribute('data-1p-ignore')) {
+        input.setAttribute('data-1p-ignore', 'true');
+      }
+      if (!input.hasAttribute('data-bwignore')) {
+        input.setAttribute('data-bwignore', 'true');
+      }
+    };
+
+    // Add to all existing inputs
+    document.querySelectorAll('input').forEach(addPasswordManagerIgnore);
+
+    // Watch for new inputs added dynamically
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const element = node as Element;
+            // Check if the added node is an input
+            if (element.tagName === 'INPUT') {
+              addPasswordManagerIgnore(element as HTMLInputElement);
+            }
+            // Check for inputs within the added node
+            element.querySelectorAll?.('input').forEach(addPasswordManagerIgnore);
+          }
+        });
+      });
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
   const handleReadFromRadio = () => {
     // Close startup modal - the Toolbar's handleRead will show the progress modal
     setShowStartupModal(false);
