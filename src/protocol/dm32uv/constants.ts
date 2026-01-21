@@ -107,10 +107,11 @@ export const LIMITS = {
   CHANNEL_MIN: 1,
   ZONES_PER_BLOCK: 28,      // Approximate (4096 - 16) / 145
   SCAN_LISTS_PER_BLOCK: 44, // First 44 start at offset 16
+  SCAN_LISTS_MAX: 32,        // Maximum of 32 scan lists
   SCAN_LIST_CHANNELS_MAX: 16,
   DIGITAL_EMERGENCY_MAX: 37, // (4096 - 0x218) / 40 ≈ 37
   ANALOG_EMERGENCY_MAX: 108, // (4096 - 0xAC) / 36 ≈ 108
-  QUICK_MESSAGES_MAX: 31,   // floor((4096 - 16) / 129) = 31
+  QUICK_MESSAGES_MAX: 20,   // Maximum of 20 quick messages
   RX_GROUPS_MAX: 32,        // Max 32 groups (limited by 32-bit bitmask in header)
   DMR_RADIO_IDS_MAX: 256,   // 4096 / 16 = 256
 } as const;

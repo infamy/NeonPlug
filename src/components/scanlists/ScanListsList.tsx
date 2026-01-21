@@ -4,15 +4,69 @@ import { useChannelsStore } from '../../store/channelsStore';
 import type { ScanList } from '../../models/ScanList';
 
 export const ScanListsList: React.FC = () => {
-  const { scanLists, selectedScanList, setSelectedScanList } = useScanListsStore();
+  const { scanLists, selectedScanList, setSelectedScanList, addScanList, deleteScanList } = useScanListsStore();
+  const [newScanListName, setNewScanListName] = useState('');
 
   const selectedScanListData = scanLists.find(sl => sl.name === selectedScanList);
+
+  const handleAddScanList = () => {
+    if (scanLists.length >= 32) {
+      alert('Maximum of 32 scan lists allowed.');
+      return;
+    }
+    if (!newScanListName.trim()) {
+      return;
+    }
+    // Check if name already exists
+    if (scanLists.some(sl => sl.name === newScanListName.trim())) {
+      alert('A scan list with this name already exists.');
+      return;
+    }
+    addScanList({
+      name: newScanListName.trim().slice(0, 16),
+      ctcScanMode: 0,
+      settings: new Array(8).fill(0),
+      channels: [],
+    });
+    setNewScanListName('');
+  };
+
+  const handleDeleteScanList = (name: string) => {
+    if (confirm(`Are you sure you want to delete scan list "${name}"? This cannot be undone.`)) {
+      deleteScanList(name);
+      if (selectedScanList === name) {
+        setSelectedScanList(null);
+      }
+    }
+  };
 
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="bg-deep-gray rounded-lg border border-neon-cyan">
-        <div className="p-4 border-b border-neon-cyan border-opacity-30">
-          <h3 className="text-neon-cyan font-bold">Scan Lists</h3>
+        <div className="p-4 border-b border-neon-cyan border-opacity-30 flex justify-between items-center">
+          <div>
+            <h3 className="text-neon-cyan font-bold">Scan Lists</h3>
+            <p className="text-cool-gray text-xs mt-1">{scanLists.length}/32 scan lists</p>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newScanListName}
+              onChange={(e) => setNewScanListName(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleAddScanList()}
+              placeholder="Scan list name..."
+              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-32"
+              maxLength={16}
+              disabled={scanLists.length >= 32}
+            />
+            <button
+              onClick={handleAddScanList}
+              disabled={scanLists.length >= 32 || !newScanListName.trim()}
+              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded font-medium hover:bg-opacity-90 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Add
+            </button>
+          </div>
         </div>
         <div className="overflow-y-auto max-h-[calc(100vh-250px)]">
           {scanLists.length === 0 ? (
@@ -44,6 +98,17 @@ export const ScanListsList: React.FC = () => {
                       {scanList.channels.length > 5 && ` +${scanList.channels.length - 5} more`}
                     </div>
                   )}
+                  <div className="flex gap-2 justify-end mt-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteScanList(scanList.name);
+                      }}
+                      className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -80,7 +145,11 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleAddChannel = (channelNumber: number) => {
-    if (!scanList.channels.includes(channelNumber) && scanList.channels.length < 16) {
+    if (scanList.channels.length >= 16) {
+      alert('Maximum of 16 channels per scan list allowed.');
+      return;
+    }
+    if (!scanList.channels.includes(channelNumber)) {
       updateScanList(scanList.name, {
         channels: [...scanList.channels, channelNumber].sort((a, b) => a - b),
       });

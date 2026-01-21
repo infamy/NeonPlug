@@ -31,17 +31,31 @@ export const useRXGroupsStore = create<RXGroupsState>((set, get) => ({
   setSelectedGroup: (index) => set({ selectedGroup: index }),
   addGroup: (group) => {
     const groups = get().groups;
+    if (groups.length >= 32) {
+      console.warn('Maximum of 32 RX groups allowed');
+      return;
+    }
     const newIndex = groups.length;
+    // Enforce limit: max 32 talk groups per RX group
+    const talkGroupIndices = group.talkGroupIndices ? group.talkGroupIndices.slice(0, 32) : [];
     const newGroup: RXGroup = {
       ...group,
       index: newIndex,
+      talkGroupIndices,
     };
     set({ groups: [...groups, newGroup] });
   },
   updateGroup: (index, updates) => set((state) => ({
-    groups: state.groups.map((g) => 
-      g.index === index ? { ...g, ...updates } : g
-    )
+    groups: state.groups.map((g) => {
+      if (g.index === index) {
+        // Enforce limit: max 32 talk groups per RX group
+        if (updates.talkGroupIndices && updates.talkGroupIndices.length > 32) {
+          updates.talkGroupIndices = updates.talkGroupIndices.slice(0, 32);
+        }
+        return { ...g, ...updates };
+      }
+      return g;
+    })
   })),
   deleteGroup: (index) => {
     const groups = get().groups.filter(g => g.index !== index);

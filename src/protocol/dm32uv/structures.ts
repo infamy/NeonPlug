@@ -2120,7 +2120,7 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
  * - Header: Offset 0x00 (1 byte count), 0x01-0x0F (15 bytes padding)
  * - Entry size: 129 bytes per message (0x81)
  * - Entries start at offset 0x10
- * - Max entries: 31 (floor((4096 - 16) / 129) = 31)
+ * - Max entries: 20
  * 
  * Entry N (1-based):
  * - Status byte: (N * 0x81) - 0x71
@@ -2262,7 +2262,7 @@ export function encodeQuickMessages(messages: QuickTextMessage[], buffer: Uint8A
   const messageCount = Math.min(messages.length, LIMITS.QUICK_MESSAGES_MAX);
   buffer[0x00] = messageCount;
   
-  // Clear all message entries first (entries 1-31) to 0xFF
+  // Clear all message entries first (entries 1-20) to 0xFF
   for (let entryNum = 1; entryNum <= LIMITS.QUICK_MESSAGES_MAX; entryNum++) {
     const statusOffset = (entryNum * 0x81) - 0x71;
     const messageOffset = (entryNum * 0x81) - 0x70;

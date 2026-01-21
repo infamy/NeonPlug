@@ -18,13 +18,28 @@ export const useScanListsStore = create<ScanListsState>((set) => ({
   selectedScanList: null,
   rawScanListData: new Map(),
   setScanLists: (scanLists) => set({ scanLists }),
-  addScanList: (scanList) => set((state) => ({
-    scanLists: [...state.scanLists, scanList]
-  })),
+  addScanList: (scanList) => set((state) => {
+    if (state.scanLists.length >= 32) {
+      console.warn('Maximum of 32 scan lists allowed');
+      return state;
+    }
+    // Enforce limit: max 16 channels per scan list
+    const channels = scanList.channels ? scanList.channels.slice(0, 16) : [];
+    return {
+      scanLists: [...state.scanLists, { ...scanList, channels }]
+    };
+  }),
   updateScanList: (name, updates) => set((state) => ({
-    scanLists: state.scanLists.map(sl =>
-      sl.name === name ? { ...sl, ...updates } : sl
-    )
+    scanLists: state.scanLists.map(sl => {
+      if (sl.name === name) {
+        // Enforce limit: max 16 channels per scan list
+        if (updates.channels && updates.channels.length > 16) {
+          updates.channels = updates.channels.slice(0, 16);
+        }
+        return { ...sl, ...updates };
+      }
+      return sl;
+    })
   })),
   deleteScanList: (name) => set((state) => ({
     scanLists: state.scanLists.filter(sl => sl.name !== name)

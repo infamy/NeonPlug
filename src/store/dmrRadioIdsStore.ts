@@ -29,12 +29,12 @@ export const useDMRRadioIDsStore = create<DMRRadioIDsState>((set) => ({
     radioIds: [...state.radioIds, radioId]
   })),
   updateRadioId: (index, updates) => set((state) => ({
-    radioIds: state.radioIds.map((id, i) => 
-      i === index ? { ...id, ...updates } : id
+    radioIds: state.radioIds.map((id) => 
+      id.index === index ? { ...id, ...updates } : id
     )
   })),
   deleteRadioId: (index) => set((state) => ({
-    radioIds: state.radioIds.filter((_, i) => i !== index)
+    radioIds: state.radioIds.filter((id) => id.index !== index)
   })),
   setRadioIdsLoaded: (loaded) => set({ radioIdsLoaded: loaded }),
 }));
