@@ -457,11 +457,12 @@ export async function smartImportCodeplug(
                 name: row['Scan List Name'] || '',
                 ctcScanMode: parseInt(row['CTC Scan Mode'] || '0') || 0,
                 scanTxMode: parseInt(row['Scan TX Mode'] || '0') || 0,
-                hangTime: row['Hang Time'] || undefined,
+                hangTime: row['Hang Time (tenths)'] ? parseInt(String(row['Hang Time (tenths)'])) : undefined,
+                priority1Type: row['Priority 1 Type'] ? parseInt(String(row['Priority 1 Type'])) : 0,
+                priority2Type: row['Priority 2 Type'] ? parseInt(String(row['Priority 2 Type'])) : 0,
                 priorityChannel1: priorityCh1 && priorityCh1 !== '' ? parseInt(priorityCh1) : undefined,
                 priorityChannel2: priorityCh2 && priorityCh2 !== '' ? parseInt(priorityCh2) : undefined,
                 designatedTxChannel: designatedTx && designatedTx !== '' ? parseInt(designatedTx) : undefined,
-                prioritySweepTime: row['Priority Sweep Time'] || undefined,
                 channels: (row['Channels'] || '').toString().split(',').map((c: string) => parseInt(c.trim())).filter((n: number) => !isNaN(n)),
               };
               result.scanLists.push(scanList);

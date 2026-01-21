@@ -23,8 +23,8 @@ export const useScanListsStore = create<ScanListsState>((set) => ({
       console.warn('Maximum of 32 scan lists allowed');
       return state;
     }
-    // Enforce limit: max 16 channels per scan list
-    const channels = scanList.channels ? scanList.channels.slice(0, 16) : [];
+    // Enforce limit: max 15 channels per scan list
+    const channels = scanList.channels ? scanList.channels.slice(0, 15) : [];
     return {
       scanLists: [...state.scanLists, { ...scanList, channels }]
     };
@@ -32,9 +32,9 @@ export const useScanListsStore = create<ScanListsState>((set) => ({
   updateScanList: (name, updates) => set((state) => ({
     scanLists: state.scanLists.map(sl => {
       if (sl.name === name) {
-        // Enforce limit: max 16 channels per scan list
-        if (updates.channels && updates.channels.length > 16) {
-          updates.channels = updates.channels.slice(0, 16);
+        // Enforce limit: max 15 channels per scan list
+        if (updates.channels && updates.channels.length > 15) {
+          updates.channels = updates.channels.slice(0, 15);
         }
         return { ...sl, ...updates };
       }

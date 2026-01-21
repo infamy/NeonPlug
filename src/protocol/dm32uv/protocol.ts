@@ -1606,11 +1606,10 @@ export class DM32UVProtocol implements RadioProtocol {
     log.debug(`Parsing scan list data, total size: ${allScanListData.length} bytes`, 'Protocol');
     const scanLists = parseScanLists(allScanListData, (listNum, rawData, name) => {
       // Store raw scan list data for debug export
-      const offset = listNum <= 44 
-        ? OFFSET.SCAN_LIST_START + (listNum - 1) * BLOCK_SIZE.SCAN_LIST 
-        : (listNum - 45) * BLOCK_SIZE.SCAN_LIST;
+      // Offset calculation: (57 * N) - 56, where N is 1-indexed
+      const offset = (BLOCK_SIZE.SCAN_LIST * (listNum + 1)) - 56;
       storeRawData(this.rawScanListData, name, rawData, { listNum }, offset);
-      log.debug(`Parsed scan list ${listNum}: "${name}" with ${rawData.length >= 25 ? 'channels' : 'no channels'}`, 'Protocol');
+      log.debug(`Parsed scan list ${listNum + 1}: "${name}" with ${rawData.length} bytes`, 'Protocol');
     });
 
     log.info(`Successfully parsed ${scanLists.length} scan lists: ${scanLists.map(sl => sl.name).join(', ')}`, 'Protocol');
@@ -1669,11 +1668,11 @@ export class DM32UVProtocol implements RadioProtocol {
     // Write count at offset 0x00
     allScanListData[0x00] = Math.min(scanLists.length, LIMITS.SCAN_LISTS_MAX);
     
-    // Write scan lists to fixed 92-byte boundaries: 0x01 + (scan_list - 1) * 92
-    // Count is at offset 0x00, first entry starts at 0x01
+    // Write scan lists to fixed 57-byte boundaries: (57 * N) - 56
+    // Entry 1 at offset 1, Entry 2 at offset 58, Entry 3 at offset 115, etc.
     for (let i = 0; i < encodedScanLists.length; i++) {
       const listNum = i + 1; // 1-indexed
-      const entryOffset = OFFSET.SCAN_LIST_START + (listNum - 1) * BLOCK_SIZE.SCAN_LIST;
+      const entryOffset = (BLOCK_SIZE.SCAN_LIST * listNum) - 56;
       
       // Ensure we don't exceed the data length
       if (entryOffset + BLOCK_SIZE.SCAN_LIST > allScanListData.length) {
