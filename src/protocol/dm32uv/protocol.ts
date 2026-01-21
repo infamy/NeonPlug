@@ -1669,7 +1669,8 @@ export class DM32UVProtocol implements RadioProtocol {
     // Write count at offset 0x00
     allScanListData[0x00] = Math.min(scanLists.length, LIMITS.SCAN_LISTS_MAX);
     
-    // Write scan lists to fixed 92-byte boundaries: 0x10 + (scan_list - 1) * 92
+    // Write scan lists to fixed 92-byte boundaries: 0x01 + (scan_list - 1) * 92
+    // Count is at offset 0x00, first entry starts at 0x01
     for (let i = 0; i < encodedScanLists.length; i++) {
       const listNum = i + 1; // 1-indexed
       const entryOffset = OFFSET.SCAN_LIST_START + (listNum - 1) * BLOCK_SIZE.SCAN_LIST;

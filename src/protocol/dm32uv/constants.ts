@@ -47,7 +47,7 @@ export const OFFSET = {
   CHANNEL_COUNT: 0x00,      // Offset of channel count in first block
   FIRST_CHANNEL: 0x10,      // First channel starts at offset 0x10 in first block
   ZONE_START: 16,           // Zones start at offset 16
-  SCAN_LIST_START: 16,      // Scan lists start at offset 16 (for first 44)
+  SCAN_LIST_START: 1,       // Scan lists start at offset 1 (count is at 0x00, first entry at 0x01)
   METADATA_BYTE: 0xFFF,     // Offset to read metadata byte (last byte of 4KB block)
   QUICK_MESSAGE_COUNT: 0x00, // Count field at offset 0
   QUICK_MESSAGE_HEADER_SIZE: 0x10, // Header size (16 bytes: 1 byte count + 15 bytes padding)

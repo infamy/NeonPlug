@@ -22,11 +22,9 @@ export const DiagnosticsTab: React.FC = () => {
   const { settings: radioSettings } = useRadioSettingsStore();
   const { channels, rawChannelData } = useChannelsStore();
   const [showMetadataBlock, setShowMetadataBlock] = useState(false);
-  const [showMetadataBlock10, setShowMetadataBlock10] = useState(false);
   const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
   const [showContactBlock, setShowContactBlock] = useState(true);
   const [showChannelParser, setShowChannelParser] = useState(false);
-  const [inspectOffset10, setInspectOffset10] = useState<string>('');
   const [inspectOffset41, setInspectOffset41] = useState<string>('');
   const [inspectContactOffset, setInspectContactOffset] = useState<string>('');
   const [showContactWriteBlocks, setShowContactWriteBlocks] = useState(false);
@@ -52,18 +50,6 @@ export const DiagnosticsTab: React.FC = () => {
   const [txContactLookupChannel, setTxContactLookupChannel] = useState<string>('');
   
   const { logs, clearLogs, maxLogs, setMaxLogs } = useLogStore();
-
-  // Find block with metadata 0x10
-  const block10Address = useMemo(() => {
-    for (const [address, metadata] of blockMetadata.entries()) {
-      if (metadata.metadata === 0x10) {
-        return address;
-      }
-    }
-    return null;
-  }, [blockMetadata]);
-
-  const block10Data = block10Address !== null ? blockData.get(block10Address) : null;
 
   // Find block with metadata 0x41
   const block41Address = useMemo(() => {
@@ -96,6 +82,7 @@ export const DiagnosticsTab: React.FC = () => {
   const block0A = getBlockByMetadata(0x0A);
   const block0B = getBlockByMetadata(0x0B);
   const block0F = getBlockByMetadata(0x0F);
+  const block11 = getBlockByMetadata(0x11); // Scan Lists
   const block42 = getBlockByMetadata(0x42);
   const block43 = getBlockByMetadata(0x43);
   const block44 = getBlockByMetadata(0x44);
@@ -396,16 +383,6 @@ export const DiagnosticsTab: React.FC = () => {
         blockData={block02.data}
         blockAddress={block02.address}
         description="Calibration data"
-        downloadHexDump={downloadHexDump}
-        downloadBinary={downloadBinary}
-      />
-
-      {/* Metadata Block 0x10 (Digital Emergency Systems and Encryption Keys) */}
-      <MetadataBlockDisplay
-        metadata={0x10}
-        blockData={block10.data}
-        blockAddress={block10.address}
-        description="Digital Emergency Systems and Encryption Keys"
         downloadHexDump={downloadHexDump}
         downloadBinary={downloadBinary}
       />
@@ -872,150 +849,25 @@ export const DiagnosticsTab: React.FC = () => {
         downloadBinary={downloadBinary}
       />
 
-      {/* Metadata Block 0x10 - VFO/Other Settings */}
-      {block10Data && (
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <h3 className="text-xl font-semibold text-yellow-400">Metadata Block 0x10</h3>
-              <span className="px-2 py-1 bg-yellow-900/30 text-yellow-400 text-xs rounded border border-yellow-600/30">
-                VFO/Other Settings
-              </span>
-              {block10Address !== null && (
-                <span className="px-2 py-1 bg-yellow-900/20 text-cool-gray text-xs rounded border border-yellow-600/20">
-                  Address: 0x{block10Address.toString(16).toUpperCase()}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (block10Data) {
-                    downloadHexDump(block10Data, 'metadata-0x10-hexdump.txt');
-                  }
-                }}
-                className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
-                title="Download hex dump"
-              >
-                📥 Hex
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (block10Data) {
-                    downloadBinary(block10Data, 'metadata-0x10.bin');
-                  }
-                }}
-                className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
-                title="Download binary"
-              >
-                📥 Bin
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setShowMetadataBlock10(!showMetadataBlock10);
-                }}
-                className="text-sm text-yellow-400 hover:text-yellow-300"
-              >
-                {showMetadataBlock10 ? '▼ Hide' : '▶ Show'}
-              </button>
-            </div>
-          </div>
-          <p className="text-cool-gray text-sm mb-4">4KB block containing VFO and other settings</p>
+      {/* Metadata Block 0x10 (Digital Emergency Systems and Encryption Keys) */}
+      <MetadataBlockDisplay
+        metadata={0x10}
+        blockData={block10.data}
+        blockAddress={block10.address}
+        description="Digital Emergency Systems and Encryption Keys"
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      />
 
-          <div className={`space-y-6 ${showMetadataBlock10 ? '' : 'hidden'}`}>
-            {/* Hex Dump Viewer for Block 0x10 */}
-            <CollapsibleSection title="Hex Dump (Full Block 0x10)">
-              <div className="bg-dark-charcoal rounded-lg border border-yellow-600/20 p-4">
-                <div className="mb-4">
-                  <label className="block text-sm text-cool-gray mb-2">Inspect Offset (hex)</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={inspectOffset10}
-                      onChange={(e) => setInspectOffset10(e.target.value)}
-                      placeholder="0x000"
-                      className="flex-1 px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm font-mono focus:outline-none focus:border-yellow-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const offset = parseInt(inspectOffset10.replace(/^0x/i, ''), 16);
-                        if (!isNaN(offset) && offset >= 0 && offset < block10Data.length) {
-                          const element = document.getElementById(`offset10-${offset}`);
-                          element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
-                      }}
-                      className="px-4 py-2 bg-yellow-900/30 text-yellow-400 text-sm rounded border border-yellow-600/30 hover:bg-yellow-900/50"
-                    >
-                      Go
-                    </button>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <div className="font-mono text-xs">
-                    {(() => {
-                      const bytesPerRow = 16;
-                      const rows = [];
-                      
-                      for (let i = 0; i < block10Data.length; i += bytesPerRow) {
-                        const offset = i;
-                        const rowBytes = block10Data.slice(i, i + bytesPerRow);
-                        
-                        // Format offset
-                        const offsetHex = offset.toString(16).toUpperCase().padStart(4, '0');
-                        
-                        // Format hex bytes
-                        const hexBytes = Array.from(rowBytes)
-                          .map(b => b.toString(16).toUpperCase().padStart(2, '0'))
-                          .join(' ');
-                        
-                        // Pad hex bytes if row is incomplete
-                        const hexPadding = '   '.repeat(bytesPerRow - rowBytes.length);
-                        
-                        // Format ASCII representation
-                        const ascii = Array.from(rowBytes)
-                          .map(b => {
-                            const char = String.fromCharCode(b);
-                            return (b >= 32 && b <= 126) ? char : '.';
-                          })
-                          .join('');
-                        
-                        rows.push(
-                          <div key={offset} id={`offset10-${offset}`} className="flex border-b border-yellow-600/10 hover:bg-yellow-900/10 py-1">
-                            <div className="w-20 text-yellow-400 px-2">{offsetHex}</div>
-                            <div className="w-[52ch] text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
-                            <div className="w-16 text-green-400 px-2 ml-4">{ascii}</div>
-                          </div>
-                        );
-                      }
-                      
-                      return rows;
-                    })()}
-                  </div>
-                </div>
-              </div>
-            </CollapsibleSection>
-          </div>
-        </div>
-      )}
-
-      {!block10Data && (
-        <div className="mb-6">
-          <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">
-            <h3 className="text-lg font-semibold text-yellow-400 mb-2">Metadata Block 0x10</h3>
-            <p className="text-cool-gray text-sm">Block 0x10 not found. Read from radio to view this block.</p>
-          </div>
-        </div>
-      )}
+      {/* Metadata Block 0x11 (Scan Lists) */}
+      <MetadataBlockDisplay
+        metadata={0x11}
+        blockData={block11.data}
+        blockAddress={block11.address}
+        description="Scan Lists"
+        downloadHexDump={downloadHexDump}
+        downloadBinary={downloadBinary}
+      />
 
       {/* Metadata Block 0x41 */}
       {block41Data && (

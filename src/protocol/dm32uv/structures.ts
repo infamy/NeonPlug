@@ -867,56 +867,78 @@ export function encodeZone(zone: Zone, _zoneIndex: number): Uint8Array {
 
 /**
  * Parse scan lists from scan list block data
- * Based on spec: Fixed 92-byte entries at offset 0x10 + (scan_list - 1) * 92
+ * Based on spec: Fixed 92-byte entries at offset 0x01 + (scan_list - 1) * 92
+ * Count is at offset 0x00, first entry starts at 0x01
  * Structure:
- * - Name at +0x01 (16 bytes, null-terminated)
- * - Channels at +0x11 (variable, terminated with 00 00)
- * - Settings byte at +0x13 (bits 0-1: CTC Scan Mode, bits 2-3: Scan TX Mode)
- * - Hang Time at +0x14 (8 bytes, ASCII string)
- * - Priority Channel 1 at +0x1C (2 bytes, 16-bit LE, 0xFFFF = empty)
- * - Priority Channel 2 at +0x2C (2 bytes, 16-bit LE, 0xFFFF = empty)
- * - Designated TX Channel at +0x3C (2 bytes, 16-bit LE, 0xFFFF = empty)
- * - Priority Sweep Time at +0x4C (16 bytes, ASCII string)
+ * - Name at +0x00 (16 bytes, null-terminated) - starts immediately at entry start
+ * - Channels at +0x10 (variable, terminated with 00 00) - adjusted from +0x11
+ * - Settings byte at +0x12 (bits 0-1: CTC Scan Mode, bits 2-3: Scan TX Mode) - adjusted from +0x13
+ * - Hang Time at +0x13 (8 bytes, ASCII string) - adjusted from +0x14
+ * - Priority Channel 1 at +0x1B (2 bytes, 16-bit LE, 0xFFFF = empty) - adjusted from +0x1C
+ * - Priority Channel 2 at +0x2B (2 bytes, 16-bit LE, 0xFFFF = empty) - adjusted from +0x2C
+ * - Designated TX Channel at +0x3B (2 bytes, 16-bit LE, 0xFFFF = empty) - adjusted from +0x3C
+ * - Priority Sweep Time at +0x4B (16 bytes, ASCII string) - adjusted from +0x4C
  */
 export function parseScanLists(
   data: Uint8Array,
   onRawScanListParsed?: (listNum: number, rawData: Uint8Array, name: string) => void
 ): ScanList[] {
   const scanLists: ScanList[] = [];
-  const count = data[0x00] || 0; // Count at offset 0x00
   
-  // Parse up to 32 scan lists (or count, whichever is smaller)
-  for (let listNum = 1; listNum <= Math.min(count, LIMITS.SCAN_LISTS_MAX); listNum++) {
-    // Calculate entry offset: 0x10 + (scan_list - 1) * 92
+  // Read count from offset 0x00 (confirmed to be correct per spec)
+  const count = data[0x00] || 0;
+  
+  if (count === 0) {
+    return scanLists; // No scan lists to parse
+  }
+  
+  // Parse exactly the number of entries specified by the count
+  // Don't stop on 0xFF or 0x00 as those can be valid values in context
+  for (let listNum = 1; listNum <= count; listNum++) {
+    // Calculate entry offset: 0x01 + (scan_list - 1) * 92
+    // Count is at 0x00, first entry starts at 0x01
     const entryOffset = OFFSET.SCAN_LIST_START + (listNum - 1) * BLOCK_SIZE.SCAN_LIST;
     
     if (entryOffset + BLOCK_SIZE.SCAN_LIST > data.length) {
-      break; // Not enough data
+      // Not enough data - log warning but continue with what we have
+      console.warn(`Scan list ${listNum} would exceed data length (offset ${entryOffset}, need ${BLOCK_SIZE.SCAN_LIST} bytes, have ${data.length - entryOffset})`);
+      break;
     }
     
     // Extract 92-byte entry
     const entry = data.slice(entryOffset, entryOffset + BLOCK_SIZE.SCAN_LIST);
     
-    // Check if entry is empty (all 0xFF)
-    if (entry.every(b => b === 0xFF)) {
-      continue; // Skip empty entries
+    // Name at +0x00 (16 bytes, null-terminated) - starts immediately at entry start
+    const nameBytes = entry.slice(0x00, 0x10);
+    const nullIndex = nameBytes.indexOf(0);
+    
+    // Parse name - if no null terminator, use all 16 bytes (but filter out 0xFF padding)
+    let name: string;
+    if (nullIndex >= 0 && nullIndex > 0) {
+      // Has null terminator, use up to that point
+      name = new TextDecoder('ascii', { fatal: false })
+        .decode(nameBytes.slice(0, nullIndex))
+        .trim();
+    } else if (nullIndex === 0) {
+      // Name starts with null - empty name
+      name = '';
+    } else {
+      // No null terminator - decode all bytes but filter out 0xFF
+      const validBytes = nameBytes.filter(b => b !== 0xFF && b !== 0x00);
+      name = new TextDecoder('ascii', { fatal: false })
+        .decode(new Uint8Array(validBytes))
+        .trim();
     }
     
-    // Name at +0x01 (16 bytes, null-terminated)
-    const nameBytes = entry.slice(0x01, 0x11);
-    const nullIndex = nameBytes.indexOf(0);
-    if (nullIndex < 0) continue; // No null terminator found
+    // If name is empty after trimming, use a default name
+    if (!name || name.length === 0) {
+      name = `Scan List ${listNum}`;
+    }
     
-    const name = new TextDecoder('ascii', { fatal: false })
-      .decode(nameBytes.slice(0, nullIndex))
-      .trim();
-    
-    if (!name) continue; // Empty name
-    
-    // Channels at +0x11 (variable, terminated with 00 00)
+    // Channels at +0x10 (variable, terminated with 00 00)
     const channels: number[] = [];
     for (let i = 0; i < 16; i++) {
-      const chOffset = 0x11 + (i * 2);
+      const chOffset = 0x10 + (i * 2);
       if (chOffset + 2 > entry.length) break;
       
       const chNum = entry[chOffset] | (entry[chOffset + 1] << 8);
@@ -928,32 +950,32 @@ export function parseScanLists(
       }
     }
     
-    // Settings byte at +0x13
-    const settingsByte = entry[0x13];
+    // Settings byte at +0x12
+    const settingsByte = entry[0x12];
     const ctcScanMode = (settingsByte & 0x03); // Bits 0-1
     const scanTxMode = ((settingsByte >> 2) & 0x03); // Bits 2-3
     
-    // Hang Time at +0x14 (8 bytes, ASCII string)
-    const hangTimeBytes = entry.slice(0x14, 0x1C);
+    // Hang Time at +0x13 (8 bytes, ASCII string)
+    const hangTimeBytes = entry.slice(0x13, 0x1B);
     const hangTimeNullIndex = hangTimeBytes.indexOf(0);
     const hangTime = hangTimeNullIndex >= 0
       ? new TextDecoder('ascii', { fatal: false }).decode(hangTimeBytes.slice(0, hangTimeNullIndex)).trim()
       : undefined;
     
-    // Priority Channel 1 at +0x1C (2 bytes, 16-bit LE)
-    const priorityCh1 = entry[0x1C] | (entry[0x1D] << 8);
-    const priorityChannel1 = (priorityCh1 !== 0xFFFF && priorityCh1 > 0) ? priorityCh1 : undefined;
+    // Priority Channel 1 at +0x1B (2 bytes, 16-bit LE, 0x0000 or 0xFFFF = empty)
+    const priorityCh1 = entry[0x1B] | (entry[0x1C] << 8);
+    const priorityChannel1 = (priorityCh1 !== 0xFFFF && priorityCh1 !== 0x0000 && priorityCh1 > 0) ? priorityCh1 : undefined;
     
-    // Priority Channel 2 at +0x2C (2 bytes, 16-bit LE)
-    const priorityCh2 = entry[0x2C] | (entry[0x2D] << 8);
-    const priorityChannel2 = (priorityCh2 !== 0xFFFF && priorityCh2 > 0) ? priorityCh2 : undefined;
+    // Priority Channel 2 at +0x2B (2 bytes, 16-bit LE, 0x0000 or 0xFFFF = empty)
+    const priorityCh2 = entry[0x2B] | (entry[0x2C] << 8);
+    const priorityChannel2 = (priorityCh2 !== 0xFFFF && priorityCh2 !== 0x0000 && priorityCh2 > 0) ? priorityCh2 : undefined;
     
-    // Designated TX Channel at +0x3C (2 bytes, 16-bit LE)
-    const designatedTx = entry[0x3C] | (entry[0x3D] << 8);
-    const designatedTxChannel = (designatedTx !== 0xFFFF && designatedTx > 0) ? designatedTx : undefined;
+    // Designated TX Channel at +0x3B (2 bytes, 16-bit LE, 0x0000 or 0xFFFF = empty)
+    const designatedTx = entry[0x3B] | (entry[0x3C] << 8);
+    const designatedTxChannel = (designatedTx !== 0xFFFF && designatedTx !== 0x0000 && designatedTx > 0) ? designatedTx : undefined;
     
-    // Priority Sweep Time at +0x4C (16 bytes, ASCII string)
-    const sweepTimeBytes = entry.slice(0x4C, 0x5C);
+    // Priority Sweep Time at +0x4B (16 bytes, ASCII string)
+    const sweepTimeBytes = entry.slice(0x4B, 0x5B);
     const sweepTimeNullIndex = sweepTimeBytes.indexOf(0);
     const prioritySweepTime = sweepTimeNullIndex >= 0
       ? new TextDecoder('ascii', { fatal: false }).decode(sweepTimeBytes.slice(0, sweepTimeNullIndex)).trim()
@@ -994,80 +1016,80 @@ export function encodeScanList(scanList: ScanList, _listNum: number): Uint8Array
   // Initialize to 0xFF (empty/padding)
   data.fill(0xFF);
   
-  // Name at +0x01 (16 bytes, null-terminated)
+  // Name at +0x00 (16 bytes, null-terminated) - starts immediately at entry start
   const nameBytes = new TextEncoder().encode(scanList.name.slice(0, 15));
   const nameLength = Math.min(nameBytes.length, 15);
   for (let i = 0; i < nameLength; i++) {
-    data[0x01 + i] = nameBytes[i];
+    data[0x00 + i] = nameBytes[i];
   }
-  data[0x01 + nameLength] = 0; // Null terminator
+  data[0x00 + nameLength] = 0; // Null terminator
   
-  // Channels at +0x11 (variable, terminated with 00 00)
+  // Channels at +0x10 (variable, terminated with 00 00)
   const channelCount = Math.min(scanList.channels.length, 16);
   for (let i = 0; i < channelCount; i++) {
     const chNum = scanList.channels[i];
-    const offset = 0x11 + (i * 2);
+    const offset = 0x10 + (i * 2);
     data[offset] = chNum & 0xFF;
     data[offset + 1] = (chNum >> 8) & 0xFF;
   }
   // End marker (0x0000 after last channel)
   if (channelCount < 16) {
-    const endOffset = 0x11 + (channelCount * 2);
+    const endOffset = 0x10 + (channelCount * 2);
     data[endOffset] = 0x00;
     data[endOffset + 1] = 0x00;
   }
   
-  // Settings byte at +0x13 (bits 0-1: CTC Scan Mode, bits 2-3: Scan TX Mode)
+  // Settings byte at +0x12 (bits 0-1: CTC Scan Mode, bits 2-3: Scan TX Mode)
   const ctcScanMode = (scanList.ctcScanMode || 0) & 0x03;
   const scanTxMode = (scanList.scanTxMode || 0) & 0x03;
-  data[0x13] = ctcScanMode | (scanTxMode << 2);
+  data[0x12] = ctcScanMode | (scanTxMode << 2);
   
-  // Hang Time at +0x14 (8 bytes, ASCII string)
+  // Hang Time at +0x13 (8 bytes, ASCII string)
   if (scanList.hangTime) {
     const hangTimeBytes = new TextEncoder().encode(scanList.hangTime.slice(0, 7));
     for (let i = 0; i < hangTimeBytes.length; i++) {
-      data[0x14 + i] = hangTimeBytes[i];
+      data[0x13 + i] = hangTimeBytes[i];
     }
-    data[0x14 + hangTimeBytes.length] = 0; // Null terminator
+    data[0x13 + hangTimeBytes.length] = 0; // Null terminator
   }
   
-  // Priority Channel 1 at +0x1C (2 bytes, 16-bit LE, 0xFFFF = empty)
+  // Priority Channel 1 at +0x1B (2 bytes, 16-bit LE, 0xFFFF = empty)
   if (scanList.priorityChannel1 && scanList.priorityChannel1 !== 0xFFFF) {
     const ch1 = scanList.priorityChannel1;
-    data[0x1C] = ch1 & 0xFF;
-    data[0x1D] = (ch1 >> 8) & 0xFF;
+    data[0x1B] = ch1 & 0xFF;
+    data[0x1C] = (ch1 >> 8) & 0xFF;
   } else {
+    data[0x1B] = 0xFF;
     data[0x1C] = 0xFF;
-    data[0x1D] = 0xFF;
   }
   
-  // Priority Channel 2 at +0x2C (2 bytes, 16-bit LE, 0xFFFF = empty)
+  // Priority Channel 2 at +0x2B (2 bytes, 16-bit LE, 0xFFFF = empty)
   if (scanList.priorityChannel2 && scanList.priorityChannel2 !== 0xFFFF) {
     const ch2 = scanList.priorityChannel2;
-    data[0x2C] = ch2 & 0xFF;
-    data[0x2D] = (ch2 >> 8) & 0xFF;
+    data[0x2B] = ch2 & 0xFF;
+    data[0x2C] = (ch2 >> 8) & 0xFF;
   } else {
+    data[0x2B] = 0xFF;
     data[0x2C] = 0xFF;
-    data[0x2D] = 0xFF;
   }
   
-  // Designated TX Channel at +0x3C (2 bytes, 16-bit LE, 0xFFFF = empty)
+  // Designated TX Channel at +0x3B (2 bytes, 16-bit LE, 0xFFFF = empty)
   if (scanList.designatedTxChannel && scanList.designatedTxChannel !== 0xFFFF) {
     const txCh = scanList.designatedTxChannel;
-    data[0x3C] = txCh & 0xFF;
-    data[0x3D] = (txCh >> 8) & 0xFF;
+    data[0x3B] = txCh & 0xFF;
+    data[0x3C] = (txCh >> 8) & 0xFF;
   } else {
+    data[0x3B] = 0xFF;
     data[0x3C] = 0xFF;
-    data[0x3D] = 0xFF;
   }
   
-  // Priority Sweep Time at +0x4C (16 bytes, ASCII string)
+  // Priority Sweep Time at +0x4B (16 bytes, ASCII string)
   if (scanList.prioritySweepTime) {
     const sweepTimeBytes = new TextEncoder().encode(scanList.prioritySweepTime.slice(0, 15));
     for (let i = 0; i < sweepTimeBytes.length; i++) {
-      data[0x4C + i] = sweepTimeBytes[i];
+      data[0x4B + i] = sweepTimeBytes[i];
     }
-    data[0x4C + sweepTimeBytes.length] = 0; // Null terminator
+    data[0x4B + sweepTimeBytes.length] = 0; // Null terminator
   }
   
   return data;
