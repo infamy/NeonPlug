@@ -867,225 +867,207 @@ export function encodeZone(zone: Zone, _zoneIndex: number): Uint8Array {
 
 /**
  * Parse scan lists from scan list block data
- * Structure discovered from debug analysis:
- * - Scan lists are NOT at fixed 92-byte boundaries starting at offset 16
- * - Names are at variable positions: 1, 58, 115, 172 (absolute offsets)
- * - After name, there's data, then channels start
- * - Channels are 16-bit LE, 4 bytes apart (2 bytes channel, 2 bytes padding)
+ * Based on spec: Fixed 92-byte entries at offset 0x10 + (scan_list - 1) * 92
+ * Structure:
+ * - Name at +0x01 (16 bytes, null-terminated)
+ * - Channels at +0x11 (variable, terminated with 00 00)
+ * - Settings byte at +0x13 (bits 0-1: CTC Scan Mode, bits 2-3: Scan TX Mode)
+ * - Hang Time at +0x14 (8 bytes, ASCII string)
+ * - Priority Channel 1 at +0x1C (2 bytes, 16-bit LE, 0xFFFF = empty)
+ * - Priority Channel 2 at +0x2C (2 bytes, 16-bit LE, 0xFFFF = empty)
+ * - Designated TX Channel at +0x3C (2 bytes, 16-bit LE, 0xFFFF = empty)
+ * - Priority Sweep Time at +0x4C (16 bytes, ASCII string)
  */
 export function parseScanLists(
   data: Uint8Array,
   onRawScanListParsed?: (listNum: number, rawData: Uint8Array, name: string) => void
 ): ScanList[] {
   const scanLists: ScanList[] = [];
-
-  // Find scan list names by searching for readable ASCII strings
-  // We know the exact positions: 1, 58, 115, 172
-  // But we'll search more carefully to avoid duplicates
-  const foundLists: Array<{ namePos: number; name: string }> = [];
-  const usedPositions = new Set<number>();
+  const count = data[0x00] || 0; // Count at offset 0x00
   
-  // Search through the data for potential scan list names
-  for (let i = 0; i < Math.min(data.length - 10, 500); i++) {
-    // Skip padding bytes
-    if (data[i] === 0x00 || data[i] === 0xFF || data[i] < 32 || data[i] >= 127) {
-      continue;
+  // Parse up to 32 scan lists (or count, whichever is smaller)
+  for (let listNum = 1; listNum <= Math.min(count, LIMITS.SCAN_LISTS_MAX); listNum++) {
+    // Calculate entry offset: 0x10 + (scan_list - 1) * 92
+    const entryOffset = OFFSET.SCAN_LIST_START + (listNum - 1) * BLOCK_SIZE.SCAN_LIST;
+    
+    if (entryOffset + BLOCK_SIZE.SCAN_LIST > data.length) {
+      break; // Not enough data
     }
     
-    // Skip if we've already used a position near this one (within 20 bytes)
-    let tooClose = false;
-    for (const usedPos of usedPositions) {
-      if (Math.abs(i - usedPos) < 20) {
-        tooClose = true;
-        break;
-      }
-    }
-    if (tooClose) continue;
+    // Extract 92-byte entry
+    const entry = data.slice(entryOffset, entryOffset + BLOCK_SIZE.SCAN_LIST);
     
-    // Try to read a name starting here (max 16 bytes per spec)
-    const nameBytes = data.slice(i, i + 16);
+    // Check if entry is empty (all 0xFF)
+    if (entry.every(b => b === 0xFF)) {
+      continue; // Skip empty entries
+    }
+    
+    // Name at +0x01 (16 bytes, null-terminated)
+    const nameBytes = entry.slice(0x01, 0x11);
     const nullIndex = nameBytes.indexOf(0);
-    if (nullIndex < 2) continue; // Need at least 2 chars
+    if (nullIndex < 0) continue; // No null terminator found
     
-    const potentialName = new TextDecoder('ascii', { fatal: false })
+    const name = new TextDecoder('ascii', { fatal: false })
       .decode(nameBytes.slice(0, nullIndex))
-      .replace(/\x00/g, '')
       .trim();
     
-    // Check if it looks like a scan list name
-    // Should have letters/numbers, might contain "List", dots, spaces
-    if (potentialName.length >= 2 && 
-        /^[A-Za-z0-9\s\.\-]+$/.test(potentialName) &&
-        (potentialName.includes('List') || 
-         /^[A-Z]{2,}/.test(potentialName) || // Starts with uppercase letters
-         /^[A-Z]/.test(potentialName))) {   // Starts with uppercase
-      
-      // Check if this is a duplicate of an existing name (exact match or substring)
-      const isDuplicate = foundLists.some(l => {
-        const existing = l.name;
-        const newName = potentialName;
-        // Check if one is a substring of the other (but not too short)
-        return existing === newName || 
-               (existing.length > 3 && newName.length > 3 && 
-                (existing.includes(newName) || newName.includes(existing)));
-      });
-      
-      if (!isDuplicate) {
-        foundLists.push({ namePos: i, name: potentialName });
-        usedPositions.add(i);
-        log.debug(`Found scan list name "${potentialName}" at offset ${i}`, 'Structures');
-      }
-    }
-  }
-  
-  // Sort by position
-  foundLists.sort((a, b) => a.namePos - b.namePos);
-  
-  // Parse each found scan list
-  for (let listNum = 0; listNum < foundLists.length; listNum++) {
-    const { namePos, name } = foundLists[listNum];
+    if (!name) continue; // Empty name
     
-    // Find where channels start by searching for a SEQUENCE of valid channels after the name
-    // Name is null-terminated, so find the end
-    const nameEnd = namePos + name.length + 1; // +1 for null terminator
-    let channelStart = -1;
-    
-    // Search for a sequence of at least 3 consecutive valid channels
-    // This avoids false matches on single channel numbers that appear in metadata
-    // Channels are 2 bytes apart, so we need to check every 2 bytes
-    for (let i = nameEnd; i < Math.min(nameEnd + 100, data.length - 5); i++) {
-      // Check for at least 3 consecutive valid channels (6 bytes total)
-      const ch1 = data[i] | (data[i + 1] << 8);
-      const ch2 = data[i + 2] | (data[i + 3] << 8);
-      const ch3 = data[i + 4] | (data[i + 5] << 8);
-      
-      // All three must be valid channels
-      if (ch1 > 0 && ch1 <= 4000 && ch2 > 0 && ch2 <= 4000 && ch3 > 0 && ch3 <= 4000) {
-        // Verify this is a sequence - channels should be close together (within 20 of each other)
-        // This ensures we're reading actual channel lists, not random valid numbers
-        if (Math.abs(ch2 - ch1) <= 20 && Math.abs(ch3 - ch2) <= 20) {
-          channelStart = i;
-          break;
-        }
-      }
-    }
-    
-    if (channelStart === -1) {
-      log.warn(`Could not find channel start for scan list "${name}"`, 'Structures');
-      continue;
-    }
-    
-    // Read channels (2 bytes each, 16-bit LE, up to 16 channels)
+    // Channels at +0x11 (variable, terminated with 00 00)
     const channels: number[] = [];
     for (let i = 0; i < 16; i++) {
-      const offset = channelStart + (i * 2); // 2 bytes per channel
-      if (offset + 2 > data.length) break;
+      const chOffset = 0x11 + (i * 2);
+      if (chOffset + 2 > entry.length) break;
       
-      const chNum = data[offset] | (data[offset + 1] << 8);
-      if (chNum === 0) {
+      const chNum = entry[chOffset] | (entry[chOffset + 1] << 8);
+      if (chNum === 0 || chNum === 0xFFFF) {
         break; // End of channel list
       }
-      if (chNum > 0 && chNum <= 4000) {
+      if (chNum > 0 && chNum <= 65535) {
         channels.push(chNum);
-      } else {
-        break; // Invalid channel number
       }
     }
     
-    // Extract 92 bytes for raw data storage (starting from name or before if header exists)
-    let listStart = namePos;
-    if (namePos > 0 && data[namePos - 1] === 0x04) {
-      listStart = namePos - 1; // Include 0x04 header
-    }
-    const listData = data.slice(listStart, Math.min(listStart + 92, data.length));
-
-    // CTC mode and settings - try to find, but for now use defaults
-    const ctcScanMode = 0;
-    const settings = new Array(8).fill(0);
-
-    const scanList = {
+    // Settings byte at +0x13
+    const settingsByte = entry[0x13];
+    const ctcScanMode = (settingsByte & 0x03); // Bits 0-1
+    const scanTxMode = ((settingsByte >> 2) & 0x03); // Bits 2-3
+    
+    // Hang Time at +0x14 (8 bytes, ASCII string)
+    const hangTimeBytes = entry.slice(0x14, 0x1C);
+    const hangTimeNullIndex = hangTimeBytes.indexOf(0);
+    const hangTime = hangTimeNullIndex >= 0
+      ? new TextDecoder('ascii', { fatal: false }).decode(hangTimeBytes.slice(0, hangTimeNullIndex)).trim()
+      : undefined;
+    
+    // Priority Channel 1 at +0x1C (2 bytes, 16-bit LE)
+    const priorityCh1 = entry[0x1C] | (entry[0x1D] << 8);
+    const priorityChannel1 = (priorityCh1 !== 0xFFFF && priorityCh1 > 0) ? priorityCh1 : undefined;
+    
+    // Priority Channel 2 at +0x2C (2 bytes, 16-bit LE)
+    const priorityCh2 = entry[0x2C] | (entry[0x2D] << 8);
+    const priorityChannel2 = (priorityCh2 !== 0xFFFF && priorityCh2 > 0) ? priorityCh2 : undefined;
+    
+    // Designated TX Channel at +0x3C (2 bytes, 16-bit LE)
+    const designatedTx = entry[0x3C] | (entry[0x3D] << 8);
+    const designatedTxChannel = (designatedTx !== 0xFFFF && designatedTx > 0) ? designatedTx : undefined;
+    
+    // Priority Sweep Time at +0x4C (16 bytes, ASCII string)
+    const sweepTimeBytes = entry.slice(0x4C, 0x5C);
+    const sweepTimeNullIndex = sweepTimeBytes.indexOf(0);
+    const prioritySweepTime = sweepTimeNullIndex >= 0
+      ? new TextDecoder('ascii', { fatal: false }).decode(sweepTimeBytes.slice(0, sweepTimeNullIndex)).trim()
+      : undefined;
+    
+    const scanList: ScanList = {
       name,
-      ctcScanMode,
-      settings,
       channels,
+      ctcScanMode,
+      scanTxMode,
+      hangTime,
+      priorityChannel1,
+      priorityChannel2,
+      designatedTxChannel,
+      prioritySweepTime,
     };
+    
     scanLists.push(scanList);
     
     // Call callback to store raw data
-    onRawScanListParsed?.(listNum, listData, name);
+    onRawScanListParsed?.(listNum - 1, entry, name);
   }
-
-  // TODO: Handle lists 45+ which start at offset 0 in subsequent blocks
-  // For now, we only parse lists 1-44 which start at offset 16
 
   return scanLists;
 }
 
 /**
  * Encode a scan list to binary format
- * This is the reverse of parseScanLists()
+ * Based on spec: Fixed 92-byte entry structure
  * 
  * @param scanList - Scan list to encode
- * @param listNum - Scan list number (1-indexed)
+ * @param listNum - Scan list number (1-indexed, unused but kept for compatibility)
  * @returns Encoded scan list data (92 bytes)
  */
-export function encodeScanList(scanList: ScanList, listNum: number): Uint8Array {
+export function encodeScanList(scanList: ScanList, _listNum: number): Uint8Array {
   const data = new Uint8Array(92);
   
   // Initialize to 0xFF (empty/padding)
   data.fill(0xFF);
   
-  // Calculate name position based on list number
-  // Lists 1-44: positions 1, 58, 115, 172 (repeating pattern)
-  // For simplicity, we'll use a pattern: listNum % 4 determines offset
-  let nameOffset = 1;
-  if (listNum <= 44) {
-    // Pattern: 1, 58, 115, 172, then repeat
-    const patternIndex = (listNum - 1) % 4;
-    const offsets = [1, 58, 115, 172];
-    nameOffset = offsets[patternIndex] + Math.floor((listNum - 1) / 4) * 228; // 228 = 4 * 57 (approximate spacing)
-  } else {
-    // Lists 45+: start at offset 0 in subsequent blocks
-    nameOffset = 0;
-  }
-  
-  // Ensure name offset is within bounds
-  if (nameOffset >= data.length - 16) {
-    nameOffset = 1; // Fallback to start
-  }
-  
-  // Name (max 16 bytes, null-terminated)
-  const nameBytes = new TextEncoder().encode(scanList.name.slice(0, 16));
-  const nameLength = Math.min(nameBytes.length, 16 - 1); // -1 for null terminator
-  
+  // Name at +0x01 (16 bytes, null-terminated)
+  const nameBytes = new TextEncoder().encode(scanList.name.slice(0, 15));
+  const nameLength = Math.min(nameBytes.length, 15);
   for (let i = 0; i < nameLength; i++) {
-    data[nameOffset + i] = nameBytes[i];
+    data[0x01 + i] = nameBytes[i];
   }
-  data[nameOffset + nameLength] = 0; // Null terminator
+  data[0x01 + nameLength] = 0; // Null terminator
   
-  // Find channel start position (after name)
-  const nameEnd = nameOffset + nameLength + 1;
-  const channelStart = nameEnd;
-  
-  // Channels (2 bytes each, 16-bit LE, max 16 channels)
+  // Channels at +0x11 (variable, terminated with 00 00)
   const channelCount = Math.min(scanList.channels.length, 16);
   for (let i = 0; i < channelCount; i++) {
-    const offset = channelStart + (i * 2);
-    if (offset + 2 > data.length) break;
-    
     const chNum = scanList.channels[i];
-    // Write 16-bit little-endian
+    const offset = 0x11 + (i * 2);
     data[offset] = chNum & 0xFF;
     data[offset + 1] = (chNum >> 8) & 0xFF;
   }
-  
   // End marker (0x0000 after last channel)
   if (channelCount < 16) {
-    const endOffset = channelStart + (channelCount * 2);
-    if (endOffset + 2 <= data.length) {
-      data[endOffset] = 0x00;
-      data[endOffset + 1] = 0x00;
+    const endOffset = 0x11 + (channelCount * 2);
+    data[endOffset] = 0x00;
+    data[endOffset + 1] = 0x00;
+  }
+  
+  // Settings byte at +0x13 (bits 0-1: CTC Scan Mode, bits 2-3: Scan TX Mode)
+  const ctcScanMode = (scanList.ctcScanMode || 0) & 0x03;
+  const scanTxMode = (scanList.scanTxMode || 0) & 0x03;
+  data[0x13] = ctcScanMode | (scanTxMode << 2);
+  
+  // Hang Time at +0x14 (8 bytes, ASCII string)
+  if (scanList.hangTime) {
+    const hangTimeBytes = new TextEncoder().encode(scanList.hangTime.slice(0, 7));
+    for (let i = 0; i < hangTimeBytes.length; i++) {
+      data[0x14 + i] = hangTimeBytes[i];
     }
+    data[0x14 + hangTimeBytes.length] = 0; // Null terminator
+  }
+  
+  // Priority Channel 1 at +0x1C (2 bytes, 16-bit LE, 0xFFFF = empty)
+  if (scanList.priorityChannel1 && scanList.priorityChannel1 !== 0xFFFF) {
+    const ch1 = scanList.priorityChannel1;
+    data[0x1C] = ch1 & 0xFF;
+    data[0x1D] = (ch1 >> 8) & 0xFF;
+  } else {
+    data[0x1C] = 0xFF;
+    data[0x1D] = 0xFF;
+  }
+  
+  // Priority Channel 2 at +0x2C (2 bytes, 16-bit LE, 0xFFFF = empty)
+  if (scanList.priorityChannel2 && scanList.priorityChannel2 !== 0xFFFF) {
+    const ch2 = scanList.priorityChannel2;
+    data[0x2C] = ch2 & 0xFF;
+    data[0x2D] = (ch2 >> 8) & 0xFF;
+  } else {
+    data[0x2C] = 0xFF;
+    data[0x2D] = 0xFF;
+  }
+  
+  // Designated TX Channel at +0x3C (2 bytes, 16-bit LE, 0xFFFF = empty)
+  if (scanList.designatedTxChannel && scanList.designatedTxChannel !== 0xFFFF) {
+    const txCh = scanList.designatedTxChannel;
+    data[0x3C] = txCh & 0xFF;
+    data[0x3D] = (txCh >> 8) & 0xFF;
+  } else {
+    data[0x3C] = 0xFF;
+    data[0x3D] = 0xFF;
+  }
+  
+  // Priority Sweep Time at +0x4C (16 bytes, ASCII string)
+  if (scanList.prioritySweepTime) {
+    const sweepTimeBytes = new TextEncoder().encode(scanList.prioritySweepTime.slice(0, 15));
+    for (let i = 0; i < sweepTimeBytes.length; i++) {
+      data[0x4C + i] = sweepTimeBytes[i];
+    }
+    data[0x4C + sweepTimeBytes.length] = 0; // Null terminator
   }
   
   return data;

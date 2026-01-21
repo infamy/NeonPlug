@@ -25,7 +25,7 @@ export const ScanListsList: React.FC = () => {
     addScanList({
       name: newScanListName.trim().slice(0, 16),
       ctcScanMode: 0,
-      settings: new Array(8).fill(0),
+      scanTxMode: 0,
       channels: [],
     });
     setNewScanListName('');

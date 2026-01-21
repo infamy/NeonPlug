@@ -1666,62 +1666,21 @@ export class DM32UVProtocol implements RadioProtocol {
     // Encode scan lists
     const encodedScanLists = scanLists.map((scanList, idx) => encodeScanList(scanList, idx + 1));
     
-    // Write scan lists to the concatenated data
-    // Scan lists are NOT at fixed 92-byte boundaries - names are at absolute positions: 1, 58, 115, 172, etc.
-    // The encodeScanList function calculates name position relative to the start of a 92-byte entry
-    // We need to calculate the absolute name position and write the entry so the name ends up there
+    // Write count at offset 0x00
+    allScanListData[0x00] = Math.min(scanLists.length, LIMITS.SCAN_LISTS_MAX);
+    
+    // Write scan lists to fixed 92-byte boundaries: 0x10 + (scan_list - 1) * 92
     for (let i = 0; i < encodedScanLists.length; i++) {
       const listNum = i + 1; // 1-indexed
-      let absoluteNamePos: number;
-      
-      if (listNum <= 44) {
-        // Calculate absolute name position based on pattern: 1, 58, 115, 172, then repeat
-        const patternIndex = (listNum - 1) % 4;
-        const baseOffsets = [1, 58, 115, 172];
-        const baseOffset = baseOffsets[patternIndex];
-        const cycle = Math.floor((listNum - 1) / 4);
-        // Each cycle adds approximately 228 bytes (4 * 57)
-        absoluteNamePos = baseOffset + (cycle * 228);
-      } else {
-        // Lists 45+: start at offset 0 in subsequent blocks
-        const blockIndex = Math.floor((listNum - 45) / 44); // Which block (0-indexed from first scan block)
-        const listIndexInBlock = (listNum - 45) % 44;
-        const patternIndex = listIndexInBlock % 4;
-        const baseOffsets = [1, 58, 115, 172];
-        const baseOffset = baseOffsets[patternIndex];
-        const cycle = Math.floor(listIndexInBlock / 4);
-        absoluteNamePos = (blockIndex * BLOCK_SIZE.STANDARD) + baseOffset + (cycle * 228);
-      }
-      
-      // The encoded scan list has the name at a relative position within the 92-byte entry
-      // encodeScanList uses the same pattern to calculate relative position: 1, 58, 115, 172
-      const patternIndex = (listNum - 1) % 4;
-      const relativeNameOffsets = [1, 58, 115, 172];
-      const relativeNamePosInEntry = relativeNameOffsets[patternIndex];
-      
-      // Calculate where to start writing the 92-byte entry so the name ends up at absoluteNamePos
-      // If name is at relative position X in entry, and we want it at absolute position Y,
-      // we write the entry starting at Y - X
-      let writeStartOffset = absoluteNamePos - relativeNamePosInEntry;
-      
-      // Check if there's a header byte (0x04) before the name in the existing data
-      // If so, we need to account for it
-      if (absoluteNamePos > 0 && writeStartOffset >= 0 && allScanListData[absoluteNamePos - 1] === 0x04) {
-        writeStartOffset = absoluteNamePos - relativeNamePosInEntry - 1;
-      }
-      
-      // Ensure we don't write before the start of the data
-      if (writeStartOffset < 0) {
-        writeStartOffset = 0;
-      }
+      const entryOffset = OFFSET.SCAN_LIST_START + (listNum - 1) * BLOCK_SIZE.SCAN_LIST;
       
       // Ensure we don't exceed the data length
-      if (writeStartOffset + BLOCK_SIZE.SCAN_LIST > allScanListData.length) {
-        throw new Error(`Scan list ${listNum} would exceed block size (offset ${writeStartOffset})`);
+      if (entryOffset + BLOCK_SIZE.SCAN_LIST > allScanListData.length) {
+        throw new Error(`Scan list ${listNum} would exceed block size (offset ${entryOffset})`);
       }
       
-      // Write the encoded scan list data
-      allScanListData.set(encodedScanLists[i], writeStartOffset);
+      // Write the encoded scan list data at the fixed offset
+      allScanListData.set(encodedScanLists[i], entryOffset);
       
       const progress = 50 + Math.floor((i / scanLists.length) * 40); // 50-90%
       if (i % 5 === 0 || i === scanLists.length - 1) {
