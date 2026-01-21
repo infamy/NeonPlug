@@ -113,6 +113,7 @@ export const LIMITS = {
   ANALOG_EMERGENCY_MAX: 108, // (4096 - 0xAC) / 36 ≈ 108
   QUICK_MESSAGES_MAX: 20,   // Maximum of 20 quick messages
   RX_GROUPS_MAX: 32,        // Max 32 groups (limited by 32-bit bitmask in header)
-  DMR_RADIO_IDS_MAX: 256,   // 4096 / 16 = 256
+  DMR_RADIO_IDS_MAX: 250,   // Maximum of 250 DMR Radio IDs per spec
+  TALK_GROUPS_MAX: 800,     // Maximum of 800 talk groups
 } as const;
 

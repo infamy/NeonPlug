@@ -7,6 +7,7 @@ import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { parseEncryptionKeys, parseDigitalEmergencies } from '../../protocol/dm32uv/structures';
+import { LIMITS } from '../../protocol/dm32uv/constants';
 import { RXGroupsList } from '../rxgroups/RXGroupsList';
 
 export const DigitalTab: React.FC = () => {
@@ -91,6 +92,10 @@ export const DigitalTab: React.FC = () => {
   };
 
   const handleAddContact = () => {
+    if (quickContacts.length >= 800) {
+      alert('Maximum of 800 talk groups allowed.');
+      return;
+    }
     addContact({
       name: 'New Talk Group',
       contactNumber: 0,
@@ -126,8 +131,8 @@ export const DigitalTab: React.FC = () => {
   };
 
   const handleAddRadioId = () => {
-    if (radioIds.length >= 250) {
-      alert('Maximum of 250 DMR Radio IDs allowed.');
+    if (radioIds.length >= LIMITS.DMR_RADIO_IDS_MAX) {
+      alert(`Maximum of ${LIMITS.DMR_RADIO_IDS_MAX} DMR Radio IDs allowed.`);
       return;
     }
     const newIndex = radioIds.length;
@@ -161,10 +166,10 @@ export const DigitalTab: React.FC = () => {
           <div>
             <h3 className="text-xl font-semibold text-neon-cyan mb-2">DMR Radio IDs</h3>
             <p className="text-cool-gray text-sm">
-              Manage DMR Radio IDs. Up to 250 IDs can be configured.
+              Manage DMR Radio IDs. Up to {LIMITS.DMR_RADIO_IDS_MAX} IDs can be configured.
             </p>
           </div>
-          {radioIdsLoaded && radioIds.length < 250 && (
+          {radioIdsLoaded && radioIds.length < LIMITS.DMR_RADIO_IDS_MAX && (
             <button
               onClick={handleAddRadioId}
               className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
@@ -274,12 +279,18 @@ export const DigitalTab: React.FC = () => {
             </p>
           </div>
           {quickContactsLoaded && (
-            <button
-              onClick={handleAddContact}
-              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
-            >
-              + Add Group
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="text-cool-gray text-sm">
+                {quickContacts.length}/800 talk groups
+              </div>
+              <button
+                onClick={handleAddContact}
+                disabled={quickContacts.length >= 800}
+                className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                + Add Group
+              </button>
+            </div>
           )}
         </div>
 

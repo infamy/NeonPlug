@@ -2387,6 +2387,10 @@ export class DM32UVProtocol implements RadioProtocol {
   async writeQuickContacts(contacts: QuickContact[]): Promise<void> {
     requireConnection(this.connection, this.radioInfo);
 
+    if (contacts.length > LIMITS.TALK_GROUPS_MAX) {
+      throw new Error(`Maximum of ${LIMITS.TALK_GROUPS_MAX} talk groups allowed. Got ${contacts.length}`);
+    }
+
     this.onProgress?.(0, 'Preparing to write Talk Groups...');
 
     // Discover blocks if not already discovered

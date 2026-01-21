@@ -2691,7 +2691,7 @@ export function encodeAnalogEmergencies(systems: AnalogEmergency[]): Uint8Array 
  * - Count field: Offset 0 (4 bytes, DWORD, little-endian)
  * - Entry size: 16 bytes per entry (0x10)
  * - Entry base: Offset 0x00 (entries start at buffer base)
- * - Max entries: 256 entries (4096 / 16 = 256)
+ * - Max entries: 250 entries per spec
  * 
  * Entry calculation: buffer + entry_num * 0x10
  * 

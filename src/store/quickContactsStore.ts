@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { QuickContact } from '../models/QuickContact';
+import { LIMITS } from '../protocol/dm32uv/constants';
 
 interface QuickContactsState {
   contacts: QuickContact[];
@@ -48,6 +49,10 @@ export const useQuickContactsStore = create<QuickContactsState>((set, get) => ({
   },
   addContact: (newContact) => {
     const contacts = get().contacts;
+    if (contacts.length >= LIMITS.TALK_GROUPS_MAX) {
+      console.warn(`Maximum of ${LIMITS.TALK_GROUPS_MAX} talk groups allowed`);
+      return;
+    }
     // New index is simply the next position (array length + 1)
     // This ensures indexes are always sequential: 1, 2, 3, ...
     const newIndex = contacts.length + 1;
