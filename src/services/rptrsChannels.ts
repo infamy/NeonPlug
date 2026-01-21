@@ -119,7 +119,6 @@ export function generateRptrsChannels(
           bandwidth: '12.5kHz', // DMR uses 12.5kHz bandwidth
           power: 'High',
           scanAdd: true,
-          busyLock: 'Off',
           colorCode: rptr.color_code,
           // Note: timeslot information is typically handled via contact/talkgroup settings
           // The slotOperation field in Channel might be used, but it's not clear from the model

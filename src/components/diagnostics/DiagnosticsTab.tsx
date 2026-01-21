@@ -2286,8 +2286,6 @@ export const DiagnosticsTab: React.FC = () => {
                   const modeMap = ['Analog', 'Digital', 'Fixed Analog', 'Fixed Digital'];
                   const mode = modeMap[channelMode] || 'Analog';
                   const forbidTx = (modeFlags & 0x08) !== 0;
-                  // Busy Lock - location unknown, defaulting to 'Off' (bits 2-1 of 0x18 are used for power)
-                  const busyLock: 'Off' | 'Carrier' | 'Repeater' = 'Off';
                   const loneWorker = (modeFlags & 0x01) !== 0;
 
                   const scanBw = channelBytes[0x19];
@@ -2398,7 +2396,6 @@ export const DiagnosticsTab: React.FC = () => {
                     txFreq,
                     mode,
                     forbidTx,
-                    busyLock,
                     loneWorker,
                     bandwidth,
                     scanAdd,
@@ -2979,7 +2976,6 @@ export const DiagnosticsTab: React.FC = () => {
                     const modeMap = ['Analog', 'Digital', 'Fixed Analog', 'Fixed Digital'];
                     const mode = modeMap[channelMode] || 'Analog';
                     const forbidTx = (modeFlags & 0x08) !== 0;
-                    const busyLock: 'Off' | 'Carrier' | 'Repeater' = 'Off';
                     const loneWorker = (modeFlags & 0x01) !== 0;
 
                     const scanBw = channelBytes[0x19];
@@ -3047,7 +3043,7 @@ export const DiagnosticsTab: React.FC = () => {
                     const dmrRadioIdIndex = channelBytes[0x2B]; // DMR Radio ID Index for TX (0-255, 0=None)
 
                     return {
-                      name, rxFreq, txFreq, mode, forbidTx, busyLock, loneWorker,
+                      name, rxFreq, txFreq, mode, forbidTx, loneWorker,
                       bandwidth, scanAdd, scanListId, forbidTalkaround, aprsReceive,
                       emergencyIndicator, emergencyAck, emergencySystemId,
                       power, aprsReportMode, squelchLevel, colorCode,

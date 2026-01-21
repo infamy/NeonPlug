@@ -19,7 +19,6 @@ export function createDefaultChannel(overrides: Partial<Channel> = {}): Channel 
     txFrequency: 146.5200,
     mode: 'Analog',
     forbidTx: false,
-    busyLock: 'Off',
     loneWorker: false,
     bandwidth: '25kHz',
     scanAdd: false,

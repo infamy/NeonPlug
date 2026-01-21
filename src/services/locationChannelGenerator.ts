@@ -101,7 +101,6 @@ export function generateChannelsFromRepeaters(
       txCtcssDcs,
       power: 'High', // Repeaters typically need high power
       scanAdd: true, // Add to scan by default
-      busyLock: 'Off',
     });
     
     channels.push(channel);

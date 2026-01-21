@@ -19,7 +19,6 @@ export interface Channel {
   // Mode & Flags (0x18)
   mode: ChannelMode;           // Bits 7-4: 0=Analog, 1=Digital, 2=Fixed Analog, 3=Fixed Digital
   forbidTx: boolean;           // Bit 3: 0=Allow, 1=Forbid
-  busyLock: 'Off' | 'Carrier' | 'Repeater'; // Bits 2-1: 0=Off, 1=Carrier, 2=Repeater
   loneWorker: boolean;         // Bit 0: 0=Off, 1=On
   
   // Scan & Bandwidth (0x19)

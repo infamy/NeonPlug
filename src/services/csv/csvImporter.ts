@@ -121,7 +121,6 @@ export function importChannelsFromCSV(content: string): ImportResult {
           bandwidth: (getValue('bandwidth') as Channel['bandwidth']) || '25kHz',
           power: (getValue('power') as Channel['power']) || 'High',
           forbidTx: getBool('forbid tx'),
-          busyLock: (getValue('busy lock') as Channel['busyLock']) || 'Off',
           loneWorker: getBool('lone worker'),
           scanAdd: getBool('scan add'),
           scanListId: getNumber('scan list', 0),
