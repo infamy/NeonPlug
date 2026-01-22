@@ -5,7 +5,7 @@
 
 import { DM32Connection } from './connection';
 import { discoverMemoryBlocks, readChannelCount, type MemoryBlock } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
 import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
@@ -2068,6 +2068,90 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(100, `Successfully processed ${radioIds.length} DMR Radio IDs`);
     return radioIds;
+  }
+
+  /**
+   * Write DMR Radio IDs to the radio
+   * Structure:
+   * - Count field at offset 0x00 (1 byte, max 250)
+   * - Entries start at offset 0x10 (16 bytes each)
+   * - Max 250 entries
+   */
+  async writeDMRRadioIDs(radioIds: DMRRadioID[]): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+    
+    if (radioIds.length > LIMITS.DMR_RADIO_IDS_MAX) {
+      throw new Error(`Maximum of ${LIMITS.DMR_RADIO_IDS_MAX} DMR Radio IDs allowed. Got ${radioIds.length}`);
+    }
+
+    this.onProgress?.(0, 'Preparing to write DMR Radio IDs...');
+
+    // Discover blocks if not already discovered
+    if (this.discoveredBlocks.length === 0) {
+      this.onProgress?.(5, 'Discovering DMR Radio ID blocks...');
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo!.memoryLayout.configStart,
+        this.radioInfo!.memoryLayout.configEnd,
+        (current, total) => {
+          const progress = 5 + Math.floor((current / total) * 5); // 5-10%
+          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+
+    // Get DMR Radio ID blocks (metadata 0x67)
+    const radioIdBlocks = this.discoveredBlocks.filter(b => b.type === 'dmrradioid' && b.metadata === METADATA.DMR_RADIO_IDS);
+
+    if (radioIdBlocks.length === 0) {
+      throw new Error('No DMR Radio ID blocks found');
+    }
+
+    if (radioIdBlocks.length > 1) {
+      log.warn(`Found ${radioIdBlocks.length} DMR Radio ID blocks, expected 1. Using first block.`, 'Protocol');
+    }
+
+    const block = radioIdBlocks[0];
+    this.onProgress?.(10, `Writing ${radioIds.length} DMR Radio IDs...`);
+
+    // Read the current block to preserve unknown data
+    const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
+    
+    // Fill with 0xFF (empty)
+    blockData.fill(0xFF);
+
+    // Write count at offset 0x00 (1 byte, max 250)
+    const count = Math.min(radioIds.length, LIMITS.DMR_RADIO_IDS_MAX);
+    blockData[0x00] = count & 0xFF;
+
+    // Encode and write each DMR Radio ID entry starting at offset 0x10
+    for (let i = 0; i < radioIds.length && i < LIMITS.DMR_RADIO_IDS_MAX; i++) {
+      const entryOffset = 0x10 + (i * BLOCK_SIZE.DMR_RADIO_ID);
+      
+      if (entryOffset + BLOCK_SIZE.DMR_RADIO_ID > blockData.length) {
+        log.warn(`DMR Radio ID ${i + 1} would exceed block size`, 'Protocol');
+        break;
+      }
+
+      const encodedEntry = encodeDMRRadioID(radioIds[i]);
+      blockData.set(encodedEntry, entryOffset);
+      
+      if (i % 10 === 0 || i === radioIds.length - 1) {
+        const progress = 10 + Math.floor(((i + 1) / radioIds.length) * 80); // 10-90%
+        this.onProgress?.(progress, `Encoded ${i + 1} of ${radioIds.length} DMR Radio IDs...`);
+      }
+    }
+
+    // Set metadata byte at end of block
+    blockData[0xFFF] = block.metadata;
+
+    // Write to radio
+    this.onProgress?.(95, 'Writing DMR Radio IDs to radio...');
+    await this.connection!.writeMemory(block.address, blockData, block.metadata);
+
+    this.onProgress?.(100, `Successfully wrote ${radioIds.length} DMR Radio IDs`);
+    log.info(`Successfully wrote ${radioIds.length} DMR Radio IDs to radio`, 'Protocol');
   }
 
   /**
