@@ -1,4 +1,4 @@
-import type { Channel, Zone, Contact, RadioSettings, ScanList } from '../models';
+import type { Channel, Zone, Contact, RadioSettings, ScanList, DMRRadioID } from '../models';
 
 // Re-export RadioSettings for use in stores
 export type { RadioSettings } from '../models';
@@ -36,6 +36,10 @@ export interface RadioProtocol {
   
   // Scan Lists
   readScanLists(): Promise<ScanList[]>;
+  
+  // DMR Radio IDs
+  readDMRRadioIDs(): Promise<DMRRadioID[]>;
+  writeDMRRadioIDs(radioIds: DMRRadioID[]): Promise<void>;
   
   // Contacts
   readContacts(): Promise<Contact[]>;

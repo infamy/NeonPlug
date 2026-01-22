@@ -667,6 +667,14 @@ export function useRadioConnection() {
         await protocol.writeRXGroups(rxGroups);
       }
 
+      // Step 5.7: Write DMR Radio IDs if they have been loaded
+      const dmrRadioIDsStore = useDMRRadioIDsStore.getState();
+      const dmrRadioIds = dmrRadioIDsStore.radioIds;
+      if (dmrRadioIds && dmrRadioIds.length > 0) {
+        onProgress?.(94, `Writing ${dmrRadioIds.length} DMR Radio ID(s) to radio...`, steps[4]);
+        await protocol.writeDMRRadioIDs(dmrRadioIds);
+      }
+
       // Step 6: Write radio settings only if they have been modified
       const radioSettingsStore = useRadioSettingsStore.getState();
       const radioSettings = radioSettingsStore.settings;

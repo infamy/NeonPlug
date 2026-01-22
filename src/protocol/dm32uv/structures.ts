@@ -2732,10 +2732,8 @@ export function parseDMRRadioIDs(
 ): DMRRadioID[] {
   const radioIds: DMRRadioID[] = [];
 
-  // Read count field at offset 0 (4 bytes, DWORD, little-endian)
-  const idCount = data.length >= 4 
-    ? data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)
-    : 0;
+  // Read count field at offset 0 (1 byte, max 250)
+  const idCount = data.length >= 1 ? data[0] : 0;
   const maxIds = Math.min(idCount, LIMITS.DMR_RADIO_IDS_MAX);
 
   // According to spec: "Entry Calculation: buffer + entry_num * 0x10"
