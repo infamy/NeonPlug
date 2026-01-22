@@ -7,13 +7,14 @@ import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { parseEncryptionKeys, parseDigitalEmergencies } from '../../protocol/dm32uv/structures';
+import { LIMITS } from '../../protocol/dm32uv/constants';
 import { RXGroupsList } from '../rxgroups/RXGroupsList';
 
 export const DigitalTab: React.FC = () => {
   const { blockMetadata, blockData } = useRadioStore();
   const { keys, setKeys, updateKey } = useEncryptionKeysStore();
   const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem } = useDigitalEmergencyStore();
-  const { radioIds, radioIdsLoaded, updateRadioId } = useDMRRadioIDsStore();
+  const { radioIds, radioIdsLoaded, updateRadioId, addRadioId, deleteRadioId } = useDMRRadioIDsStore();
   const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact } = useQuickContactsStore();
   const { groupsLoaded: rxGroupsLoaded } = useRXGroupsStore();
   const { messages, messagesLoaded, updateMessage, addMessage, deleteMessage } = useQuickMessagesStore();
@@ -91,6 +92,10 @@ export const DigitalTab: React.FC = () => {
   };
 
   const handleAddContact = () => {
+    if (quickContacts.length >= 800) {
+      alert('Maximum of 800 talk groups allowed.');
+      return;
+    }
     addContact({
       name: 'New Talk Group',
       contactNumber: 0,
@@ -106,8 +111,8 @@ export const DigitalTab: React.FC = () => {
   };
 
   const handleAddMessage = () => {
-    if (messages.length >= 31) {
-      alert('Maximum of 31 quick messages allowed.');
+    if (messages.length >= 20) {
+      alert('Maximum of 20 quick messages allowed.');
       return;
     }
     const newIndex = messages.length;
@@ -125,6 +130,27 @@ export const DigitalTab: React.FC = () => {
     }
   };
 
+  const handleAddRadioId = () => {
+    if (radioIds.length >= LIMITS.DMR_RADIO_IDS_MAX) {
+      alert(`Maximum of ${LIMITS.DMR_RADIO_IDS_MAX} DMR Radio IDs allowed.`);
+      return;
+    }
+    const newIndex = radioIds.length;
+    addRadioId({
+      index: newIndex,
+      name: 'New Radio ID',
+      dmrId: '0',
+      dmrIdValue: 0,
+      dmrIdBytes: new Uint8Array([0, 0, 0]),
+    });
+  };
+
+  const handleDeleteRadioId = (index: number) => {
+    if (confirm(`Are you sure you want to delete this DMR Radio ID?`)) {
+      deleteRadioId(index);
+    }
+  };
+
   return (
     <div className="p-6">
       <div className="mb-6">
@@ -136,11 +162,21 @@ export const DigitalTab: React.FC = () => {
 
       {/* DMR Radio IDs Section */}
       <div className="mb-8">
-        <div className="mb-4">
-          <h3 className="text-xl font-semibold text-neon-cyan mb-2">DMR Radio IDs</h3>
-          <p className="text-cool-gray text-sm">
-            Manage DMR Radio IDs. Up to 5 IDs can be configured.
-          </p>
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-semibold text-neon-cyan mb-2">DMR Radio IDs</h3>
+            <p className="text-cool-gray text-sm">
+              Manage DMR Radio IDs. Up to {LIMITS.DMR_RADIO_IDS_MAX} IDs can be configured.
+            </p>
+          </div>
+          {radioIdsLoaded && radioIds.length < LIMITS.DMR_RADIO_IDS_MAX && (
+            <button
+              onClick={handleAddRadioId}
+              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
+            >
+              + Add ID
+            </button>
+          )}
         </div>
 
         {!radioIdsLoaded ? (
@@ -162,10 +198,11 @@ export const DigitalTab: React.FC = () => {
                     <tr className="bg-dark-charcoal border-b border-neon-cyan">
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">DMR ID</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {radioIds.slice(0, 5).map((radioId) => (
+                    {radioIds.map((radioId) => (
                       <tr
                         key={radioId.index}
                         className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
@@ -207,11 +244,19 @@ export const DigitalTab: React.FC = () => {
                             placeholder="DMR ID (0-16777215)"
                           />
                         </td>
+                        <td className="px-2 py-2">
+                          <button
+                            onClick={() => handleDeleteRadioId(radioId.index)}
+                            className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                          >
+                            Delete
+                          </button>
+                        </td>
                       </tr>
                     ))}
                     {radioIds.length === 0 && (
                       <tr>
-                        <td colSpan={2} className="px-2 py-2 text-cool-gray text-center">
+                        <td colSpan={3} className="px-2 py-2 text-cool-gray text-center">
                           No DMR Radio IDs found on the radio.
                         </td>
                       </tr>
@@ -220,13 +265,6 @@ export const DigitalTab: React.FC = () => {
                 </table>
               </div>
             </div>
-            {radioIds.length > 5 && (
-              <div className="px-4 py-2 bg-yellow-900/20 border-t border-yellow-600/30">
-                <p className="text-yellow-400 text-sm">
-                  Warning: Radio only supports 5 DMR Radio IDs. Only the first 5 are shown.
-                </p>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -241,12 +279,18 @@ export const DigitalTab: React.FC = () => {
             </p>
           </div>
           {quickContactsLoaded && (
-            <button
-              onClick={handleAddContact}
-              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
-            >
-              + Add Group
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="text-cool-gray text-sm">
+                {quickContacts.length}/800 talk groups
+              </div>
+              <button
+                onClick={handleAddContact}
+                disabled={quickContacts.length >= 800}
+                className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                + Add Group
+              </button>
+            </div>
           )}
         </div>
 
@@ -526,10 +570,10 @@ export const DigitalTab: React.FC = () => {
           <div>
             <h3 className="text-xl font-semibold text-neon-cyan mb-2">Quick Text Messages</h3>
             <p className="text-cool-gray text-sm">
-              Manage quick text messages. Maximum 128 bytes per message, up to 31 messages.
+              Manage quick text messages. Maximum 128 bytes per message, up to 20 messages.
             </p>
           </div>
-          {messagesLoaded && messages.length < 31 && (
+          {messagesLoaded && messages.length < 20 && (
             <button
               onClick={handleAddMessage}
               className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"

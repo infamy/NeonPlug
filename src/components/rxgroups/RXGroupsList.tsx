@@ -10,7 +10,11 @@ export const RXGroupsList: React.FC = () => {
   const [editingNameValue, setEditingNameValue] = useState('');
 
   const handleAddGroup = () => {
-    if (newGroupName.trim() && groups.length < 32) {
+    if (groups.length >= 32) {
+      alert('Maximum of 32 RX groups allowed.');
+      return;
+    }
+    if (newGroupName.trim()) {
       addGroup({
         name: newGroupName.trim().slice(0, 11),
         bitmask: 0,
@@ -29,7 +33,10 @@ export const RXGroupsList: React.FC = () => {
     <div className="grid grid-cols-2 gap-4">
       <div className="bg-deep-gray rounded-lg border border-neon-cyan">
         <div className="p-4 border-b border-neon-cyan border-opacity-30 flex justify-between items-center">
-          <h3 className="text-neon-cyan font-bold">RX Groups</h3>
+          <div>
+            <h3 className="text-neon-cyan font-bold">RX Groups</h3>
+            <p className="text-cool-gray text-xs mt-1">{groups.length}/32 groups</p>
+          </div>
           <div className="flex gap-2">
             <input
               type="text"
@@ -224,8 +231,13 @@ const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group }) => {
     const talkGroup = talkGroups.find(tg => tg.index === talkGroupIndex);
     if (!talkGroup) return;
     
+    if (group.talkGroupIndices.length >= 32) {
+      alert('Maximum of 32 talk groups per RX group allowed.');
+      return;
+    }
+    
     const dmrId = talkGroup.contactNumber;
-    if (!group.talkGroupIndices.includes(dmrId) && group.talkGroupIndices.length < 32) {
+    if (!group.talkGroupIndices.includes(dmrId)) {
       updateGroup(group.index, {
         talkGroupIndices: [...group.talkGroupIndices, dmrId].sort((a, b) => a - b),
       });

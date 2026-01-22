@@ -867,226 +867,233 @@ export function encodeZone(zone: Zone, _zoneIndex: number): Uint8Array {
 
 /**
  * Parse scan lists from scan list block data
- * Structure discovered from debug analysis:
- * - Scan lists are NOT at fixed 92-byte boundaries starting at offset 16
- * - Names are at variable positions: 1, 58, 115, 172 (absolute offsets)
- * - After name, there's data, then channels start
- * - Channels are 16-bit LE, 4 bytes apart (2 bytes channel, 2 bytes padding)
+ * Based on spec: Fixed 57-byte entries
+ * 
+ * Block Structure:
+ * - Byte 0: Scan list count (1-32)
+ * - Byte 1+: Scan list entries (57 bytes each)
+ * 
+ * Entry Offset Calculation: (57 * N) - 56
+ * - Entry 1: offset 1
+ * - Entry 2: offset 58
+ * - Entry 3: offset 115
+ * 
+ * 57-Byte Entry Structure:
+ * - +0x00: Name (11 bytes, null-terminated, max 10 chars)
+ * - +0x0B: Channel Count (1 byte, 0-15)
+ * - +0x0C: CTC/TX Mode (1 byte, bits 0-1: CTC, bits 2-3: TX)
+ * - +0x0D: Hang Time (1 byte, tenths of seconds, 1-255 = 0.1s to 25.5s)
+ * - +0x0E: Priority Types (1 byte, bits 0-3: Pri1 Type, bits 4-7: Pri2 Type)
+ * - +0x0F: Priority Channel 1 (2 bytes LE, stored directly)
+ * - +0x11: Designated TX Channel (2 bytes LE, ENCODED with -2)
+ * - +0x13: Priority Channel 2 (2 bytes LE, ENCODED with -2)
+ * - +0x15: Unknown (5 bytes)
+ * - +0x1A: Channel List (30 bytes, uint16 array LE, 0x0000 terminated, max 15 channels)
+ * - +0x38: Padding (1 byte)
  */
 export function parseScanLists(
   data: Uint8Array,
   onRawScanListParsed?: (listNum: number, rawData: Uint8Array, name: string) => void
 ): ScanList[] {
   const scanLists: ScanList[] = [];
-
-  // Find scan list names by searching for readable ASCII strings
-  // We know the exact positions: 1, 58, 115, 172
-  // But we'll search more carefully to avoid duplicates
-  const foundLists: Array<{ namePos: number; name: string }> = [];
-  const usedPositions = new Set<number>();
   
-  // Search through the data for potential scan list names
-  for (let i = 0; i < Math.min(data.length - 10, 500); i++) {
-    // Skip padding bytes
-    if (data[i] === 0x00 || data[i] === 0xFF || data[i] < 32 || data[i] >= 127) {
-      continue;
-    }
-    
-    // Skip if we've already used a position near this one (within 20 bytes)
-    let tooClose = false;
-    for (const usedPos of usedPositions) {
-      if (Math.abs(i - usedPos) < 20) {
-        tooClose = true;
-        break;
-      }
-    }
-    if (tooClose) continue;
-    
-    // Try to read a name starting here (max 16 bytes per spec)
-    const nameBytes = data.slice(i, i + 16);
-    const nullIndex = nameBytes.indexOf(0);
-    if (nullIndex < 2) continue; // Need at least 2 chars
-    
-    const potentialName = new TextDecoder('ascii', { fatal: false })
-      .decode(nameBytes.slice(0, nullIndex))
-      .replace(/\x00/g, '')
-      .trim();
-    
-    // Check if it looks like a scan list name
-    // Should have letters/numbers, might contain "List", dots, spaces
-    if (potentialName.length >= 2 && 
-        /^[A-Za-z0-9\s\.\-]+$/.test(potentialName) &&
-        (potentialName.includes('List') || 
-         /^[A-Z]{2,}/.test(potentialName) || // Starts with uppercase letters
-         /^[A-Z]/.test(potentialName))) {   // Starts with uppercase
-      
-      // Check if this is a duplicate of an existing name (exact match or substring)
-      const isDuplicate = foundLists.some(l => {
-        const existing = l.name;
-        const newName = potentialName;
-        // Check if one is a substring of the other (but not too short)
-        return existing === newName || 
-               (existing.length > 3 && newName.length > 3 && 
-                (existing.includes(newName) || newName.includes(existing)));
-      });
-      
-      if (!isDuplicate) {
-        foundLists.push({ namePos: i, name: potentialName });
-        usedPositions.add(i);
-        log.debug(`Found scan list name "${potentialName}" at offset ${i}`, 'Structures');
-      }
-    }
+  // Read count from offset 0x00
+  const count = data[0x00] || 0;
+  
+  if (count === 0) {
+    return scanLists;
   }
   
-  // Sort by position
-  foundLists.sort((a, b) => a.namePos - b.namePos);
-  
-  // Parse each found scan list
-  for (let listNum = 0; listNum < foundLists.length; listNum++) {
-    const { namePos, name } = foundLists[listNum];
+  // Parse exactly the number of entries specified by the count
+  for (let listNum = 1; listNum <= count; listNum++) {
+    // Calculate entry offset: (57 * N) - 56
+    const entryOffset = (BLOCK_SIZE.SCAN_LIST * listNum) - 56;
     
-    // Find where channels start by searching for a SEQUENCE of valid channels after the name
-    // Name is null-terminated, so find the end
-    const nameEnd = namePos + name.length + 1; // +1 for null terminator
-    let channelStart = -1;
-    
-    // Search for a sequence of at least 3 consecutive valid channels
-    // This avoids false matches on single channel numbers that appear in metadata
-    // Channels are 2 bytes apart, so we need to check every 2 bytes
-    for (let i = nameEnd; i < Math.min(nameEnd + 100, data.length - 5); i++) {
-      // Check for at least 3 consecutive valid channels (6 bytes total)
-      const ch1 = data[i] | (data[i + 1] << 8);
-      const ch2 = data[i + 2] | (data[i + 3] << 8);
-      const ch3 = data[i + 4] | (data[i + 5] << 8);
-      
-      // All three must be valid channels
-      if (ch1 > 0 && ch1 <= 4000 && ch2 > 0 && ch2 <= 4000 && ch3 > 0 && ch3 <= 4000) {
-        // Verify this is a sequence - channels should be close together (within 20 of each other)
-        // This ensures we're reading actual channel lists, not random valid numbers
-        if (Math.abs(ch2 - ch1) <= 20 && Math.abs(ch3 - ch2) <= 20) {
-          channelStart = i;
-          break;
-        }
-      }
+    if (entryOffset + BLOCK_SIZE.SCAN_LIST > data.length) {
+      console.warn(`Scan list ${listNum} would exceed data length (offset ${entryOffset})`);
+      break;
     }
     
-    if (channelStart === -1) {
-      log.warn(`Could not find channel start for scan list "${name}"`, 'Structures');
-      continue;
+    // Extract 57-byte entry
+    const entry = data.slice(entryOffset, entryOffset + BLOCK_SIZE.SCAN_LIST);
+    
+    // Name at +0x00 (11 bytes, null-terminated, max 10 chars)
+    const nameBytes = entry.slice(0x00, 0x0B);
+    const nullIndex = nameBytes.indexOf(0);
+    let name = '';
+    if (nullIndex >= 0 && nullIndex > 0) {
+      name = new TextDecoder('ascii', { fatal: false })
+        .decode(nameBytes.slice(0, nullIndex))
+        .trim();
+    }
+    if (!name) {
+      name = `Scan List ${listNum}`;
     }
     
-    // Read channels (2 bytes each, 16-bit LE, up to 16 channels)
+    // Channel Count at +0x0B (1 byte, 0-15)
+    const channelCount = entry[0x0B];
+    
+    // CTC/TX Mode at +0x0C (1 byte)
+    const ctcTxMode = entry[0x0C];
+    const ctcScanMode = (ctcTxMode & 0x03); // Bits 0-1
+    const scanTxMode = ((ctcTxMode >> 2) & 0x03); // Bits 2-3
+    
+    // Hang Time at +0x0D (1 byte, tenths of seconds)
+    const hangTime = entry[0x0D] || undefined;
+    
+    // Priority Types at +0x0E (1 byte)
+    const priorityTypes = entry[0x0E];
+    const priority1Type = (priorityTypes & 0x0F); // Bits 0-3
+    const priority2Type = ((priorityTypes >> 4) & 0x0F); // Bits 4-7
+    
+    // Priority Channel 1 at +0x0F (2 bytes LE, stored directly)
+    const priorityCh1Raw = entry[0x0F] | (entry[0x10] << 8);
+    const priorityChannel1 = (priority1Type === 2 && priorityCh1Raw > 0) ? priorityCh1Raw : undefined;
+    
+    // Designated TX Channel at +0x11 (2 bytes LE, ENCODED with -2)
+    const designatedTxRaw = entry[0x11] | (entry[0x12] << 8);
+    let designatedTxChannel: number | undefined;
+    // Decode: if type==0 → 0 (None), if type==1 → 1 (Current), if type==2 → stored+2
+    const designatedTxType = (scanTxMode === 2) ? 2 : (scanTxMode === 1 ? 1 : 0);
+    if (designatedTxType === 0) {
+      designatedTxChannel = undefined; // None
+    } else if (designatedTxType === 1) {
+      designatedTxChannel = undefined; // Current (we'll store in scanTxMode instead)
+    } else {
+      designatedTxChannel = designatedTxRaw + 2;
+    }
+    
+    // Priority Channel 2 at +0x13 (2 bytes LE, ENCODED with -2)
+    const priorityCh2Raw = entry[0x13] | (entry[0x14] << 8);
+    let priorityChannel2: number | undefined;
+    // Decode: if type==0 → 0 (None), if type==1 → 1 (Current), if type==2 → stored+2
+    if (priority2Type === 0) {
+      priorityChannel2 = undefined; // None
+    } else if (priority2Type === 1) {
+      priorityChannel2 = undefined; // Current (stored in priority2Type)
+    } else {
+      priorityChannel2 = priorityCh2Raw + 2;
+    }
+    
+    // Channel List at +0x1A (30 bytes, uint16 array LE, 0x0000 terminated, max 15 channels)
     const channels: number[] = [];
-    for (let i = 0; i < 16; i++) {
-      const offset = channelStart + (i * 2); // 2 bytes per channel
-      if (offset + 2 > data.length) break;
+    for (let i = 0; i < 15; i++) {
+      const chOffset = 0x1A + (i * 2);
+      if (chOffset + 2 > entry.length) break;
       
-      const chNum = data[offset] | (data[offset + 1] << 8);
-      if (chNum === 0) {
+      const chNum = entry[chOffset] | (entry[chOffset + 1] << 8);
+      if (chNum === 0 || chNum === 0xFFFF) {
         break; // End of channel list
       }
-      if (chNum > 0 && chNum <= 4000) {
+      if (chNum > 0 && chNum <= 65535) {
         channels.push(chNum);
-      } else {
-        break; // Invalid channel number
       }
     }
     
-    // Extract 92 bytes for raw data storage (starting from name or before if header exists)
-    let listStart = namePos;
-    if (namePos > 0 && data[namePos - 1] === 0x04) {
-      listStart = namePos - 1; // Include 0x04 header
-    }
-    const listData = data.slice(listStart, Math.min(listStart + 92, data.length));
-
-    // CTC mode and settings - try to find, but for now use defaults
-    const ctcScanMode = 0;
-    const settings = new Array(8).fill(0);
-
-    const scanList = {
+    const scanList: ScanList = {
       name,
-      ctcScanMode,
-      settings,
       channels,
+      channelCount,
+      ctcScanMode,
+      scanTxMode,
+      hangTime,
+      priority1Type,
+      priority2Type,
+      priorityChannel1,
+      priorityChannel2,
+      designatedTxChannel,
     };
+    
     scanLists.push(scanList);
     
     // Call callback to store raw data
-    onRawScanListParsed?.(listNum, listData, name);
+    onRawScanListParsed?.(listNum - 1, entry, name);
   }
-
-  // TODO: Handle lists 45+ which start at offset 0 in subsequent blocks
-  // For now, we only parse lists 1-44 which start at offset 16
 
   return scanLists;
 }
 
 /**
  * Encode a scan list to binary format
- * This is the reverse of parseScanLists()
+ * Based on spec: Fixed 57-byte entry structure
  * 
  * @param scanList - Scan list to encode
- * @param listNum - Scan list number (1-indexed)
- * @returns Encoded scan list data (92 bytes)
+ * @param listNum - Scan list number (1-indexed, unused but kept for compatibility)
+ * @returns Encoded scan list data (57 bytes)
  */
-export function encodeScanList(scanList: ScanList, listNum: number): Uint8Array {
-  const data = new Uint8Array(92);
+export function encodeScanList(scanList: ScanList, _listNum: number): Uint8Array {
+  const data = new Uint8Array(57);
   
-  // Initialize to 0xFF (empty/padding)
-  data.fill(0xFF);
+  // Initialize to 0x00
+  data.fill(0x00);
   
-  // Calculate name position based on list number
-  // Lists 1-44: positions 1, 58, 115, 172 (repeating pattern)
-  // For simplicity, we'll use a pattern: listNum % 4 determines offset
-  let nameOffset = 1;
-  if (listNum <= 44) {
-    // Pattern: 1, 58, 115, 172, then repeat
-    const patternIndex = (listNum - 1) % 4;
-    const offsets = [1, 58, 115, 172];
-    nameOffset = offsets[patternIndex] + Math.floor((listNum - 1) / 4) * 228; // 228 = 4 * 57 (approximate spacing)
-  } else {
-    // Lists 45+: start at offset 0 in subsequent blocks
-    nameOffset = 0;
-  }
-  
-  // Ensure name offset is within bounds
-  if (nameOffset >= data.length - 16) {
-    nameOffset = 1; // Fallback to start
-  }
-  
-  // Name (max 16 bytes, null-terminated)
-  const nameBytes = new TextEncoder().encode(scanList.name.slice(0, 16));
-  const nameLength = Math.min(nameBytes.length, 16 - 1); // -1 for null terminator
-  
+  // Name at +0x00 (11 bytes, null-terminated, max 10 chars)
+  const nameBytes = new TextEncoder().encode(scanList.name.slice(0, 10));
+  const nameLength = Math.min(nameBytes.length, 10);
   for (let i = 0; i < nameLength; i++) {
-    data[nameOffset + i] = nameBytes[i];
+    data[0x00 + i] = nameBytes[i];
   }
-  data[nameOffset + nameLength] = 0; // Null terminator
+  data[nameLength] = 0; // Null terminator
   
-  // Find channel start position (after name)
-  const nameEnd = nameOffset + nameLength + 1;
-  const channelStart = nameEnd;
+  // Channel Count at +0x0B (1 byte, 0-15)
+  const channelCount = Math.min(scanList.channels.length, 15);
+  data[0x0B] = channelCount;
   
-  // Channels (2 bytes each, 16-bit LE, max 16 channels)
-  const channelCount = Math.min(scanList.channels.length, 16);
-  for (let i = 0; i < channelCount; i++) {
-    const offset = channelStart + (i * 2);
-    if (offset + 2 > data.length) break;
-    
+  // CTC/TX Mode at +0x0C (1 byte)
+  const ctcScanMode = (scanList.ctcScanMode || 0) & 0x03;
+  const scanTxMode = (scanList.scanTxMode || 0) & 0x03;
+  data[0x0C] = ctcScanMode | (scanTxMode << 2);
+  
+  // Hang Time at +0x0D (1 byte, tenths of seconds)
+  if (scanList.hangTime) {
+    data[0x0D] = scanList.hangTime & 0xFF;
+  }
+  
+  // Priority Types at +0x0E (1 byte)
+  const priority1Type = (scanList.priority1Type || 0) & 0x0F;
+  const priority2Type = (scanList.priority2Type || 0) & 0x0F;
+  data[0x0E] = priority1Type | (priority2Type << 4);
+  
+  // Priority Channel 1 at +0x0F (2 bytes LE, stored directly)
+  if (scanList.priorityChannel1 && priority1Type === 2) {
+    const ch1 = scanList.priorityChannel1;
+    data[0x0F] = ch1 & 0xFF;
+    data[0x10] = (ch1 >> 8) & 0xFF;
+  }
+  
+  // Designated TX Channel at +0x11 (2 bytes LE, ENCODED with -2)
+  // Encode: if (ch < 2) store 0, type=ch; else store ch-2, type=2
+  if (scanList.designatedTxChannel !== undefined) {
+    const ch = scanList.designatedTxChannel;
+    const encoded = ch < 2 ? 0 : ch - 2;
+    data[0x11] = encoded & 0xFF;
+    data[0x12] = (encoded >> 8) & 0xFF;
+  }
+  
+  // Priority Channel 2 at +0x13 (2 bytes LE, ENCODED with -2)
+  // Encode: if (ch < 2) store 0, type=ch; else store ch-2, type=2
+  if (scanList.priorityChannel2 !== undefined && priority2Type === 2) {
+    const ch = scanList.priorityChannel2;
+    const encoded = ch < 2 ? 0 : ch - 2;
+    data[0x13] = encoded & 0xFF;
+    data[0x14] = (encoded >> 8) & 0xFF;
+  }
+  
+  // Channel List at +0x1A (30 bytes, uint16 array LE, 0x0000 terminated, max 15 channels)
+  for (let i = 0; i < channelCount && i < 15; i++) {
     const chNum = scanList.channels[i];
-    // Write 16-bit little-endian
+    const offset = 0x1A + (i * 2);
     data[offset] = chNum & 0xFF;
     data[offset + 1] = (chNum >> 8) & 0xFF;
   }
-  
   // End marker (0x0000 after last channel)
-  if (channelCount < 16) {
-    const endOffset = channelStart + (channelCount * 2);
-    if (endOffset + 2 <= data.length) {
-      data[endOffset] = 0x00;
-      data[endOffset + 1] = 0x00;
-    }
+  if (channelCount < 15) {
+    const endOffset = 0x1A + (channelCount * 2);
+    data[endOffset] = 0x00;
+    data[endOffset + 1] = 0x00;
   }
+  
+  // Padding at +0x38 (1 byte) - already 0x00 from fill
   
   return data;
 }
@@ -2120,7 +2127,7 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
  * - Header: Offset 0x00 (1 byte count), 0x01-0x0F (15 bytes padding)
  * - Entry size: 129 bytes per message (0x81)
  * - Entries start at offset 0x10
- * - Max entries: 31 (floor((4096 - 16) / 129) = 31)
+ * - Max entries: 20
  * 
  * Entry N (1-based):
  * - Status byte: (N * 0x81) - 0x71
@@ -2262,7 +2269,7 @@ export function encodeQuickMessages(messages: QuickTextMessage[], buffer: Uint8A
   const messageCount = Math.min(messages.length, LIMITS.QUICK_MESSAGES_MAX);
   buffer[0x00] = messageCount;
   
-  // Clear all message entries first (entries 1-31) to 0xFF
+  // Clear all message entries first (entries 1-20) to 0xFF
   for (let entryNum = 1; entryNum <= LIMITS.QUICK_MESSAGES_MAX; entryNum++) {
     const statusOffset = (entryNum * 0x81) - 0x71;
     const messageOffset = (entryNum * 0x81) - 0x70;
@@ -2709,7 +2716,7 @@ export function encodeAnalogEmergencies(systems: AnalogEmergency[]): Uint8Array 
  * - Count field: Offset 0 (4 bytes, DWORD, little-endian)
  * - Entry size: 16 bytes per entry (0x10)
  * - Entry base: Offset 0x00 (entries start at buffer base)
- * - Max entries: 256 entries (4096 / 16 = 256)
+ * - Max entries: 250 entries per spec
  * 
  * Entry calculation: buffer + entry_num * 0x10
  * 

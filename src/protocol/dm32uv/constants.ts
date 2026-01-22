@@ -31,7 +31,7 @@ export const BLOCK_SIZE = {
   STANDARD: 4096,           // 4KB blocks
   CHANNEL: 48,              // Bytes per channel
   ZONE: 145,                // Bytes per zone
-  SCAN_LIST: 92,            // Bytes per scan list
+  SCAN_LIST: 57,            // Bytes per scan list (per spec: 57-byte entries)
   DIGITAL_EMERGENCY: 40,    // Bytes per digital emergency entry
   ANALOG_EMERGENCY: 36,     // Bytes per analog emergency entry
   ZONE_NAME: 11,            // Bytes for zone name
@@ -47,7 +47,7 @@ export const OFFSET = {
   CHANNEL_COUNT: 0x00,      // Offset of channel count in first block
   FIRST_CHANNEL: 0x10,      // First channel starts at offset 0x10 in first block
   ZONE_START: 16,           // Zones start at offset 16
-  SCAN_LIST_START: 16,      // Scan lists start at offset 16 (for first 44)
+  SCAN_LIST_START: 1,       // Scan lists: count at 0x00, entries start at offset 1 using formula (57*N)-56
   METADATA_BYTE: 0xFFF,     // Offset to read metadata byte (last byte of 4KB block)
   QUICK_MESSAGE_COUNT: 0x00, // Count field at offset 0
   QUICK_MESSAGE_HEADER_SIZE: 0x10, // Header size (16 bytes: 1 byte count + 15 bytes padding)
@@ -105,13 +105,17 @@ export const CONNECTION = {
 export const LIMITS = {
   CHANNEL_MAX: 4000,
   CHANNEL_MIN: 1,
+  ZONES_MAX: 250,           // Maximum of 250 zones
   ZONES_PER_BLOCK: 28,      // Approximate (4096 - 16) / 145
+  ZONE_CHANNELS_MAX: 64,    // Max 64 channels per zone
   SCAN_LISTS_PER_BLOCK: 44, // First 44 start at offset 16
-  SCAN_LIST_CHANNELS_MAX: 16,
+  SCAN_LISTS_MAX: 32,        // Maximum of 32 scan lists
+  SCAN_LIST_CHANNELS_MAX: 15,    // Max 15 channels per scan list (30 bytes / 2)
   DIGITAL_EMERGENCY_MAX: 37, // (4096 - 0x218) / 40 ≈ 37
   ANALOG_EMERGENCY_MAX: 108, // (4096 - 0xAC) / 36 ≈ 108
-  QUICK_MESSAGES_MAX: 31,   // floor((4096 - 16) / 129) = 31
+  QUICK_MESSAGES_MAX: 20,   // Maximum of 20 quick messages
   RX_GROUPS_MAX: 32,        // Max 32 groups (limited by 32-bit bitmask in header)
-  DMR_RADIO_IDS_MAX: 256,   // 4096 / 16 = 256
+  DMR_RADIO_IDS_MAX: 250,   // Maximum of 250 DMR Radio IDs per spec
+  TALK_GROUPS_MAX: 800,     // Maximum of 800 talk groups
 } as const;
 
