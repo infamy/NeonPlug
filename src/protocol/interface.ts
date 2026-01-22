@@ -36,7 +36,6 @@ export interface RadioProtocol {
   
   // Scan Lists
   readScanLists(): Promise<ScanList[]>;
-  writeScanLists(scanLists: ScanList[]): Promise<void>;
   
   // Contacts
   readContacts(): Promise<Contact[]>;

@@ -137,10 +137,6 @@ export const ScanListsList: React.FC = () => {
   );
 };
 
-interface ScanListEditorProps {
-  scanList: ScanList;
-}
-
 interface SearchableChannelSelectProps {
   value: number | undefined;
   onChange: (value: number | undefined) => void;

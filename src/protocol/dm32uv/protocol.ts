@@ -1617,101 +1617,6 @@ export class DM32UVProtocol implements RadioProtocol {
     return scanLists;
   }
 
-  async writeScanLists(scanLists: ScanList[]): Promise<void> {
-    requireConnection(this.connection, this.radioInfo);
-    
-    if (scanLists.length === 0) {
-      throw new Error('No scan lists to write');
-    }
-
-    // Enforce maximum of 32 scan lists
-    if (scanLists.length > LIMITS.SCAN_LISTS_MAX) {
-      throw new Error(`Maximum of ${LIMITS.SCAN_LISTS_MAX} scan lists allowed. Got ${scanLists.length}`);
-    }
-
-    this.onProgress?.(0, 'Preparing to write scan lists...');
-
-    // Discover blocks if not already discovered
-    if (this.discoveredBlocks.length === 0) {
-      this.onProgress?.(5, 'Discovering scan list blocks...');
-      const blocks = await discoverMemoryBlocks(
-        this.connection!,
-        this.radioInfo!.memoryLayout.configStart,
-        this.radioInfo!.memoryLayout.configEnd,
-        (current, total) => {
-          const progress = 5 + Math.floor((current / total) * 5); // 5-10%
-          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
-        }
-      );
-      this.discoveredBlocks = blocks;
-    }
-
-    // Get scan list blocks (metadata 0x5d)
-    const scanBlocks = this.discoveredBlocks.filter(b => b.type === 'scan' && b.metadata === METADATA.SCAN_LIST);
-
-    if (scanBlocks.length === 0) {
-      throw new Error('No scan list blocks found');
-    }
-
-    this.onProgress?.(10, `Writing ${scanLists.length} scan lists to ${scanBlocks.length} block(s)...`);
-
-    // Read all scan list blocks and concatenate
-    const allScanListData = await readAndConcatenateBlocks(
-      this.connection!,
-      scanBlocks,
-      this.onProgress
-    );
-
-    // Encode scan lists
-    const encodedScanLists = scanLists.map((scanList, idx) => encodeScanList(scanList, idx + 1));
-    
-    // Write count at offset 0x00
-    allScanListData[0x00] = Math.min(scanLists.length, LIMITS.SCAN_LISTS_MAX);
-    
-    // Write scan lists to fixed 57-byte boundaries: (57 * N) - 56
-    // Entry 1 at offset 1, Entry 2 at offset 58, Entry 3 at offset 115, etc.
-    for (let i = 0; i < encodedScanLists.length; i++) {
-      const listNum = i + 1; // 1-indexed
-      const entryOffset = (BLOCK_SIZE.SCAN_LIST * listNum) - 56;
-      
-      // Ensure we don't exceed the data length
-      if (entryOffset + BLOCK_SIZE.SCAN_LIST > allScanListData.length) {
-        throw new Error(`Scan list ${listNum} would exceed block size (offset ${entryOffset})`);
-      }
-      
-      // Write the encoded scan list data at the fixed offset
-      allScanListData.set(encodedScanLists[i], entryOffset);
-      
-      const progress = 50 + Math.floor((i / scanLists.length) * 40); // 50-90%
-      if (i % 5 === 0 || i === scanLists.length - 1) {
-        this.onProgress?.(progress, `Encoded ${i + 1} of ${scanLists.length} scan lists...`);
-      }
-    }
-
-    // Write blocks back to radio
-    // We need to split the concatenated data back into blocks
-    let dataOffset = 0;
-    for (let blockIdx = 0; blockIdx < scanBlocks.length; blockIdx++) {
-      const block = scanBlocks[blockIdx];
-      const blockData = allScanListData.slice(dataOffset, dataOffset + BLOCK_SIZE.STANDARD);
-      
-      const progress = 90 + Math.floor((blockIdx / scanBlocks.length) * 10); // 90-100%
-      this.onProgress?.(progress, `Writing scan list block ${blockIdx + 1} of ${scanBlocks.length}...`);
-      
-      await this.connection!.writeMemory(block.address, blockData, block.metadata);
-      
-      dataOffset += BLOCK_SIZE.STANDARD;
-      
-      // Delay between block writes
-      if (blockIdx < scanBlocks.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
-      }
-    }
-
-    this.onProgress?.(100, `Successfully wrote ${scanLists.length} scan lists`);
-    log.info(`Successfully wrote ${scanLists.length} scan lists to radio`, 'Protocol');
-  }
-
   /**
    * Read contacts from the radio
    * Based on ContactReadWrite.md spec:
@@ -3503,23 +3408,24 @@ export class DM32UVProtocol implements RadioProtocol {
       const allScanListData = new Uint8Array(totalScanListBlocksNeeded * BLOCK_SIZE.STANDARD);
       allScanListData.fill(0xFF);
       
-      // Write scan lists to the concatenated data
+      // Write scan lists to fixed 57-byte boundaries: (57 * N) - 56
+      // Entry 1 at offset 1, Entry 2 at offset 58, Entry 3 at offset 115, etc.
       for (let i = 0; i < encodedScanLists.length; i++) {
-        let scanListOffset: number;
-        if (i < 44) {
-          scanListOffset = OFFSET.SCAN_LIST_START + (i * BLOCK_SIZE.SCAN_LIST);
-        } else {
-          const blockIndex = Math.floor((i - 44) / 44);
-          const listIndexInBlock = (i - 44) % 44;
-          scanListOffset = (blockIndex * BLOCK_SIZE.STANDARD) + (listIndexInBlock * BLOCK_SIZE.SCAN_LIST);
-        }
+        const listNum = i + 1; // 1-indexed
+        const scanListOffset = (BLOCK_SIZE.SCAN_LIST * listNum) - 56;
         
         if (scanListOffset + BLOCK_SIZE.SCAN_LIST > allScanListData.length) {
-          throw new Error(`Scan list ${i + 1} would exceed block size`);
+          throw new Error(`Scan list ${listNum} would exceed block size (offset ${scanListOffset})`);
         }
         
         allScanListData.set(encodedScanLists[i], scanListOffset);
       }
+      
+      // Write count at offset 0x00 AFTER all entries
+      const scanListCount = Math.min(scanLists.length, LIMITS.SCAN_LISTS_MAX);
+      allScanListData[0x00] = scanListCount;
+      log.debug(`Smart write: Set scan list count to ${scanListCount} at offset 0x00`, 'Protocol');
+      log.debug(`Smart write: First 32 bytes = [${Array.from(allScanListData.slice(0, 32)).map(b => b.toString(16).padStart(2, '0')).join(' ')}]`, 'Protocol');
       
       // Split into blocks and set metadata
       let scanListDataOffset = 0;
