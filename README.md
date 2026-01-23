@@ -1,82 +1,88 @@
+![NeonPlug Banner](neonplug_banner.jpg)
+
 # NEONPLUG
 
-WEB Based CPS for Baofeng DM-32UV.
+[![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/9ckzrcKU)
 
-**Not feature complete, work in progress**
+**A modern, web-based Customer Programming Software (CPS) for the Baofeng DM-32UV radio.**
 
-**Try it live:** [https://neonplug.app](https://neonplug.app)
+Program your DMR radio directly from your browser—no software installation required. NeonPlug brings a sleek, cyberpunk-themed interface with powerful features for managing channels, contacts, zones, and more.
 
-**Join our Discord:** [https://discord.gg/9ckzrcKU](https://discord.gg/9ckzrcKU)
+**🚀 Try it live:** [https://neonplug.app](https://neonplug.app)
 
-## Features
+**💬 Join us:** [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/9ckzrcKU)
 
-- Cyberpunk neon-themed UI
-- Full DM-32UV protocol support
-- Editable tables with ReactGrid
-- Location-based channel wizard
-- CSV import/export
-- Comprehensive validation
+> ⚠️ **Note:** Currently in active development. Some features are still being implemented.
 
-## Tech Stack
+---
 
-- **React** + **TypeScript**
-- **Vite** for building
-- **Tailwind CSS** with custom neon theme
-- **ReactGrid** for editable tables
-- **Zustand** for state management
-- **Web Serial API** for radio communication
+## ✨ Demo
 
-## Getting Started
+![NeonPlug Demo](demo.gif)
 
-### Prerequisites
+*Create channels, manage contacts, and program your radio—all from your browser.*
 
-- Node.js 18+ and npm
+---
 
-### Installation
+## 🎯 Key Features
 
-```bash
-npm install
-```
+### 📻 Radio Management
+- **Direct USB Connection** - Connect your DM-32UV via Web Serial API (no drivers needed)
+- **Read & Write** - Full codeplug read/write support
+- **Live Validation** - Real-time frequency and configuration validation
 
-### Development
+### 📡 Channel Configuration
+- **Smart Import** - Location-based channel wizard using repeater databases
+- **Bulk Editing** - Powerful table interface for editing multiple channels at once
+- **CSV Support** - Import/export channels from CHIRP and custom CSV formats
+- **Auto-Configuration** - Automatic offset, CTCSS, and color code detection
 
-```bash
-npm run dev
-```
+### 👥 Contact & Group Management
+- **Digital Contacts** - Manage DMR contacts with full talk group support
+- **RX Groups** - Create and organize receive groups
+- **Scan Lists** - Configure scan lists across zones
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+### 🎨 Modern Interface
+- **Cyberpunk Theme** - Eye-catching neon UI that's both beautiful and functional
+- **Responsive Design** - Works seamlessly on desktop and tablet
+- **Dark Mode Native** - Easy on the eyes during long programming sessions
 
-### Build
+---
 
-```bash
-npm run build
-```
+## 🚀 Getting Started
 
-## Project Structure
+Just visit **[neonplug.app](https://neonplug.app)** in a Chrome-based browser (Chrome, Edge, Opera, Brave). No installation needed!
 
-```
-src/
-├── components/     # React components
-├── models/         # TypeScript data models
-├── protocol/       # Radio protocol interface
-├── services/       # Business logic (validation, import, etc.)
-├── store/          # Zustand state management
-└── styles/         # Global styles and theme
-```
+**Requirements:**
+- Chrome, Edge, Opera, or Brave browser (for Web Serial API support)
+- Baofeng DM-32UV radio with USB cable
 
-## Roadmap
+---
 
-- Complete data read and parse
-- Complete export/import
-- Channel wizard (create codeplug based on location)
-- Write to radio (channels, then full)
-- Support for encrypted channels
+## 🤝 Contributing
 
-## Development Status
+We welcome contributions from everyone—not just developers!
 
-Coded and documented with the assistance of AI. Keyword ASSISTANCE.
+**Ways to help:**
+- 🧪 **Test the app** and report bugs or issues
+- 💡 **Share ideas** for new features
+- 📣 **Spread the word** about NeonPlug to other radio enthusiasts
+- 💻 **Code contributions** - Check out our [Contributing & Roadmap Guide](CONTRIBUTING.md)
 
-## License
+**For developers:** See our [Contributing & Roadmap Guide](CONTRIBUTING.md) for setup instructions, architecture overview, development roadmap, and guidelines.
 
-MIT
+This project was built with the assistance of AI, but all design decisions and architecture are intentional and human-guided.
 
+---
+
+## 📜 License
+
+MIT License - feel free to use this project for your own radio programming needs!
+
+---
+
+## 💬 Community
+
+Have questions or want to share your experience? Join our Discord community!
+
+[![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/9ckzrcKU)
