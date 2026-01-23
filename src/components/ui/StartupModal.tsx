@@ -1,5 +1,6 @@
 import React from 'react';
 import { Button } from './Button';
+import { isWebSerialSupported, getSupportedBrowsers } from '../../utils/browserSupport';
 
 interface StartupModalProps {
   isOpen: boolean;
@@ -15,6 +16,9 @@ export const StartupModal: React.FC<StartupModalProps> = ({
   onDismiss,
 }) => {
   if (!isOpen) return null;
+
+  const webSerialSupported = isWebSerialSupported();
+  const supportedBrowsers = getSupportedBrowsers();
 
   return (
     <div
@@ -33,11 +37,29 @@ export const StartupModal: React.FC<StartupModalProps> = ({
             How would you like to get started?
           </p>
 
+          {!webSerialSupported && (
+            <div className="bg-yellow-900 bg-opacity-30 border border-yellow-600 rounded-lg p-4 mb-4">
+              <div className="flex items-start">
+                <svg className="w-5 h-5 text-yellow-500 mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <div>
+                  <p className="text-yellow-500 font-semibold text-sm mb-1">Web Serial Not Supported</p>
+                  <p className="text-yellow-200 text-xs">
+                    Your browser does not support the Web Serial API. To read from or write to your radio, please use {supportedBrowsers.slice(0, -1).join(', ')}, or {supportedBrowsers[supportedBrowsers.length - 1]}.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <Button
             variant="primary"
             onClick={onReadFromRadio}
-            className="w-full py-4 text-lg"
-            glow
+            className="w-full py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-600 disabled:text-gray-400 disabled:shadow-none"
+            glow={webSerialSupported}
+            disabled={!webSerialSupported}
+            title={!webSerialSupported ? 'Web Serial API not supported in this browser' : 'Read codeplug from connected radio'}
           >
             Read from Radio
           </Button>

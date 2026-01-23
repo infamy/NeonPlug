@@ -11,6 +11,7 @@ import { useRadioStore } from '../../store/radioStore';
 // XLSX functions will be lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
+import { isWebSerialSupported } from '../../utils/browserSupport';
 
 export const Toolbar: React.FC = () => {
   const { channels, setChannels } = useChannelsStore();
@@ -31,6 +32,7 @@ export const Toolbar: React.FC = () => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isWriting, setIsWriting] = useState(false);
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
+  const webSerialSupported = isWebSerialSupported();
 
   const handleImport = () => {
     fileInputRef.current?.click();
@@ -266,15 +268,19 @@ export const Toolbar: React.FC = () => {
           <Button
             variant="primary"
             onClick={handleRead}
-            disabled={isConnecting}
+            disabled={isConnecting || !webSerialSupported}
+            className={!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}
+            title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Read codeplug from connected radio'}
           >
             {isConnecting ? 'Reading...' : 'Read from Radio'}
           </Button>
           <Button
             variant="primary"
             onClick={handleWrite}
-            disabled={isConnecting || isWriting || (channels.length === 0 && zones.length === 0 && scanLists.length === 0)}
-            glow
+            disabled={isConnecting || isWriting || (channels.length === 0 && zones.length === 0 && scanLists.length === 0) || !webSerialSupported}
+            className={!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}
+            title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Write codeplug to connected radio'}
+            glow={webSerialSupported}
           >
             {isWriting ? 'Writing...' : 'Write to Radio'}
           </Button>
