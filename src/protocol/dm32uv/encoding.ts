@@ -96,16 +96,21 @@ export function decodeCTCSSDCS(data: Uint8Array): CTCSSDCSResult {
     return { type: 'DCS', value: code, polarity };
   }
 
-  // CTCSS: tone in Hz
-  // Format per spec Python implementation:
-  // decimal_part = (low_byte >> 4) & 0x0F
-  // low_digit = low_byte & 0x0F
-  // high_digit = high_byte
-  // ctcss_hz = float(high_digit * 10 + low_digit) + (decimal_part / 10.0)
-  const decimalPart = (low >> 4) & 0x0F;
-  const lowDigit = low & 0x0F;
-  const highDigit = high;
-  const frequency = (highDigit * 10 + lowDigit) + (decimalPart / 10.0);
+  // CTCSS: tone in Hz (BCD format across both bytes)
+  // Format: high byte = [hundreds:4][tens:4], low byte = [ones:4][decimal:4]
+  // Example 1: 69.3 Hz = 0x93 0x06
+  //   hundreds = (0x06 >> 4) = 0, tens = 0x06 & 0x0F = 6
+  //   ones = (0x93 >> 4) = 9, decimal = 0x93 & 0x0F = 3
+  //   frequency = 0*100 + 6*10 + 9 + 3/10 = 69.3
+  // Example 2: 167.9 Hz = 0x79 0x16
+  //   hundreds = (0x16 >> 4) = 1, tens = 0x16 & 0x0F = 6
+  //   ones = (0x79 >> 4) = 7, decimal = 0x79 & 0x0F = 9
+  //   frequency = 1*100 + 6*10 + 7 + 9/10 = 167.9
+  const hundreds = (high >> 4) & 0x0F;
+  const tens = high & 0x0F;
+  const ones = (low >> 4) & 0x0F;
+  const decimalPart = low & 0x0F;
+  const frequency = (hundreds * 100 + tens * 10 + ones) + (decimalPart / 10.0);
 
   // If frequency is 0, treat as None
   if (frequency === 0) {
@@ -129,10 +134,23 @@ export function encodeCTCSSDCS(ctcssDcs: CTCSSDCSResult): Uint8Array {
     return new Uint8Array([code, 0x80 | polarityBit]);
   }
 
-  // CTCSS
+  // CTCSS (BCD format across both bytes)
+  // Example 1: 69.3 Hz
+  //   hundreds = 0, tens = 6, ones = 9, decimal = 3
+  //   high byte = (0 << 4) | 6 = 0x06
+  //   low byte = (9 << 4) | 3 = 0x93
+  // Example 2: 167.9 Hz
+  //   hundreds = 1, tens = 6, ones = 7, decimal = 9
+  //   high byte = (1 << 4) | 6 = 0x16
+  //   low byte = (7 << 4) | 9 = 0x79
   const frequency = ctcssDcs.value;
   const integerPart = Math.floor(frequency);
+  const hundreds = Math.floor(integerPart / 100);
+  const tens = Math.floor((integerPart % 100) / 10);
+  const ones = integerPart % 10;
   const decimalPart = Math.round((frequency - integerPart) * 10);
-  return new Uint8Array([integerPart, decimalPart]);
+  const low = (ones << 4) | decimalPart;
+  const high = (hundreds << 4) | tens;
+  return new Uint8Array([low, high]);
 }
 
