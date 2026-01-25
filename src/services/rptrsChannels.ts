@@ -12,6 +12,7 @@ import {
   parseTimeslots,
   groupRptrsByLocation,
 } from '../data/rptrsData';
+import { isValidRepeaterFrequency } from './validation/frequencyValidator';
 
 // Helper to remove distance property for compatibility
 function removeDistance(entry: RptrData & { distance?: number }): RptrData {
@@ -87,6 +88,12 @@ export function generateRptrsChannels(
     const rxFrequency = freqMhz; // Repeater output (user RX)
     const txFrequency = freqMhz + offsetMhz; // User TX (repeater input)
     
+    // Filter out repeaters with frequencies outside supported ranges (136-172 MHz or 400-470 MHz)
+    if (!isValidRepeaterFrequency(rxFrequency) || !isValidRepeaterFrequency(txFrequency)) {
+      console.warn(`Skipping DMR repeater ${rptr.callsign} - frequency ${rxFrequency.toFixed(4)} MHz outside supported range (136-172 MHz or 400-470 MHz)`);
+      continue;
+    }
+    
     // Parse timeslots
     const timeslots = parseTimeslots(rptr.ts_linked);
     
@@ -145,7 +152,8 @@ export function generateRptrsChannels(
             Math.abs(convertRptrFrequency(r.frequency) - freqMhz) < 0.001 &&
             r.color_code === rptr.color_code
           )) {
-            const zoneName = locationName.length > 16 ? locationName.substring(0, 16) : locationName;
+            // Add "DMR-" prefix to distinguish from other zone types
+            const zoneName = `DMR-${locationName}`.substring(0, 16);
             let existingZone = zones.find(z => z.name === zoneName);
             if (!existingZone) {
               existingZone = {
@@ -162,7 +170,7 @@ export function generateRptrsChannels(
           }
         }
       } else {
-        // Create individual zones for each repeater
+        // Create individual zones for each repeater (using callsign, no prefix)
         const zoneName = rptr.callsign.length > 16 ? rptr.callsign.substring(0, 16) : rptr.callsign;
         let existingZone = zones.find(z => z.name === zoneName);
         if (!existingZone) {
@@ -184,7 +192,7 @@ export function generateRptrsChannels(
     // Deduplicate channel numbers
     const uniqueChannels = Array.from(new Set(allZoneChannels));
     zones.push({
-      name: 'DMR Repeater',
+      name: 'DMR Repeaters',
       channels: uniqueChannels,
     });
   }

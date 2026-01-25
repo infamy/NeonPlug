@@ -7,6 +7,7 @@ import type { Channel, Zone } from '../models';
 import type { Repeater } from './repeaterFinder';
 import { createDefaultChannel } from '../utils/channelHelpers';
 import { getStandardOffset } from './repeaterFinder';
+import { isValidRepeaterFrequency } from './validation/frequencyValidator';
 
 export interface GenerationOptions {
   startChannelNumber?: number; // Starting channel number (default: find next available)
@@ -52,6 +53,12 @@ export function generateChannelsFromRepeaters(
     const inputOffset = repeater.inputOffset || getStandardOffset(repeater.band);
     const txFrequency = repeater.frequency + inputOffset;
     const rxFrequency = repeater.frequency;
+    
+    // Filter out repeaters with frequencies outside supported ranges (136-172 MHz or 400-470 MHz)
+    if (!isValidRepeaterFrequency(rxFrequency) || !isValidRepeaterFrequency(txFrequency)) {
+      console.warn(`Skipping repeater ${repeater.callsign} - frequency ${rxFrequency.toFixed(4)} MHz outside supported range (136-172 MHz or 400-470 MHz)`);
+      continue;
+    }
     
     // Determine mode
     let mode: Channel['mode'] = 'Analog';
