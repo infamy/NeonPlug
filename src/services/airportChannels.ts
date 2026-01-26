@@ -114,7 +114,12 @@ export function generateAirportChannels(
       if (typeName.length > maxTypeLength) {
         typeName = typeName.substring(0, maxTypeLength);
       }
-      const channelName = `${airportCode} ${typeName}`;
+      let channelName = `${airportCode} ${typeName}`;
+      
+      // Final safety check: ensure name is never longer than 16 characters
+      if (channelName.length > 16) {
+        channelName = channelName.substring(0, 16);
+      }
       
       const channel = createDefaultChannel({
         number: channelNumber++,

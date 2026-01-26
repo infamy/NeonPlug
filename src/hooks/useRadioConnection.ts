@@ -17,6 +17,7 @@ import { useRXGroupsStore } from '../store/rxGroupsStore';
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
+import { isValidChannelFrequency } from '../services/validation/frequencyValidator';
 
 // Export steps so UI components can use them (single source of truth)
 const READ_STEPS: string[] = [
@@ -602,6 +603,29 @@ export function useRadioConnection() {
     const steps = WRITE_CHANNELS_STEPS;
 
     try {
+      // Filter channels to only include those with valid frequencies
+      // Airport channels: 108-136 MHz
+      // Repeater channels: 136-172 MHz or 400-470 MHz
+      const validChannels = channels.filter(ch => isValidChannelFrequency(ch));
+      const filteredCount = channels.length - validChannels.length;
+      
+      if (filteredCount > 0) {
+        console.warn(`Filtered out ${filteredCount} channel(s) with frequencies outside supported ranges`);
+      }
+      
+      // Update zones to only include valid channel numbers
+      const validChannelNumbers = new Set(validChannels.map(ch => ch.number));
+      const filteredZones = zones.map(zone => ({
+        ...zone,
+        channels: zone.channels.filter(chNum => validChannelNumbers.has(chNum))
+      })).filter(zone => zone.channels.length > 0); // Remove empty zones
+      
+      // Update scan lists to only include valid channel numbers
+      const filteredScanLists = scanLists.map(scanList => ({
+        ...scanList,
+        channels: scanList.channels.filter(chNum => validChannelNumbers.has(chNum))
+      })).filter(scanList => scanList.channels.length > 0); // Remove empty scan lists
+      
       // Create protocol instance
       protocol = new DM32UVProtocol();
       
@@ -639,9 +663,9 @@ export function useRadioConnection() {
       setRadioInfo(radioInfo);
       setConnected(true);
       
-      // Step 4: Write channels, zones, and scan lists
+      // Step 4: Write channels, zones, and scan lists (using filtered data)
       onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
-      await protocol.writeAllData(channels, zones, scanLists);
+      await protocol.writeAllData(validChannels, filteredZones, filteredScanLists);
       
       // Step 5: Write Talk Groups if they have been loaded
       const quickContactsStore = useQuickContactsStore.getState();
@@ -695,16 +719,22 @@ export function useRadioConnection() {
       await protocol.disconnect();
       
       const summary = [
-        channels.length > 0 ? `${channels.length} channels` : null,
-        zones.length > 0 ? `${zones.length} zones` : null,
-        scanLists.length > 0 ? `${scanLists.length} scan lists` : null,
+        validChannels.length > 0 ? `${validChannels.length} channels` : null,
+        filteredZones.length > 0 ? `${filteredZones.length} zones` : null,
+        filteredScanLists.length > 0 ? `${filteredScanLists.length} scan lists` : null,
         quickContacts && quickContacts.length > 0 ? `${quickContacts.length} talk group(s)` : null,
         quickMessages && quickMessages.length > 0 ? `${quickMessages.length} quick message(s)` : null,
         rxGroups && rxGroups.length > 0 && rxGroupsStore.groupsLoaded ? `${rxGroups.length} RX group(s)` : null,
         radioSettings && changedFields.length > 0 ? `${changedFields.length} setting(s)` : null,
       ].filter(Boolean).join(', ');
       
-      onProgress?.(100, `Successfully wrote ${summary} to radio!`, steps[4]);
+      // Add warning if channels were filtered
+      if (filteredCount > 0) {
+        const warningMsg = `Note: ${filteredCount} channel(s) were filtered out due to unsupported frequencies. Successfully wrote ${summary} to radio!`;
+        onProgress?.(100, warningMsg, steps[4]);
+      } else {
+        onProgress?.(100, `Successfully wrote ${summary} to radio!`, steps[4]);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Write failed';
       setError(errorMessage);

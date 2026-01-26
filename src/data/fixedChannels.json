@@ -187,15 +187,15 @@
       { "number": 51, "rx": 158.940, "tx": 158.940, "name": "LADD-2" },
       { "number": 52, "rx": 154.325, "tx": 154.325, "name": "LADD-3" },
       { "number": 53, "rx": 173.370, "tx": 173.370, "name": "LADD-4" },
-      { "number": 54, "rx": 150.365, "tx": 150.365, "name": "AB-Industrial-150.365" },
-      { "number": 55, "rx": 150.470, "tx": 150.470, "name": "AB-Industrial-150.470" },
-      { "number": 56, "rx": 151.625, "tx": 151.625, "name": "AB-Industrial-151.625" },
-      { "number": 57, "rx": 152.900, "tx": 152.900, "name": "AB-Industrial-152.900" },
-      { "number": 58, "rx": 152.960, "tx": 152.960, "name": "AB-Industrial-152.960" },
-      { "number": 59, "rx": 150.155, "tx": 150.155, "name": "SK-Resource-150.155" },
-      { "number": 60, "rx": 150.320, "tx": 150.320, "name": "SK-Resource-150.320" },
-      { "number": 61, "rx": 151.040, "tx": 151.040, "name": "SK-Resource-151.040" },
-      { "number": 62, "rx": 151.265, "tx": 151.265, "name": "SK-Resource-151.265" }
+      { "number": 54, "rx": 150.365, "tx": 150.365, "name": "AB-IND-150.365" },
+      { "number": 55, "rx": 150.470, "tx": 150.470, "name": "AB-IND-150.470" },
+      { "number": 56, "rx": 151.625, "tx": 151.625, "name": "AB-IND-151.625" },
+      { "number": 57, "rx": 152.900, "tx": 152.900, "name": "AB-IND-152.900" },
+      { "number": 58, "rx": 152.960, "tx": 152.960, "name": "AB-IND-152.960" },
+      { "number": 59, "rx": 150.155, "tx": 150.155, "name": "SK-RES-150.155" },
+      { "number": 60, "rx": 150.320, "tx": 150.320, "name": "SK-RES-150.320" },
+      { "number": 61, "rx": 151.040, "tx": 151.040, "name": "SK-RES-151.040" },
+      { "number": 62, "rx": 151.265, "tx": 151.265, "name": "SK-RES-151.265" }
     ]
   },
   {

@@ -24,9 +24,15 @@ function frequenciesToChannels(
   startChannelNumber: number = 1
 ): Channel[] {
   return setData.frequencies.map((freq, index) => {
+    // Ensure channel name is within 16 character limit
+    let channelName = freq.name;
+    if (channelName.length > 16) {
+      channelName = channelName.substring(0, 16);
+    }
+    
     const channel = createDefaultChannel({
       number: startChannelNumber + index,
-      name: freq.name,
+      name: channelName,
       rxFrequency: freq.rx,
       txFrequency: freq.tx,
       mode: setData.defaultMode,
