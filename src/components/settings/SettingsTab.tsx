@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import Cropper, { Area } from 'react-easy-crop';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { parseBootImageHeader, rgb565ToImageData, imageDataToRgb565, buildBootImagePayload, BOOT_IMAGE } from '../../utils/bootImage';
@@ -34,6 +35,11 @@ export const SettingsTab: React.FC = () => {
   const [bootImageError, setBootImageError] = useState<string | null>(null);
   const [pendingBootImagePayload, setPendingBootImagePayload] = useState<Uint8Array | null>(null);
   const [bootImageDragOver, setBootImageDragOver] = useState(false);
+  const [bootImageCropUrl, setBootImageCropUrl] = useState<string | null>(null);
+  const [bootImageCropPixels, setBootImageCropPixels] = useState<Area | null>(null);
+  const [bootImageCrop, setBootImageCrop] = useState({ x: 0, y: 0 });
+  const [bootImageZoom, setBootImageZoom] = useState(1);
+  const [showBootImageCropModal, setShowBootImageCropModal] = useState(false);
   const bootImageCanvasRef = useRef<HTMLCanvasElement>(null);
   const uploadCanvasRef = useRef<HTMLCanvasElement>(null);
   const bootImageFileInputRef = useRef<HTMLInputElement>(null);
@@ -153,39 +159,91 @@ export const SettingsTab: React.FC = () => {
   };
 
 
-  const processBootImageFile = (file: File) => {
+  const BOOT_IMAGE_ASPECT = BOOT_IMAGE.WIDTH / BOOT_IMAGE.HEIGHT;
+
+  const getDefaultCropArea = useCallback((imgWidth: number, imgHeight: number): Area => {
+    const imgAspect = imgWidth / imgHeight;
+    let cropW: number;
+    let cropH: number;
+    if (imgAspect > BOOT_IMAGE_ASPECT) {
+      cropH = imgHeight;
+      cropW = imgHeight * BOOT_IMAGE_ASPECT;
+    } else {
+      cropW = imgWidth;
+      cropH = imgWidth / BOOT_IMAGE_ASPECT;
+    }
+    return {
+      x: Math.round((imgWidth - cropW) / 2),
+      y: Math.round((imgHeight - cropH) / 2),
+      width: Math.round(cropW),
+      height: Math.round(cropH),
+    };
+  }, []);
+
+  const processBootImageFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) {
       setBootImageError('Please choose an image file');
       return;
     }
     setBootImageError(null);
-    const img = new Image();
+    if (bootImageCropUrl) URL.revokeObjectURL(bootImageCropUrl);
     const url = URL.createObjectURL(file);
+    setBootImageCropUrl(url);
+    setBootImageCropPixels(null);
+    setBootImageCrop({ x: 0, y: 0 });
+    setBootImageZoom(1);
+    setShowBootImageCropModal(true);
+  }, [bootImageCropUrl]);
+
+  const closeBootImageCropModal = useCallback(() => {
+    if (bootImageCropUrl) {
+      URL.revokeObjectURL(bootImageCropUrl);
+      setBootImageCropUrl(null);
+    }
+    setBootImageCropPixels(null);
+    setBootImageCrop({ x: 0, y: 0 });
+    setBootImageZoom(1);
+    setShowBootImageCropModal(false);
+  }, [bootImageCropUrl]);
+
+  const handleBootImageCropComplete = useCallback((_croppedArea: Area, croppedAreaPixels: Area) => {
+    setBootImageCropPixels(croppedAreaPixels);
+  }, []);
+
+  const applyBootImageCrop = useCallback(() => {
+    if (!bootImageCropUrl) return;
+    const img = new Image();
     img.onload = () => {
-      URL.revokeObjectURL(url);
-      const canvas = document.createElement('canvas');
-      canvas.width = BOOT_IMAGE.WIDTH;
-      canvas.height = BOOT_IMAGE.HEIGHT;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      const scale = Math.max(
-        BOOT_IMAGE.WIDTH / img.width,
-        BOOT_IMAGE.HEIGHT / img.height
-      );
-      const w = img.width * scale;
-      const h = img.height * scale;
-      ctx.drawImage(img, (BOOT_IMAGE.WIDTH - w) / 2, (BOOT_IMAGE.HEIGHT - h) / 2, w, h);
-      const imageData = ctx.getImageData(0, 0, BOOT_IMAGE.WIDTH, BOOT_IMAGE.HEIGHT);
-      const rgb565 = imageDataToRgb565(imageData);
-      const payload = buildBootImagePayload('', rgb565);
-      setPendingBootImagePayload(payload);
+      try {
+        const area = bootImageCropPixels ?? getDefaultCropArea(img.naturalWidth, img.naturalHeight);
+        const canvas = document.createElement('canvas');
+        canvas.width = BOOT_IMAGE.WIDTH;
+        canvas.height = BOOT_IMAGE.HEIGHT;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          closeBootImageCropModal();
+          return;
+        }
+        ctx.drawImage(
+          img,
+          area.x, area.y, area.width, area.height,
+          0, 0, BOOT_IMAGE.WIDTH, BOOT_IMAGE.HEIGHT
+        );
+        const imageData = ctx.getImageData(0, 0, BOOT_IMAGE.WIDTH, BOOT_IMAGE.HEIGHT);
+        const rgb565 = imageDataToRgb565(imageData);
+        const payload = buildBootImagePayload('', rgb565);
+        setPendingBootImagePayload(payload);
+      } catch (err) {
+        setBootImageError(err instanceof Error ? err.message : 'Failed to apply crop');
+      }
+      closeBootImageCropModal();
     };
     img.onerror = () => {
-      URL.revokeObjectURL(url);
       setBootImageError('Failed to load image');
+      closeBootImageCropModal();
     };
-    img.src = url;
-  };
+    img.src = bootImageCropUrl;
+  }, [bootImageCropUrl, bootImageCropPixels, getDefaultCropArea, closeBootImageCropModal]);
 
   const handleUploadBootImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -216,6 +274,65 @@ export const SettingsTab: React.FC = () => {
 
   return (
     <div className="h-full overflow-y-auto">
+      {/* Boot image crop modal */}
+      <Modal
+        isOpen={showBootImageCropModal}
+        onClose={closeBootImageCropModal}
+        title="Crop boot image (240×320)"
+      >
+        {bootImageCropUrl && (
+          <>
+            <p className="text-cool-gray text-sm mb-3">
+              Drag the image up, down, or sideways to pan; use the slider to zoom. The frame is 240×320. Click Apply when done.
+            </p>
+            <div className="relative w-full h-[360px] rounded-lg overflow-hidden bg-dark-charcoal mb-4">
+              <Cropper
+                image={bootImageCropUrl}
+                crop={bootImageCrop}
+                zoom={bootImageZoom}
+                aspect={BOOT_IMAGE_ASPECT}
+                onCropChange={setBootImageCrop}
+                onZoomChange={setBootImageZoom}
+                onCropComplete={handleBootImageCropComplete}
+                cropShape="rect"
+                showGrid={true}
+                objectFit="contain"
+                restrictPosition={false}
+                style={{ containerStyle: { backgroundColor: '#121212' } }}
+              />
+            </div>
+            <div className="flex flex-col gap-2 mb-4">
+              <label className="text-cool-gray text-sm">Zoom</label>
+              <input
+                type="range"
+                min={0.5}
+                max={3}
+                step={0.1}
+                value={bootImageZoom}
+                onChange={(e) => setBootImageZoom(Number(e.target.value))}
+                className="w-full accent-neon-cyan"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeBootImageCropModal}
+                className="px-4 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-50 text-neon-cyan text-sm font-medium rounded hover:bg-neon-cyan hover:text-black transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applyBootImageCrop}
+                className="px-4 py-2 bg-neon-cyan text-black text-sm font-medium rounded hover:bg-cyan-300 transition-colors"
+              >
+                Apply
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
+
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-neon-cyan">Settings</h2>
         <p className="text-cool-gray text-sm mt-1">Radio information, memory usage, and configuration</p>
