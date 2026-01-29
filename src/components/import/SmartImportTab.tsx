@@ -3,8 +3,9 @@ import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
 import { getCurrentLocation, geocodeLocation } from '../../services/repeaterFinder';
 import { getAvailableFixedChannelSets, getChannelsForSet } from '../../services/fixedChannels';
-import { mergeOverlappingChannels } from '../../services/channelMerger';
+import { mergeOverlappingChannels, getChannelFullKey } from '../../services/channelMerger';
 import { generateAirportChannels } from '../../services/airportChannels';
+import { generateZoneId } from '../../utils/zoneHelpers';
 import { findNearbyAirports, getAirportFrequenciesWithTypes, type AirportData } from '../../data/airportsData';
 import { generateTaflChannels } from '../../services/taflChannels';
 import { findNearbyTaflEntries, groupTaflEntriesByName, type TaflData } from '../../data/taflData';
@@ -259,38 +260,80 @@ export const SmartImportTab: React.FC = () => {
         }
       }
       
-      // Merge overlapping channels
+      // FIRST: Check against existing channels and build mapping for duplicates
+      // Match on ALL settings: frequency, name, mode, bandwidth, power, CTCSS/DCS
+      const existingChannelMap = new Map<string, number>(); // full key -> channel number
+      for (const ch of channels) {
+        const fullKey = getChannelFullKey(ch);
+        existingChannelMap.set(fullKey, ch.number);
+      }
+      
+      // Merge overlapping channels (within new sets only)
       const { mergedChannels, channelMapping } = mergeOverlappingChannels(channelSets, nextChannelNumber);
       
-      // Create zones with merged channel numbers
+      // Update mapping to use existing channels where ALL settings match
+      const finalChannelMapping = new Map<number, number>();
+      const channelsToAdd: Channel[] = [];
+      
+      for (const newChannel of mergedChannels) {
+        const fullKey = getChannelFullKey(newChannel);
+        
+        if (existingChannelMap.has(fullKey)) {
+          // This exact channel already exists - use existing channel
+          const existingChannelNum = existingChannelMap.get(fullKey)!;
+          console.log(`[SmartImport] Channel ${newChannel.number} "${newChannel.name}" (${newChannel.rxFrequency} MHz) is EXACT DUPLICATE of existing channel ${existingChannelNum}`);
+          
+          // Update all mappings that point to this merged channel
+          for (const [origNum, mergedNum] of channelMapping.entries()) {
+            if (mergedNum === newChannel.number) {
+              finalChannelMapping.set(origNum, existingChannelNum);
+            }
+          }
+        } else {
+          // New unique channel (or different settings) - add it
+          channelsToAdd.push(newChannel);
+          
+          // Copy mapping as-is for this channel
+          for (const [origNum, mergedNum] of channelMapping.entries()) {
+            if (mergedNum === newChannel.number) {
+              finalChannelMapping.set(origNum, newChannel.number);
+            }
+          }
+        }
+      }
+      
+      console.log(`[SmartImport] Adding ${channelsToAdd.length} new channels (${mergedChannels.length - channelsToAdd.length} were duplicates of existing)`);
+      
+      // Create zones with final channel numbers
       const newZones: Zone[] = [];
       for (let i = 0; i < channelSets.length; i++) {
         const setChannels = channelSets[i];
         const setName = setNames[i];
         
-        // Map original channel numbers to merged channel numbers
+        // Map original channel numbers to final channel numbers
         const zoneChannelNumbers = setChannels
-          .map(ch => channelMapping.get(ch.number))
+          .map(ch => finalChannelMapping.get(ch.number))
           .filter((num): num is number => num !== undefined)
           .sort((a, b) => a - b);
         
         if (zoneChannelNumbers.length > 0) {
           newZones.push({
+            id: generateZoneId(),
             name: setName,
             channels: zoneChannelNumbers,
           });
         }
       }
       
-      // Add channels and zones
-      const updatedChannels = [...channels, ...mergedChannels];
+      // Add only new channels (not duplicates)
+      const updatedChannels = [...channels, ...channelsToAdd];
       setChannels(updatedChannels);
       
       const updatedZones = [...zones, ...newZones];
       setZones(updatedZones);
       
       setGenerationResult({
-        channels: mergedChannels.length,
+        channels: channelsToAdd.length,
         zones: newZones.length,
       });
       

@@ -9,22 +9,33 @@ export interface RawZoneData {
 
 interface ZonesState {
   zones: Zone[];
-  selectedZone: string | null;
+  selectedZoneId: string | null;
   rawZoneData: Map<string, RawZoneData>; // Store raw data for debug export
   setZones: (zones: Zone[]) => void;
   setRawZoneData: (rawData: Map<string, RawZoneData>) => void;
-  addZone: (zone: Zone) => void;
-  updateZone: (name: string, zone: Partial<Zone>) => void;
-  renameZone: (oldName: string, newName: string) => boolean;
-  deleteZone: (name: string) => void;
+  addZone: (zone: Omit<Zone, 'id'>) => void;
+  updateZone: (id: string, zone: Partial<Omit<Zone, 'id'>>) => void;
+  renameZone: (id: string, newName: string) => boolean;
+  deleteZone: (id: string) => void;
+  setSelectedZoneId: (id: string | null) => void;
+  // Legacy compatibility
   setSelectedZone: (name: string | null) => void;
+  selectedZone: string | null;
 }
 
-export const useZonesStore = create<ZonesState>((set) => ({
+export const useZonesStore = create<ZonesState>((set, get) => ({
   zones: [],
-  selectedZone: null,
+  selectedZoneId: null,
+  selectedZone: null, // Legacy compatibility
   rawZoneData: new Map(),
-  setZones: (zones) => set({ zones }),
+  setZones: (zones) => {
+    // Ensure all zones have IDs - generate if missing
+    const zonesWithIds = zones.map((z, index) => ({
+      ...z,
+      id: z.id || `zone-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`
+    }));
+    set({ zones: zonesWithIds });
+  },
   setRawZoneData: (rawData) => set({ rawZoneData: rawData }),
   addZone: (zone) => set((state) => {
     if (state.zones.length >= 250) {
@@ -33,13 +44,18 @@ export const useZonesStore = create<ZonesState>((set) => ({
     }
     // Enforce limit: max 64 channels per zone
     const channels = zone.channels ? zone.channels.slice(0, 64) : [];
+    const newZone: Zone = {
+      ...zone,
+      channels,
+      id: `zone-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    };
     return {
-      zones: [...state.zones, { ...zone, channels }]
+      zones: [...state.zones, newZone]
     };
   }),
-  updateZone: (name, updates) => set((state) => ({
+  updateZone: (id, updates) => set((state) => ({
     zones: state.zones.map(z => {
-      if (z.name === name) {
+      if (z.id === id) {
         // Enforce limit: max 64 channels per zone
         if (updates.channels && updates.channels.length > 64) {
           updates.channels = updates.channels.slice(0, 64);
@@ -49,7 +65,7 @@ export const useZonesStore = create<ZonesState>((set) => ({
       return z;
     })
   })),
-  renameZone: (oldName, newName) => {
+  renameZone: (id, newName) => {
     const trimmedNewName = newName.trim();
     
     // Validate new name
@@ -60,25 +76,27 @@ export const useZonesStore = create<ZonesState>((set) => ({
       return false;
     }
     
-    // Check for duplicate names
-    const state = useZonesStore.getState();
-    if (state.zones.some(z => z.name === trimmedNewName && z.name !== oldName)) {
-      return false;
-    }
+    // Note: We now ALLOW duplicate names since zones can have the same name
+    // The ID ensures they're still unique in the UI
     
-    // Rename the zone and update selected zone if needed
+    // Rename the zone
     set((state) => ({
       zones: state.zones.map(z => 
-        z.name === oldName ? { ...z, name: trimmedNewName } : z
-      ),
-      selectedZone: state.selectedZone === oldName ? trimmedNewName : state.selectedZone
+        z.id === id ? { ...z, name: trimmedNewName } : z
+      )
     }));
     
     return true;
   },
-  deleteZone: (name) => set((state) => ({
-    zones: state.zones.filter(z => z.name !== name)
+  deleteZone: (id) => set((state) => ({
+    zones: state.zones.filter(z => z.id !== id),
+    selectedZoneId: state.selectedZoneId === id ? null : state.selectedZoneId
   })),
-  setSelectedZone: (name) => set({ selectedZone: name }),
+  setSelectedZoneId: (id) => set({ selectedZoneId: id, selectedZone: id ? get().zones.find(z => z.id === id)?.name || null : null }),
+  // Legacy compatibility
+  setSelectedZone: (name) => {
+    const zone = get().zones.find(z => z.name === name);
+    set({ selectedZoneId: zone?.id || null, selectedZone: name });
+  },
 }));
 

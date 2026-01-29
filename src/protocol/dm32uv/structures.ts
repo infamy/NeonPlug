@@ -4,6 +4,7 @@
  */
 
 import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, CalibrationData, RXGroup, EncryptionKey, QuickContact } from '../../models';
+import { generateZoneId } from '../../utils/zoneHelpers';
 import { decodeBCDFrequency, decodeCTCSSDCS, encodeBCDFrequency, encodeCTCSSDCS } from './encoding';
 import { OFFSET, BLOCK_SIZE, LIMITS, METADATA } from './constants';
 import { createDefaultChannel } from '../../utils/channelHelpers';
@@ -806,7 +807,7 @@ export function parseZones(
       log.debug(`Zone "${name}" (Num ${zoneNum}, offset ${offset}): Found ${channels.length} channels (byte 16 count: ${channelCount}): ${channels.join(', ')}`, 'Structures');
     }
 
-    const zone = { name, channels };
+    const zone = { id: generateZoneId(), name, channels };
     zones.push(zone);
     
     // Call callback to store raw data - store full 145 bytes for complete debug info
@@ -850,7 +851,8 @@ export function encodeZone(zone: Zone, _zoneIndex: number): Uint8Array {
   data[16] = channelCount;
   
   // Channels (bytes 17-144, 16-bit little-endian)
-  // Each channel is 2 bytes (little-endian)
+  // Each channel is 2 bytes (little-endian). Radio uses byte 16 (count) only - do NOT write 0x0000
+  // terminator as the radio may treat it as an empty channel slot and show nulls / truncate.
   for (let i = 0; i < channelCount && i < 64; i++) {
     const chOffset = 17 + (i * 2);
     const chNum = zone.channels[i];
@@ -860,7 +862,9 @@ export function encodeZone(zone: Zone, _zoneIndex: number): Uint8Array {
     data[chOffset + 1] = (chNum >> 8) & 0xFF;
   }
   
-  // Remaining bytes (17 + channelCount*2 to 144) are already 0xFF (padding)
+  // No 0x0000 terminator - pad with 0xFF only. Radio uses channel count (byte 16) to know how many
+  // channels to read. Writing 0x0000 caused the radio to show null slots / lose channels.
+  // Bytes 17 + (channelCount*2) through 144 are already 0xFF from initial fill.
   
   return data;
 }

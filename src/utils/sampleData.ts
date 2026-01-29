@@ -167,10 +167,12 @@ export const sampleContacts: Contact[] = [
 
 export const sampleZones: Zone[] = [
   {
+    id: 'zone-sample-local',
     name: 'Local',
     channels: [1, 2],
   },
   {
+    id: 'zone-sample-dmr',
     name: 'DMR',
     channels: [3],
   },

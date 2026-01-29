@@ -5,6 +5,7 @@
 
 import type { Channel, Zone } from '../models';
 import { createDefaultChannel } from '../utils/channelHelpers';
+import { generateZoneId } from '../utils/zoneHelpers';
 import { getAirportFrequenciesWithTypes, type AirportData } from '../data/airportsData';
 
 // Helper to remove distance property for compatibility
@@ -146,6 +147,7 @@ export function generateAirportChannels(
     // Create zone with airport code as name (only in individual mode)
     if (!singleZone && airportZoneChannels.length > 0) {
       zones.push({
+        id: generateZoneId(),
         name: airportCode,
         channels: airportZoneChannels,
       });
@@ -155,6 +157,7 @@ export function generateAirportChannels(
   // Create single zone with all airports (if single zone mode)
   if (singleZone && allZoneChannels.length > 0) {
     zones.push({
+      id: generateZoneId(),
       name: 'Airports',
       channels: allZoneChannels,
     });

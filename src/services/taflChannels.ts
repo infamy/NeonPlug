@@ -5,6 +5,7 @@
 
 import type { Channel, Zone } from '../models';
 import { createDefaultChannel } from '../utils/channelHelpers';
+import { generateZoneId } from '../utils/zoneHelpers';
 import { groupTaflEntriesByName, type TaflData } from '../data/taflData';
 
 // Helper to remove distance property for compatibility
@@ -142,7 +143,8 @@ export function generateTaflChannels(
         let existingZone = zones.find(z => z.name === zoneName);
         if (!existingZone) {
           existingZone = {
-            name: zoneName, // Zone names limited to 16 chars
+            id: generateZoneId(),
+            name: zoneName,
             channels: [],
           };
           zones.push(existingZone);
@@ -160,6 +162,7 @@ export function generateTaflChannels(
         let existingZone = zones.find(z => z.name === entryCode);
         if (!existingZone) {
           existingZone = {
+            id: generateZoneId(),
             name: entryCode.substring(0, 10), // Zone names limited to 10 chars
             channels: [],
           };
@@ -177,6 +180,7 @@ export function generateTaflChannels(
     // Deduplicate channel numbers
     const uniqueChannels = Array.from(new Set(allZoneChannels));
     zones.push({
+      id: generateZoneId(),
       name: 'TAFL',
       channels: uniqueChannels,
     });

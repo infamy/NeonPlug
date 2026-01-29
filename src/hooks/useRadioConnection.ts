@@ -604,7 +604,7 @@ export function useRadioConnection() {
 
     try {
       // Filter channels to only include those with valid frequencies
-      // VHF: 87-172 MHz
+      // VHF: 87-174 MHz
       // UHF: 400-470 MHz
       const validChannels = channels.filter(ch => isValidChannelFrequency(ch));
       const filteredCount = channels.length - validChannels.length;

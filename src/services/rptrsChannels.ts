@@ -5,6 +5,7 @@
 
 import type { Channel, Zone } from '../models';
 import { createDefaultChannel } from '../utils/channelHelpers';
+import { generateZoneId } from '../utils/zoneHelpers';
 import {
   type RptrData,
   convertRptrFrequency,
@@ -88,9 +89,9 @@ export function generateRptrsChannels(
     const rxFrequency = freqMhz; // Repeater output (user RX)
     const txFrequency = freqMhz + offsetMhz; // User TX (repeater input)
     
-    // Filter out repeaters with frequencies outside supported ranges (87-172 MHz or 400-470 MHz)
+    // Filter out repeaters with frequencies outside supported ranges (87-174 MHz or 400-470 MHz)
     if (!isValidFrequencyRange(rxFrequency) || !isValidFrequencyRange(txFrequency)) {
-      console.warn(`Skipping DMR repeater ${rptr.callsign} - frequency ${rxFrequency.toFixed(4)} MHz outside supported range (87-172 MHz or 400-470 MHz)`);
+      console.warn(`Skipping DMR repeater ${rptr.callsign} - frequency ${rxFrequency.toFixed(4)} MHz outside supported range (87-174 MHz or 400-470 MHz)`);
       continue;
     }
     
@@ -157,6 +158,7 @@ export function generateRptrsChannels(
             let existingZone = zones.find(z => z.name === zoneName);
             if (!existingZone) {
               existingZone = {
+                id: generateZoneId(),
                 name: zoneName,
                 channels: [],
               };
@@ -175,6 +177,7 @@ export function generateRptrsChannels(
         let existingZone = zones.find(z => z.name === zoneName);
         if (!existingZone) {
           existingZone = {
+            id: generateZoneId(),
             name: zoneName,
             channels: [],
           };
@@ -192,6 +195,7 @@ export function generateRptrsChannels(
     // Deduplicate channel numbers
     const uniqueChannels = Array.from(new Set(allZoneChannels));
     zones.push({
+      id: generateZoneId(),
       name: 'DMR Rptrs',
       channels: uniqueChannels,
     });

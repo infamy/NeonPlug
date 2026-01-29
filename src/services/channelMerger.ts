@@ -58,11 +58,18 @@ export function mergeOverlappingChannels(
   const frequencyMap = new Map<string, Channel>(); // "rx-tx" -> channel
   
   let nextChannelNumber = startChannelNumber;
+  let debugChannel722 = false;
   
   // Process all channels from all sets
   for (const channelSet of channelSets) {
     for (const channel of channelSet) {
       const freqKey = `${channel.rxFrequency.toFixed(4)}-${channel.txFrequency.toFixed(4)}`;
+      
+      // Debug logging for channel 722
+      if (channel.number === 722 || channel.name.includes('151.625')) {
+        console.log(`[ChannelMerger] Processing channel ${channel.number} "${channel.name}" (${channel.rxFrequency} MHz) - freqKey: ${freqKey}`);
+        debugChannel722 = true;
+      }
       
       if (frequencyMap.has(freqKey)) {
         // Channel with same frequencies exists - merge them
@@ -82,6 +89,10 @@ export function mergeOverlappingChannels(
         
         // Map original channel number to merged channel number
         channelMapping.set(channel.number, existingChannel.number);
+        
+        if (debugChannel722 && channel.number === 722) {
+          console.log(`[ChannelMerger] Channel 722 DUPLICATE: mapped to existing channel ${existingChannel.number} "${existingChannel.name}"`);
+        }
       } else {
         // New unique frequency - add as new channel
         const newChannel = {
@@ -94,8 +105,16 @@ export function mergeOverlappingChannels(
         
         // Map original channel number to new channel number
         channelMapping.set(channel.number, newChannel.number);
+        
+        if (debugChannel722 && channel.number === 722) {
+          console.log(`[ChannelMerger] Channel 722 NEW: assigned new number ${newChannel.number}`);
+        }
       }
     }
+  }
+  
+  if (debugChannel722) {
+    console.log(`[ChannelMerger] Final mapping for 722:`, channelMapping.get(722));
   }
   
   return { mergedChannels, channelMapping };
@@ -106,5 +125,29 @@ export function mergeOverlappingChannels(
  */
 export function getChannelFrequencyKey(channel: Channel): string {
   return `${channel.rxFrequency.toFixed(4)}-${channel.txFrequency.toFixed(4)}`;
+}
+
+/**
+ * Get a complete channel key for exact duplicate detection
+ * Includes frequency, name, mode, bandwidth, power, and CTCSS/DCS
+ */
+export function getChannelFullKey(channel: Channel): string {
+  const rxCtcss = channel.rxCtcssDcs 
+    ? `${channel.rxCtcssDcs.type}-${channel.rxCtcssDcs.value}${channel.rxCtcssDcs.polarity || ''}`
+    : 'none';
+  const txCtcss = channel.txCtcssDcs
+    ? `${channel.txCtcssDcs.type}-${channel.txCtcssDcs.value}${channel.txCtcssDcs.polarity || ''}`
+    : 'none';
+    
+  return [
+    channel.rxFrequency.toFixed(4),
+    channel.txFrequency.toFixed(4),
+    channel.name,
+    channel.mode,
+    channel.bandwidth,
+    channel.power,
+    rxCtcss,
+    txCtcss,
+  ].join('|');
 }
 

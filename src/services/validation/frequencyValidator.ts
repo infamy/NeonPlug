@@ -11,15 +11,15 @@ interface SettingsWithBandLimits {
 }
 
 // DM-32UV supported frequency ranges
-// VHF: 87-172 MHz
+// VHF: 87-174 MHz
 // UHF: 400-470 MHz
 const VHF_MIN = 87;
-const VHF_MAX = 172;
+const VHF_MAX = 174;
 const UHF_MIN = 400;
 const UHF_MAX = 470;
 
 /**
- * Check if a frequency is in the supported ranges (87-172 MHz or 400-470 MHz)
+ * Check if a frequency is in the supported ranges (87-174 MHz or 400-470 MHz)
  */
 export function isValidFrequencyRange(frequency: number): boolean {
   const isVHF = frequency >= VHF_MIN && frequency <= VHF_MAX;
@@ -29,7 +29,7 @@ export function isValidFrequencyRange(frequency: number): boolean {
 
 /**
  * Check if a channel's frequencies are within supported ranges
- * VHF: 87-172 MHz
+ * VHF: 87-174 MHz
  * UHF: 400-470 MHz
  */
 export function isValidChannelFrequency(channel: Channel): boolean {
