@@ -10,6 +10,7 @@ import type { RadioProtocol, RadioInfo } from '../interface';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
 import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION, LIMITS } from './constants';
+import { BOOT_IMAGE } from '../../utils/bootImage';
 import { withTimeout } from './utils';
 import { 
   requireConnection,
@@ -962,6 +963,81 @@ export class DM32UVProtocol implements RadioProtocol {
     if (!txContact42 || !txContact43 || !talkGroups44 || !quickAccess0B) {
       log.warn('Some critical blocks for TG mapping are missing from restored cache!', 'Protocol');
     }
+  }
+
+  /**
+   * Get boot image base address from V-Frame 0x0E (first 4 bytes LE). Fallback 0x150000.
+   */
+  private getBootImageBaseAddress(): number {
+    const vframe0e = this.radioInfo?.vframes.get(0x0e);
+    if (vframe0e && vframe0e.length >= 4) {
+      return this.readUint32LE(vframe0e, 0);
+    }
+    return BOOT_IMAGE.DEFAULT_BASE_ADDRESS;
+  }
+
+  /**
+   * Read boot/startup image from radio. Base address from V-Frame 0x0E (e.g. 0x150000).
+   * Reads 37×4KB + 1×2048 = 153600 bytes raw BGR565. No extra OEM read sequence (avoids radio reboot).
+   */
+  async readBootImage(): Promise<Uint8Array> {
+    if (!this.connection) {
+      throw new Error('Not connected to radio');
+    }
+    if (!this.radioInfo) {
+      throw new Error('Radio info required (V-Frame 0x0E for base address)');
+    }
+    const baseAddr = this.getBootImageBaseAddress();
+    const totalSize = BOOT_IMAGE.SIZE;
+    this.onProgress?.(0, 'Reading boot image...');
+    const allData = new Uint8Array(totalSize);
+    let offset = 0;
+    const fullBlocks = BOOT_IMAGE.FULL_BLOCKS;
+    for (let i = 0; i < fullBlocks; i++) {
+      const progress = Math.floor((i / BOOT_IMAGE.BLOCKS) * 100);
+      this.onProgress?.(progress, `Reading boot image block ${i + 1} of ${BOOT_IMAGE.BLOCKS}...`);
+      const addr = baseAddr + i * BLOCK_SIZE.STANDARD;
+      const chunk = await this.connection!.readMemory(addr, BLOCK_SIZE.STANDARD);
+      allData.set(chunk, offset);
+      offset += chunk.length;
+      await new Promise((r) => setTimeout(r, CONNECTION.BLOCK_READ_DELAY));
+    }
+    this.onProgress?.(95, `Reading boot image block ${BOOT_IMAGE.BLOCKS} of ${BOOT_IMAGE.BLOCKS}...`);
+    const lastAddr = baseAddr + fullBlocks * BLOCK_SIZE.STANDARD;
+    const lastChunk = await this.connection!.readMemory(lastAddr, BOOT_IMAGE.LAST_CHUNK_SIZE);
+    allData.set(lastChunk, offset);
+    this.onProgress?.(100, 'Boot image read complete');
+    return allData;
+  }
+
+  /**
+   * Write boot/startup image to radio. Base address from V-Frame 0x0E.
+   * Payload must be 153600 bytes raw BGR565. 37×4KB + 1×2048.
+   */
+  async writeBootImage(data: Uint8Array): Promise<void> {
+    if (!this.connection) {
+      throw new Error('Not connected to radio');
+    }
+    if (data.length !== BOOT_IMAGE.SIZE) {
+      throw new Error(
+        `Boot image must be ${BOOT_IMAGE.SIZE} bytes, got ${data.length}`
+      );
+    }
+    const baseAddr = this.getBootImageBaseAddress();
+    const fullBlocks = BOOT_IMAGE.FULL_BLOCKS;
+    for (let i = 0; i < fullBlocks; i++) {
+      const progress = Math.floor(((i + 1) / BOOT_IMAGE.BLOCKS) * 100);
+      this.onProgress?.(progress, `Writing boot image block ${i + 1} of ${BOOT_IMAGE.BLOCKS}...`);
+      const addr = baseAddr + i * BLOCK_SIZE.STANDARD;
+      const block = data.slice(i * BLOCK_SIZE.STANDARD, (i + 1) * BLOCK_SIZE.STANDARD);
+      await this.connection!.writeMemory(addr, block, block[0xfff] ?? 0);
+      await new Promise((r) => setTimeout(r, CONNECTION.BLOCK_READ_DELAY));
+    }
+    this.onProgress?.(99, `Writing boot image block ${BOOT_IMAGE.BLOCKS} of ${BOOT_IMAGE.BLOCKS}...`);
+    const lastAddr = baseAddr + fullBlocks * BLOCK_SIZE.STANDARD;
+    const lastBlock = data.slice(fullBlocks * BLOCK_SIZE.STANDARD, BOOT_IMAGE.SIZE);
+    await this.connection!.writeMemoryBlock(lastAddr, lastBlock);
+    this.onProgress?.(100, 'Boot image write complete');
   }
 
   /**

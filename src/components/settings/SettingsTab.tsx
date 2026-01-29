@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useRadioStore } from '../../store/radioStore';
+import { useRadioConnection } from '../../hooks/useRadioConnection';
+import { parseBootImageHeader, rgb565ToImageData, imageDataToRgb565, buildBootImagePayload, BOOT_IMAGE } from '../../utils/bootImage';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
 import { useContactsStore } from '../../store/contactsStore';
@@ -25,7 +27,16 @@ import {
 import { formatAddress } from '../../utils/formatHelpers';
 
 export const SettingsTab: React.FC = () => {
-  const { radioInfo } = useRadioStore();
+  const { radioInfo, bootImageRaw } = useRadioStore();
+  const { readBootImage, writeBootImage, isConnecting } = useRadioConnection();
+  const [bootImageProgress, setBootImageProgress] = useState(0);
+  const [bootImageMessage, setBootImageMessage] = useState('');
+  const [bootImageError, setBootImageError] = useState<string | null>(null);
+  const [pendingBootImagePayload, setPendingBootImagePayload] = useState<Uint8Array | null>(null);
+  const [bootImageDragOver, setBootImageDragOver] = useState(false);
+  const bootImageCanvasRef = useRef<HTMLCanvasElement>(null);
+  const uploadCanvasRef = useRef<HTMLCanvasElement>(null);
+  const bootImageFileInputRef = useRef<HTMLInputElement>(null);
   const { channels } = useChannelsStore();
   const { zones } = useZonesStore();
   const { contacts, contactsLoaded } = useContactsStore();
@@ -67,6 +78,141 @@ export const SettingsTab: React.FC = () => {
     loaded: contactsLoaded,
   };
 
+  // Draw radio image on left canvas when bootImageRaw changes
+  useEffect(() => {
+    if (!bootImageRaw || bootImageRaw.length < BOOT_IMAGE.SIZE || !bootImageCanvasRef.current) return;
+    try {
+      const parsed = parseBootImageHeader(bootImageRaw);
+      const imageData = rgb565ToImageData(parsed.bgr565);
+      const canvas = bootImageCanvasRef.current;
+      canvas.width = BOOT_IMAGE.WIDTH;
+      canvas.height = BOOT_IMAGE.HEIGHT;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const bitmap = new ImageData(imageData.data, imageData.width, imageData.height);
+        ctx.putImageData(bitmap, 0, 0);
+      }
+    } catch {
+      // Ignore draw errors
+    }
+  }, [bootImageRaw]);
+
+  // Draw uploaded image on right canvas when pendingBootImagePayload changes
+  useEffect(() => {
+    if (!pendingBootImagePayload || pendingBootImagePayload.length < BOOT_IMAGE.SIZE || !uploadCanvasRef.current) return;
+    try {
+      const parsed = parseBootImageHeader(pendingBootImagePayload);
+      const imageData = rgb565ToImageData(parsed.bgr565);
+      const canvas = uploadCanvasRef.current;
+      canvas.width = BOOT_IMAGE.WIDTH;
+      canvas.height = BOOT_IMAGE.HEIGHT;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const bitmap = new ImageData(imageData.data, imageData.width, imageData.height);
+        ctx.putImageData(bitmap, 0, 0);
+      }
+    } catch {
+      // Ignore draw errors
+    }
+  }, [pendingBootImagePayload]);
+
+  const handleReadBootImage = async () => {
+    setBootImageError(null);
+    setBootImageProgress(0);
+    setBootImageMessage('Starting...');
+    try {
+      await readBootImage((progress, message) => {
+        setBootImageProgress(progress);
+        setBootImageMessage(message);
+      });
+    } catch (err) {
+      setBootImageError(err instanceof Error ? err.message : 'Failed to read boot image');
+    } finally {
+      setBootImageProgress(100);
+      setBootImageMessage('');
+    }
+  };
+
+  const handleWriteBootImageToRadio = async () => {
+    if (!pendingBootImagePayload || pendingBootImagePayload.length !== BOOT_IMAGE.SIZE) return;
+    setBootImageError(null);
+    setBootImageProgress(0);
+    setBootImageMessage('Starting...');
+    try {
+      await writeBootImage(pendingBootImagePayload, (progress, message) => {
+        setBootImageProgress(progress);
+        setBootImageMessage(message);
+      });
+      setPendingBootImagePayload(null);
+    } catch (err) {
+      setBootImageError(err instanceof Error ? err.message : 'Failed to write boot image');
+    } finally {
+      setBootImageProgress(100);
+      setBootImageMessage('');
+    }
+  };
+
+
+  const processBootImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setBootImageError('Please choose an image file');
+      return;
+    }
+    setBootImageError(null);
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+      canvas.width = BOOT_IMAGE.WIDTH;
+      canvas.height = BOOT_IMAGE.HEIGHT;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const scale = Math.max(
+        BOOT_IMAGE.WIDTH / img.width,
+        BOOT_IMAGE.HEIGHT / img.height
+      );
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ctx.drawImage(img, (BOOT_IMAGE.WIDTH - w) / 2, (BOOT_IMAGE.HEIGHT - h) / 2, w, h);
+      const imageData = ctx.getImageData(0, 0, BOOT_IMAGE.WIDTH, BOOT_IMAGE.HEIGHT);
+      const rgb565 = imageDataToRgb565(imageData);
+      const payload = buildBootImagePayload('', rgb565);
+      setPendingBootImagePayload(payload);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      setBootImageError('Failed to load image');
+    };
+    img.src = url;
+  };
+
+  const handleUploadBootImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    processBootImageFile(file);
+  };
+
+  const handleBootImageDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setBootImageDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    processBootImageFile(file);
+  };
+
+  const handleBootImageDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setBootImageDragOver(true);
+  };
+
+  const handleBootImageDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setBootImageDragOver(false);
+  };
 
   return (
     <div className="h-full overflow-y-auto">
@@ -203,6 +349,130 @@ export const SettingsTab: React.FC = () => {
                       </div>
                     )}
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Boot / Startup Image Section */}
+          <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
+            <h3 className="text-lg font-semibold text-neon-cyan mb-2 pb-2 border-b border-neon-cyan border-opacity-20">
+              Boot / Startup Image
+            </h3>
+            <p className="text-cool-gray text-sm mb-6">
+              Optionally read from the radio to see the current image, then import your image (drag and drop or click Import). It will be resized to 240×320 portrait. When it looks right, send it to the radio.
+            </p>
+
+            <div className="flex flex-col gap-6">
+              {/* Actions */}
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleReadBootImage}
+                  disabled={isConnecting}
+                  className="px-4 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-50 text-neon-cyan text-sm font-medium rounded hover:bg-neon-cyan hover:text-black disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Read current boot image from radio (optional)"
+                >
+                  Read from radio
+                </button>
+                <input
+                  ref={bootImageFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleUploadBootImage}
+                />
+                <button
+                  type="button"
+                  onClick={() => bootImageFileInputRef.current?.click()}
+                  disabled={isConnecting}
+                  className="px-4 py-2 bg-neon-cyan text-black text-sm font-medium rounded hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Choose an image; it will be resized to 240×320"
+                >
+                  Import
+                </button>
+                <span className="text-cool-gray text-sm">→</span>
+                <button
+                  type="button"
+                  onClick={handleWriteBootImageToRadio}
+                  disabled={isConnecting || !pendingBootImagePayload || pendingBootImagePayload.length !== BOOT_IMAGE.SIZE}
+                  className="px-4 py-2 bg-neon-cyan text-black text-sm font-medium rounded hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Send your image to the radio"
+                >
+                  Write to radio
+                </button>
+              </div>
+
+              {isConnecting && bootImageMessage && (
+                <div className="flex items-center gap-3 max-w-sm">
+                  <div className="flex-1 bg-dark-charcoal rounded-full h-2">
+                    <div
+                      className="bg-neon-cyan h-2 rounded-full transition-all"
+                      style={{ width: `${bootImageProgress}%` }}
+                    />
+                  </div>
+                  <span className="text-cool-gray text-sm truncate flex-shrink min-w-0" title={bootImageMessage}>{bootImageMessage}</span>
+                </div>
+              )}
+              {bootImageError && (
+                <p className="text-red-400 text-sm">{bootImageError}</p>
+              )}
+
+              {/* Previews side by side */}
+              <div className="flex flex-wrap gap-8 items-start">
+                <div className="flex flex-col gap-2">
+                  <p className="text-cool-gray text-sm font-medium">On radio</p>
+                  {bootImageRaw && bootImageRaw.length >= BOOT_IMAGE.SIZE ? (
+                    <>
+                      <canvas
+                        ref={bootImageCanvasRef}
+                        width={BOOT_IMAGE.WIDTH}
+                        height={BOOT_IMAGE.HEIGHT}
+                        className="border border-neon-cyan border-opacity-30 rounded bg-black"
+                        style={{ width: 240, height: 320, imageRendering: 'pixelated' }}
+                      />
+                      <p className="text-cool-gray text-xs">Current boot image (read from radio)</p>
+                    </>
+                  ) : (
+                    <div className="w-[240px] h-[320px] border border-neon-cyan border-opacity-20 rounded bg-dark-charcoal flex items-center justify-center text-cool-gray text-sm text-center px-2">
+                      Optional: click &quot;Read from radio&quot; to view
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <p className="text-cool-gray text-sm font-medium">Import</p>
+                  {pendingBootImagePayload && pendingBootImagePayload.length >= BOOT_IMAGE.SIZE ? (
+                    <>
+                      <canvas
+                        ref={uploadCanvasRef}
+                        width={BOOT_IMAGE.WIDTH}
+                        height={BOOT_IMAGE.HEIGHT}
+                        className="border border-neon-cyan border-opacity-30 rounded bg-black"
+                        style={{ width: 240, height: 320, imageRendering: 'pixelated' }}
+                      />
+                      <p className="text-cyan-300 text-xs">Ready to send. Click &quot;Write to radio&quot; when you&apos;re happy with it.</p>
+                    </>
+                  ) : (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Import boot image: drop file or click to choose"
+                      onClick={() => bootImageFileInputRef.current?.click()}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') bootImageFileInputRef.current?.click(); }}
+                      onDragOver={handleBootImageDragOver}
+                      onDragLeave={handleBootImageDragLeave}
+                      onDrop={handleBootImageDrop}
+                      className={`w-[240px] h-[320px] border rounded bg-dark-charcoal flex flex-col items-center justify-center text-cool-gray text-sm text-center px-3 cursor-pointer transition-colors ${
+                        bootImageDragOver
+                          ? 'border-neon-cyan bg-neon-cyan/10 text-neon-cyan'
+                          : 'border-neon-cyan border-opacity-20 hover:border-neon-cyan/50'
+                      }`}
+                    >
+                      <span className="mb-1">Drop image here</span>
+                      <span>or click Import</span>
+                      <span className="text-xs mt-2 opacity-80">(resized to 240×320)</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -750,33 +1020,6 @@ export const SettingsTab: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
-                  <h4 className="text-md font-semibold text-neon-cyan mb-3">Boot Image</h4>
-                  <div className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <p className="text-cool-gray text-sm mb-1">Upload or download boot screen image</p>
-                        <p className="text-yellow-500 text-xs">⚠️ Not yet supported</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        disabled
-                        className="px-4 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-cool-gray text-sm cursor-not-allowed opacity-50"
-                      >
-                        Upload Image
-                      </button>
-                      <button
-                        type="button"
-                        disabled
-                        className="px-4 py-2 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-cool-gray text-sm cursor-not-allowed opacity-50"
-                      >
-                        Download Image
-                      </button>
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
           </div>

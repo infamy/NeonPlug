@@ -18,6 +18,7 @@ import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
 import { isValidChannelFrequency } from '../services/validation/frequencyValidator';
+import { parseBootImageHeader } from '../utils/bootImage';
 
 // Export steps so UI components can use them (single source of truth)
 const READ_STEPS: string[] = [
@@ -41,7 +42,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData } = useRadioStore();
+  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -535,6 +536,91 @@ export function useRadioConnection() {
     }
   }, [setContacts, setRadioInfo, setConnected, radioInfo]);
 
+  const readBootImage = useCallback(async (
+    onProgress?: (progress: number, message: string) => void
+  ) => {
+    setIsConnecting(true);
+    setError(null);
+    let protocol: DM32UVProtocol | null = null;
+    try {
+      protocol = new DM32UVProtocol();
+      protocol.onProgress = (progress, message) => {
+        onProgress?.(progress, message);
+      };
+      onProgress?.(0, 'Connecting to radio...');
+      await protocol.connect();
+      if (!radioInfo) {
+        onProgress?.(5, 'Reading radio information...');
+        const info = await protocol.getRadioInfo();
+        setRadioInfo(info);
+        setConnected(true);
+      }
+      onProgress?.(10, 'Reading boot image from radio...');
+      const raw = await protocol.readBootImage();
+      setBootImageRaw(raw);
+      const parsed = parseBootImageHeader(raw);
+      setBootImageDescription(parsed.description || null);
+      onProgress?.(100, 'Boot image read complete');
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMsg);
+      onProgress?.(0, `Error: ${errorMsg}`);
+      throw err;
+    } finally {
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (e) {
+          console.warn('Error disconnecting after reading boot image:', e);
+        }
+      }
+      setIsConnecting(false);
+    }
+  }, [setBootImageRaw, setBootImageDescription, setRadioInfo, setConnected, radioInfo]);
+
+  const writeBootImage = useCallback(async (
+    data: Uint8Array,
+    onProgress?: (progress: number, message: string) => void
+  ) => {
+    setIsConnecting(true);
+    setError(null);
+    let protocol: DM32UVProtocol | null = null;
+    try {
+      protocol = new DM32UVProtocol();
+      protocol.onProgress = (progress, message) => {
+        onProgress?.(progress, message);
+      };
+      onProgress?.(0, 'Connecting to radio...');
+      await protocol.connect();
+      if (!radioInfo) {
+        onProgress?.(5, 'Reading radio information...');
+        const info = await protocol.getRadioInfo();
+        setRadioInfo(info);
+        setConnected(true);
+      }
+      onProgress?.(10, 'Writing boot image to radio...');
+      await protocol.writeBootImage(data);
+      setBootImageRaw(data);
+      const parsed = parseBootImageHeader(data);
+      setBootImageDescription(parsed.description || null);
+      onProgress?.(100, 'Boot image write complete');
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      setError(errorMsg);
+      onProgress?.(0, `Error: ${errorMsg}`);
+      throw err;
+    } finally {
+      if (protocol) {
+        try {
+          await protocol.disconnect();
+        } catch (e) {
+          console.warn('Error disconnecting after writing boot image:', e);
+        }
+      }
+      setIsConnecting(false);
+    }
+  }, [setBootImageRaw, setBootImageDescription, setRadioInfo, setConnected, radioInfo]);
+
   const writeContacts = useCallback(async (
     contacts: Contact[],
     onProgress?: (progress: number, message: string) => void
@@ -771,6 +857,8 @@ export function useRadioConnection() {
     error,
     readFromRadio,
     readContacts,
+    readBootImage,
+    writeBootImage,
     writeContacts,
     writeChannelsToRadio,
     readSteps: READ_STEPS,
