@@ -53,7 +53,8 @@ export class DM32Connection {
     // Step 1: PSEARCH
     // According to serial capture: response is exactly 8 bytes: 06 44 50 35 37 30 55 56
     await this.sendCommand('PSEARCH');
-    await this.delay(50); // Increased delay to give radio time to respond
+    // CRITICAL: Send→read delay. Radio needs this before we read; removing it can cause radio reboot / connection failure.
+    await this.delay(100);
     
     let psearchResponse: Uint8Array;
     try {
@@ -131,9 +132,7 @@ export class DM32Connection {
     const frameIdHex = `0x${frameId.toString(16).padStart(2, '0')}`;
     log.debug(`Sending V-frame query: ${frameIdHex}`, 'Connection');
     await this.write(command);
-    
-    // Wait for response - V-frames may take longer
-    await this.delay(50);
+    await this.delay(50); // Give radio time to respond before read
 
     log.debug(`Reading V-frame ${frameIdHex} header (3 bytes)...`, 'Connection');
     const header = await this.readBytes(3);
@@ -213,7 +212,7 @@ export class DM32Connection {
         .join(' ');
       log.debug(`Sending read command (0x52 "R"): ${commandHex} (address: ${addressHex}, length: ${length})`, 'Connection');
       await this.write(command);
-      await this.delay(25); // Longer delay for block reads
+      await this.delay(25); // Give radio time to respond before read (block reads)
 
       // Response: 0x57 <addr:3> <len:2> <data>
       const header = await this.readBytes(6);
@@ -374,7 +373,7 @@ export class DM32Connection {
     
     // Write the command
     await this.writer.write(bytes);
-    await this.delay(10);
+    await this.delay(10); // Brief delay after send before caller reads
   }
 
   private async write(data: Uint8Array): Promise<void> {
