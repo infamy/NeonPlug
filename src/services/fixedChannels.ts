@@ -11,7 +11,8 @@ import { createDefaultChannel } from '../utils/channelHelpers';
 import { ALL_FIXED_CHANNEL_SETS, type FixedChannelSetData } from '../data/fixedChannelsData';
 
 export interface FixedChannelSet {
-  name: string;
+  name: string; // Zone name (written to radio, max 10 chars)
+  displayName?: string; // Optional display name for UI
   description: string;
   channels: Channel[];
 }
@@ -81,7 +82,7 @@ export function getMURSChannels(startChannelNumber: number = 1): Channel[] {
 }
 
 export function getHamCallingFrequencies(startChannelNumber: number = 1): Channel[] {
-  return getChannelsForSet('Ham Calling', startChannelNumber);
+  return getChannelsForSet('HAMCALL', startChannelNumber);
 }
 
 /**
@@ -91,6 +92,7 @@ export function getHamCallingFrequencies(startChannelNumber: number = 1): Channe
 export function getAvailableFixedChannelSets(): FixedChannelSet[] {
   return ALL_FIXED_CHANNEL_SETS.map(setData => ({
     name: setData.name,
+    displayName: setData.displayName,
     description: setData.description,
     channels: frequenciesToChannels(setData),
   }));

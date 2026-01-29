@@ -117,34 +117,138 @@ export const DebugPanel: React.FC = () => {
     setLogs([]);
   };
 
-  const handleDebugExport = () => {
+  const handleDebugExport = async () => {
     if (channels.length === 0 && zones.length === 0 && allLogs.length === 0 && blockMetadata.size === 0 && blockData.size === 0) {
       alert('No data or logs to export. Please read from radio first.');
       return;
     }
 
-    // Convert logs to export format (Date -> ISO string)
-    const exportLogs = allLogs.map(log => ({
-      timestamp: log.timestamp.toISOString(),
-      level: log.level,
-      message: log.message,
-      data: log.data,
-    }));
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
 
-    // Get block metadata and data from store
-    const debugData = exportFullDebug(
-      channels, 
-      zones, 
-      rawChannelData, 
-      rawZoneData, 
-      exportLogs,
-      blockMetadata,
-      blockData,
-      writeBlockData,
-      zoneComparisonData
-    );
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    downloadDebug(debugData, `neonplug-debug-${timestamp}.json`);
+      // Convert logs to export format (Date -> ISO string)
+      const exportLogs = allLogs.map(log => ({
+        timestamp: log.timestamp.toISOString(),
+        level: log.level,
+        message: log.message,
+        data: log.data,
+      }));
+
+      // Get full debug data
+      const debugData = exportFullDebug(
+        channels, 
+        zones, 
+        rawChannelData, 
+        rawZoneData, 
+        exportLogs,
+        blockMetadata,
+        blockData,
+        writeBlockData,
+        zoneComparisonData
+      );
+
+      // Create read folder with data from radio
+      const readFolder = zip.folder('read');
+      if (readFolder) {
+        readFolder.file('full-debug-data.json', debugData);
+        
+        // Add individual block data
+        for (const [address, data] of blockData.entries()) {
+          const metadataInfo = blockMetadata.get(address);
+          if (metadataInfo) {
+            const metadataHex = metadataInfo.metadata.toString(16).toUpperCase().padStart(2, '0');
+            const addressHex = address.toString(16).toUpperCase().padStart(6, '0');
+            readFolder.file(`block-0x${metadataHex}-addr-0x${addressHex}.bin`, data);
+          }
+        }
+      }
+
+      // Create write folder with expected write data
+      const writeFolder = zip.folder('write');
+      if (writeFolder && writeBlockData.size > 0) {
+        // Add write blocks
+        for (const [, block] of writeBlockData.entries()) {
+          const metadataHex = block.metadata.toString(16).toUpperCase().padStart(2, '0');
+          const addressHex = block.address.toString(16).toUpperCase().padStart(6, '0');
+          writeFolder.file(`write-block-0x${metadataHex}-addr-0x${addressHex}.bin`, block.data);
+        }
+        
+        // Add write summary
+        const writeSummary = {
+          totalBlocks: writeBlockData.size,
+          channels: channels.length,
+          zones: zones.length,
+          blocks: Array.from(writeBlockData.values()).map(block => ({
+            address: `0x${block.address.toString(16).toUpperCase().padStart(6, '0')}`,
+            metadata: `0x${block.metadata.toString(16).toUpperCase().padStart(2, '0')}`,
+            size: block.data.length,
+          })),
+        };
+        writeFolder.file('write-summary.json', JSON.stringify(writeSummary, null, 2));
+      } else if (writeFolder) {
+        // Add placeholder if no write data
+        const expectedWrite = {
+          channels: channels.length,
+          zones: zones.length,
+          note: 'No write data available yet. Perform a "Write to Radio" operation to generate write blocks.',
+          estimatedChannelBlocks: Math.ceil(channels.length / 125),
+          estimatedZoneBlocks: zones.length > 0 ? 1 : 0,
+        };
+        writeFolder.file('expected-write-data.json', JSON.stringify(expectedWrite, null, 2));
+      }
+
+      // Add codeplug XLSX
+      const { exportCodeplug } = await import('../../services/codeplugExport');
+      const { useRadioStore } = await import('../../store/radioStore');
+      const { useRadioSettingsStore } = await import('../../store/radioSettingsStore');
+      const { useDigitalEmergencyStore } = await import('../../store/digitalEmergencyStore');
+      const { useAnalogEmergencyStore } = await import('../../store/analogEmergencyStore');
+      const { useScanListsStore } = await import('../../store/scanListsStore');
+      const { useContactsStore } = await import('../../store/contactsStore');
+      
+      const radioStore = useRadioStore.getState();
+      const radioSettingsStore = useRadioSettingsStore.getState();
+      const digitalEmergencyStore = useDigitalEmergencyStore.getState();
+      const analogEmergencyStore = useAnalogEmergencyStore.getState();
+      const scanListsStore = useScanListsStore.getState();
+      const contactsStore = useContactsStore.getState();
+
+      const codeplugData = {
+        channels,
+        zones,
+        scanLists: scanListsStore.scanLists,
+        contacts: contactsStore.contacts,
+        digitalEmergencies: digitalEmergencyStore.systems,
+        digitalEmergencyConfig: digitalEmergencyStore.config,
+        analogEmergencies: analogEmergencyStore.systems,
+        radioSettings: radioSettingsStore.settings,
+        radioInfo: radioStore.radioInfo,
+        exportDate: new Date().toISOString(),
+        version: '1.0.0',
+      };
+
+      // Export codeplug returns a blob, we need to get it and add to zip
+      const xlsxBlob = exportCodeplug(codeplugData, true); // Pass true to return blob
+      if (xlsxBlob instanceof Blob) {
+        zip.file('codeplug.xlsx', xlsxBlob);
+      }
+
+      // Generate and download zip
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      a.download = `neonplug-full-export-${timestamp}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error creating export:', error);
+      alert('Failed to create export. See console for details.');
+    }
   };
 
   const handleWriteBlocksExport = () => {

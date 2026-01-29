@@ -19,7 +19,8 @@ export interface FixedChannelFrequency {
 }
 
 export interface FixedChannelSetData {
-  name: string;
+  name: string; // Zone name (max 10 chars for radio)
+  displayName?: string; // Optional display name for UI (can be longer)
   description: string;
   frequencies: FixedChannelFrequency[];
   defaultPower: 'Low' | 'Medium' | 'High';

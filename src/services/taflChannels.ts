@@ -138,7 +138,7 @@ export function generateTaflChannels(
       
       // Add this channel to each relevant zone (only once per zone)
       for (const groupName of groupsForThisChannel) {
-        const zoneName = groupName.substring(0, 16);
+        const zoneName = groupName.substring(0, 10);
         let existingZone = zones.find(z => z.name === zoneName);
         if (!existingZone) {
           existingZone = {
@@ -160,7 +160,7 @@ export function generateTaflChannels(
         let existingZone = zones.find(z => z.name === entryCode);
         if (!existingZone) {
           existingZone = {
-            name: entryCode.substring(0, 16), // Zone names limited to 16 chars
+            name: entryCode.substring(0, 10), // Zone names limited to 10 chars
             channels: [],
           };
           zones.push(existingZone);

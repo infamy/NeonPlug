@@ -84,7 +84,7 @@
     ]
   },
   {
-    "name": "Ham Calling",
+    "name": "HAMCALL",
     "description": "Common ham radio calling frequencies and simplex channels (2m and 70cm)",
     "defaultPower": "High",
     "defaultBandwidth": "25kHz",
@@ -128,7 +128,8 @@
     ]
   },
   {
-    "name": "Resource Road",
+    "name": "Resource R",
+    "displayName": "BC/AB/SK Resource Roads",
     "description": "BC Resource Road channels for logging and forestry operations",
     "defaultPower": "High",
     "defaultBandwidth": "25kHz",

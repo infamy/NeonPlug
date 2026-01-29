@@ -4,17 +4,45 @@ import { useChannelsStore } from '../../store/channelsStore';
 import type { Zone } from '../../models/Zone';
 
 export const ZonesList: React.FC = () => {
-  const { zones, selectedZone, setSelectedZone, addZone, deleteZone } = useZonesStore();
+  const { zones, selectedZone, setSelectedZone, addZone, deleteZone, renameZone } = useZonesStore();
   const [newZoneName, setNewZoneName] = useState('');
+  const [editingZone, setEditingZone] = useState<string | null>(null);
+  const [editZoneName, setEditZoneName] = useState('');
 
   const handleAddZone = () => {
     if (newZoneName.trim()) {
+      const zoneName = newZoneName.trim();
       addZone({
-        name: newZoneName.trim(),
+        name: zoneName,
         channels: [],
       });
       setNewZoneName('');
+      // Auto-select the newly created zone so user can immediately add channels
+      setSelectedZone(zoneName);
     }
+  };
+
+  const handleStartEdit = (zoneName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingZone(zoneName);
+    setEditZoneName(zoneName);
+  };
+
+  const handleSaveEdit = (oldName: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const success = renameZone(oldName, editZoneName);
+    if (success) {
+      setEditingZone(null);
+      setEditZoneName('');
+    } else {
+      alert('Invalid zone name or name already exists. Zone names must be 1-10 characters and unique.');
+    }
+  };
+
+  const handleCancelEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingZone(null);
+    setEditZoneName('');
   };
 
   const selectedZoneData = zones.find(z => z.name === selectedZone);
@@ -35,7 +63,7 @@ export const ZonesList: React.FC = () => {
               onKeyPress={(e) => e.key === 'Enter' && handleAddZone()}
               placeholder="Zone name..."
               className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-32"
-              maxLength={11}
+              maxLength={10}
               disabled={zones.length >= 250}
             />
             <button
@@ -60,41 +88,88 @@ export const ZonesList: React.FC = () => {
                 .map((zone, index) => (
                 <div
                   key={`${zone.name}-${index}`} // Use index to ensure uniqueness
-                  onClick={() => setSelectedZone(zone.name)}
-                  className={`p-3 cursor-pointer transition-colors ${
-                    selectedZone === zone.name
-                      ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan'
-                      : 'hover:bg-deep-gray hover:bg-opacity-50'
+                  onClick={() => editingZone !== zone.name && setSelectedZone(zone.name)}
+                  className={`p-3 transition-colors ${
+                    editingZone === zone.name 
+                      ? 'bg-deep-gray-light'
+                      : selectedZone === zone.name
+                      ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan cursor-pointer'
+                      : 'hover:bg-deep-gray hover:bg-opacity-50 cursor-pointer'
                   }`}
                 >
                   <div className="flex justify-between items-center mb-1">
-                    <span className="text-white font-medium">{zone.name}</span>
-                    <span className="text-cool-gray text-xs">
-                      {zone.channels.length} channel{zone.channels.length !== 1 ? 's' : ''}
-                    </span>
+                    {editingZone === zone.name ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="text"
+                          value={editZoneName}
+                          onChange={(e) => setEditZoneName(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              handleSaveEdit(zone.name);
+                            } else if (e.key === 'Escape') {
+                              handleCancelEdit(e as any);
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1 bg-transparent border border-neon-cyan rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                          maxLength={10}
+                          autoFocus
+                        />
+                        <button
+                          onClick={(e) => handleSaveEdit(zone.name, e)}
+                          className="px-2 py-1 bg-neon-cyan text-dark-charcoal rounded text-xs hover:bg-opacity-90"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="px-2 py-1 bg-cool-gray bg-opacity-30 text-cool-gray rounded text-xs hover:bg-opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-white font-medium">{zone.name}</span>
+                        <span className="text-cool-gray text-xs">
+                          {zone.channels.length} channel{zone.channels.length !== 1 ? 's' : ''}
+                        </span>
+                      </>
+                    )}
                   </div>
-                  {zone.channels.length > 0 && (
-                    <div className="text-cool-gray text-xs mb-2">
-                      Channels: {zone.channels.slice(0, 5).join(', ')}
-                      {zone.channels.length > 5 && ` +${zone.channels.length - 5} more`}
-                    </div>
+                  {editingZone !== zone.name && (
+                    <>
+                      {zone.channels.length > 0 && (
+                        <div className="text-cool-gray text-xs mb-2">
+                          Channels: {zone.channels.slice(0, 5).join(', ')}
+                          {zone.channels.length > 5 && ` +${zone.channels.length - 5} more`}
+                        </div>
+                      )}
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={(e) => handleStartEdit(zone.name, e)}
+                          className="px-2 py-0.5 bg-neon-cyan bg-opacity-50 text-neon-cyan rounded text-xs hover:bg-opacity-70 border border-neon-cyan border-opacity-50"
+                        >
+                          Rename
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Delete zone "${zone.name}"? This cannot be undone.`)) {
+                              deleteZone(zone.name);
+                              if (selectedZone === zone.name) {
+                                setSelectedZone(null);
+                              }
+                            }
+                          }}
+                          className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </>
                   )}
-                  <div className="flex gap-2 justify-end">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Delete zone "${zone.name}"? This cannot be undone.`)) {
-                          deleteZone(zone.name);
-                          if (selectedZone === zone.name) {
-                            setSelectedZone(null);
-                          }
-                        }
-                      }}
-                      className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
-                    >
-                      Delete
-                    </button>
-                  </div>
                 </div>
               ))}
             </div>

@@ -7,7 +7,7 @@ import type { Channel, Zone } from '../models';
 import type { Repeater } from './repeaterFinder';
 import { createDefaultChannel } from '../utils/channelHelpers';
 import { getStandardOffset } from './repeaterFinder';
-import { isValidRepeaterFrequency } from './validation/frequencyValidator';
+import { isValidFrequencyRange } from './validation/frequencyValidator';
 
 export interface GenerationOptions {
   startChannelNumber?: number; // Starting channel number (default: find next available)
@@ -54,9 +54,9 @@ export function generateChannelsFromRepeaters(
     const txFrequency = repeater.frequency + inputOffset;
     const rxFrequency = repeater.frequency;
     
-    // Filter out repeaters with frequencies outside supported ranges (136-172 MHz or 400-470 MHz)
-    if (!isValidRepeaterFrequency(rxFrequency) || !isValidRepeaterFrequency(txFrequency)) {
-      console.warn(`Skipping repeater ${repeater.callsign} - frequency ${rxFrequency.toFixed(4)} MHz outside supported range (136-172 MHz or 400-470 MHz)`);
+    // Filter out repeaters with frequencies outside supported ranges (87-172 MHz or 400-470 MHz)
+    if (!isValidFrequencyRange(rxFrequency) || !isValidFrequencyRange(txFrequency)) {
+      console.warn(`Skipping repeater ${repeater.callsign} - frequency ${rxFrequency.toFixed(4)} MHz outside supported range (87-172 MHz or 400-470 MHz)`);
       continue;
     }
     
@@ -182,9 +182,9 @@ export function generateZonesFromRepeaters(
         });
         
         if (zoneChannels.length > 0) {
-          const zoneName = `${currentZoneStartDistance.toFixed(1)}-${(currentZoneStartDistance + maxDistancePerZone).toFixed(1)} mi`;
+          const zoneName = `${Math.round(currentZoneStartDistance)}-${Math.round(currentZoneStartDistance + maxDistancePerZone)}mi`;
           zones.push({
-            name: zoneName,
+            name: zoneName.substring(0, 10), // Limit to 10 chars
             channels: zoneChannels.map(ch => ch.number),
           });
         }
@@ -206,9 +206,9 @@ export function generateZonesFromRepeaters(
       });
       
       if (zoneChannels.length > 0) {
-        const zoneName = `${currentZoneStartDistance.toFixed(1)}+ mi`;
+        const zoneName = `${Math.round(currentZoneStartDistance)}+mi`;
         zones.push({
-          name: zoneName,
+          name: zoneName.substring(0, 10), // Limit to 10 chars
           channels: zoneChannels.map(ch => ch.number),
         });
       }
@@ -216,7 +216,7 @@ export function generateZonesFromRepeaters(
   } else {
     // Single zone with all repeaters
     zones.push({
-      name: 'Location Repeaters',
+      name: 'Loc Rptrs',
       channels: channels.map(ch => ch.number),
     });
   }

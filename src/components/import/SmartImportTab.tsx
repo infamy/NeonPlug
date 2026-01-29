@@ -1493,7 +1493,7 @@ export const SmartImportTab: React.FC = () => {
                           onClick={(e) => e.stopPropagation()}
                           className="mr-2"
                         />
-                        <span className="font-semibold text-neon-cyan">{set.name}</span>
+                        <span className="font-semibold text-neon-cyan">{set.displayName || set.name}</span>
                         <span className="text-cool-gray text-sm">
                           ({set.channels.length} channels)
                         </span>

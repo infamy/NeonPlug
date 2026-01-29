@@ -5,6 +5,7 @@ import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ContactsTable } from './ContactsTable';
 import { ProgressBar } from '../ui/ProgressBar';
 import { getContactCapacityWithFallback } from '../../utils/firmware';
+import { COUNTRIES_BY_REGION, type CountryRegion } from '../../constants/countries';
 import type { Contact } from '../../models/Contact';
 
 // RadioID User interface
@@ -17,63 +18,6 @@ interface RadioIDUser {
   country?: string;
 }
 
-// Countries organized by region
-export interface CountryRegion {
-  name: string;
-  countries: string[];
-}
-
-export const COUNTRIES_BY_REGION: CountryRegion[] = [
-  {
-    name: 'North America',
-    countries: ['United States', 'Canada', 'Mexico'],
-  },
-  {
-    name: 'Central & South America',
-    countries: [
-      'Brazil', 'Argentina', 'Chile', 'Colombia', 'Peru', 'Venezuela',
-      'Ecuador', 'Guatemala', 'Cuba', 'Costa Rica', 'Panama', 'Uruguay',
-      'Paraguay', 'Bolivia',
-    ],
-  },
-  {
-    name: 'Europe - Western',
-    countries: [
-      'United Kingdom', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands',
-      'Belgium', 'Switzerland', 'Austria', 'Portugal', 'Ireland', 'Greece',
-      'Luxembourg',
-    ],
-  },
-  {
-    name: 'Europe - Northern',
-    countries: [
-      'Sweden', 'Norway', 'Denmark', 'Finland', 'Iceland', 'Estonia',
-      'Latvia', 'Lithuania',
-    ],
-  },
-  {
-    name: 'Europe - Eastern',
-    countries: [
-      'Poland', 'Czech Republic', 'Romania', 'Bulgaria', 'Hungary', 'Slovakia',
-      'Slovenia', 'Croatia', 'Serbia', 'Ukraine', 'Belarus', 'Russia',
-    ],
-  },
-  {
-    name: 'Asia Pacific',
-    countries: [
-      'Australia', 'New Zealand', 'Japan', 'South Korea', 'India', 'Thailand',
-      'Philippines', 'Indonesia', 'Malaysia', 'Singapore', 'Vietnam', 'Taiwan',
-      'Hong Kong', 'China',
-    ],
-  },
-  {
-    name: 'Middle East & Africa',
-    countries: [
-      'Israel', 'Turkey', 'South Africa', 'Egypt', 'United Arab Emirates',
-      'Saudi Arabia', 'Kenya', 'Morocco', 'Tunisia',
-    ],
-  },
-];
 
 // Cache for CSV data
 let csvCache: RadioIDUser[] | null = null;

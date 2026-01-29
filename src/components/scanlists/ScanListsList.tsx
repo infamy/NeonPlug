@@ -6,8 +6,10 @@ import type { ScanList } from '../../models/ScanList';
 import type { Channel } from '../../models/Channel';
 
 export const ScanListsList: React.FC = () => {
-  const { scanLists, selectedScanList, setSelectedScanList, addScanList, deleteScanList } = useScanListsStore();
+  const { scanLists, selectedScanList, setSelectedScanList, addScanList, deleteScanList, renameScanList } = useScanListsStore();
   const [newScanListName, setNewScanListName] = useState('');
+  const [editingScanList, setEditingScanList] = useState<string | null>(null);
+  const [editScanListName, setEditScanListName] = useState('');
 
   const selectedScanListData = scanLists.find(sl => sl.name === selectedScanList);
 
@@ -24,13 +26,16 @@ export const ScanListsList: React.FC = () => {
       alert('A scan list with this name already exists.');
       return;
     }
+    const scanListName = newScanListName.trim().slice(0, 16);
     addScanList({
-      name: newScanListName.trim().slice(0, 16),
+      name: scanListName,
       ctcScanMode: 0,
       scanTxMode: 0,
       channels: [],
     });
     setNewScanListName('');
+    // Auto-select the newly created scan list so user can immediately add channels
+    setSelectedScanList(scanListName);
   };
 
   const handleDeleteScanList = (name: string) => {
@@ -40,6 +45,29 @@ export const ScanListsList: React.FC = () => {
         setSelectedScanList(null);
       }
     }
+  };
+
+  const handleStartEdit = (scanListName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingScanList(scanListName);
+    setEditScanListName(scanListName);
+  };
+
+  const handleSaveEdit = (oldName: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const success = renameScanList(oldName, editScanListName);
+    if (success) {
+      setEditingScanList(null);
+      setEditScanListName('');
+    } else {
+      alert('Invalid scan list name or name already exists. Scan list names must be 1-16 characters and unique.');
+    }
+  };
+
+  const handleCancelEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingScanList(null);
+    setEditScanListName('');
   };
 
   return (
@@ -81,36 +109,83 @@ export const ScanListsList: React.FC = () => {
               {scanLists.map((scanList, index) => (
                 <div
                   key={`${scanList.name}-${index}`}
-                  onClick={() => setSelectedScanList(scanList.name)}
-                  className={`p-3 cursor-pointer transition-colors ${
-                    selectedScanList === scanList.name
-                      ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan'
-                      : 'hover:bg-deep-gray hover:bg-opacity-50'
+                  onClick={() => editingScanList !== scanList.name && setSelectedScanList(scanList.name)}
+                  className={`p-3 transition-colors ${
+                    editingScanList === scanList.name 
+                      ? 'bg-deep-gray-light'
+                      : selectedScanList === scanList.name
+                      ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan cursor-pointer'
+                      : 'hover:bg-deep-gray hover:bg-opacity-50 cursor-pointer'
                   }`}
                 >
                   <div className="flex justify-between items-center mb-1">
-                    <span className="text-white font-medium">{scanList.name}</span>
-                    <span className="text-cool-gray text-xs">
-                      {scanList.channels.length} channel{scanList.channels.length !== 1 ? 's' : ''}
-                    </span>
+                    {editingScanList === scanList.name ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="text"
+                          value={editScanListName}
+                          onChange={(e) => setEditScanListName(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              handleSaveEdit(scanList.name);
+                            } else if (e.key === 'Escape') {
+                              handleCancelEdit(e as any);
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1 bg-transparent border border-neon-cyan rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                          maxLength={16}
+                          autoFocus
+                        />
+                        <button
+                          onClick={(e) => handleSaveEdit(scanList.name, e)}
+                          className="px-2 py-1 bg-neon-cyan text-dark-charcoal rounded text-xs hover:bg-opacity-90"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="px-2 py-1 bg-cool-gray bg-opacity-30 text-cool-gray rounded text-xs hover:bg-opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-white font-medium">{scanList.name}</span>
+                        <span className="text-cool-gray text-xs">
+                          {scanList.channels.length} channel{scanList.channels.length !== 1 ? 's' : ''}
+                        </span>
+                      </>
+                    )}
                   </div>
-                  {scanList.channels.length > 0 && (
-                    <div className="text-cool-gray text-xs mb-2">
-                      Channels: {scanList.channels.slice(0, 5).join(', ')}
-                      {scanList.channels.length > 5 && ` +${scanList.channels.length - 5} more`}
-                    </div>
+                  {editingScanList !== scanList.name && (
+                    <>
+                      {scanList.channels.length > 0 && (
+                        <div className="text-cool-gray text-xs mb-2">
+                          Channels: {scanList.channels.slice(0, 5).join(', ')}
+                          {scanList.channels.length > 5 && ` +${scanList.channels.length - 5} more`}
+                        </div>
+                      )}
+                      <div className="flex gap-2 justify-end mt-2">
+                        <button
+                          onClick={(e) => handleStartEdit(scanList.name, e)}
+                          className="px-2 py-0.5 bg-neon-cyan bg-opacity-50 text-neon-cyan rounded text-xs hover:bg-opacity-70 border border-neon-cyan border-opacity-50"
+                        >
+                          Rename
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteScanList(scanList.name);
+                          }}
+                          className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </>
                   )}
-                  <div className="flex gap-2 justify-end mt-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteScanList(scanList.name);
-                      }}
-                      className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
-                    >
-                      Delete
-                    </button>
-                  </div>
                 </div>
               ))}
             </div>
