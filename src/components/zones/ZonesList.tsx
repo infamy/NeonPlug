@@ -4,20 +4,53 @@ import { useChannelsStore } from '../../store/channelsStore';
 import type { Zone } from '../../models/Zone';
 
 export const ZonesList: React.FC = () => {
-  const { zones, selectedZone, setSelectedZone, addZone, deleteZone } = useZonesStore();
+  const { zones, selectedZoneId, setSelectedZoneId, addZone, deleteZone, renameZone } = useZonesStore();
   const [newZoneName, setNewZoneName] = useState('');
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+  const [editZoneName, setEditZoneName] = useState('');
 
   const handleAddZone = () => {
     if (newZoneName.trim()) {
+      const zoneName = newZoneName.trim();
       addZone({
-        name: newZoneName.trim(),
+        name: zoneName,
         channels: [],
       });
       setNewZoneName('');
+      // Auto-select the newly created zone so user can immediately add channels
+      setTimeout(() => {
+        const addedZone = useZonesStore.getState().zones.find(z => z.name === zoneName && !selectedZoneId);
+        if (addedZone) {
+          setSelectedZoneId(addedZone.id);
+        }
+      }, 0);
     }
   };
 
-  const selectedZoneData = zones.find(z => z.name === selectedZone);
+  const handleStartEdit = (zoneId: string, zoneName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingZoneId(zoneId);
+    setEditZoneName(zoneName);
+  };
+
+  const handleSaveEdit = (zoneId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const success = renameZone(zoneId, editZoneName);
+    if (success) {
+      setEditingZoneId(null);
+      setEditZoneName('');
+    } else {
+      alert('Invalid zone name. Zone names must be 1-10 characters.');
+    }
+  };
+
+  const handleCancelEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingZoneId(null);
+    setEditZoneName('');
+  };
+
+  const selectedZoneData = zones.find(z => z.id === selectedZoneId);
 
   return (
     <div className="grid grid-cols-2 gap-4 h-full">
@@ -35,7 +68,7 @@ export const ZonesList: React.FC = () => {
               onKeyPress={(e) => e.key === 'Enter' && handleAddZone()}
               placeholder="Zone name..."
               className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-32"
-              maxLength={11}
+              maxLength={10}
               disabled={zones.length >= 250}
             />
             <button
@@ -57,44 +90,88 @@ export const ZonesList: React.FC = () => {
             <div className="divide-y divide-neon-cyan divide-opacity-20">
               {zones
                 .filter(zone => zone.name && zone.name.trim().length > 0) // Filter out empty zones
-                .map((zone, index) => (
+                .map((zone) => (
                 <div
-                  key={`${zone.name}-${index}`} // Use index to ensure uniqueness
-                  onClick={() => setSelectedZone(zone.name)}
-                  className={`p-3 cursor-pointer transition-colors ${
-                    selectedZone === zone.name
-                      ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan'
-                      : 'hover:bg-deep-gray hover:bg-opacity-50'
+                  key={zone.id} // Use unique ID
+                  onClick={() => editingZoneId !== zone.id && setSelectedZoneId(zone.id)}
+                  className={`p-3 transition-colors ${
+                    editingZoneId === zone.id 
+                      ? 'bg-deep-gray-light'
+                      : selectedZoneId === zone.id
+                      ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan cursor-pointer'
+                      : 'hover:bg-deep-gray hover:bg-opacity-50 cursor-pointer'
                   }`}
                 >
                   <div className="flex justify-between items-center mb-1">
-                    <span className="text-white font-medium">{zone.name}</span>
-                    <span className="text-cool-gray text-xs">
-                      {zone.channels.length} channel{zone.channels.length !== 1 ? 's' : ''}
-                    </span>
+                    {editingZoneId === zone.id ? (
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="text"
+                          value={editZoneName}
+                          onChange={(e) => setEditZoneName(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              handleSaveEdit(zone.id);
+                            } else if (e.key === 'Escape') {
+                              handleCancelEdit(e as any);
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1 bg-transparent border border-neon-cyan rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                          maxLength={10}
+                          autoFocus
+                        />
+                        <button
+                          onClick={(e) => handleSaveEdit(zone.id, e)}
+                          className="px-2 py-1 bg-neon-cyan text-dark-charcoal rounded text-xs hover:bg-opacity-90"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="px-2 py-1 bg-cool-gray bg-opacity-30 text-cool-gray rounded text-xs hover:bg-opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-white font-medium">{zone.name}</span>
+                        <span className="text-cool-gray text-xs">
+                          {zone.channels.length} channel{zone.channels.length !== 1 ? 's' : ''}
+                        </span>
+                      </>
+                    )}
                   </div>
-                  {zone.channels.length > 0 && (
-                    <div className="text-cool-gray text-xs mb-2">
-                      Channels: {zone.channels.slice(0, 5).join(', ')}
-                      {zone.channels.length > 5 && ` +${zone.channels.length - 5} more`}
-                    </div>
+                  {editingZoneId !== zone.id && (
+                    <>
+                      {zone.channels.length > 0 && (
+                        <div className="text-cool-gray text-xs mb-2">
+                          Channels: {zone.channels.slice(0, 5).join(', ')}
+                          {zone.channels.length > 5 && ` +${zone.channels.length - 5} more`}
+                        </div>
+                      )}
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={(e) => handleStartEdit(zone.id, zone.name, e)}
+                          className="px-2 py-0.5 bg-neon-cyan bg-opacity-50 text-neon-cyan rounded text-xs hover:bg-opacity-70 border border-neon-cyan border-opacity-50"
+                        >
+                          Rename
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Delete zone "${zone.name}"? This cannot be undone.`)) {
+                              deleteZone(zone.id);
+                            }
+                          }}
+                          className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </>
                   )}
-                  <div className="flex gap-2 justify-end">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Delete zone "${zone.name}"? This cannot be undone.`)) {
-                          deleteZone(zone.name);
-                          if (selectedZone === zone.name) {
-                            setSelectedZone(null);
-                          }
-                        }
-                      }}
-                      className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
-                    >
-                      Delete
-                    </button>
-                  </div>
                 </div>
               ))}
             </div>
@@ -138,14 +215,14 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone }) => {
       return;
     }
     if (!zone.channels.includes(channelNumber)) {
-      updateZone(zone.name, {
+      updateZone(zone.id, {
         channels: [...zone.channels, channelNumber].sort((a, b) => a - b),
       });
     }
   };
 
   const handleRemoveChannel = (channelNumber: number) => {
-    updateZone(zone.name, {
+    updateZone(zone.id, {
       channels: zone.channels.filter(ch => ch !== channelNumber),
     });
   };
@@ -154,7 +231,7 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone }) => {
     const newChannels = [...zone.channels];
     const [removed] = newChannels.splice(fromIndex, 1);
     newChannels.splice(toIndex, 0, removed);
-    updateZone(zone.name, { channels: newChannels });
+    updateZone(zone.id, { channels: newChannels });
   };
 
   const availableChannels = channels

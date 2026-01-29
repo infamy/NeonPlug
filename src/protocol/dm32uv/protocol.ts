@@ -3288,50 +3288,67 @@ export class DM32UVProtocol implements RadioProtocol {
     }
     
     // Split into blocks and set metadata
-    let zoneDataOffset = 0;
     for (let blockIdx = 0; blockIdx < zoneBlocks.length; blockIdx++) {
       const block = zoneBlocks[blockIdx];
       
       // Get original block data for comparison (only if we have cached data)
-      const originalBlockData = originalZoneData ? originalZoneData.slice(zoneDataOffset, zoneDataOffset + BLOCK_SIZE.STANDARD) : null;
+      const originalBlockData = originalZoneData ? originalZoneData.slice(blockIdx * BLOCK_SIZE.STANDARD, (blockIdx + 1) * BLOCK_SIZE.STANDARD) : null;
       
       // Calculate how many zones are in this block
-      // Zones are 145 bytes each, starting at offset 16
-      // Max zones per block: (4096 - 16) / 145 ≈ 28 zones
-      const maxZonesPerBlock = Math.floor((BLOCK_SIZE.STANDARD - OFFSET.ZONE_START) / BLOCK_SIZE.ZONE);
-      const zonesWrittenSoFar = Math.floor(zoneDataOffset / BLOCK_SIZE.STANDARD) * maxZonesPerBlock;
-      const zonesInBlock = Math.min(zonesToWrite.length - zonesWrittenSoFar, maxZonesPerBlock);
+      // First block: zones start at byte 16, max (4096-16)/145 = 28 zones
+      // Subsequent blocks: zones start at byte 0, max 4096/145 = 28 zones
+      const isFirstBlock = blockIdx === 0;
+      const maxZonesFirstBlock = Math.floor((BLOCK_SIZE.STANDARD - OFFSET.ZONE_START) / BLOCK_SIZE.ZONE); // 28
+      const maxZonesPerBlock = Math.floor(BLOCK_SIZE.STANDARD / BLOCK_SIZE.ZONE); // 28
       
-      log.verbose(`Block ${blockIdx}: zonesWrittenSoFar=${zonesWrittenSoFar}, zonesInBlock=${zonesInBlock}, totalZones=${zonesToWrite.length}, maxZonesPerBlock=${maxZonesPerBlock}`, 'Protocol');
+      let firstZoneIdx: number;
+      let zonesInBlock: number;
       
-      // Create a new block data array (don't use slice as it creates a view)
-      const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
-      blockData.fill(0xFF); // Fill with 0xFF first
-      
-      // Set zone count in byte 0 (range: 1-28)
-      // Byte 0: Zone count for this block (FUN_0047b800 writes this)
-      // Bytes 1-15: Reserved/padding (0xFF)
-      if (zonesInBlock > 0) {
-        const zoneCount = Math.min(Math.max(zonesInBlock, 1), 28); // Clamp to 1-28
-        blockData[0] = zoneCount;
-        log.debug(`Set zone count in byte 0: ${zoneCount} zones for block ${blockIdx}`, 'Protocol');
+      if (isFirstBlock) {
+        firstZoneIdx = 0;
+        zonesInBlock = Math.min(zonesToWrite.length, maxZonesFirstBlock);
       } else {
-        blockData[0] = 0; // No zones in this block
-        log.debug(`Block ${blockIdx} has no zones, setting byte 0 to 0`, 'Protocol');
+        firstZoneIdx = maxZonesFirstBlock + ((blockIdx - 1) * maxZonesPerBlock);
+        zonesInBlock = Math.min(zonesToWrite.length - firstZoneIdx, maxZonesPerBlock);
       }
       
-      // Bytes 1-15: Reserved/padding (already filled with 0xFF)
+      log.verbose(`Block ${blockIdx}: firstZoneIdx=${firstZoneIdx}, zonesInBlock=${zonesInBlock}, totalZones=${zonesToWrite.length}, isFirstBlock=${isFirstBlock}`, 'Protocol');
       
-      // Preserve the original bytes 1-15 if available (to match original structure)
-      if (originalBlockData) {
-        blockData.set(originalBlockData.slice(1, 16), 1);
-        log.verbose(`Preserved original bytes 1-15 for block ${blockIdx}: ${Array.from(originalBlockData.slice(1, 16)).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ')}`, 'Protocol');
+      // Create a new block data array initialized with 0xFF
+      const blockData = new Uint8Array(BLOCK_SIZE.STANDARD);
+      blockData.fill(0xFF);
+      
+      // Copy zone data for this block from allZoneData
+      if (zonesInBlock > 0) {
+        // Calculate source offset in allZoneData (zones always start at byte 16 in allZoneData)
+        const sourceOffset = OFFSET.ZONE_START + (firstZoneIdx * BLOCK_SIZE.ZONE);
+        const sourceLength = zonesInBlock * BLOCK_SIZE.ZONE;
+        const sourceData = allZoneData.slice(sourceOffset, sourceOffset + sourceLength);
+        
+        // First block: zones start at byte 16, subsequent blocks: zones start at byte 0
+        const destOffset = isFirstBlock ? OFFSET.ZONE_START : 0;
+        blockData.set(sourceData, destOffset);
+        
+        // Only set zone count at byte 0 for the first block
+        if (isFirstBlock) {
+          const zoneCount = Math.min(Math.max(zonesInBlock, 1), 28); // Clamp to 1-28
+          blockData[0] = zoneCount;
+          log.debug(`Set zone count in byte 0: ${zoneCount} zones for first block`, 'Protocol');
+          
+          // Preserve the original bytes 1-15 if available (to match original structure)
+          if (originalBlockData) {
+            blockData.set(originalBlockData.slice(1, 16), 1);
+            log.verbose(`Preserved original bytes 1-15 for first block: ${Array.from(originalBlockData.slice(1, 16)).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ')}`, 'Protocol');
+          }
+        } else {
+          log.debug(`Block ${blockIdx} is not first block, zones start at byte 0 (no header)`, 'Protocol');
+        }
+      } else {
+        if (isFirstBlock) {
+          blockData[0] = 0; // No zones in first block
+          log.debug(`First block has no zones, setting byte 0 to 0`, 'Protocol');
+        }
       }
-      
-      // Copy the zone data for this block (this will overwrite bytes 16+ with zone data)
-      const sourceData = allZoneData.slice(zoneDataOffset, zoneDataOffset + BLOCK_SIZE.STANDARD);
-      // Copy starting at offset 16 to preserve the header we just set
-      blockData.set(sourceData.slice(16), 16);
       
       // Set metadata byte
       blockData[0xFFF] = block.metadata;
@@ -3460,8 +3477,6 @@ export class DM32UVProtocol implements RadioProtocol {
       if (cacheIndex >= 0) {
         this.cachedBlockData[cacheIndex].data = blockData;
       }
-        
-      zoneDataOffset += BLOCK_SIZE.STANDARD;
     }
 
     // Generate scan list blocks - ALWAYS write scan lists when writing channels
@@ -3581,8 +3596,6 @@ export class DM32UVProtocol implements RadioProtocol {
       });
     }
     
-    // Log write blocks for debug
-    log.info(`Write blocks prepared (${finalBlocksToWrite.length} blocks)`, 'Protocol');
     for (const block of finalBlocksToWrite) {
       const metadataHex = `0x${block.metadata.toString(16).padStart(2, '0').toUpperCase()}`;
       const addressHex = `0x${block.address.toString(16).padStart(6, '0')}`;

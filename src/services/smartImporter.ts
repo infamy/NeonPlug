@@ -7,6 +7,7 @@ import { read, utils } from 'xlsx';
 import type { WorkSheet } from 'xlsx';
 import type { Channel, Zone, ScanList, Contact } from '../models';
 import type { CodeplugData } from './codeplugExport';
+import { generateZoneId } from '../utils/zoneHelpers';
 
 const CODEPLUG_VERSION = '1.0.0';
 
@@ -430,6 +431,7 @@ export async function smartImportCodeplug(
           for (const row of rows) {
             try {
               const zone: Zone = {
+                id: generateZoneId(),
                 name: row['Zone Name'] || '',
                 channels: (row['Channels'] || '').toString().split(',').map((c: string) => parseInt(c.trim())).filter((n: number) => !isNaN(n)),
               };

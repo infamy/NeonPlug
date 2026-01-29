@@ -5,6 +5,7 @@
 
 import type { Channel, Zone } from '../models';
 import { createDefaultChannel } from '../utils/channelHelpers';
+import { generateZoneId } from '../utils/zoneHelpers';
 import {
   type RptrData,
   convertRptrFrequency,
@@ -12,7 +13,7 @@ import {
   parseTimeslots,
   groupRptrsByLocation,
 } from '../data/rptrsData';
-import { isValidRepeaterFrequency } from './validation/frequencyValidator';
+import { isValidFrequencyRange } from './validation/frequencyValidator';
 
 // Helper to remove distance property for compatibility
 function removeDistance(entry: RptrData & { distance?: number }): RptrData {
@@ -88,9 +89,9 @@ export function generateRptrsChannels(
     const rxFrequency = freqMhz; // Repeater output (user RX)
     const txFrequency = freqMhz + offsetMhz; // User TX (repeater input)
     
-    // Filter out repeaters with frequencies outside supported ranges (136-172 MHz or 400-470 MHz)
-    if (!isValidRepeaterFrequency(rxFrequency) || !isValidRepeaterFrequency(txFrequency)) {
-      console.warn(`Skipping DMR repeater ${rptr.callsign} - frequency ${rxFrequency.toFixed(4)} MHz outside supported range (136-172 MHz or 400-470 MHz)`);
+    // Filter out repeaters with frequencies outside supported ranges (87-174 MHz or 400-470 MHz)
+    if (!isValidFrequencyRange(rxFrequency) || !isValidFrequencyRange(txFrequency)) {
+      console.warn(`Skipping DMR repeater ${rptr.callsign} - frequency ${rxFrequency.toFixed(4)} MHz outside supported range (87-174 MHz or 400-470 MHz)`);
       continue;
     }
     
@@ -153,10 +154,11 @@ export function generateRptrsChannels(
             r.color_code === rptr.color_code
           )) {
             // Add "DMR-" prefix to distinguish from other zone types
-            const zoneName = `DMR-${locationName}`.substring(0, 16);
+            const zoneName = `DMR-${locationName}`.substring(0, 10);
             let existingZone = zones.find(z => z.name === zoneName);
             if (!existingZone) {
               existingZone = {
+                id: generateZoneId(),
                 name: zoneName,
                 channels: [],
               };
@@ -171,10 +173,11 @@ export function generateRptrsChannels(
         }
       } else {
         // Create individual zones for each repeater (using callsign, no prefix)
-        const zoneName = rptr.callsign.length > 16 ? rptr.callsign.substring(0, 16) : rptr.callsign;
+        const zoneName = rptr.callsign.length > 10 ? rptr.callsign.substring(0, 10) : rptr.callsign;
         let existingZone = zones.find(z => z.name === zoneName);
         if (!existingZone) {
           existingZone = {
+            id: generateZoneId(),
             name: zoneName,
             channels: [],
           };
@@ -192,7 +195,8 @@ export function generateRptrsChannels(
     // Deduplicate channel numbers
     const uniqueChannels = Array.from(new Set(allZoneChannels));
     zones.push({
-      name: 'DMR Repeaters',
+      id: generateZoneId(),
+      name: 'DMR Rptrs',
       channels: uniqueChannels,
     });
   }

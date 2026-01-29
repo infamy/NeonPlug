@@ -1,5 +1,6 @@
 export interface Zone {
-  name: string;                // Max 16 chars
+  id: string;                 // Unique identifier for UI (generated)
+  name: string;                // Zone name (max 10 chars, written to radio)
   channels: number[];         // Array of channel numbers
 }
 

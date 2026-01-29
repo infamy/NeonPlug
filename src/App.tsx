@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { MainLayout } from './components/layout/MainLayout';
-import { DebugPanel } from './components/ui/DebugPanel';
 import { StartupModal } from './components/ui/StartupModal';
 
 // Lazy load tabs for better code splitting - only load when tab is active
@@ -240,7 +239,6 @@ function App() {
       <MainLayout activeTab={activeTab} onTabChange={setActiveTab}>
         {renderTabContent()}
       </MainLayout>
-      <DebugPanel />
       <StartupModal
         isOpen={showStartupModal && !isConnecting}
         onReadFromRadio={handleReadFromRadio}

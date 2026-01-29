@@ -8,6 +8,7 @@ interface ScanListsState {
   setScanLists: (scanLists: ScanList[]) => void;
   addScanList: (scanList: ScanList) => void;
   updateScanList: (name: string, scanList: Partial<ScanList>) => void;
+  renameScanList: (oldName: string, newName: string) => boolean;
   deleteScanList: (name: string) => void;
   setSelectedScanList: (name: string | null) => void;
   setRawScanListData: (data: Map<string, { data: Uint8Array; listNum: number; offset: number }>) => void;
@@ -41,6 +42,33 @@ export const useScanListsStore = create<ScanListsState>((set) => ({
       return sl;
     })
   })),
+  renameScanList: (oldName, newName) => {
+    const trimmedNewName = newName.trim();
+    
+    // Validate new name
+    if (!trimmedNewName || trimmedNewName.length === 0) {
+      return false;
+    }
+    if (trimmedNewName.length > 16) {
+      return false;
+    }
+    
+    // Check for duplicate names
+    const state = useScanListsStore.getState();
+    if (state.scanLists.some(sl => sl.name === trimmedNewName && sl.name !== oldName)) {
+      return false;
+    }
+    
+    // Rename the scan list and update selected scan list if needed
+    set((state) => ({
+      scanLists: state.scanLists.map(sl => 
+        sl.name === oldName ? { ...sl, name: trimmedNewName } : sl
+      ),
+      selectedScanList: state.selectedScanList === oldName ? trimmedNewName : state.selectedScanList
+    }));
+    
+    return true;
+  },
   deleteScanList: (name) => set((state) => ({
     scanLists: state.scanLists.filter(sl => sl.name !== name)
   })),

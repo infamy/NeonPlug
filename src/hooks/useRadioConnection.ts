@@ -604,8 +604,8 @@ export function useRadioConnection() {
 
     try {
       // Filter channels to only include those with valid frequencies
-      // Airport channels: 108-136 MHz
-      // Repeater channels: 136-172 MHz or 400-470 MHz
+      // VHF: 87-174 MHz
+      // UHF: 400-470 MHz
       const validChannels = channels.filter(ch => isValidChannelFrequency(ch));
       const filteredCount = channels.length - validChannels.length;
       

@@ -2,6 +2,15 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useChannelsStore } from '../../store/channelsStore';
+import { useZonesStore } from '../../store/zonesStore';
+import { useScanListsStore } from '../../store/scanListsStore';
+import { useContactsStore } from '../../store/contactsStore';
+import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
+import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
+import { useRXGroupsStore } from '../../store/rxGroupsStore';
+import { useQuickMessagesStore } from '../../store/quickMessagesStore';
+import { useQuickContactsStore } from '../../store/quickContactsStore';
+import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useLogStore } from '../../store/logStore';
 import { parseRadioSettings } from '../../protocol/dm32uv/structures';
 import { decodeBCDFrequency, decodeCTCSSDCS } from '../../protocol/dm32uv/encoding';
@@ -15,12 +24,24 @@ import { MetadataBlockDisplay } from './MetadataBlockDisplay';
 import { CollapsibleSection } from './CollapsibleSection';
 import { OffsetInspector } from './OffsetInspector';
 import { FieldVerificationTable } from './FieldVerificationTable';
+import { exportFullDebug, exportWriteBlocks, downloadDebug } from '../../services/debugExport';
+import { analyzeMetadata, generateMetadataReport } from '../../services/metadataAnalysis';
+import { exportCodeplug } from '../../services/codeplugExport';
 import JSZip from 'jszip';
 
 export const DiagnosticsTab: React.FC = () => {
-  const { rawRadioSettingsData, rawContactBlockAddress, rawContactBlocks, blockMetadata, blockData, writeBlockData } = useRadioStore();
-  const { settings: radioSettings } = useRadioSettingsStore();
+  const { rawRadioSettingsData, rawContactBlockAddress, rawContactBlocks, blockMetadata, blockData, writeBlockData, radioInfo, zoneComparisonData } = useRadioStore();
+  const { settings: radioSettings, getChangedFields } = useRadioSettingsStore();
   const { channels, rawChannelData } = useChannelsStore();
+  const { zones, rawZoneData } = useZonesStore();
+  const { scanLists } = useScanListsStore();
+  const { contacts } = useContactsStore();
+  const { systems: digitalEmergencies, config: digitalEmergencyConfig } = useDigitalEmergencyStore();
+  const { systems: analogEmergencies } = useAnalogEmergencyStore();
+  const { groups: rxGroups, groupsLoaded: rxGroupsLoaded } = useRXGroupsStore();
+  const { messages: quickMessages } = useQuickMessagesStore();
+  const { contacts: quickContacts } = useQuickContactsStore();
+  const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
   const [showMetadataBlock, setShowMetadataBlock] = useState(false);
   const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
   const [showContactBlock, setShowContactBlock] = useState(true);
@@ -31,6 +52,7 @@ export const DiagnosticsTab: React.FC = () => {
   const [expandedContactBlocks, setExpandedContactBlocks] = useState<Set<number>>(new Set());
   const [contactBlockOffsets, setContactBlockOffsets] = useState<Map<number, string>>(new Map());
   const [selectedContactBlock, setSelectedContactBlock] = useState<number | null>(null);
+  const [showExpectedWriteData, setShowExpectedWriteData] = useState(false);
 
   // Initialize selected block to first block if available
   React.useEffect(() => {
@@ -344,15 +366,316 @@ export const DiagnosticsTab: React.FC = () => {
     }
   };
 
+  const handleExportExpectedWriteHex = () => {
+    if (channels.length === 0) {
+      alert('No channels available to export.');
+      return;
+    }
+
+    // Create a summary of expected write data in hex format
+    const summary = {
+      channels: channels.length,
+      zones: zones.length,
+      estimatedChannelBlocks: Math.ceil(channels.length / 125),
+      estimatedZoneBlocks: zones.length > 0 ? 1 : 0,
+      channelData: channels.map(ch => ({
+        number: ch.number,
+        name: ch.name,
+        rxFreq: ch.rxFrequency.toFixed(4),
+        txFreq: ch.txFrequency.toFixed(4),
+        mode: ch.mode,
+      })),
+      zoneData: zones.map(zone => ({
+        name: zone.name,
+        channelCount: zone.channels.length,
+        channels: zone.channels,
+      })),
+      note: 'This is a preview. Actual write data is generated during the write process.',
+    };
+
+    const hexContent = JSON.stringify(summary, null, 2);
+    const blob = new Blob([hexContent], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    a.download = `expected-write-data-${timestamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportExpectedWriteBin = () => {
+    if (channels.length === 0) {
+      alert('No channels available to export.');
+      return;
+    }
+
+    // Create a text summary for binary format (JSON for now)
+    const summary = {
+      channels: channels.length,
+      zones: zones.length,
+      estimatedChannelBlocks: Math.ceil(channels.length / 125),
+      estimatedZoneBlocks: zones.length > 0 ? 1 : 0,
+      note: 'Full binary write data generation requires an active write operation.',
+      suggestion: 'Use "Write to Radio" to generate actual binary blocks, then check writeBlockData in debug export.',
+    };
+
+    const content = JSON.stringify(summary, null, 2);
+    const blob = new Blob([content], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    a.download = `expected-write-summary-${timestamp}.bin`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFullDebugExport = async () => {
+    if (channels.length === 0 && zones.length === 0 && logs.length === 0 && blockMetadata.size === 0 && blockData.size === 0) {
+      alert('No data or logs to export. Please read from radio first.');
+      return;
+    }
+
+    try {
+      const zip = new JSZip();
+
+      // Convert logs to export format
+      const exportLogs = logs.map(log => ({
+        timestamp: new Date(log.timestamp).toISOString(),
+        level: log.level.toLowerCase() as 'log' | 'warn' | 'error' | 'info' | 'debug' | 'verbose',
+        message: log.message,
+        error: log.error,
+        context: log.context,
+      }));
+
+      // Get full debug data
+      const debugData = exportFullDebug(
+        channels, 
+        zones, 
+        rawChannelData, 
+        rawZoneData, 
+        exportLogs,
+        blockMetadata,
+        blockData,
+        writeBlockData,
+        zoneComparisonData
+      );
+
+      // Create read folder with data from radio
+      const readFolder = zip.folder('read');
+      if (readFolder) {
+        readFolder.file('full-debug-data.json', debugData);
+        
+        // Add individual block data
+        for (const [address, data] of blockData.entries()) {
+          const metadataInfo = blockMetadata.get(address);
+          if (metadataInfo) {
+            const metadataHex = metadataInfo.metadata.toString(16).toUpperCase().padStart(2, '0');
+            const addressHex = address.toString(16).toUpperCase().padStart(6, '0');
+            readFolder.file(`block-0x${metadataHex}-addr-0x${addressHex}.bin`, data);
+          }
+        }
+      }
+
+      // Create write folder with expected write data
+      const writeFolder = zip.folder('write');
+      if (writeFolder && writeBlockData.size > 0) {
+        // Add write blocks
+        for (const [, block] of writeBlockData.entries()) {
+          const metadataHex = block.metadata.toString(16).toUpperCase().padStart(2, '0');
+          const addressHex = block.address.toString(16).toUpperCase().padStart(6, '0');
+          writeFolder.file(`write-block-0x${metadataHex}-addr-0x${addressHex}.bin`, block.data);
+        }
+        
+        // Add write summary
+        const writeSummary = {
+          totalBlocks: writeBlockData.size,
+          channels: channels.length,
+          zones: zones.length,
+          blocks: Array.from(writeBlockData.values()).map(block => ({
+            address: `0x${block.address.toString(16).toUpperCase().padStart(6, '0')}`,
+            metadata: `0x${block.metadata.toString(16).toUpperCase().padStart(2, '0')}`,
+            size: block.data.length,
+          })),
+        };
+        writeFolder.file('write-summary.json', JSON.stringify(writeSummary, null, 2));
+      } else if (writeFolder) {
+        // Add placeholder if no write data
+        const expectedWrite = {
+          channels: channels.length,
+          zones: zones.length,
+          note: 'No write data available yet. Perform a "Write to Radio" operation to generate write blocks.',
+          estimatedChannelBlocks: Math.ceil(channels.length / 125),
+          estimatedZoneBlocks: zones.length > 0 ? 1 : 0,
+        };
+        writeFolder.file('expected-write-data.json', JSON.stringify(expectedWrite, null, 2));
+      }
+
+      // Add codeplug XLSX
+      const codeplugData = {
+        channels,
+        zones,
+        scanLists,
+        contacts,
+        digitalEmergencies,
+        digitalEmergencyConfig,
+        analogEmergencies,
+        radioSettings,
+        radioInfo,
+        exportDate: new Date().toISOString(),
+        version: '1.0.0',
+      };
+
+      const xlsxBlob = exportCodeplug(codeplugData, true);
+      if (xlsxBlob instanceof Blob) {
+        zip.file('codeplug.xlsx', xlsxBlob);
+      }
+
+      // Generate and download zip
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      a.download = `neonplug-full-export-${timestamp}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error creating export:', error);
+      alert('Failed to create export. See console for details.');
+    }
+  };
+
+  const handleWriteBlocksExport = () => {
+    if (writeBlockData.size === 0) {
+      alert('No write blocks available. Please write to radio first.');
+      return;
+    }
+
+    const writeBlocksData = exportWriteBlocks(writeBlockData, blockData);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    downloadDebug(writeBlocksData, `neonplug-write-blocks-${timestamp}.json`);
+  };
+
+  const handleMetadataAnalysisExport = () => {
+    if (blockMetadata.size === 0) {
+      alert('No block metadata available. Please read from radio first.');
+      return;
+    }
+
+    const analysis = analyzeMetadata(blockMetadata, blockData);
+    const report = generateMetadataReport(analysis);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    downloadDebug(report, `neonplug-metadata-analysis-${timestamp}.txt`);
+  };
+
   if (!radioSettings || !rawRadioSettingsData) {
     return (
       <div className="h-full overflow-y-auto">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-yellow-400">Diagnostics & Debug</h2>
-          <p className="text-cool-gray text-sm mt-1">Radio settings diagnostic tools</p>
-        </div>
-        <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-8 text-center">
-          <p className="text-cool-gray">No radio settings data available. Read from radio to view diagnostics.</p>
+        <div className="p-6">
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-yellow-400">Diagnostics & Debug</h2>
+            <p className="text-cool-gray text-sm mt-1">Radio settings diagnostic tools</p>
+          </div>
+
+          {/* Debug Export Section - Always visible */}
+          <div className="mb-6 bg-gradient-to-br from-cyan-900/20 to-blue-900/20 border border-cyan-600/40 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <div>
+                  <h3 className="text-xl font-semibold text-cyan-400">Debug Exports</h3>
+                  <p className="text-xs text-cyan-300/70">Download debug data, logs, and memory blocks</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <button
+                onClick={handleFullDebugExport}
+                className="px-4 py-3 bg-cyan-600/30 hover:bg-cyan-600/50 border border-cyan-600/40 rounded-lg text-left transition-all group"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-cyan-300 font-semibold text-sm">Full Debug Export</div>
+                    <div className="text-cyan-400/70 text-xs mt-0.5">
+                      Complete ZIP with read/write folders + codeplug
+                    </div>
+                  </div>
+                  <svg className="w-5 h-5 text-cyan-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </div>
+              </button>
+
+              <button
+                onClick={handleWriteBlocksExport}
+                disabled={writeBlockData.size === 0}
+                className="px-4 py-3 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-600/40 rounded-lg text-left transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-purple-300 font-semibold text-sm">Write Blocks</div>
+                    <div className="text-purple-400/70 text-xs mt-0.5">
+                      {writeBlockData.size > 0 ? `${writeBlockData.size} blocks` : 'No write data yet'}
+                    </div>
+                  </div>
+                  <svg className="w-5 h-5 text-purple-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </div>
+              </button>
+
+              <button
+                onClick={handleMetadataAnalysisExport}
+                disabled={blockMetadata.size === 0}
+                className="px-4 py-3 bg-yellow-600/30 hover:bg-yellow-600/50 border border-yellow-600/40 rounded-lg text-left transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-yellow-300 font-semibold text-sm">Metadata Analysis</div>
+                    <div className="text-yellow-400/70 text-xs mt-0.5">
+                      {blockMetadata.size > 0 ? `${blockMetadata.size} blocks` : 'No metadata yet'}
+                    </div>
+                  </div>
+                  <svg className="w-5 h-5 text-yellow-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+              </button>
+
+              <button
+                onClick={downloadAllMetadataBlocks}
+                disabled={blockMetadata.size === 0 && !rawRadioSettingsData}
+                className="px-4 py-3 bg-green-600/30 hover:bg-green-600/50 border border-green-600/40 rounded-lg text-left transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-green-300 font-semibold text-sm">All Blocks (ZIP)</div>
+                    <div className="text-green-400/70 text-xs mt-0.5">
+                      Individual HEX + BIN files
+                    </div>
+                  </div>
+                  <svg className="w-5 h-5 text-green-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-8 text-center">
+            <p className="text-cool-gray">No radio settings data available. Read from radio to view diagnostics.</p>
+          </div>
         </div>
       </div>
     );
@@ -366,13 +689,93 @@ export const DiagnosticsTab: React.FC = () => {
             <h2 className="text-2xl font-bold text-yellow-400">Diagnostics & Debug</h2>
             <p className="text-cool-gray text-sm mt-1">Inspect raw memory offsets and verify field parsing</p>
           </div>
+        </div>
+      </div>
+
+      {/* Debug Export Section */}
+      <div className="mb-6 bg-gradient-to-br from-cyan-900/20 to-blue-900/20 border border-cyan-600/40 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <div>
+              <h3 className="text-xl font-semibold text-cyan-400">Debug Exports</h3>
+              <p className="text-xs text-cyan-300/70">Download debug data, logs, and memory blocks</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <button
-            type="button"
-            onClick={downloadAllMetadataBlocks}
-            className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-semibold rounded transition-colors flex items-center gap-2"
-            title="Download all metadata blocks as a zip file"
+            onClick={handleFullDebugExport}
+            className="px-4 py-3 bg-cyan-600/30 hover:bg-cyan-600/50 border border-cyan-600/40 rounded-lg text-left transition-all group"
           >
-            📦 Download All Blocks (.zip)
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-cyan-300 font-semibold text-sm">Full Debug Export</div>
+                <div className="text-cyan-400/70 text-xs mt-0.5">
+                  Complete ZIP with read/write folders + codeplug
+                </div>
+              </div>
+              <svg className="w-5 h-5 text-cyan-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </div>
+          </button>
+
+          <button
+            onClick={handleWriteBlocksExport}
+            disabled={writeBlockData.size === 0}
+            className="px-4 py-3 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-600/40 rounded-lg text-left transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-purple-300 font-semibold text-sm">Write Blocks</div>
+                <div className="text-purple-400/70 text-xs mt-0.5">
+                  {writeBlockData.size > 0 ? `${writeBlockData.size} blocks` : 'No write data yet'}
+                </div>
+              </div>
+              <svg className="w-5 h-5 text-purple-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </div>
+          </button>
+
+          <button
+            onClick={handleMetadataAnalysisExport}
+            disabled={blockMetadata.size === 0}
+            className="px-4 py-3 bg-yellow-600/30 hover:bg-yellow-600/50 border border-yellow-600/40 rounded-lg text-left transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-yellow-300 font-semibold text-sm">Metadata Analysis</div>
+                <div className="text-yellow-400/70 text-xs mt-0.5">
+                  {blockMetadata.size > 0 ? `${blockMetadata.size} blocks` : 'No metadata yet'}
+                </div>
+              </div>
+              <svg className="w-5 h-5 text-yellow-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+          </button>
+
+          <button
+            onClick={downloadAllMetadataBlocks}
+            disabled={blockMetadata.size === 0 && !rawRadioSettingsData}
+            className="px-4 py-3 bg-green-600/30 hover:bg-green-600/50 border border-green-600/40 rounded-lg text-left transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-green-300 font-semibold text-sm">All Blocks (ZIP)</div>
+                <div className="text-green-400/70 text-xs mt-0.5">
+                  Individual HEX + BIN files
+                </div>
+              </div>
+              <svg className="w-5 h-5 text-green-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </div>
           </button>
         </div>
       </div>
@@ -3038,6 +3441,109 @@ export const DiagnosticsTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Expected Write Data Section */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-xl font-semibold text-purple-400">Expected Write Data</h3>
+            <span className="px-2 py-1 bg-purple-900/30 text-purple-400 text-xs rounded border border-purple-600/30">
+              Preview
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowExpectedWriteData(!showExpectedWriteData)}
+              className="px-3 py-1 text-xs text-purple-400 hover:text-purple-300 border border-purple-600/30 hover:border-purple-400 rounded transition-colors"
+            >
+              {showExpectedWriteData ? '▼ Hide' : '▶ Show'}
+            </button>
+            {showExpectedWriteData && channels.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleExportExpectedWriteHex}
+                  className="px-3 py-1 text-xs text-purple-400 hover:text-purple-300 border border-purple-600/30 hover:border-purple-400 rounded transition-colors"
+                >
+                  Download HEX
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportExpectedWriteBin}
+                  className="px-3 py-1 text-xs text-purple-400 hover:text-purple-300 border border-purple-600/30 hover:border-purple-400 rounded transition-colors"
+                >
+                  Download BIN
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {showExpectedWriteData && (
+          <div className="bg-deep-gray rounded-lg border border-purple-600/30 p-4">
+            <div className="text-sm text-purple-200 mb-4">
+              <p className="mb-2">
+                This shows what data would be written to the radio based on current channels and zones.
+              </p>
+              <p className="text-purple-300/70">
+                Note: Actual write data generation happens during the write process and may include additional blocks.
+              </p>
+            </div>
+
+            {channels.length === 0 && zones.length === 0 ? (
+              <div className="text-center py-8 text-cool-gray">
+                <p>No channels or zones available to generate write data.</p>
+                <p className="text-sm mt-2">Add some channels or zones first.</p>
+              </div>
+            ) : (() => {
+              // Calculate all estimated blocks
+              const channelBlocks = Math.ceil(channels.length / 125);
+              const zoneBlocks = zones.length > 0 ? 1 : 0;
+              const scanListBlocks = scanLists.length > 0 ? 1 : 0;
+              const quickContactBlocks = quickContacts && quickContacts.length > 0 ? 1 : 0;
+              const quickMessageBlocks = quickMessages && quickMessages.length > 0 ? 1 : 0;
+              const rxGroupBlocks = rxGroups && rxGroups.length > 0 && rxGroupsLoaded ? 1 : 0;
+              const dmrRadioIdBlocks = dmrRadioIds && dmrRadioIds.length > 0 ? 1 : 0;
+              const radioSettingBlocks = getChangedFields().length > 0 ? 1 : 0;
+              
+              const totalBlocks = channelBlocks + zoneBlocks + scanListBlocks + 
+                                quickContactBlocks + quickMessageBlocks + rxGroupBlocks + 
+                                dmrRadioIdBlocks + radioSettingBlocks;
+              
+              return (
+                <div className="bg-black/30 rounded border border-purple-600/20 p-4">
+                  <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
+                    <div className="bg-purple-900/20 rounded p-3 border border-purple-600/30">
+                      <div className="text-purple-400 font-semibold mb-1">Channels</div>
+                      <div className="text-2xl text-white">{channels.length}</div>
+                    </div>
+                    <div className="bg-purple-900/20 rounded p-3 border border-purple-600/30">
+                      <div className="text-purple-400 font-semibold mb-1">Zones</div>
+                      <div className="text-2xl text-white">{zones.length}</div>
+                    </div>
+                    <div className="bg-purple-900/20 rounded p-3 border border-purple-600/30">
+                      <div className="text-purple-400 font-semibold mb-1">Est. Blocks</div>
+                      <div className="text-2xl text-white">{totalBlocks}</div>
+                    </div>
+                  </div>
+                  
+                  <div className="text-xs text-purple-300/70 mt-4 space-y-1">
+                    <p>• Channel blocks: {channelBlocks} (125 channels per block)</p>
+                    <p>• Zone blocks: {zoneBlocks} (all zones in single block)</p>
+                    {scanListBlocks > 0 && <p>• Scan list blocks: {scanListBlocks}</p>}
+                    {quickContactBlocks > 0 && <p>• Talk group blocks: {quickContactBlocks} ({quickContacts?.length} talk groups)</p>}
+                    {quickMessageBlocks > 0 && <p>• Quick message blocks: {quickMessageBlocks} ({quickMessages?.length} messages)</p>}
+                    {rxGroupBlocks > 0 && <p>• RX group blocks: {rxGroupBlocks} ({rxGroups?.length} groups)</p>}
+                    {dmrRadioIdBlocks > 0 && <p>• DMR Radio ID blocks: {dmrRadioIdBlocks} ({dmrRadioIds?.length} IDs)</p>}
+                    {radioSettingBlocks > 0 && <p>• Radio settings blocks: {radioSettingBlocks} ({getChangedFields().length} changed fields)</p>}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
 
       {/* Logs Viewer */}
       <div className="mb-6">

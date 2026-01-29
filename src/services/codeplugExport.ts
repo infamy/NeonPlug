@@ -4,7 +4,7 @@
  */
 
 // Use writeFileXLSX instead of writeFile to only include XLSX writer (smaller bundle)
-import { read, writeFileXLSX, utils } from 'xlsx';
+import { read, write, writeFileXLSX, utils } from 'xlsx';
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
@@ -32,8 +32,10 @@ const CODEPLUG_VERSION = '1.0.0';
 
 /**
  * Export codeplug data to XLSX file
+ * @param data Codeplug data to export
+ * @param returnBlob If true, returns a Blob instead of downloading. For use in zip archives.
  */
-export function exportCodeplug(data: CodeplugData): void {
+export function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Blob | void {
   const workbook = utils.book_new();
 
   // Sheet 1: Channels - Enhanced with more fields and better formatting
@@ -290,8 +292,13 @@ export function exportCodeplug(data: CodeplugData): void {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
   const filename = `codeplug-export-${timestamp}.xlsx`;
 
-  // Write file
-  writeFileXLSX(workbook, filename);
+  // Write file or return blob
+  if (returnBlob) {
+    const wbout = write(workbook, { bookType: 'xlsx', type: 'array' });
+    return new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  } else {
+    writeFileXLSX(workbook, filename);
+  }
 }
 
 /**
