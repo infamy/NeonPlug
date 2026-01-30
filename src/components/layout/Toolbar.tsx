@@ -21,7 +21,7 @@ export const Toolbar: React.FC = () => {
   const { settings: radioSettings, setSettings: setRadioSettings } = useRadioSettingsStore();
   const { systems: digitalEmergencies, config: digitalEmergencyConfig, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
-  const { radioInfo } = useRadioStore();
+  const { radioInfo, connectionError, setConnectionError } = useRadioStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { readFromRadio, writeChannelsToRadio, isConnecting, error, readSteps, writeChannelsSteps } = useRadioConnection();
   const [progress, setProgress] = useState(0);
@@ -29,8 +29,8 @@ export const Toolbar: React.FC = () => {
   const [currentStep, setCurrentStep] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isWriting, setIsWriting] = useState(false);
+  const isUserGestureError = connectionError?.includes('Please click the button directly') ?? false;
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const webSerialSupported = isWebSerialSupported();
 
@@ -277,14 +277,14 @@ export const Toolbar: React.FC = () => {
           <Button
             variant="primary"
             onClick={handleWrite}
-            disabled={isConnecting || isWriting || (channels.length === 0 && zones.length === 0 && scanLists.length === 0) || !webSerialSupported}
+            disabled={isConnecting || isWriting || (channels.length === 0 && zones.length === 0 && scanLists.length === 0) || !webSerialSupported || !!connectionError}
             className={!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}
             title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Write codeplug to connected radio'}
             glow={webSerialSupported}
           >
             {isWriting ? 'Writing...' : 'Write to Radio'}
           </Button>
-          {error && (
+          {error && !error.includes('Please click the button directly') && (
             <span className="text-red-400 text-xs ml-2">{error}</span>
           )}
           {importError && (
@@ -296,7 +296,7 @@ export const Toolbar: React.FC = () => {
         </div>
       </div>
       <ReadProgressModal
-        isOpen={isConnecting || isWriting || !!connectionError}
+        isOpen={isConnecting || isWriting || (!!connectionError && !isUserGestureError)}
         progress={progress}
         message={progressMessage}
         currentStep={currentStep || (isWriting ? writeChannelsSteps[0] : readSteps[0])}
