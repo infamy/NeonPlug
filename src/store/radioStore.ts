@@ -35,6 +35,8 @@ interface RadioState {
   blockData: Map<number, Uint8Array>;
   writeBlockData: Map<number, { address: number; data: Uint8Array; metadata: number }>;
   zoneComparisonData: ZoneComparisonData;
+  bootImageRaw: Uint8Array | null;
+  bootImageDescription: string | null;
   setConnected: (connected: boolean) => void;
   setRadioInfo: (info: RadioInfo | null) => void;
   setSettings: (settings: RadioSettings | null) => void;
@@ -45,6 +47,8 @@ interface RadioState {
   setBlockData: (data: Map<number, Uint8Array>) => void;
   setWriteBlockData: (data: Map<number, { address: number; data: Uint8Array; metadata: number }>) => void;
   setZoneComparisonData: (data: ZoneComparisonData) => void;
+  setBootImageRaw: (data: Uint8Array | null) => void;
+  setBootImageDescription: (description: string | null) => void;
 }
 
 export const useRadioStore = create<RadioState>((set) => ({
@@ -59,6 +63,8 @@ export const useRadioStore = create<RadioState>((set) => ({
   blockData: new Map(),
   writeBlockData: new Map(),
   zoneComparisonData: [],
+  bootImageRaw: null,
+  bootImageDescription: null,
   setConnected: (connected) => set({ isConnected: connected }),
   setRadioInfo: (info) => set({ radioInfo: info }),
   setSettings: (settings) => set({ settings }),
@@ -69,5 +75,7 @@ export const useRadioStore = create<RadioState>((set) => ({
   setBlockData: (data) => set({ blockData: data }),
   setWriteBlockData: (data) => set({ writeBlockData: data }),
   setZoneComparisonData: (data) => set({ zoneComparisonData: data }),
+  setBootImageRaw: (data) => set({ bootImageRaw: data }),
+  setBootImageDescription: (description) => set({ bootImageDescription: description }),
 }));
 

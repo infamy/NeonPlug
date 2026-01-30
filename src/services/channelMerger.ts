@@ -150,4 +150,3 @@ export function getChannelFullKey(channel: Channel): string {
     txCtcss,
   ].join('|');
 }
-

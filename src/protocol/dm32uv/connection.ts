@@ -334,6 +334,77 @@ export class DM32Connection {
     }
   }
 
+  /**
+   * OEM read path for boot image: enter mode so 0x52 chunk reads use correct region.
+   * Send 0x47 00 01 00 00 (5 bytes) → read 262 bytes (first = 0x53);
+   * then FF FF FF FF 0C (5 bytes) → 0x06; PROGRAM → 0x06; 02 → 8 bytes; 06 → 0x06.
+   */
+  async enterBootImageReadMode(): Promise<void> {
+    await this.write(new Uint8Array([0x47, 0x00, 0x01, 0x00, 0x00]));
+    await this.delay(50);
+    const resp262 = await this.readBytes(262);
+    if (resp262[0] !== 0x53) {
+      log.warn(`Boot image read mode: expected first byte 0x53, got 0x${resp262[0]?.toString(16).padStart(2, '0')}`, 'Connection');
+    }
+    await this.delay(10);
+    await this.write(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0x0c]));
+    await this.delay(25);
+    const ack1 = await this.readBytes(1);
+    if (ack1[0] !== 0x06) {
+      throw new Error(`Boot image read mode: expected 0x06 after FF FF FF FF 0C, got 0x${ack1[0].toString(16).padStart(2, '0')}`);
+    }
+    await this.delay(10);
+    const programCmd = new Uint8Array([0xff, 0xff, 0xff, 0xff, 0x0c, ...new TextEncoder().encode('PROGRAM')]);
+    await this.write(programCmd);
+    await this.delay(25);
+    const ack2 = await this.readBytes(1);
+    if (ack2[0] !== 0x06) {
+      throw new Error(`Boot image read mode: PROGRAM failed, got 0x${ack2[0].toString(16).padStart(2, '0')}`);
+    }
+    await this.delay(10);
+    await this.write(new Uint8Array([0x02]));
+    await this.delay(25);
+    await this.readBytes(8);
+    await this.delay(10);
+    await this.write(new Uint8Array([0x06]));
+    await this.delay(25);
+    const ack3 = await this.readBytes(1);
+    if (ack3[0] !== 0x06) {
+      throw new Error(`Boot image read mode: ACK 06 failed, got 0x${ack3[0].toString(16).padStart(2, '0')}`);
+    }
+    await this.delay(10);
+  }
+
+  /**
+   * Write a single block for boot image: 2048 or 4096 bytes (no metadata byte).
+   * Format: 0x57 <addr:3> <size_lo> <size_hi> <data>
+   */
+  async writeMemoryBlock(address: number, data: Uint8Array): Promise<void> {
+    if (data.length !== 2048 && data.length !== 4096) {
+      throw new Error(`Boot image block must be 2048 or 4096 bytes, got ${data.length}`);
+    }
+    const addrBytes = new Uint8Array([
+      address & 0xff,
+      (address >> 8) & 0xff,
+      (address >> 16) & 0xff,
+    ]);
+    const sizeLo = data.length & 0xff;
+    const sizeHi = (data.length >> 8) & 0xff;
+    const command = new Uint8Array(6 + data.length);
+    command[0] = 0x57;
+    command.set(addrBytes, 1);
+    command[4] = sizeLo;
+    command[5] = sizeHi;
+    command.set(data, 6);
+    const addressHex = `0x${address.toString(16).padStart(6, '0').toUpperCase()}`;
+    log.debug(`Sending boot image write: address=${addressHex}, size=${data.length}`, 'Connection');
+    await this.write(command);
+    const response = await this.readBytes(1);
+    if (response[0] !== 0x06) {
+      throw new Error(`Boot image write not ACK at ${addressHex}: got 0x${response[0].toString(16).padStart(2, '0')}`);
+    }
+  }
+
   async disconnect(): Promise<void> {
     // Clear read buffer to prevent stale data from affecting next connection
     this.readBuffer = new Uint8Array(0);
