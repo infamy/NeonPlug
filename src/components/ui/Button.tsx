@@ -10,6 +10,7 @@ export const Button: React.FC<ButtonProps> = ({
   variant = 'primary',
   glow = false,
   className = '',
+  disabled,
   ...props
 }) => {
   const baseClasses = 'px-4 py-2 rounded font-medium transition-all duration-200';
@@ -21,10 +22,12 @@ export const Button: React.FC<ButtonProps> = ({
   };
   
   const glowClasses = glow ? 'shadow-glow-cyan' : '';
+  const disabledClasses = disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : '';
   
   return (
     <button
-      className={`${baseClasses} ${variantClasses[variant]} ${glowClasses} ${className}`}
+      className={`${baseClasses} ${variantClasses[variant]} ${glowClasses} ${disabledClasses} ${className}`}
+      disabled={disabled}
       {...props}
     >
       {children}

@@ -3,9 +3,12 @@ import { useRadioStore } from '../../store/radioStore';
 import { Modal } from '../ui/Modal';
 import { isFirmware049OrNewer } from '../../utils/firmware';
 
+const USER_GESTURE_MESSAGE = 'Unable to read from radio, please read from a radio or load a codeplug to continue';
+
 export const StatusBar: React.FC = () => {
-  const { radioInfo } = useRadioStore();
+  const { radioInfo, connectionError, setConnectionError } = useRadioStore();
   const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
+  const showUserGestureInBar = connectionError?.includes('Please click the button directly') ?? false;
 
   const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
   const isNewerFirmware = radioInfo?.firmware && isFirmware049OrNewer(radioInfo.firmware);
@@ -13,8 +16,8 @@ export const StatusBar: React.FC = () => {
 
   return (
     <>
-      <div className="bg-deep-gray border-b border-neon-cyan px-6 py-2 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+      <div className="bg-deep-gray border-b border-neon-cyan px-6 py-2 flex items-center justify-between gap-4">
+        <div className="flex items-center space-x-4 min-w-0 flex-shrink-0">
           {radioInfo ? (
             <>
               <div className="flex items-center space-x-2">
@@ -57,11 +60,25 @@ export const StatusBar: React.FC = () => {
         ) : (
           <span className="text-sm text-cool-gray">No radio data loaded</span>
         )}
+        </div>
+        {showUserGestureInBar && (
+          <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
+            <span className="text-sm text-amber-400">{USER_GESTURE_MESSAGE}</span>
+            <button
+              type="button"
+              onClick={() => setConnectionError(null)}
+              className="text-cool-gray hover:text-white flex-shrink-0"
+              title="Dismiss"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
+        <div className="text-sm text-cool-gray flex-shrink-0">
+          NEONPLUG
+        </div>
       </div>
-      <div className="text-sm text-cool-gray">
-        NEONPLUG
-      </div>
-    </div>
     <Modal
       isOpen={showFirmwareWarning}
       onClose={() => setShowFirmwareWarning(false)}

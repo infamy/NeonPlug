@@ -1,5 +1,22 @@
-import React from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { ProgressBar } from './ProgressBar';
+import { useLogStore, type LogEntry } from '../../store/logStore';
+
+function formatLogError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) return String((error as { message?: unknown }).message);
+  if (typeof error === 'object' && error !== null) return JSON.stringify(error);
+  return String(error);
+}
+
+function formatLogEntry(entry: LogEntry): string {
+  const time = new Date(entry.timestamp).toISOString();
+  const line = `[${time}][${entry.level}]${entry.context ? `[${entry.context}]` : ''} ${entry.message}`;
+  if (entry.error !== undefined && entry.error !== null) {
+    return `${line}\n  Error: ${formatLogError(entry.error)}`;
+  }
+  return line;
+}
 
 interface ReadProgressModalProps {
   isOpen: boolean;
@@ -13,6 +30,8 @@ interface ReadProgressModalProps {
   mode?: 'read' | 'write';
 }
 
+const DEBUG_LOGS_COUNT = 50;
+
 export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
   isOpen,
   progress,
@@ -24,6 +43,34 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
   onClose,
   mode = 'read',
 }) => {
+  const [debugExpanded, setDebugExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const { logs } = useLogStore();
+
+  const debugText = useMemo(() => {
+    if (!error) return '';
+    const header = [
+      'NeonPlug Connection Debug',
+      `Timestamp: ${new Date().toISOString()}`,
+      `Error: ${error}`,
+      '',
+      '--- Recent logs ---',
+    ].join('\n');
+    const recentLogs = logs.slice(-DEBUG_LOGS_COUNT).map(formatLogEntry).join('\n');
+    return `${header}\n${recentLogs}`;
+  }, [error, logs]);
+
+  const handleCopyDebug = useCallback(async () => {
+    if (!debugText) return;
+    try {
+      await navigator.clipboard.writeText(debugText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  }, [debugText]);
+
   if (!isOpen) return null;
 
   const isError = !!error;
@@ -67,6 +114,31 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
                 <li>Try unplugging and replugging USB cable</li>
                 <li>Select the correct serial port</li>
               </ul>
+            </div>
+
+            <div className="border border-gray-700 rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setDebugExpanded((e) => !e)}
+                className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:text-gray-300 bg-gray-800 bg-opacity-50 hover:bg-gray-800 flex items-center justify-between"
+              >
+                <span>Debug Info</span>
+                <span className="text-gray-500">{debugExpanded ? '▼' : '▶'}</span>
+              </button>
+              {debugExpanded && (
+                <div className="p-3 border-t border-gray-700 bg-deep-gray">
+                  <pre className="text-xs text-gray-400 overflow-auto max-h-48 mb-3 p-2 bg-black bg-opacity-30 rounded font-mono whitespace-pre-wrap break-all">
+                    {debugText}
+                  </pre>
+                  <button
+                    type="button"
+                    onClick={handleCopyDebug}
+                    className="px-3 py-1.5 text-xs bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
+                  >
+                    {copied ? 'Copied!' : 'Copy to clipboard'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ) : (

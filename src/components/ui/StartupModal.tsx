@@ -2,6 +2,8 @@ import React from 'react';
 import { Button } from './Button';
 import { isWebSerialSupported, getSupportedBrowsers } from '../../utils/browserSupport';
 
+const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
+
 interface StartupModalProps {
   isOpen: boolean;
   onReadFromRadio: () => void;
@@ -73,6 +75,43 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           </Button>
           <p className="text-xs text-cool-gray text-center mt-2">
             Import from XLSX codeplug file
+          </p>
+
+          <p className="text-center text-sm">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const response = await fetch(OFFLINE_VERSION_URL);
+                  if (!response.ok) throw new Error('Not available');
+                  const html = await response.text();
+                  const blob = new Blob([html], { type: 'text/html' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'neonplug.html';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                } catch {
+                  const confirmed = window.confirm(
+                    'The offline version is available on GitHub Pages.\n\n' +
+                      'Click OK to open it, then:\n' +
+                      '1. Right-click on the page\n' +
+                      '2. Select "Save As" or "Save Page As"\n' +
+                      '3. Save as "neonplug.html"\n\n' +
+                      'Or build it locally using the instructions in the About tab.'
+                  );
+                  if (confirmed) {
+                    window.open(OFFLINE_VERSION_URL, '_blank');
+                  }
+                }
+              }}
+              className="text-neon-cyan hover:underline bg-transparent border-none cursor-pointer p-0 font-inherit text-inherit"
+            >
+              Download offline version (single file)
+            </button>
           </p>
 
           {onDismiss && (
