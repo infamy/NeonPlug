@@ -78,7 +78,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75"
+      className={`fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 ${isError ? 'z-[100]' : 'z-50'}`}
     >
       <div
         className={`bg-deep-gray rounded-lg p-6 max-w-md w-full mx-4 border ${

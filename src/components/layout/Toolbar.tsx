@@ -21,7 +21,7 @@ export const Toolbar: React.FC = () => {
   const { settings: radioSettings, setSettings: setRadioSettings } = useRadioSettingsStore();
   const { systems: digitalEmergencies, config: digitalEmergencyConfig, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
-  const { radioInfo, connectionError, setConnectionError } = useRadioStore();
+  const { radioInfo } = useRadioStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { readFromRadio, writeChannelsToRadio, isConnecting, error, readSteps, writeChannelsSteps } = useRadioConnection();
   const [progress, setProgress] = useState(0);
@@ -29,8 +29,8 @@ export const Toolbar: React.FC = () => {
   const [currentStep, setCurrentStep] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isWriting, setIsWriting] = useState(false);
-  const isUserGestureError = connectionError?.includes('Please click the button directly') ?? false;
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const webSerialSupported = isWebSerialSupported();
 
@@ -104,10 +104,8 @@ export const Toolbar: React.FC = () => {
 
   const handleRead = async () => {
     try {
-      // Clear any previous error immediately
       setConnectionError(null);
       setLastOperationMode('read');
-      // Show progress modal immediately with initial state
       setProgress(0);
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
@@ -120,7 +118,6 @@ export const Toolbar: React.FC = () => {
         }
       });
       
-      // Success - clear error and close modal after a moment
       setConnectionError(null);
       setLastOperationMode(null);
       setTimeout(() => {
@@ -130,28 +127,17 @@ export const Toolbar: React.FC = () => {
       }, 2000);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      
-      // Format error message for display - use the error message as-is since we've improved them
-      // The error messages from protocol/connection are now user-friendly
-      let displayError = errorMessage;
-      
-      // Set error state - modal will stay open to show error
+      const displayError = errorMessage;
       setConnectionError(displayError);
-      // Reset progress state to show error clearly
       setProgress(0);
       setProgressMessage('Connection failed');
-      // Don't close modal - let user see error and retry
     }
   };
 
   const handleRetry = () => {
-    // For write operations, restart the write process
-    // For read operations, refresh the page to reset everything
     if (lastOperationMode === 'write') {
-      // Restart write process
       handleWrite();
     } else {
-      // Read operation - refresh page to reset everything
       window.location.reload();
     }
   };
@@ -191,14 +177,11 @@ export const Toolbar: React.FC = () => {
     setIsWriting(true);
     setLastOperationMode('write');
     try {
-      // Clear any previous error immediately
       setConnectionError(null);
-      // Show progress modal immediately with initial state
       setProgress(0);
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
       
-      // Write channels, zones, and scan lists together
       await writeChannelsToRadio(channels, zones, scanLists, (progress, message, step) => {
         setProgress(progress);
         setProgressMessage(message);
@@ -207,7 +190,6 @@ export const Toolbar: React.FC = () => {
         }
       });
       
-      // Success - clear error and close modal after a moment
       setConnectionError(null);
       setLastOperationMode(null);
       setTimeout(() => {
@@ -218,18 +200,11 @@ export const Toolbar: React.FC = () => {
       }, 2000);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      
-      // Format error message for display - use the error message as-is since we've improved them
-      // The error messages from protocol/connection are now user-friendly
-      let displayError = errorMessage;
-      
-      // Set error state - modal will stay open to show error
+      const displayError = errorMessage;
       setConnectionError(displayError);
-      // Reset progress state to show error clearly
       setProgress(0);
       setProgressMessage('Write failed');
       setIsWriting(false);
-      // Don't close modal - let user see error and retry
     }
   };
 
@@ -251,14 +226,14 @@ export const Toolbar: React.FC = () => {
             </span>
             <button
               onClick={handleImport}
-              className="px-4 py-2 bg-neon-purple text-white font-semibold rounded hover:bg-neon-purple hover:bg-opacity-80 transition-all shadow-lg hover:shadow-neon-purple border border-neon-purple border-opacity-50 active:scale-95"
+              className="px-4 py-2 bg-neon-purple text-white font-semibold rounded hover:bg-neon-purple hover:bg-opacity-80 transition-all hover:shadow-lg border border-neon-purple border-opacity-50 active:scale-95"
               title="Import codeplug from XLSX file"
             >
               Import
             </button>
             <button
               onClick={handleExport}
-              className="px-4 py-2 bg-neon-cyan text-deep-gray font-semibold rounded hover:bg-neon-cyan hover:bg-opacity-80 transition-all shadow-lg hover:shadow-glow-cyan border border-neon-cyan border-opacity-50 active:scale-95"
+              className="px-4 py-2 bg-neon-cyan text-deep-gray font-semibold rounded hover:bg-neon-cyan hover:bg-opacity-80 transition-all hover:shadow-glow-cyan border border-neon-cyan border-opacity-50 active:scale-95"
               title="Export codeplug to XLSX file"
             >
               Export
@@ -267,6 +242,7 @@ export const Toolbar: React.FC = () => {
           <div className="w-px h-6 bg-neon-cyan bg-opacity-30" />
           <Button
             variant="primary"
+            data-action="read-from-radio"
             onClick={handleRead}
             disabled={isConnecting || !webSerialSupported}
             className={!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}
@@ -296,7 +272,7 @@ export const Toolbar: React.FC = () => {
         </div>
       </div>
       <ReadProgressModal
-        isOpen={isConnecting || isWriting || (!!connectionError && !isUserGestureError)}
+        isOpen={isConnecting || isWriting || !!connectionError}
         progress={progress}
         message={progressMessage}
         currentStep={currentStep || (isWriting ? writeChannelsSteps[0] : readSteps[0])}
@@ -309,4 +285,3 @@ export const Toolbar: React.FC = () => {
     </>
   );
 };
-
