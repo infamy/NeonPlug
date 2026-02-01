@@ -94,17 +94,9 @@ function App() {
     setShowStartupModal(false);
     // Small delay to ensure modal closes, then trigger the read button
     setTimeout(() => {
-      // Find and click the "Read from Radio" button in the toolbar
-      const readButton = document.querySelector('button') as HTMLButtonElement;
-      if (readButton && readButton.textContent?.includes('Read from Radio')) {
+      const readButton = document.querySelector('[data-action="read-from-radio"]') as HTMLButtonElement;
+      if (readButton && !readButton.disabled) {
         readButton.click();
-      } else {
-        // Fallback: try to find by looking for buttons with that text
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const readBtn = buttons.find(btn => btn.textContent?.trim() === 'Read from Radio');
-        if (readBtn) {
-          (readBtn as HTMLButtonElement).click();
-        }
       }
     }, 100);
   };
@@ -197,14 +189,11 @@ function App() {
     setZones(sampleZones);
   };
 
-  // Don't show startup modal if we're already reading
-  // Show it again if reading stops and there's an error or no data loaded
+  // Don't show startup modal if we're already reading; show it again if reading stops with error or no data
   useEffect(() => {
     if (isConnecting) {
       setShowStartupModal(false);
     } else if (!isConnecting && (radioError || channels.length === 0)) {
-      // If we're not connecting and there's an error or no data, show startup modal again
-      // This handles the case where radio wasn't found
       if (radioError && radioError.includes('Radio not found')) {
         setShowStartupModal(true);
       }

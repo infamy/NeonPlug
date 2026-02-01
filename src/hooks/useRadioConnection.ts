@@ -42,7 +42,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription } = useRadioStore();
+  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setConnectionError } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -61,6 +61,7 @@ export function useRadioConnection() {
   ) => {
     setIsConnecting(true);
     setError(null);
+    setConnectionError(null);
     
     let protocol: DM32UVProtocol | null = null;
 
@@ -431,6 +432,7 @@ export function useRadioConnection() {
           console.error('Retry with port selection also failed:', retryErr);
           const retryErrorMessage = retryErr instanceof Error ? retryErr.message : 'Read failed';
           setError(retryErrorMessage);
+          setConnectionError(retryErrorMessage);
           onProgress?.(0, `Error: ${retryErrorMessage}`, 'Error');
           setIsConnecting(false);
           
@@ -447,6 +449,7 @@ export function useRadioConnection() {
       
       // If port selection was cancelled or retry didn't happen, show error
       setError(errorMessage);
+      setConnectionError(errorMessage);
       onProgress?.(0, `Error: ${errorMessage}`, 'Error');
       
       console.error('Radio read error:', err);
@@ -473,7 +476,7 @@ export function useRadioConnection() {
         setIsConnecting(false);
       }
     }
-  }, [setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setQuickContacts, setRadioIds, setRawRadioIdData, setCalibration, setRXGroups, setRawGroupData]);
+  }, [setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setQuickContacts, setRadioIds, setRawRadioIdData, setCalibration, setRXGroups, setRawGroupData, setConnectionError]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
@@ -684,6 +687,7 @@ export function useRadioConnection() {
   ) => {
     setIsConnecting(true);
     setError(null);
+    setConnectionError(null);
     
     let protocol: DM32UVProtocol | null = null;
     const steps = WRITE_CHANNELS_STEPS;
@@ -824,6 +828,7 @@ export function useRadioConnection() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Write failed';
       setError(errorMessage);
+      setConnectionError(errorMessage);
       onProgress?.(0, `Error: ${errorMessage}`, 'Error');
       
       console.error('Radio write error:', err);
@@ -850,7 +855,7 @@ export function useRadioConnection() {
         setIsConnecting(false);
       }
     }
-  }, [setConnected, setRadioInfo, setWriteBlockData, setZoneComparisonData]);
+  }, [setConnected, setRadioInfo, setWriteBlockData, setZoneComparisonData, setConnectionError]);
 
   return {
     isConnecting,
