@@ -19,7 +19,8 @@ export interface RadioInfo {
 
 export interface RadioProtocol {
   // Connection
-  connect(port: string): Promise<void>;
+  // port: legacy for protocols that take a path; options: e.g. { forcePortSelection } for Web Serial
+  connect(portOrOptions?: string | { forcePortSelection?: boolean }): Promise<void>;
   disconnect(): Promise<void>;
   isConnected(): boolean;
   

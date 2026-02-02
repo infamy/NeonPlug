@@ -94,16 +94,24 @@ export class DM32UVProtocol implements RadioProtocol {
    * Connect to the radio via Web Serial API
    * 
    * Opens a serial port connection, queries V-frames for radio information,
-   * and enters programming mode. The user will be prompted to select a port.
+   * and enters programming mode.
    * 
+   * @param options.forcePortSelection - If true, always show the serial port picker
+   *   in the same user gesture. Use this for Read so the browser allows requestPort().
+   *   If false, tries a previously granted port first (can fail outside user gesture on retry).
    * @throws {Error} If Web Serial API is not supported
    * @throws {Error} If port is already in use
    * @throws {Error} If connection handshake fails
    */
-  async connect(): Promise<void> {
+  async connect(portOrOptions?: string | { forcePortSelection?: boolean }): Promise<void> {
+    const forcePortSelection =
+      typeof portOrOptions === 'object' && portOrOptions != null && 'forcePortSelection' in portOrOptions
+        ? portOrOptions.forcePortSelection
+        : false;
+
     // Per-request timeouts handle each message/ack cycle (2s each, resets on response)
     // No overall connection timeout - each request/response has its own 2s timeout
-    
+
     // Request serial port
     if (!('serial' in navigator)) {
       throw new Error('Web Serial API not supported. Please use Chrome/Edge.');
@@ -112,36 +120,32 @@ export class DM32UVProtocol implements RadioProtocol {
     let port: WebSerialPort | null = null;
     let usedPreviouslyGrantedPort = false;
 
-    // Try to get a port (will auto-detect previously granted port or prompt if needed)
-    // Don't force selection - let getOrSelectPort() handle autodetection
+    // Get port: either force picker (same user gesture) or try previously granted first
     try {
-      port = await this.getOrSelectPort(false);
-      if (port) {
-        // Check if we used a previously granted port (not from prompt)
+      port = await this.getOrSelectPort(forcePortSelection);
+      if (port && !forcePortSelection) {
         const grantedPorts = await (navigator as any).serial.getPorts();
         if (grantedPorts && grantedPorts.length > 0 && grantedPorts.includes(port)) {
           usedPreviouslyGrantedPort = true;
         }
       }
     } catch (e: unknown) {
-      // If port selection was cancelled, rethrow
       const error = e as Error;
       if (error.message && error.message.includes('cancelled')) {
         throw error;
       }
-      // Otherwise, we'll retry with port selection below
+      throw error;
     }
 
     // Try to connect with the port
     try {
       await this.connectWithPort(port!);
     } catch (connectError: unknown) {
-      // If connection failed and we used a previously granted port, retry with port selection
+      // If we used a previously granted port and it failed, do NOT call requestPort() here:
+      // we're in a catch block, outside the user gesture, so the browser would block it.
       if (usedPreviouslyGrantedPort && port) {
-        log.warn('Connection failed with previously granted port, will prompt for port selection', 'Protocol', connectError);
-        // Clear the failed port
+        log.warn('Connection failed with previously granted port', 'Protocol', connectError);
         this.port = null;
-        // Close the port if it's open
         try {
           if (port && (port.readable || port.writable)) {
             await port.close();
@@ -149,13 +153,12 @@ export class DM32UVProtocol implements RadioProtocol {
         } catch (closeError) {
           log.warn('Error closing failed port', 'Protocol', closeError);
         }
-        // Retry with port selection
-        port = await this.getOrSelectPort(true); // Force port selection
-        await this.connectWithPort(port);
-      } else {
-        // Re-throw the original connection error
-        throw connectError;
+        const msg = connectError instanceof Error ? connectError.message : String(connectError);
+        throw new Error(
+          `Connection failed: ${msg} Please click the Read/Write button again and select the correct serial port when prompted.`
+        );
       }
+      throw connectError;
     }
   }
 

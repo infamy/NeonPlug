@@ -77,12 +77,12 @@ export function useRadioConnection() {
       protocol.onProgress = (progress, message) => {
         onProgress?.(progress, message);
       };
-      
-      // Step 1: Connect to radio (will auto-detect previously granted port or prompt if needed)
-      onProgress?.(5, 'Connecting to radio...', steps[1]);
-      await protocol.connect();
-      
-      // Step 3: Get radio info
+
+      // Step 1: Request serial port in same user gesture (so browser allows requestPort)
+      onProgress?.(5, 'Select serial port...', steps[0]);
+      await protocol.connect({ forcePortSelection: true });
+
+      // Step 2: Get radio info
       onProgress?.(10, 'Reading radio information...', steps[2]);
       const radioInfo = await protocol.getRadioInfo();
       
