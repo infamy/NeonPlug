@@ -51,3 +51,4 @@ colours.png
 
 #Ignore bug data folder
 bugs/*
+coverage/*
