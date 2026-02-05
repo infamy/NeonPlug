@@ -11,6 +11,7 @@ import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency,
 import type { WebSerialPort, ProtocolDebugData } from './types';
 import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION, LIMITS } from './constants';
 import { BOOT_IMAGE } from '../../utils/bootImage';
+import { getContactCapacityWithFallback } from '../../utils/firmware';
 import { withTimeout } from './utils';
 import { 
   requireConnection,
@@ -374,11 +375,12 @@ export class DM32UVProtocol implements RadioProtocol {
       dspVersion,
       radioVersion,
       codeplugVersion,
+      maxContacts: getContactCapacityWithFallback(vframes.get(VFRAME.CONTACTS), firmware),
       memoryLayout: {
         configStart: startAddr,
         configEnd: endAddr,
       },
-      vframes, // Store all raw V-frame data
+      vframes, // Store all raw V-frame data (internal use only)
     };
 
     // Enter programming mode
@@ -490,8 +492,8 @@ export class DM32UVProtocol implements RadioProtocol {
     // Step 1: Discover all metadata blocks
     const blocks = await discoverMemoryBlocks(
       this.connection!,
-      this.radioInfo!.memoryLayout.configStart,
-      this.radioInfo!.memoryLayout.configEnd,
+      this.radioInfo!.memoryLayout!.configStart,
+      this.radioInfo!.memoryLayout!.configEnd,
       (current, total) => {
         const progress = Math.floor((current / total) * 10); // 0-10% for discovery
         this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
@@ -746,8 +748,8 @@ export class DM32UVProtocol implements RadioProtocol {
       this.onProgress?.(0, 'Discovering memory blocks...');
       const blocks = await discoverMemoryBlocks(
         this.connection!,
-        this.radioInfo!.memoryLayout.configStart,
-        this.radioInfo!.memoryLayout.configEnd,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
         (current, total) => {
           const progress = Math.floor((current / total) * 10); // 0-10% for discovery
           this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
@@ -972,7 +974,7 @@ export class DM32UVProtocol implements RadioProtocol {
    * Get boot image base address from V-Frame 0x0E (first 4 bytes LE). Fallback 0x150000.
    */
   private getBootImageBaseAddress(): number {
-    const vframe0e = this.radioInfo?.vframes.get(0x0e);
+    const vframe0e = this.radioInfo?.vframes?.get(0x0e);
     if (vframe0e && vframe0e.length >= 4) {
       return this.readUint32LE(vframe0e, 0);
     }
@@ -1367,8 +1369,8 @@ export class DM32UVProtocol implements RadioProtocol {
       this.onProgress?.(5, 'Discovering channel blocks...');
       const blocks = await discoverMemoryBlocks(
         this.connection!,
-        this.radioInfo!.memoryLayout.configStart,
-        this.radioInfo!.memoryLayout.configEnd,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
         (current, total) => {
           const progress = 5 + Math.floor((current / total) * 5); // 5-10%
           this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
@@ -1418,8 +1420,8 @@ export class DM32UVProtocol implements RadioProtocol {
       log.warn('No discovered blocks - re-discovering to confirm TX Contact block locations', 'Protocol');
       const blocks = await discoverMemoryBlocks(
         this.connection!,
-        this.radioInfo!.memoryLayout.configStart,
-        this.radioInfo!.memoryLayout.configEnd,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
         () => {} // No progress callback needed
       );
       this.discoveredBlocks = blocks;
@@ -1577,8 +1579,8 @@ export class DM32UVProtocol implements RadioProtocol {
       this.onProgress?.(5, 'Discovering zone blocks...');
       const blocks = await discoverMemoryBlocks(
         this.connection!,
-        this.radioInfo!.memoryLayout.configStart,
-        this.radioInfo!.memoryLayout.configEnd,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
         (current, total) => {
           const progress = 5 + Math.floor((current / total) * 5); // 5-10%
           this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
@@ -1713,7 +1715,7 @@ export class DM32UVProtocol implements RadioProtocol {
     this.onProgress?.(0, 'Querying contact database info...');
     
     // Query V-frame 0x0F to get contacts memory range
-    let contactsVFrame = this.radioInfo!.vframes.get(VFRAME.CONTACTS);
+    let contactsVFrame = this.radioInfo!.vframes!.get(VFRAME.CONTACTS);
     if (!contactsVFrame || contactsVFrame.length < 8) {
       // Query it if not cached
       this.onProgress?.(1, 'Querying V-frame 0x0F (contact address range)...');
@@ -1737,7 +1739,7 @@ export class DM32UVProtocol implements RadioProtocol {
     
     // Query V-frame 0x10 to get max contact count
     this.onProgress?.(2, 'Querying V-frame 0x10 (max contact count)...');
-    let maxContactsVFrame = this.radioInfo!.vframes.get(0x10);
+    let maxContactsVFrame = this.radioInfo!.vframes!.get(0x10);
     if (!maxContactsVFrame || maxContactsVFrame.length < 4) {
       maxContactsVFrame = await this.connection!.queryVFrame(0x10);
     }
@@ -1878,7 +1880,7 @@ export class DM32UVProtocol implements RadioProtocol {
     this.onProgress?.(0, 'Preparing to write contacts...');
     
     // Query V-frame 0x0F to get base address
-    let contactsVFrame = this.radioInfo!.vframes.get(VFRAME.CONTACTS);
+    let contactsVFrame = this.radioInfo!.vframes!.get(VFRAME.CONTACTS);
     if (!contactsVFrame || contactsVFrame.length < 8) {
       this.onProgress?.(1, 'Querying V-frame 0x0F (contact address range)...');
       contactsVFrame = await this.connection!.queryVFrame(0x0F);
@@ -2170,8 +2172,8 @@ export class DM32UVProtocol implements RadioProtocol {
       this.onProgress?.(5, 'Discovering DMR Radio ID blocks...');
       const blocks = await discoverMemoryBlocks(
         this.connection!,
-        this.radioInfo!.memoryLayout.configStart,
-        this.radioInfo!.memoryLayout.configEnd,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
         (current, total) => {
           const progress = 5 + Math.floor((current / total) * 5); // 5-10%
           this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
@@ -2344,8 +2346,8 @@ export class DM32UVProtocol implements RadioProtocol {
       this.onProgress?.(5, 'Discovering blocks...');
       const blocks = await discoverMemoryBlocks(
         this.connection!,
-        this.radioInfo.memoryLayout.configStart,
-        this.radioInfo.memoryLayout.configEnd,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
         (current, total) => {
           const progress = 5 + Math.floor((current / total) * 5); // 5-10%
           this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
@@ -2469,8 +2471,8 @@ export class DM32UVProtocol implements RadioProtocol {
       this.onProgress?.(5, 'Discovering blocks...');
       const blocks = await discoverMemoryBlocks(
         this.connection!,
-        this.radioInfo.memoryLayout.configStart,
-        this.radioInfo.memoryLayout.configEnd,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
         (current, total) => {
           const progress = 5 + Math.floor((current / total) * 5); // 5-10%
           this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
@@ -2709,8 +2711,8 @@ export class DM32UVProtocol implements RadioProtocol {
       this.onProgress?.(5, 'Discovering blocks...');
       const blocks = await discoverMemoryBlocks(
         this.connection!,
-        this.radioInfo.memoryLayout.configStart,
-        this.radioInfo.memoryLayout.configEnd,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
         (current, total) => {
           const progress = 5 + Math.floor((current / total) * 5); // 5-10%
           this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
@@ -2895,8 +2897,8 @@ export class DM32UVProtocol implements RadioProtocol {
       }
       const blocks = await discoverMemoryBlocks(
         this.connection!,
-        this.radioInfo.memoryLayout.configStart,
-        this.radioInfo.memoryLayout.configEnd,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
         (current, total) => {
           // Convert to our progress format
           const progress = Math.floor((current / total) * 100);
@@ -3047,8 +3049,8 @@ export class DM32UVProtocol implements RadioProtocol {
       }
       const blocks = await discoverMemoryBlocks(
         this.connection!,
-        this.radioInfo.memoryLayout.configStart,
-        this.radioInfo.memoryLayout.configEnd,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
         (current, total) => {
           const progress = Math.floor((current / total) * 100);
           this.onProgress?.(progress, `Discovering blocks ${current}/${total}...`);
@@ -3138,8 +3140,8 @@ export class DM32UVProtocol implements RadioProtocol {
       }
       const blocks = await discoverMemoryBlocks(
         this.connection!,
-        this.radioInfo.memoryLayout.configStart,
-        this.radioInfo.memoryLayout.configEnd,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
         (current, total) => {
           const progress = Math.floor((current / total) * 100);
           this.onProgress?.(progress, `Discovering blocks ${current}/${total}...`);
@@ -3235,8 +3237,8 @@ export class DM32UVProtocol implements RadioProtocol {
       throw new Error('Radio info not available - connect() must be called first');
     }
     
-    const startAddr = this.radioInfo.memoryLayout.configStart;
-    const endAddr = this.radioInfo.memoryLayout.configEnd;
+    const startAddr = this.radioInfo!.memoryLayout!.configStart;
+    const endAddr = this.radioInfo!.memoryLayout!.configEnd;
     
     // Step 1a: Discover all metadata blocks (same as bulkReadRequiredBlocks)
     // We're already in programming mode from connect(), so we can discover blocks directly

@@ -8,7 +8,7 @@ import { useZonesStore } from '../../store/zonesStore';
 import { useContactsStore } from '../../store/contactsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useCalibrationStore } from '../../store/calibrationStore';
-import { getContactCapacityWithFallback, isFirmware049OrNewer } from '../../utils/firmware';
+import { isFirmware049OrNewer } from '../../utils/firmware';
 import { CALIBRATION_PARAM_NAMES } from '../../models/Calibration';
 import { Modal } from '../ui/Modal';
 import {
@@ -105,13 +105,7 @@ export const SettingsTab: React.FC = () => {
     percent: Math.round((zones.length / 250) * 100),
   };
 
-  // Get contact capacity based on firmware: 150k for L01, 50k otherwise
-  const contactCapacity = radioInfo 
-    ? getContactCapacityWithFallback(
-        radioInfo.vframes.get(0x0F),
-        radioInfo.firmware
-      )
-    : 50000;
+  const contactCapacity = radioInfo?.maxContacts ?? 50000;
   const contactUsage = {
     used: contacts.length,
     total: contactCapacity,
@@ -437,17 +431,19 @@ export const SettingsTab: React.FC = () => {
               Memory & Storage
             </h3>
             <div className="space-y-6 mt-4">
-              <div>
-                <h4 className="text-md font-semibold text-neon-cyan mb-3">Memory Layout</h4>
-                <div className="space-y-2 font-mono text-sm">
-                  <div className="flex justify-between items-center py-2 px-3 bg-dark-charcoal rounded">
-                    <span className="text-cool-gray">Configuration Region:</span>
-                    <span className="text-white">
-                      {formatAddress(radioInfo.memoryLayout.configStart)} - {formatAddress(radioInfo.memoryLayout.configEnd)}
-                    </span>
+              {radioInfo?.memoryLayout && (
+                <div>
+                  <h4 className="text-md font-semibold text-neon-cyan mb-3">Memory Layout</h4>
+                  <div className="space-y-2 font-mono text-sm">
+                    <div className="flex justify-between items-center py-2 px-3 bg-dark-charcoal rounded">
+                      <span className="text-cool-gray">Configuration Region:</span>
+                      <span className="text-white">
+                        {formatAddress(radioInfo.memoryLayout.configStart)} - {formatAddress(radioInfo.memoryLayout.configEnd)}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div>
                 <h4 className="text-md font-semibold text-neon-cyan mb-3">Usage Statistics</h4>
