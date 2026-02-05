@@ -1,13 +1,26 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useDebugStore } from '../../store/debugStore';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { Button } from '../ui/Button';
+import { ConfirmModal } from '../ui/ConfirmModal';
+
+const OFFLINE_FALLBACK_MESSAGE =
+  'The offline version is available on GitHub Pages.\n\n' +
+  'Click OK to open it, then:\n' +
+  '1. Right-click on the page\n' +
+  '2. Select "Save As" or "Save Page As"\n' +
+  '3. Save as "neonplug.html"\n\n' +
+  'Or build it locally using the instructions below.';
+
+const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
 
 export const AboutTab: React.FC = () => {
   const { debugMode, setDebugMode } = useDebugStore();
+  const [offlineFallbackOpen, setOfflineFallbackOpen] = useState(false);
 
   return (
+    <>
     <div className="h-full overflow-y-auto">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-neon-cyan mb-2">About NeonPlug</h2>
@@ -35,10 +48,8 @@ export const AboutTab: React.FC = () => {
               <Button
                 onClick={async () => {
                   try {
-                    // Try to download from GitHub Pages
-                    const response = await fetch('https://infamy.github.io/NeonPlug/');
+                    const response = await fetch(OFFLINE_VERSION_URL);
                     if (!response.ok) throw new Error('Not available');
-                    
                     const html = await response.text();
                     const blob = new Blob([html], { type: 'text/html' });
                     const url = URL.createObjectURL(blob);
@@ -49,19 +60,8 @@ export const AboutTab: React.FC = () => {
                     a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
-                  } catch (error) {
-                    // Fallback: open GitHub Pages in new tab with instructions
-                    const confirmed = window.confirm(
-                      'The offline version is available on GitHub Pages.\n\n' +
-                      'Click OK to open it, then:\n' +
-                      '1. Right-click on the page\n' +
-                      '2. Select "Save As" or "Save Page As"\n' +
-                      '3. Save as "neonplug.html"\n\n' +
-                      'Or build it locally using the instructions below.'
-                    );
-                    if (confirmed) {
-                      window.open('https://infamy.github.io/NeonPlug/', '_blank');
-                    }
+                  } catch {
+                    setOfflineFallbackOpen(true);
                   }
                 }}
                 variant="primary"
@@ -305,6 +305,16 @@ npm run build:single</code>
         </div>
       </div>
     </div>
+    <ConfirmModal
+      isOpen={offlineFallbackOpen}
+      onClose={() => setOfflineFallbackOpen(false)}
+      onConfirm={() => window.open(OFFLINE_VERSION_URL, '_blank')}
+      title="Download offline version"
+      message={OFFLINE_FALLBACK_MESSAGE}
+      confirmLabel="OK"
+      variant="alert"
+    />
+    </>
   );
 };
 

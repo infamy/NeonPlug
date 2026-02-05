@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { ChannelsTable } from './ChannelsTable';
 import { createDefaultChannel } from '../../utils/channelHelpers';
+import { ConfirmModal } from '../ui/ConfirmModal';
 import type { Channel } from '../../models/Channel';
 
 const isVFOChannel = (n: number) => n === 4001 || n === 4002;
@@ -39,16 +40,27 @@ export const ChannelsTab: React.FC = () => {
   }, []);
 
   const selectedCount = selectedChannelNumbers.size;
-  const handleDeleteSelected = useCallback(() => {
+  const [deleteSelectedOpen, setDeleteSelectedOpen] = useState(false);
+  const [pendingDeleteCount, setPendingDeleteCount] = useState(0);
+  const pendingDeleteNumbers = useRef<number[]>([]);
+  const handleDeleteSelectedClick = useCallback(() => {
     const toDelete = Array.from(selectedChannelNumbers).filter(n => !isVFOChannel(n));
     if (toDelete.length === 0) {
       setSelectedChannelNumbers(new Set());
       return;
     }
-    if (!confirm(`Delete ${toDelete.length} selected channel${toDelete.length !== 1 ? 's' : ''}?`)) return;
-    deleteChannels(toDelete);
-    setSelectedChannelNumbers(new Set());
-  }, [selectedChannelNumbers, deleteChannels]);
+    pendingDeleteNumbers.current = toDelete;
+    setPendingDeleteCount(toDelete.length);
+    setDeleteSelectedOpen(true);
+  }, [selectedChannelNumbers]);
+  const handleDeleteSelectedConfirm = useCallback(() => {
+    const toDelete = pendingDeleteNumbers.current;
+    if (toDelete.length > 0) {
+      deleteChannels(toDelete);
+      setSelectedChannelNumbers(new Set());
+    }
+    setDeleteSelectedOpen(false);
+  }, [deleteChannels]);
 
   const handleClearSelection = useCallback(() => setSelectedChannelNumbers(new Set()), []);
 
@@ -146,7 +158,7 @@ export const ChannelsTab: React.FC = () => {
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-cool-gray text-sm whitespace-nowrap">{selectedCount} selected</span>
             <button
-              onClick={handleDeleteSelected}
+              onClick={handleDeleteSelectedClick}
               className="px-2 py-1.5 text-xs text-red-400 hover:text-red-300 border border-red-600 border-opacity-30 hover:border-opacity-60 rounded transition-colors whitespace-nowrap"
               title="Delete selected channels"
             >
@@ -168,6 +180,15 @@ export const ChannelsTab: React.FC = () => {
         onScrollComplete={handleScrollComplete}
         selectedChannelNumbers={selectedChannelNumbers}
         onSelectionChange={setSelectedChannelNumbers}
+      />
+      <ConfirmModal
+        isOpen={deleteSelectedOpen}
+        onClose={() => setDeleteSelectedOpen(false)}
+        onConfirm={handleDeleteSelectedConfirm}
+        title="Delete channels"
+        message={`Delete ${pendingDeleteCount} selected channel${pendingDeleteCount !== 1 ? 's' : ''}?`}
+        confirmLabel="Delete"
+        variant="danger"
       />
     </div>
   );

@@ -113,6 +113,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
                 <li>Verify radio is in programming mode</li>
                 <li>Try unplugging and replugging USB cable</li>
                 <li>Select the correct serial port</li>
+                <li>Keep this tab in the foreground during read/write</li>
               </ul>
             </div>
 
@@ -143,6 +144,9 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
           </div>
         ) : (
           <div className="mb-6">
+            <p className="text-amber-400/90 text-sm mb-3">
+              Please keep this tab in the foreground for reliable communication.
+            </p>
             <ProgressBar progress={progress} message={message} />
           </div>
         )}

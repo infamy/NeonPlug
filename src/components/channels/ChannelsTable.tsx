@@ -8,6 +8,7 @@ import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import type { Channel } from '../../models/Channel';
 import { ChannelEditModal } from './ChannelEditModal';
+import { ConfirmModal } from '../ui/ConfirmModal';
 import { Card } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
@@ -74,6 +75,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
   const channels = channelsProp ?? channelsFromStore;
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
+  const [channelToDelete, setChannelToDelete] = useState<Channel | null>(null);
   const [clonedChannelNumber, setClonedChannelNumber] = useState<number | null>(null);
   const [internalSelection, setInternalSelection] = useState<Set<number>>(new Set());
   const selectedChannelNumbers = selectedChannelNumbersProp ?? internalSelection;
@@ -997,11 +999,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     )}
                     {!isVFOChannel(channel.number) && (
                     <button
-                      onClick={() => {
-                        if (confirm(`Delete channel ${channel.number}: "${channel.name}"?`)) {
-                          deleteChannel(channel.number);
-                        }
-                      }}
+                      onClick={() => setChannelToDelete(channel)}
                       className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-red-400 border border-red-600 border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
                       title={`Delete channel ${channel.number}`}
                     >
@@ -1031,6 +1029,20 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
           talkGroups={talkGroups}
         />
       )}
+      <ConfirmModal
+        isOpen={!!channelToDelete}
+        onClose={() => setChannelToDelete(null)}
+        onConfirm={() => {
+          if (channelToDelete) {
+            deleteChannel(channelToDelete.number);
+            setChannelToDelete(null);
+          }
+        }}
+        title="Delete channel"
+        message={channelToDelete ? `Delete channel ${channelToDelete.number}: "${channelToDelete.name}"?` : ''}
+        confirmLabel="Delete"
+        variant="danger"
+      />
     </Card>
   );
 };

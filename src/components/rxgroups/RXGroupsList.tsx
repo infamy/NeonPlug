@@ -5,16 +5,21 @@ import type { RXGroup } from '../../models/RXGroup';
 import { ListDetailLayout } from '../ui/ListDetailLayout';
 import { Card } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
+import { ConfirmModal } from '../ui/ConfirmModal';
 
 export const RXGroupsList: React.FC = () => {
   const { groups, selectedGroup, setSelectedGroup, addGroup, deleteGroup, updateGroup } = useRXGroupsStore();
   const [newGroupName, setNewGroupName] = useState('');
   const [editingName, setEditingName] = useState<number | null>(null);
   const [editingNameValue, setEditingNameValue] = useState('');
+  const [groupToDelete, setGroupToDelete] = useState<{ index: number; name: string } | null>(null);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
 
   const handleAddGroup = () => {
     if (groups.length >= 32) {
-      alert('Maximum of 32 RX groups allowed.');
+      setAlertMessage('Maximum of 32 RX groups allowed.');
+      setAlertOpen(true);
       return;
     }
     if (newGroupName.trim()) {
@@ -108,12 +113,7 @@ export const RXGroupsList: React.FC = () => {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (confirm(`Delete RX group "${group.name}"? This cannot be undone.`)) {
-                    deleteGroup(group.index);
-                    if (selectedGroup === group.index) {
-                      setSelectedGroup(null);
-                    }
-                  }
+                  setGroupToDelete({ index: group.index, name: group.name });
                 }}
                 className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
               >
@@ -179,7 +179,7 @@ export const RXGroupsList: React.FC = () => {
         )}
       </div>
       {selectedGroupData ? (
-        <RXGroupEditor group={selectedGroupData} />
+        <RXGroupEditor group={selectedGroupData} onAlert={(msg) => { setAlertMessage(msg); setAlertOpen(true); }} />
       ) : (
         <EmptyState
           message="Select an RX group to edit"
@@ -190,26 +190,54 @@ export const RXGroupsList: React.FC = () => {
   );
 
   return (
-    <ListDetailLayout
-      listTitle="RX Groups"
-      listSubtitle={`${groups.length}/32 groups`}
-      addInputPlaceholder="Group name..."
-      addInputValue={newGroupName}
-      onAddInputChange={setNewGroupName}
-      onAdd={handleAddGroup}
-      addDisabled={groups.length >= 32}
-      addInputMaxLength={11}
-      listContent={listContent}
-      detailContent={detailContent}
-    />
+    <>
+      <ListDetailLayout
+        listTitle="RX Groups"
+        listSubtitle={`${groups.length}/32 groups`}
+        addInputPlaceholder="Group name..."
+        addInputValue={newGroupName}
+        onAddInputChange={setNewGroupName}
+        onAdd={handleAddGroup}
+        addDisabled={groups.length >= 32}
+        addInputMaxLength={11}
+        listContent={listContent}
+        detailContent={detailContent}
+      />
+      <ConfirmModal
+        isOpen={!!groupToDelete}
+        onClose={() => setGroupToDelete(null)}
+        onConfirm={() => {
+          if (groupToDelete) {
+            deleteGroup(groupToDelete.index);
+            if (selectedGroup === groupToDelete.index) {
+              setSelectedGroup(null);
+            }
+            setGroupToDelete(null);
+          }
+        }}
+        title="Delete RX group"
+        message={groupToDelete ? `Delete RX group "${groupToDelete.name}"? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        variant="danger"
+      />
+      <ConfirmModal
+        isOpen={alertOpen}
+        onClose={() => setAlertOpen(false)}
+        title="Notice"
+        message={alertMessage}
+        confirmLabel="OK"
+        variant="alert"
+      />
+    </>
   );
 };
 
 interface RXGroupEditorProps {
   group: RXGroup;
+  onAlert: (message: string) => void;
 }
 
-const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group }) => {
+const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group, onAlert }) => {
   const { updateGroup } = useRXGroupsStore();
   const { contacts: talkGroups } = useQuickContactsStore();
   const [searchQuery, setSearchQuery] = useState('');
@@ -220,7 +248,7 @@ const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group }) => {
     if (!talkGroup) return;
     
     if (group.talkGroupIndices.length >= 32) {
-      alert('Maximum of 32 talk groups per RX group allowed.');
+      onAlert('Maximum of 32 talk groups per RX group allowed.');
       return;
     }
     

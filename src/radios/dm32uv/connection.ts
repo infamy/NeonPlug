@@ -250,8 +250,9 @@ export class DM32Connection {
       if (responseLength === 0 || responseLength > length) {
         throw new Error(`Invalid response length at ${addressHex}. Expected <= ${length}, got ${responseLength}`);
       }
-      
-      const data = await this.readBytes(responseLength);
+
+      // Use longer timeout for large block reads (e.g. 4KB); header read above uses default 5s
+      const data = await this.readBytes(responseLength, CONNECTION.TIMEOUT.READ_MEMORY);
       // Brief settling delay after receiving block so radio is ready for next command
       await this.delay(30);
       return data;
@@ -543,43 +544,44 @@ export class DM32Connection {
    * Read exactly 'count' bytes from the buffer.
    * If the buffer doesn't have enough data, we fill it by reading from the stream.
    * This matches how Go/Python serial libraries work - they maintain an internal buffer.
-   * 
-   * Timeout: 2s per request/response cycle. If no data arrives within 2s, timeout.
-   * This is the ONLY place we apply timeout - all read operations go through here.
+   *
+   * @param count Number of bytes to read
+   * @param timeoutMs Optional timeout in ms (default: REQUEST_RESPONSE). Use READ_MEMORY for large block reads.
    */
-  private async readBytes(count: number): Promise<Uint8Array> {
+  private async readBytes(count: number, timeoutMs?: number): Promise<Uint8Array> {
     if (!this.reader) {
       throw new Error('Not connected');
     }
 
+    const timeout = timeoutMs ?? CONNECTION.TIMEOUT.REQUEST_RESPONSE;
     const startTime = Date.now();
-    
+
     return withTimeout(
       (async () => {
         // Keep reading from stream until we have enough data in buffer
         while (this.readBuffer.length < count) {
           const bufferLengthBefore = this.readBuffer.length;
           await this.fillBuffer();
-          
+
           // If fillBuffer didn't add any data and we still don't have enough,
           // check if we've been waiting too long
           if (this.readBuffer.length === bufferLengthBefore && this.readBuffer.length < count) {
             const elapsed = Date.now() - startTime;
-            if (elapsed >= CONNECTION.TIMEOUT.REQUEST_RESPONSE) {
-              throw new Error(`Read ${count} bytes timed out after ${CONNECTION.TIMEOUT.REQUEST_RESPONSE}ms (got ${this.readBuffer.length} bytes)`);
+            if (elapsed >= timeout) {
+              throw new Error(`Read ${count} bytes timed out after ${timeout}ms (got ${this.readBuffer.length} bytes)`);
             }
           }
         }
 
         // Extract exactly 'count' bytes from buffer
         const result = this.readBuffer.slice(0, count);
-        
+
         // Remove consumed bytes from buffer
         this.readBuffer = this.readBuffer.slice(count);
 
         return result;
       })(),
-      CONNECTION.TIMEOUT.REQUEST_RESPONSE,
+      timeout,
       `Read ${count} bytes`
     );
   }

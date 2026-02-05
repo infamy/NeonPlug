@@ -8,18 +8,23 @@ import { ListDetailLayout } from '../ui/ListDetailLayout';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
+import { ConfirmModal } from '../ui/ConfirmModal';
 
 export const ScanListsList: React.FC = () => {
   const { scanLists, selectedScanList, setSelectedScanList, addScanList, deleteScanList, renameScanList } = useScanListsStore();
   const [newScanListName, setNewScanListName] = useState('');
   const [editingScanList, setEditingScanList] = useState<string | null>(null);
   const [editScanListName, setEditScanListName] = useState('');
+  const [scanListToDelete, setScanListToDelete] = useState<string | null>(null);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
 
   const selectedScanListData = scanLists.find(sl => sl.name === selectedScanList);
 
   const handleAddScanList = () => {
     if (scanLists.length >= 32) {
-      alert('Maximum of 32 scan lists allowed.');
+      setAlertMessage('Maximum of 32 scan lists allowed.');
+      setAlertOpen(true);
       return;
     }
     if (!newScanListName.trim()) {
@@ -27,7 +32,8 @@ export const ScanListsList: React.FC = () => {
     }
     // Check if name already exists
     if (scanLists.some(sl => sl.name === newScanListName.trim())) {
-      alert('A scan list with this name already exists.');
+      setAlertMessage('A scan list with this name already exists.');
+      setAlertOpen(true);
       return;
     }
     const scanListName = newScanListName.trim().slice(0, 16);
@@ -42,12 +48,16 @@ export const ScanListsList: React.FC = () => {
     setSelectedScanList(scanListName);
   };
 
-  const handleDeleteScanList = (name: string) => {
-    if (confirm(`Are you sure you want to delete scan list "${name}"? This cannot be undone.`)) {
-      deleteScanList(name);
-      if (selectedScanList === name) {
+  const handleDeleteScanListClick = (name: string) => {
+    setScanListToDelete(name);
+  };
+  const handleDeleteScanListConfirm = () => {
+    if (scanListToDelete) {
+      deleteScanList(scanListToDelete);
+      if (selectedScanList === scanListToDelete) {
         setSelectedScanList(null);
       }
+      setScanListToDelete(null);
     }
   };
 
@@ -64,7 +74,8 @@ export const ScanListsList: React.FC = () => {
       setEditingScanList(null);
       setEditScanListName('');
     } else {
-      alert('Invalid scan list name or name already exists. Scan list names must be 1-16 characters and unique.');
+      setAlertMessage('Invalid scan list name or name already exists. Scan list names must be 1-16 characters and unique.');
+      setAlertOpen(true);
     }
   };
 
@@ -153,7 +164,7 @@ export const ScanListsList: React.FC = () => {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleDeleteScanList(scanList.name);
+                      handleDeleteScanListClick(scanList.name);
                     }}
                     className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
                   >
@@ -175,7 +186,7 @@ export const ScanListsList: React.FC = () => {
         </SectionTitle>
       </div>
       {selectedScanListData ? (
-        <ScanListEditor scanList={selectedScanListData} />
+        <ScanListEditor scanList={selectedScanListData} onAlert={(msg) => { setAlertMessage(msg); setAlertOpen(true); }} />
       ) : (
         <EmptyState
           message="Select a scan list to edit"
@@ -186,18 +197,37 @@ export const ScanListsList: React.FC = () => {
   );
 
   return (
-    <ListDetailLayout
-      listTitle="Scan Lists"
-      listSubtitle={`${scanLists.length}/32 scan lists`}
-      addInputPlaceholder="Scan list name..."
-      addInputValue={newScanListName}
-      onAddInputChange={setNewScanListName}
-      onAdd={handleAddScanList}
-      addDisabled={scanLists.length >= 32}
-      addInputMaxLength={16}
-      listContent={listContent}
-      detailContent={detailContent}
-    />
+    <>
+      <ListDetailLayout
+        listTitle="Scan Lists"
+        listSubtitle={`${scanLists.length}/32 scan lists`}
+        addInputPlaceholder="Scan list name..."
+        addInputValue={newScanListName}
+        onAddInputChange={setNewScanListName}
+        onAdd={handleAddScanList}
+        addDisabled={scanLists.length >= 32}
+        addInputMaxLength={16}
+        listContent={listContent}
+        detailContent={detailContent}
+      />
+      <ConfirmModal
+        isOpen={!!scanListToDelete}
+        onClose={() => setScanListToDelete(null)}
+        onConfirm={handleDeleteScanListConfirm}
+        title="Delete scan list"
+        message={scanListToDelete ? `Are you sure you want to delete scan list "${scanListToDelete}"? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        variant="danger"
+      />
+      <ConfirmModal
+        isOpen={alertOpen}
+        onClose={() => setAlertOpen(false)}
+        title="Notice"
+        message={alertMessage}
+        confirmLabel="OK"
+        variant="alert"
+      />
+    </>
   );
 };
 
@@ -368,9 +398,10 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
 
 interface ScanListEditorProps {
   scanList: ScanList;
+  onAlert: (message: string) => void;
 }
 
-const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList }) => {
+const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) => {
   const { updateScanList } = useScanListsStore();
   const { channels } = useChannelsStore();
   const [searchQuery, setSearchQuery] = useState('');
@@ -378,7 +409,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList }) => {
 
   const handleAddChannel = (channelNumber: number) => {
     if (scanList.channels.length >= 15) {
-      alert('Maximum of 15 channels per scan list allowed.');
+      onAlert('Maximum of 15 channels per scan list allowed.');
       return;
     }
     if (!scanList.channels.includes(channelNumber)) {

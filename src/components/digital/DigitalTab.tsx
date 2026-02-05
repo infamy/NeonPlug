@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
@@ -11,6 +11,7 @@ import { RXGroupsList } from '../rxgroups/RXGroupsList';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
+import { ConfirmModal } from '../ui/ConfirmModal';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
@@ -105,7 +106,8 @@ export const DigitalTab: React.FC = () => {
 
   const handleAddContact = () => {
     if (quickContacts.length >= talkGroupsMax) {
-      alert(`Maximum of ${talkGroupsMax} talk groups allowed.`);
+      setAlertMessage(`Maximum of ${talkGroupsMax} talk groups allowed.`);
+      setAlertOpen(true);
       return;
     }
     addContact({
@@ -116,15 +118,20 @@ export const DigitalTab: React.FC = () => {
     });
   };
 
-  const handleDeleteContact = (index: number) => {
-    if (confirm(`Are you sure you want to delete this contact?`)) {
-      deleteContact(index);
-    }
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState<
+    { type: 'contact'; index: number } | { type: 'message'; index: number } | { type: 'radioId'; index: number } | null
+  >(null);
+
+  const handleDeleteContactClick = (index: number) => {
+    setDeleteConfirm({ type: 'contact', index });
   };
 
   const handleAddMessage = () => {
     if (messages.length >= 20) {
-      alert('Maximum of 20 quick messages allowed.');
+      setAlertMessage('Maximum of 20 quick messages allowed.');
+      setAlertOpen(true);
       return;
     }
     const newIndex = messages.length;
@@ -136,15 +143,14 @@ export const DigitalTab: React.FC = () => {
     });
   };
 
-  const handleDeleteMessage = (index: number) => {
-    if (confirm(`Are you sure you want to delete this message?`)) {
-      deleteMessage(index);
-    }
+  const handleDeleteMessageClick = (index: number) => {
+    setDeleteConfirm({ type: 'message', index });
   };
 
   const handleAddRadioId = () => {
     if (radioIds.length >= dmrRadioIdsMax) {
-      alert(`Maximum of ${dmrRadioIdsMax} DMR Radio IDs allowed.`);
+      setAlertMessage(`Maximum of ${dmrRadioIdsMax} DMR Radio IDs allowed.`);
+      setAlertOpen(true);
       return;
     }
     const newIndex = radioIds.length;
@@ -157,13 +163,37 @@ export const DigitalTab: React.FC = () => {
     });
   };
 
-  const handleDeleteRadioId = (index: number) => {
-    if (confirm(`Are you sure you want to delete this DMR Radio ID?`)) {
-      deleteRadioId(index);
-    }
+  const handleDeleteRadioIdClick = (index: number) => {
+    setDeleteConfirm({ type: 'radioId', index });
   };
 
+  const handleDeleteConfirmModalConfirm = () => {
+    if (!deleteConfirm) return;
+    if (deleteConfirm.type === 'contact') deleteContact(deleteConfirm.index);
+    else if (deleteConfirm.type === 'message') deleteMessage(deleteConfirm.index);
+    else if (deleteConfirm.type === 'radioId') deleteRadioId(deleteConfirm.index);
+    setDeleteConfirm(null);
+  };
+
+  const deleteConfirmTitle =
+    deleteConfirm?.type === 'contact'
+      ? 'Delete contact'
+      : deleteConfirm?.type === 'message'
+        ? 'Delete message'
+        : deleteConfirm?.type === 'radioId'
+          ? 'Delete DMR Radio ID'
+          : '';
+  const deleteConfirmMessage =
+    deleteConfirm?.type === 'contact'
+      ? 'Are you sure you want to delete this contact?'
+      : deleteConfirm?.type === 'message'
+        ? 'Are you sure you want to delete this message?'
+        : deleteConfirm?.type === 'radioId'
+          ? 'Are you sure you want to delete this DMR Radio ID?'
+          : '';
+
   return (
+    <>
     <div className="p-6">
       <div className="mb-6">
         <SectionTitle as="h2" size="xl" bold className="text-2xl">Digital Settings</SectionTitle>
@@ -256,7 +286,7 @@ export const DigitalTab: React.FC = () => {
                         </td>
                         <td className="px-2 py-2">
                           <button
-                            onClick={() => handleDeleteRadioId(radioId.index)}
+                            onClick={() => handleDeleteRadioIdClick(radioId.index)}
                             className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
                           >
                             Delete
@@ -368,7 +398,7 @@ export const DigitalTab: React.FC = () => {
                           </td>
                           <td className="px-2 py-2">
                             <button
-                              onClick={() => handleDeleteContact(contact.index)}
+                              onClick={() => handleDeleteContactClick(contact.index)}
                               className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
                             >
                               Delete
@@ -629,7 +659,7 @@ export const DigitalTab: React.FC = () => {
                           </td>
                           <td className="px-2 py-2">
                             <button
-                              onClick={() => handleDeleteMessage(arrayIndex)}
+                              onClick={() => handleDeleteMessageClick(arrayIndex)}
                               className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
                             >
                               Delete
@@ -646,6 +676,24 @@ export const DigitalTab: React.FC = () => {
         )}
       </div>
     </div>
+    <ConfirmModal
+      isOpen={!!deleteConfirm}
+      onClose={() => setDeleteConfirm(null)}
+      onConfirm={handleDeleteConfirmModalConfirm}
+      title={deleteConfirmTitle}
+      message={deleteConfirmMessage}
+      confirmLabel="Delete"
+      variant="danger"
+    />
+    <ConfirmModal
+      isOpen={alertOpen}
+      onClose={() => setAlertOpen(false)}
+      title="Notice"
+      message={alertMessage}
+      confirmLabel="OK"
+      variant="alert"
+    />
+    </>
   );
 };
 

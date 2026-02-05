@@ -86,14 +86,14 @@ export const CONNECTION = {
   BAUD_RATE: 115200,
   INIT_DELAY: 200,          // ms after port open
   CLEAR_BUFFER_DELAY: 100,  // ms after clearing buffer
-  BLOCK_READ_DELAY: 100,    // ms between block reads (radio needs time after sending 4KB before next request)
+  BLOCK_READ_DELAY: 150,    // ms between block reads (radio needs time after sending 4KB before next request)
   // Timeout values (in milliseconds)
   // Per-request timeout: 5s per message/ack cycle (matches C code), resets with each response
   TIMEOUT: {
     REQUEST_RESPONSE: 5000,  // 5s per request/response cycle (matches C code, resets on each message/ack)
     HANDSHAKE: 5000,         // 5s for handshake commands (PSEARCH, PASSSTA, etc.)
     READ_BYTES: 5000,        // 5s for reading bytes (per read operation)
-    READ_MEMORY: 5000,       // 5s for reading memory blocks
+    READ_MEMORY: 15000,      // 15s for reading memory blocks (4KB can be slow on some radios/hosts)
     WRITE_MEMORY: 5000,      // 5s for write acknowledgment
     VFRAME_QUERY: 5000,      // 5s per V-frame query
     FILL_BUFFER: 5000,       // 5s for filling buffer

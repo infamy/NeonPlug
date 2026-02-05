@@ -11,6 +11,7 @@ import { useRadioStore } from '../../store/radioStore';
 // XLSX functions will be lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
+import { ConfirmModal } from '../ui/ConfirmModal';
 import { isWebSerialSupported } from '../../utils/browserSupport';
 
 export const Toolbar: React.FC = () => {
@@ -32,6 +33,9 @@ export const Toolbar: React.FC = () => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isWriting, setIsWriting] = useState(false);
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
+  const [writeWarningOpen, setWriteWarningOpen] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
   const webSerialSupported = isWebSerialSupported();
 
   const handleImport = () => {
@@ -103,6 +107,7 @@ export const Toolbar: React.FC = () => {
   };
 
   const handleRead = async () => {
+    window.focus();
     try {
       setConnectionError(null);
       setLastOperationMode('read');
@@ -150,30 +155,18 @@ export const Toolbar: React.FC = () => {
     setCurrentStep('');
   };
 
-  const showWriteWarning = (): boolean => {
-    const warningMessage = 
-      '⚠️ EXPERIMENTAL FEATURE WARNING ⚠️\n\n' +
-      'Writing to the radio is an EXPERIMENTAL feature and is used at your own risk.\n\n' +
-      'IMPORTANT: Before proceeding, ensure that:\n' +
-      '• Allow Reset is ENABLED via the Baofeng CPS\n' +
-      '• You have done a radio read with the Baofeng CPS and saved that as a backup\n' +
-      '• You have a backup of your current codeplug\n' +
-      '• You understand that this operation may modify your radio\'s memory\n\n' +
-      'Do you want to continue?';
-    
-    return window.confirm(warningMessage);
-  };
+  const WRITE_WARNING_MESSAGE =
+    '⚠️ EXPERIMENTAL FEATURE WARNING ⚠️\n\n' +
+    'Writing to the radio is an EXPERIMENTAL feature and is used at your own risk.\n\n' +
+    'IMPORTANT: Before proceeding, ensure that:\n' +
+    '• Allow Reset is ENABLED via the Baofeng CPS\n' +
+    '• You have done a radio read with the Baofeng CPS and saved that as a backup\n' +
+    '• You have a backup of your current codeplug\n' +
+    '• You understand that this operation may modify your radio\'s memory\n\n' +
+    'Do you want to continue?';
 
-  const handleWrite = async () => {
-    if (channels.length === 0 && zones.length === 0 && scanLists.length === 0) {
-      alert('No data to write (channels, zones, or scan lists)');
-      return;
-    }
-
-    if (!showWriteWarning()) {
-      return;
-    }
-
+  const startWriteOperation = async () => {
+    window.focus();
     setIsWriting(true);
     setLastOperationMode('write');
     try {
@@ -206,6 +199,20 @@ export const Toolbar: React.FC = () => {
       setProgressMessage('Write failed');
       setIsWriting(false);
     }
+  };
+
+  const handleWrite = () => {
+    if (channels.length === 0 && zones.length === 0 && scanLists.length === 0) {
+      setAlertMessage('No data to write (channels, zones, or scan lists)');
+      setAlertOpen(true);
+      return;
+    }
+    setWriteWarningOpen(true);
+  };
+
+  const handleWriteWarningConfirm = () => {
+    setWriteWarningOpen(false);
+    startWriteOperation();
   };
 
   return (
@@ -281,6 +288,24 @@ export const Toolbar: React.FC = () => {
         onRetry={handleRetry}
         onClose={handleCloseModal}
         mode={isWriting ? 'write' : 'read'}
+      />
+      <ConfirmModal
+        isOpen={writeWarningOpen}
+        onClose={() => setWriteWarningOpen(false)}
+        onConfirm={handleWriteWarningConfirm}
+        title="Write to radio"
+        message={WRITE_WARNING_MESSAGE}
+        confirmLabel="Continue"
+        cancelLabel="Cancel"
+        variant="default"
+      />
+      <ConfirmModal
+        isOpen={alertOpen}
+        onClose={() => setAlertOpen(false)}
+        title="Notice"
+        message={alertMessage}
+        confirmLabel="OK"
+        variant="alert"
       />
     </>
   );

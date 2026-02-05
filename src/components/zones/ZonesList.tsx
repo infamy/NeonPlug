@@ -6,12 +6,16 @@ import { ListDetailLayout } from '../ui/ListDetailLayout';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
+import { ConfirmModal } from '../ui/ConfirmModal';
 
 export const ZonesList: React.FC = () => {
   const { zones, selectedZoneId, setSelectedZoneId, addZone, deleteZone, renameZone } = useZonesStore();
   const [newZoneName, setNewZoneName] = useState('');
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
   const [editZoneName, setEditZoneName] = useState('');
+  const [zoneToDelete, setZoneToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
 
   const handleAddZone = () => {
     if (newZoneName.trim()) {
@@ -44,7 +48,8 @@ export const ZonesList: React.FC = () => {
       setEditingZoneId(null);
       setEditZoneName('');
     } else {
-      alert('Invalid zone name. Zone names must be 1-10 characters.');
+      setAlertMessage('Invalid zone name. Zone names must be 1-10 characters.');
+      setAlertOpen(true);
     }
   };
 
@@ -137,9 +142,7 @@ export const ZonesList: React.FC = () => {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (confirm(`Delete zone "${zone.name}"? This cannot be undone.`)) {
-                          deleteZone(zone.id);
-                        }
+                        setZoneToDelete({ id: zone.id, name: zone.name });
                       }}
                       className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
                     >
@@ -162,7 +165,7 @@ export const ZonesList: React.FC = () => {
       </div>
       {selectedZoneData ? (
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ZoneEditor zone={selectedZoneData} />
+          <ZoneEditor zone={selectedZoneData} onAlert={(msg) => { setAlertMessage(msg); setAlertOpen(true); }} />
         </div>
       ) : (
         <EmptyState
@@ -174,34 +177,62 @@ export const ZonesList: React.FC = () => {
   );
 
   return (
-    <ListDetailLayout
-      listTitle="Zones"
-      listSubtitle={`${zones.length}/250 zones`}
-      addInputPlaceholder="Zone name..."
-      addInputValue={newZoneName}
-      onAddInputChange={setNewZoneName}
-      onAdd={handleAddZone}
-      addDisabled={zones.length >= 250}
-      addInputMaxLength={10}
-      listContent={listContent}
-      detailContent={detailContent}
-      fullHeight
-    />
+    <>
+      <ListDetailLayout
+        listTitle="Zones"
+        listSubtitle={`${zones.length}/250 zones`}
+        addInputPlaceholder="Zone name..."
+        addInputValue={newZoneName}
+        onAddInputChange={setNewZoneName}
+        onAdd={handleAddZone}
+        addDisabled={zones.length >= 250}
+        addInputMaxLength={10}
+        listContent={listContent}
+        detailContent={detailContent}
+        fullHeight
+      />
+      <ConfirmModal
+        isOpen={!!zoneToDelete}
+        onClose={() => setZoneToDelete(null)}
+        onConfirm={() => {
+          if (zoneToDelete) {
+            deleteZone(zoneToDelete.id);
+            if (selectedZoneId === zoneToDelete.id) {
+              setSelectedZoneId(null);
+            }
+            setZoneToDelete(null);
+          }
+        }}
+        title="Delete zone"
+        message={zoneToDelete ? `Delete zone "${zoneToDelete.name}"? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        variant="danger"
+      />
+      <ConfirmModal
+        isOpen={alertOpen}
+        onClose={() => setAlertOpen(false)}
+        title="Notice"
+        message={alertMessage}
+        confirmLabel="OK"
+        variant="alert"
+      />
+    </>
   );
 };
 
 interface ZoneEditorProps {
   zone: Zone;
+  onAlert: (message: string) => void;
 }
 
-const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone }) => {
+const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone, onAlert }) => {
   const { updateZone } = useZonesStore();
   const { channels } = useChannelsStore();
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleAddChannel = (channelNumber: number) => {
     if (zone.channels.length >= 64) {
-      alert('Maximum of 64 channels per zone allowed.');
+      onAlert('Maximum of 64 channels per zone allowed.');
       return;
     }
     if (!zone.channels.includes(channelNumber)) {
