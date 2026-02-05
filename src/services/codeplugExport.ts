@@ -12,7 +12,7 @@ import type { Contact } from '../models/Contact';
 import type { DigitalEmergency, DigitalEmergencyConfig } from '../models/DigitalEmergency';
 import type { AnalogEmergency } from '../models/AnalogEmergency';
 import type { RadioSettings } from '../models/RadioSettings';
-import type { RadioInfo } from '../protocol/interface';
+import type { RadioInfo } from '../types/radio';
 
 export interface CodeplugData {
   channels: Channel[];
@@ -617,6 +617,8 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
               const match = str.match(/0x([0-9a-fA-F]+)/);
               return match ? parseInt(match[1], 16) : undefined;
             };
+            const configStart = parseHex(row['Config Start']);
+            const configEnd = parseHex(row['Config End']);
             result.radioInfo = {
               model: row['Model'] || '',
               firmware: row['Firmware'] || '',
@@ -624,11 +626,9 @@ export async function importCodeplug(file: File): Promise<CodeplugData> {
               dspVersion: row['DSP Version'] || undefined,
               radioVersion: row['Radio Version'] || undefined,
               codeplugVersion: row['Codeplug Version'] || undefined,
-              memoryLayout: {
-                configStart: parseHex(row['Config Start']) || 0,
-                configEnd: parseHex(row['Config End']) || 0,
-              },
-              vframes: new Map(),
+              ...(configStart !== undefined && configEnd !== undefined && {
+                memoryLayout: { configStart, configEnd },
+              }),
             } as RadioInfo;
           }
         }

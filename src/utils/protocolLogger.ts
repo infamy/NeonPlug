@@ -1,10 +1,9 @@
 /**
  * Configurable Logger for Protocol Operations
- * 
- * Provides structured logging that can be enabled/disabled and filtered by level.
- * This replaces scattered console.log statements throughout the codebase.
- * 
- * Logs are also stored in a Zustand store for display in the diagnostics tab.
+ *
+ * Shared by all radio protocol implementations. Provides structured logging
+ * that can be enabled/disabled and filtered by level. Logs are also stored
+ * in a Zustand store for display in the diagnostics tab.
  */
 
 export enum LogLevel {
@@ -64,21 +63,21 @@ class ProtocolLogger {
    */
   private formatMessage(level: string, message: string, context?: string): string {
     const parts: string[] = [];
-    
+
     if (this.config.enableTimestamps) {
       parts.push(`[${new Date().toISOString()}]`);
     }
-    
+
     if (this.config.enablePrefixes) {
       parts.push(`[${level}]`);
     }
-    
+
     if (context) {
       parts.push(`[${context}]`);
     }
-    
+
     parts.push(message);
-    
+
     return parts.join(' ');
   }
 
@@ -86,7 +85,7 @@ class ProtocolLogger {
     if (this.config.level >= LogLevel.ERROR) {
       const formatted = this.formatMessage('ERROR', message, context);
       console.error(formatted, error || '');
-      
+
       // Also store in log store for diagnostics tab
       const store = getLogStore();
       if (store) {
@@ -99,7 +98,7 @@ class ProtocolLogger {
     if (this.config.level >= LogLevel.WARN) {
       const formatted = this.formatMessage('WARN', message, context);
       console.warn(formatted, error || '');
-      
+
       // Also store in log store for diagnostics tab
       const store = getLogStore();
       if (store) {
@@ -112,7 +111,7 @@ class ProtocolLogger {
     if (this.config.level >= LogLevel.INFO) {
       const formatted = this.formatMessage('INFO', message, context);
       console.log(formatted);
-      
+
       // Also store in log store for diagnostics tab
       const store = getLogStore();
       if (store) {
@@ -125,7 +124,7 @@ class ProtocolLogger {
     if (this.config.level >= LogLevel.DEBUG) {
       const formatted = this.formatMessage('DEBUG', message, context);
       console.log(formatted, error || '');
-      
+
       // Also store in log store for diagnostics tab
       const store = getLogStore();
       if (store) {
@@ -138,7 +137,7 @@ class ProtocolLogger {
     if (this.config.level >= LogLevel.VERBOSE) {
       const formatted = this.formatMessage('VERBOSE', message, context);
       console.log(formatted);
-      
+
       // Also store in log store for diagnostics tab
       const store = getLogStore();
       if (store) {
@@ -153,10 +152,10 @@ class ProtocolLogger {
   operation(operation: string, fn: () => Promise<void> | void, context?: string): Promise<void> | void {
     const startTime = Date.now();
     this.debug(`Starting: ${operation}`, context);
-    
+
     try {
       const result = fn();
-      
+
       if (result instanceof Promise) {
         return result
           .then(() => {
@@ -192,4 +191,3 @@ export const log = {
   debug: (msg: string, ctx?: string, err?: unknown) => logger.debug(msg, ctx, err),
   verbose: (msg: string, ctx?: string) => logger.verbose(msg, ctx),
 };
-

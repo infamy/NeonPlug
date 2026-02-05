@@ -22,7 +22,7 @@ import { useAnalogEmergencyStore } from './store/analogEmergencyStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
-import { setLogStore } from './protocol/dm32uv/logger';
+import { setLogStore } from './utils/protocolLogger';
 import { useLogStore } from './store/logStore';
 
 function App() {

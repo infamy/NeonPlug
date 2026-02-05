@@ -12,8 +12,7 @@ import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useLogStore } from '../../store/logStore';
-import { parseRadioSettings } from '../../protocol/dm32uv/structures';
-import { decodeBCDFrequency, decodeCTCSSDCS } from '../../protocol/dm32uv/encoding';
+import { getCapabilitiesForModel } from '../../radios/capabilities';
 import {
   POWER_ON_INTERFACE_OPTIONS,
   COLOR_OPTIONS,
@@ -29,6 +28,9 @@ import { analyzeMetadata, generateMetadataReport } from '../../services/metadata
 import { exportCodeplug } from '../../services/codeplugExport';
 import { BOOT_IMAGE } from '../../utils/bootImage';
 import JSZip from 'jszip';
+import { Card } from '../ui/Card';
+import { SectionTitle } from '../ui/SectionTitle';
+import { EmptyState } from '../ui/EmptyState';
 
 export const DiagnosticsTab: React.FC = () => {
   const { rawRadioSettingsData, rawContactBlockAddress, rawContactBlocks, blockMetadata, blockData, writeBlockData, radioInfo, zoneComparisonData, bootImageRaw } = useRadioStore();
@@ -43,6 +45,7 @@ export const DiagnosticsTab: React.FC = () => {
   const { messages: quickMessages } = useQuickMessagesStore();
   const { contacts: quickContacts } = useQuickContactsStore();
   const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
+  const caps = useMemo(() => getCapabilitiesForModel(radioInfo?.model), [radioInfo?.model]);
   const [showMetadataBlock, setShowMetadataBlock] = useState(false);
   const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
   const [showContactBlock, setShowContactBlock] = useState(true);
@@ -584,7 +587,7 @@ export const DiagnosticsTab: React.FC = () => {
       <div className="h-full overflow-y-auto">
         <div className="p-6">
           <div className="mb-6">
-            <h2 className="text-2xl font-bold text-yellow-400">Diagnostics & Debug</h2>
+            <SectionTitle as="h2" size="xl" bold className="text-2xl !text-yellow-400">Diagnostics & Debug</SectionTitle>
             <p className="text-cool-gray text-sm mt-1">Radio settings diagnostic tools</p>
           </div>
 
@@ -676,9 +679,9 @@ export const DiagnosticsTab: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-8 text-center">
-            <p className="text-cool-gray">No radio settings data available. Read from radio to view diagnostics.</p>
-          </div>
+          <Card className="!border-yellow-600/30">
+            <EmptyState message="No radio settings data available. Read from radio to view diagnostics." />
+          </Card>
         </div>
       </div>
     );
@@ -689,7 +692,7 @@ export const DiagnosticsTab: React.FC = () => {
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-yellow-400">Diagnostics & Debug</h2>
+            <SectionTitle as="h2" size="xl" bold className="text-2xl !text-yellow-400">Diagnostics & Debug</SectionTitle>
             <p className="text-cool-gray text-sm mt-1">Inspect raw memory offsets and verify field parsing</p>
           </div>
         </div>
@@ -1018,9 +1021,12 @@ export const DiagnosticsTab: React.FC = () => {
 
         {/* Field Verification Table */}
         <CollapsibleSection title="Field Verification">
-          {rawRadioSettingsData && (() => {
+          {rawRadioSettingsData && !caps?.diagnostics && (
+            <p className="text-cool-gray">Field verification not available for this radio.</p>
+          )}
+          {rawRadioSettingsData && caps?.diagnostics && (() => {
             try {
-              const parsed = parseRadioSettings(rawRadioSettingsData);
+              const parsed = caps.diagnostics.parseRadioSettings(rawRadioSettingsData);
               const fields = [
                 { name: 'Power On Interface', offset: 0x00, parsed: parsed.powerOnInterface, ui: radioSettings?.powerOnInterface, rawHex: rawRadioSettingsData[0x00] },
                 { name: 'Backlight Brightness', offset: 0x30, parsed: parsed.backlightBrightness, ui: radioSettings?.backlightBrightness, rawHex: rawRadioSettingsData[0x30] },
@@ -2641,8 +2647,8 @@ export const DiagnosticsTab: React.FC = () => {
                   let rxFreq = 0;
                   let txFreq = 0;
                   try {
-                    rxFreq = decodeBCDFrequency(channelBytes.slice(0x10, 0x14));
-                    txFreq = decodeBCDFrequency(channelBytes.slice(0x14, 0x18));
+                    rxFreq = caps?.diagnostics?.decodeBCDFrequency(channelBytes.slice(0x10, 0x14)) ?? 0;
+                    txFreq = caps?.diagnostics?.decodeBCDFrequency(channelBytes.slice(0x14, 0x18)) ?? 0;
                   } catch (e) {
                     // Ignore
                   }
@@ -2687,14 +2693,14 @@ export const DiagnosticsTab: React.FC = () => {
 
                   let rxCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
                   try {
-                    rxCtcssDcs = decodeCTCSSDCS(channelBytes.slice(0x21, 0x23));
+                    rxCtcssDcs = caps?.diagnostics?.decodeCTCSSDCS(channelBytes.slice(0x21, 0x23)) ?? rxCtcssDcs;
                   } catch (e) {
                     // Ignore
                   }
 
                   let txCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
                   try {
-                    txCtcssDcs = decodeCTCSSDCS(channelBytes.slice(0x23, 0x25));
+                    txCtcssDcs = caps?.diagnostics?.decodeCTCSSDCS(channelBytes.slice(0x23, 0x25)) ?? txCtcssDcs;
                   } catch (e) {
                     // Ignore
                   }
@@ -3331,8 +3337,8 @@ export const DiagnosticsTab: React.FC = () => {
                     let rxFreq = 0;
                     let txFreq = 0;
                     try {
-                      rxFreq = decodeBCDFrequency(channelBytes.slice(0x10, 0x14));
-                      txFreq = decodeBCDFrequency(channelBytes.slice(0x14, 0x18));
+                      rxFreq = caps?.diagnostics?.decodeBCDFrequency(channelBytes.slice(0x10, 0x14)) ?? 0;
+                      txFreq = caps?.diagnostics?.decodeBCDFrequency(channelBytes.slice(0x14, 0x18)) ?? 0;
                     } catch (e) {
                       // Ignore
                     }
@@ -3373,14 +3379,14 @@ export const DiagnosticsTab: React.FC = () => {
 
                     let rxCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
                     try {
-                      rxCtcssDcs = decodeCTCSSDCS(channelBytes.slice(0x21, 0x23));
+                      rxCtcssDcs = caps?.diagnostics?.decodeCTCSSDCS(channelBytes.slice(0x21, 0x23)) ?? rxCtcssDcs;
                     } catch (e) {
                       // Ignore
                     }
 
                     let txCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
                     try {
-                      txCtcssDcs = decodeCTCSSDCS(channelBytes.slice(0x23, 0x25));
+                      txCtcssDcs = caps?.diagnostics?.decodeCTCSSDCS(channelBytes.slice(0x23, 0x25)) ?? txCtcssDcs;
                     } catch (e) {
                       // Ignore
                     }
@@ -3747,14 +3753,14 @@ export const DiagnosticsTab: React.FC = () => {
                     WARN: 'text-yellow-400',
                     INFO: 'text-blue-400',
                     DEBUG: 'text-green-400',
-                    VERBOSE: 'text-gray-400',
+                    VERBOSE: 'text-cool-gray',
                   };
                   const levelBg = {
                     ERROR: 'bg-red-900/20',
                     WARN: 'bg-yellow-900/20',
                     INFO: 'bg-blue-900/20',
                     DEBUG: 'bg-green-900/20',
-                    VERBOSE: 'bg-gray-900/20',
+                    VERBOSE: 'bg-deep-gray/30',
                   };
 
                   return (
@@ -3765,14 +3771,14 @@ export const DiagnosticsTab: React.FC = () => {
                         log.level === 'WARN' ? 'border-yellow-500' :
                         log.level === 'INFO' ? 'border-blue-500' :
                         log.level === 'DEBUG' ? 'border-green-500' :
-                        'border-gray-500'
+                        'border-neon-cyan border-opacity-30'
                       }`}
                     >
                       <div className="flex items-start gap-2">
                         <span className={`${levelColors[log.level]} font-semibold min-w-[60px]`}>
                           {log.level}
                         </span>
-                        <span className="text-gray-500 min-w-[80px]">{timestamp}</span>
+                        <span className="text-cool-gray min-w-[80px]">{timestamp}</span>
                         {log.context && (
                           <span className="text-purple-400 min-w-[100px]">[{log.context}]</span>
                         )}

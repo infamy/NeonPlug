@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react';
-import { DM32UVProtocol } from '../protocol/dm32uv/protocol';
+import type { RadioProtocol } from '../types/radio';
+import { createDefaultProtocol } from '../radios';
+import { getCapabilitiesForModel } from '../radios/capabilities';
 import type { Contact } from '../models/Contact';
 import { useRadioStore } from '../store/radioStore';
 import { useChannelsStore } from '../store/channelsStore';
@@ -63,7 +65,7 @@ export function useRadioConnection() {
     setError(null);
     setConnectionError(null);
     
-    let protocol: DM32UVProtocol | null = null;
+    let protocol: RadioProtocol | null = null;
 
     // Define steps once - this is the single source of truth
     // Use the exported READ_STEPS array (single source of truth)
@@ -71,7 +73,7 @@ export function useRadioConnection() {
 
     try {
       // Create protocol instance
-      protocol = new DM32UVProtocol();
+      protocol = createDefaultProtocol();
       
       // Set up progress callback that forwards to our callback
       protocol.onProgress = (progress, message) => {
@@ -92,7 +94,7 @@ export function useRadioConnection() {
       // Step 4: Bulk read all required blocks upfront
       // This will read all blocks and then disconnect from the radio
       onProgress?.(15, 'Reading all memory blocks...', steps[3]);
-      await protocol.bulkReadRequiredBlocks();
+      await (protocol as any).bulkReadRequiredBlocks();
       
       // Connection is now closed - all data is in cache
       // All parsing happens from cached blocks, no connection needed
@@ -152,11 +154,11 @@ export function useRadioConnection() {
 
       // Read quick messages (optional - don't fail if missing)
       try {
-        const messages = await protocol.readQuickMessages();
+        const messages = await (protocol as any).readQuickMessages();
         setMessages(messages);
         // Store raw message data for debug export
         const rawDataMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
-        for (const [index, rawData] of protocol.rawMessageData.entries()) {
+        for (const [index, rawData] of (protocol as any).rawMessageData.entries()) {
           rawDataMap.set(index, rawData);
         }
         setRawMessageData(rawDataMap);
@@ -171,7 +173,7 @@ export function useRadioConnection() {
         setRadioIds(radioIds);
         // Store raw radio ID data for debug export
         const rawIdDataMap = new Map<number, { data: Uint8Array; idIndex: number; offset: number }>();
-        for (const [index, rawData] of protocol.rawDMRRadioIDData.entries()) {
+        for (const [index, rawData] of (protocol as any).rawDMRRadioIDData.entries()) {
           rawIdDataMap.set(index, rawData);
         }
         setRawRadioIdData(rawIdDataMap);
@@ -182,7 +184,7 @@ export function useRadioConnection() {
 
       // Read calibration data (optional - don't fail if missing)
       try {
-        const calibration = await protocol.readCalibration();
+        const calibration = await (protocol as any).readCalibration();
         setCalibration(calibration);
       } catch (err) {
         // Calibration is optional - log error but don't fail the entire read
@@ -191,11 +193,11 @@ export function useRadioConnection() {
 
       // Read DMR RX Groups (optional - don't fail if missing)
       try {
-        const rxGroups = await protocol.readRXGroups();
+        const rxGroups = await (protocol as any).readRXGroups();
         setRXGroups(rxGroups);
         // Store raw DMR RX group data for debug export
         const rawGroupDataMap = new Map<number, { data: Uint8Array; groupIndex: number; offset: number }>();
-        for (const [index, rawData] of protocol.rawRXGroupData.entries()) {
+        for (const [index, rawData] of (protocol as any).rawRXGroupData.entries()) {
           rawGroupDataMap.set(index, rawData);
         }
         setRawGroupData(rawGroupDataMap);
@@ -205,7 +207,7 @@ export function useRadioConnection() {
 
       // Read Talk Groups (metadata 0x44)
       try {
-        const quickContacts = await protocol.readQuickContacts();
+        const quickContacts = await (protocol as any).readQuickContacts();
         setQuickContacts(quickContacts);
       } catch (err) {
         console.warn('Could not read Talk Groups:', err);
@@ -232,7 +234,7 @@ export function useRadioConnection() {
 
         // Read Digital Emergency Systems
         try {
-          const digitalEmergency = await protocol.readDigitalEmergencies();
+          const digitalEmergency = await (protocol as any).readDigitalEmergencies();
           if (digitalEmergency) {
             setDigitalEmergencies(digitalEmergency.systems);
             setDigitalEmergencyConfig(digitalEmergency.config);
@@ -243,7 +245,7 @@ export function useRadioConnection() {
 
         // Read Analog Emergency Systems
         try {
-          const analogEmergencies = await protocol.readAnalogEmergencies();
+          const analogEmergencies = await (protocol as any).readAnalogEmergencies();
           if (analogEmergencies) {
             setAnalogEmergencies(analogEmergencies);
           }
@@ -287,7 +289,7 @@ export function useRadioConnection() {
         try {
           onProgress?.(5, 'Retrying with port selection...', steps[0]);
           // Create a new protocol instance to ensure clean state
-          protocol = new DM32UVProtocol();
+          protocol = createDefaultProtocol();
           protocol.onProgress = (progress, message) => {
             onProgress?.(progress, message);
           };
@@ -303,7 +305,7 @@ export function useRadioConnection() {
           setConnected(true);
           
           onProgress?.(15, 'Reading all memory blocks...', steps[3]);
-          await protocol.bulkReadRequiredBlocks();
+          await (protocol as any).bulkReadRequiredBlocks();
           
           onProgress?.(20, 'Parsing channels from cache...', steps[4]);
           const channels = await protocol.readChannels();
@@ -342,10 +344,10 @@ export function useRadioConnection() {
           }
           
           try {
-            const messages = await protocol.readQuickMessages();
+            const messages = await (protocol as any).readQuickMessages();
             setMessages(messages);
             const rawDataMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
-            for (const [index, rawData] of protocol.rawMessageData.entries()) {
+            for (const [index, rawData] of (protocol as any).rawMessageData.entries()) {
               rawDataMap.set(index, rawData);
             }
             setRawMessageData(rawDataMap);
@@ -364,7 +366,7 @@ export function useRadioConnection() {
           }
           
           try {
-            const digitalEmergencies = await protocol.readDigitalEmergencies();
+            const digitalEmergencies = await (protocol as any).readDigitalEmergencies();
             if (digitalEmergencies) {
               setDigitalEmergencies(digitalEmergencies.systems);
               setDigitalEmergencyConfig(digitalEmergencies.config);
@@ -383,7 +385,7 @@ export function useRadioConnection() {
           }
           
           try {
-            const calibration = await protocol.readCalibration();
+            const calibration = await (protocol as any).readCalibration();
             if (calibration) {
               setCalibration(calibration);
             }
@@ -392,7 +394,7 @@ export function useRadioConnection() {
           }
           
           try {
-            const rxGroups = await protocol.readRXGroups();
+            const rxGroups = await (protocol as any).readRXGroups();
             if (rxGroups) {
               setRXGroups(rxGroups);
             }
@@ -402,7 +404,7 @@ export function useRadioConnection() {
 
           // Read Talk Groups
           try {
-            const quickContacts = await protocol.readQuickContacts();
+            const quickContacts = await (protocol as any).readQuickContacts();
             if (quickContacts) {
               setQuickContacts(quickContacts);
             }
@@ -411,7 +413,7 @@ export function useRadioConnection() {
           }
           
           try {
-            const analogEmergencies = await protocol.readAnalogEmergencies();
+            const analogEmergencies = await (protocol as any).readAnalogEmergencies();
             if (analogEmergencies) {
               setAnalogEmergencies(analogEmergencies);
             }
@@ -484,11 +486,11 @@ export function useRadioConnection() {
     setIsConnecting(true);
     setError(null);
     
-    let protocol: DM32UVProtocol | null = null;
+    let protocol: RadioProtocol | null = null;
 
     try {
       // Create protocol instance
-      protocol = new DM32UVProtocol();
+      protocol = createDefaultProtocol();
       
       // Set up progress callback
       protocol.onProgress = (progress, message) => {
@@ -544,9 +546,9 @@ export function useRadioConnection() {
   ) => {
     setIsConnecting(true);
     setError(null);
-    let protocol: DM32UVProtocol | null = null;
+    let protocol: RadioProtocol | null = null;
     try {
-      protocol = new DM32UVProtocol();
+      protocol = createDefaultProtocol();
       protocol.onProgress = (progress, message) => {
         onProgress?.(progress, message);
       };
@@ -559,7 +561,7 @@ export function useRadioConnection() {
         setConnected(true);
       }
       onProgress?.(10, 'Reading boot image from radio...');
-      const raw = await protocol.readBootImage();
+      const raw = await (protocol as any).readBootImage();
       setBootImageRaw(raw);
       const parsed = parseBootImageHeader(raw);
       setBootImageDescription(parsed.description || null);
@@ -587,9 +589,9 @@ export function useRadioConnection() {
   ) => {
     setIsConnecting(true);
     setError(null);
-    let protocol: DM32UVProtocol | null = null;
+    let protocol: RadioProtocol | null = null;
     try {
-      protocol = new DM32UVProtocol();
+      protocol = createDefaultProtocol();
       protocol.onProgress = (progress, message) => {
         onProgress?.(progress, message);
       };
@@ -602,7 +604,7 @@ export function useRadioConnection() {
         setConnected(true);
       }
       onProgress?.(10, 'Writing boot image to radio...');
-      await protocol.writeBootImage(data);
+      await (protocol as any).writeBootImage(data);
       setBootImageRaw(data);
       const parsed = parseBootImageHeader(data);
       setBootImageDescription(parsed.description || null);
@@ -631,11 +633,11 @@ export function useRadioConnection() {
     setIsConnecting(true);
     setError(null);
     
-    let protocol: DM32UVProtocol | null = null;
+    let protocol: RadioProtocol | null = null;
 
     try {
       // Create protocol instance
-      protocol = new DM32UVProtocol();
+      protocol = createDefaultProtocol();
       
       // Set up progress callback
       protocol.onProgress = (progress, message) => {
@@ -689,14 +691,13 @@ export function useRadioConnection() {
     setError(null);
     setConnectionError(null);
     
-    let protocol: DM32UVProtocol | null = null;
+    let protocol: RadioProtocol | null = null;
     const steps = WRITE_CHANNELS_STEPS;
 
     try {
       // Filter channels to only include those with valid frequencies
-      // VHF: 87-174 MHz
-      // UHF: 400-470 MHz
-      const validChannels = channels.filter(ch => isValidChannelFrequency(ch));
+      const bandLimits = getCapabilitiesForModel(radioInfo?.model)?.bandLimits;
+      const validChannels = channels.filter(ch => isValidChannelFrequency(ch, bandLimits));
       const filteredCount = channels.length - validChannels.length;
       
       if (filteredCount > 0) {
@@ -717,7 +718,7 @@ export function useRadioConnection() {
       })).filter(scanList => scanList.channels.length > 0); // Remove empty scan lists
       
       // Create protocol instance
-      protocol = new DM32UVProtocol();
+      protocol = createDefaultProtocol();
       
       // Restore cache from store if available (from previous read operation)
       // Read directly from store state to avoid hook reactivity issues
@@ -729,7 +730,7 @@ export function useRadioConnection() {
         // Create new Maps to ensure we have proper copies
         const dataCopy = new Map<number, Uint8Array>(storeBlockData);
         const metadataCopy = new Map<number, { metadata: number; type: string }>(storeBlockMetadata);
-        protocol.restoreCacheFromStore(dataCopy, metadataCopy);
+        (protocol as any).restoreCacheFromStore(dataCopy, metadataCopy);
       } else {
         console.warn('[Connection] Store cache is empty - will need to read all blocks from radio');
       }
@@ -748,21 +749,21 @@ export function useRadioConnection() {
       
       // Step 3: Get radio info
       onProgress?.(10, 'Reading radio information...', steps[2]);
-      const radioInfo = await protocol.getRadioInfo();
+      const connectedRadioInfo = await protocol.getRadioInfo();
       
-      setRadioInfo(radioInfo);
+      setRadioInfo(connectedRadioInfo);
       setConnected(true);
       
       // Step 4: Write channels, zones, and scan lists (using filtered data)
       onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
-      await protocol.writeAllData(validChannels, filteredZones, filteredScanLists);
+      await (protocol as any).writeAllData(validChannels, filteredZones, filteredScanLists);
       
       // Step 5: Write Talk Groups if they have been loaded
       const quickContactsStore = useQuickContactsStore.getState();
       const quickContacts = quickContactsStore.contacts;
       if (quickContacts && quickContacts.length > 0) {
         onProgress?.(90, `Writing ${quickContacts.length} talk group(s) to radio...`, steps[4]);
-        await protocol.writeQuickContacts(quickContacts);
+        await (protocol as any).writeQuickContacts(quickContacts);
       }
 
       // Step 5.5: Write Quick Messages if they have been loaded
@@ -770,7 +771,7 @@ export function useRadioConnection() {
       const quickMessages = quickMessagesStore.messages;
       if (quickMessages && quickMessages.length > 0) {
         onProgress?.(92, `Writing ${quickMessages.length} quick message(s) to radio...`, steps[4]);
-        await protocol.writeQuickMessages(quickMessages);
+        await (protocol as any).writeQuickMessages(quickMessages);
       }
 
       // Step 5.6: Write RX Groups if they have been loaded
@@ -778,7 +779,7 @@ export function useRadioConnection() {
       const rxGroups = rxGroupsStore.groups;
       if (rxGroups && rxGroups.length > 0 && rxGroupsStore.groupsLoaded) {
         onProgress?.(93, `Writing ${rxGroups.length} RX group(s) to radio...`, steps[4]);
-        await protocol.writeRXGroups(rxGroups);
+        await (protocol as any).writeRXGroups(rxGroups);
       }
 
       // Step 5.7: Write DMR Radio IDs if they have been loaded
@@ -796,7 +797,7 @@ export function useRadioConnection() {
 
       if (radioSettings && changedFields.length > 0) {
         onProgress?.(95, `Writing ${changedFields.length} changed setting(s) to radio...`, steps[4]);
-        await protocol.writeRadioSettings(radioSettings, changedFields);
+        await protocol.writeRadioSettings(radioSettings, { changedFields });
         // Clear changes after successful write
         radioSettingsStore.clearChanges();
       }
@@ -855,7 +856,7 @@ export function useRadioConnection() {
         setIsConnecting(false);
       }
     }
-  }, [setConnected, setRadioInfo, setWriteBlockData, setZoneComparisonData, setConnectionError]);
+  }, [radioInfo, setConnected, setRadioInfo, setWriteBlockData, setZoneComparisonData, setConnectionError]);
 
   return {
     isConnecting,

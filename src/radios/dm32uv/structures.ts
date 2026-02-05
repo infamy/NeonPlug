@@ -1,14 +1,98 @@
 /**
- * DM-32UV Data Structure Parsing
- * Parses channel, zone, and contact structures from radio memory
+ * DM-32UV Data Structure Parsing and Encoding
+ * Parses/encodes channel, zone, contact, and settings structures; BCD frequency and CTCSS/DCS.
  */
 
 import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, CalibrationData, RXGroup, EncryptionKey, QuickContact } from '../../models';
 import { generateZoneId } from '../../utils/zoneHelpers';
-import { decodeBCDFrequency, decodeCTCSSDCS, encodeBCDFrequency, encodeCTCSSDCS } from './encoding';
 import { OFFSET, BLOCK_SIZE, LIMITS, METADATA } from './constants';
 import { createDefaultChannel } from '../../utils/channelHelpers';
-import { log } from './logger';
+import { log } from '../../utils/protocolLogger';
+
+// --- BCD frequency and CTCSS/DCS encoding (inlined from encoding.ts) ---
+
+export function decodeBCDFrequency(data: Uint8Array): number {
+  if (data.length < 4) {
+    throw new Error('BCD frequency must be 4 bytes');
+  }
+  const bcd = [data[3], data[2], data[1], data[0]];
+  let freqInt = 0;
+  for (let i = 0; i < 4; i++) {
+    const high = (bcd[i] >> 4) & 0x0F;
+    const low = bcd[i] & 0x0F;
+    freqInt = freqInt * 100 + high * 10 + low;
+  }
+  return freqInt / 100000.0;
+}
+
+export function encodeBCDFrequency(frequency: number): Uint8Array {
+  const freqInt = Math.round(frequency * 100000);
+  const bcd: number[] = [];
+  let temp = freqInt;
+  for (let i = 3; i >= 0; i--) {
+    const low = temp % 10;
+    temp = Math.floor(temp / 10);
+    const high = temp % 10;
+    temp = Math.floor(temp / 10);
+    bcd[i] = (high << 4) | low;
+  }
+  return new Uint8Array([bcd[3], bcd[2], bcd[1], bcd[0]]);
+}
+
+export interface CTCSSDCSResult {
+  type: 'CTCSS' | 'DCS' | 'None';
+  value?: number;
+  polarity?: 'N' | 'P';
+}
+
+export function decodeCTCSSDCS(data: Uint8Array): CTCSSDCSResult {
+  if (data.length < 2) {
+    return { type: 'None' };
+  }
+  const low = data[0];
+  const high = data[1];
+  if (low === 0xFF && high === 0xFF) {
+    return { type: 'None' };
+  }
+  if (high >= 0x80) {
+    const isInverted = high >= 0xC0;
+    const highNibble = high & 0x0F;
+    const code = (highNibble << 8) | low;
+    const polarity = isInverted ? 'P' : 'N';
+    return { type: 'DCS', value: code, polarity };
+  }
+  const hundreds = (high >> 4) & 0x0F;
+  const tens = high & 0x0F;
+  const ones = (low >> 4) & 0x0F;
+  const decimalPart = low & 0x0F;
+  const frequency = (hundreds * 100 + tens * 10 + ones) + (decimalPart / 10.0);
+  if (frequency === 0) {
+    return { type: 'None' };
+  }
+  return { type: 'CTCSS', value: frequency };
+}
+
+export function encodeCTCSSDCS(ctcssDcs: CTCSSDCSResult): Uint8Array {
+  if (ctcssDcs.type === 'None' || ctcssDcs.value === undefined) {
+    return new Uint8Array([0x00, 0x00]);
+  }
+  if (ctcssDcs.type === 'DCS') {
+    const code = ctcssDcs.value;
+    const polarityBit = ctcssDcs.polarity === 'P' ? 0x01 : 0x00;
+    return new Uint8Array([code, 0x80 | polarityBit]);
+  }
+  const frequency = ctcssDcs.value;
+  const integerPart = Math.floor(frequency);
+  const hundreds = Math.floor(integerPart / 100);
+  const tens = Math.floor((integerPart % 100) / 10);
+  const ones = integerPart % 10;
+  const decimalPart = Math.round((frequency - integerPart) * 10);
+  const low = (ones << 4) | decimalPart;
+  const high = (hundreds << 4) | tens;
+  return new Uint8Array([low, high]);
+}
+
+// --- Structure parsing and encoding ---
 
 /**
  * Calculate the block offset for a channel's flag byte

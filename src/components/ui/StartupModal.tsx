@@ -1,5 +1,6 @@
 import React from 'react';
 import { Button } from './Button';
+import { DM32_MODEL_IDS } from '../../radios';
 import { isWebSerialSupported, getSupportedBrowsers } from '../../utils/browserSupport';
 
 const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
@@ -31,7 +32,8 @@ export const StartupModal: React.FC<StartupModalProps> = ({
       >
         <div className="text-center mb-6">
           <h1 className="text-4xl font-bold text-neon-cyan mb-2">NEONPLUG</h1>
-          <p className="text-cool-gray text-sm">DM-32UV Channel Programming Software</p>
+          <p className="text-cool-gray text-sm">Channel programming software</p>
+          <p className="text-cool-gray text-xs mt-1">Supports: {DM32_MODEL_IDS.join(', ')}</p>
         </div>
 
         <div className="space-y-4 mb-6">
@@ -58,7 +60,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           <Button
             variant="primary"
             onClick={onReadFromRadio}
-            className="w-full py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-600 disabled:text-gray-400 disabled:shadow-none"
+            className="w-full py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-deep-gray disabled:text-cool-gray disabled:shadow-none"
             glow={webSerialSupported}
             disabled={!webSerialSupported}
             title={!webSerialSupported ? 'Web Serial API not supported in this browser' : 'Read codeplug from connected radio'}

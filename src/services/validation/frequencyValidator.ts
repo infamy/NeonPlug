@@ -1,5 +1,7 @@
 import type { RadioSettings } from '../../models/RadioSettings';
 import type { Channel } from '../../models/Channel';
+import type { RadioBandLimits } from '../../types/radioCapabilities';
+import { DEFAULT_BAND_LIMITS } from '../../types/radioCapabilities';
 
 interface SettingsWithBandLimits {
   bandLimits: {
@@ -10,33 +12,30 @@ interface SettingsWithBandLimits {
   };
 }
 
-// DM-32UV supported frequency ranges
-// VHF: 87-174 MHz
-// UHF: 400-470 MHz
-const VHF_MIN = 87;
-const VHF_MAX = 174;
-const UHF_MIN = 400;
-const UHF_MAX = 470;
-
 /**
- * Check if a frequency is in the supported ranges (87-174 MHz or 400-470 MHz)
+ * Check if a frequency is in the supported ranges.
+ * When limits is provided (e.g. from getCapabilitiesForModel), uses those; otherwise uses default ranges.
  */
-export function isValidFrequencyRange(frequency: number): boolean {
-  const isVHF = frequency >= VHF_MIN && frequency <= VHF_MAX;
-  const isUHF = frequency >= UHF_MIN && frequency <= UHF_MAX;
+export function isValidFrequencyRange(frequency: number, limits?: RadioBandLimits | null): boolean {
+  const resolved = limits ?? DEFAULT_BAND_LIMITS;
+  const vhfMin = resolved.vhfMin;
+  const vhfMax = resolved.vhfMax;
+  const uhfMin = resolved.uhfMin;
+  const uhfMax = resolved.uhfMax;
+  const isVHF = frequency >= vhfMin && frequency <= vhfMax;
+  const isUHF = frequency >= uhfMin && frequency <= uhfMax;
   return isVHF || isUHF;
 }
 
 /**
- * Check if a channel's frequencies are within supported ranges
- * VHF: 87-174 MHz
- * UHF: 400-470 MHz
+ * Check if a channel's frequencies are within supported ranges.
+ * When limits is provided (e.g. from getCapabilitiesForModel(radioInfo?.model)?.bandLimits), uses those.
  */
-export function isValidChannelFrequency(channel: Channel): boolean {
+export function isValidChannelFrequency(channel: Channel, limits?: RadioBandLimits | null): boolean {
   if (channel.rxFrequency <= 0 || channel.txFrequency <= 0) return false;
-  
-  return isValidFrequencyRange(channel.rxFrequency) && 
-         isValidFrequencyRange(channel.txFrequency);
+
+  return isValidFrequencyRange(channel.rxFrequency, limits) &&
+         isValidFrequencyRange(channel.txFrequency, limits);
 }
 
 export function isValidFrequency(

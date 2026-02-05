@@ -4,7 +4,6 @@ import { useRadioStore } from '../../store/radioStore';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ContactsTable } from './ContactsTable';
 import { ProgressBar } from '../ui/ProgressBar';
-import { getContactCapacityWithFallback } from '../../utils/firmware';
 import { COUNTRIES_BY_REGION, type CountryRegion } from '../../constants/countries';
 import type { Contact } from '../../models/Contact';
 
@@ -217,12 +216,7 @@ export const ContactsTab: React.FC = () => {
   const [isReading, setIsReading] = useState(false);
   const [isWriting, setIsWriting] = useState(false);
   
-  const contactCapacity = radioInfo 
-    ? getContactCapacityWithFallback(
-        radioInfo.vframes.get(0x0F),
-        radioInfo.firmware
-      )
-    : 50000;
+  const contactCapacity = radioInfo?.maxContacts ?? 50000;
 
   // Estimate time based on 150k contacts = 6 minutes
   const estimateTime = (contactCount: number): string => {

@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import { useZonesStore } from '../../store/zonesStore';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { Zone } from '../../models/Zone';
+import { ListDetailLayout } from '../ui/ListDetailLayout';
+import { Card } from '../ui/Card';
+import { SectionTitle } from '../ui/SectionTitle';
+import { EmptyState } from '../ui/EmptyState';
 
 export const ZonesList: React.FC = () => {
   const { zones, selectedZoneId, setSelectedZoneId, addZone, deleteZone, renameZone } = useZonesStore();
@@ -44,159 +48,145 @@ export const ZonesList: React.FC = () => {
     }
   };
 
-  const handleCancelEdit = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleCancelEdit = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setEditingZoneId(null);
     setEditZoneName('');
   };
 
   const selectedZoneData = zones.find(z => z.id === selectedZoneId);
 
-  return (
-    <div className="grid grid-cols-2 gap-4 h-full">
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan flex flex-col h-full">
-        <div className="p-4 border-b border-neon-cyan border-opacity-30 flex justify-between items-center flex-shrink-0">
-          <div>
-            <h3 className="text-neon-cyan font-bold">Zones</h3>
-            <p className="text-cool-gray text-xs mt-1">{zones.length}/250 zones</p>
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newZoneName}
-              onChange={(e) => setNewZoneName(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleAddZone()}
-              placeholder="Zone name..."
-              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-32"
-              maxLength={10}
-              disabled={zones.length >= 250}
-            />
-            <button
-              onClick={handleAddZone}
-              disabled={zones.length >= 250 || !newZoneName.trim()}
-              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded font-medium hover:bg-opacity-90 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+  const listContent =
+    zones.length === 0 ? (
+      <EmptyState
+        message="No zones created"
+        secondary="Create a zone to organize channels"
+      />
+    ) : (
+      <div className="divide-y divide-neon-cyan divide-opacity-20">
+        {zones
+          .filter(zone => zone.name && zone.name.trim().length > 0)
+          .map((zone) => (
+            <div
+              key={zone.id}
+              onClick={() => editingZoneId !== zone.id && setSelectedZoneId(zone.id)}
+              className={`p-3 transition-colors ${
+                editingZoneId === zone.id
+                  ? 'bg-deep-gray-light'
+                  : selectedZoneId === zone.id
+                    ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan cursor-pointer'
+                    : 'hover:bg-deep-gray hover:bg-opacity-50 cursor-pointer'
+              }`}
             >
-              Add
-            </button>
-          </div>
-        </div>
-        <div className="overflow-y-auto flex-1 min-h-0">
-          {zones.length === 0 ? (
-            <div className="p-8 text-center">
-              <p className="text-cool-gray">No zones created</p>
-              <p className="text-cool-gray text-sm mt-2">Create a zone to organize channels</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-neon-cyan divide-opacity-20">
-              {zones
-                .filter(zone => zone.name && zone.name.trim().length > 0) // Filter out empty zones
-                .map((zone) => (
-                <div
-                  key={zone.id} // Use unique ID
-                  onClick={() => editingZoneId !== zone.id && setSelectedZoneId(zone.id)}
-                  className={`p-3 transition-colors ${
-                    editingZoneId === zone.id 
-                      ? 'bg-deep-gray-light'
-                      : selectedZoneId === zone.id
-                      ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan cursor-pointer'
-                      : 'hover:bg-deep-gray hover:bg-opacity-50 cursor-pointer'
-                  }`}
-                >
-                  <div className="flex justify-between items-center mb-1">
-                    {editingZoneId === zone.id ? (
-                      <div className="flex items-center gap-2 flex-1">
-                        <input
-                          type="text"
-                          value={editZoneName}
-                          onChange={(e) => setEditZoneName(e.target.value)}
+              <div className="flex justify-between items-center mb-1">
+                {editingZoneId === zone.id ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <input
+                      type="text"
+                      value={editZoneName}
+                      onChange={(e) => setEditZoneName(e.target.value)}
                           onKeyPress={(e) => {
                             if (e.key === 'Enter') {
                               handleSaveEdit(zone.id);
                             } else if (e.key === 'Escape') {
-                              handleCancelEdit(e as any);
+                              handleCancelEdit();
                             }
                           }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex-1 bg-transparent border border-neon-cyan rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                          maxLength={10}
-                          autoFocus
-                        />
-                        <button
-                          onClick={(e) => handleSaveEdit(zone.id, e)}
-                          className="px-2 py-1 bg-neon-cyan text-dark-charcoal rounded text-xs hover:bg-opacity-90"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={handleCancelEdit}
-                          className="px-2 py-1 bg-cool-gray bg-opacity-30 text-cool-gray rounded text-xs hover:bg-opacity-50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <span className="text-white font-medium">{zone.name}</span>
-                        <span className="text-cool-gray text-xs">
-                          {zone.channels.length} channel{zone.channels.length !== 1 ? 's' : ''}
-                        </span>
-                      </>
-                    )}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-1 bg-transparent border border-neon-cyan rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      maxLength={10}
+                      autoFocus
+                    />
+                    <button
+                      onClick={(e) => handleSaveEdit(zone.id, e)}
+                      className="px-2 py-1 bg-neon-cyan text-dark-charcoal rounded text-xs hover:bg-opacity-90"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={handleCancelEdit}
+                      className="px-2 py-1 bg-cool-gray bg-opacity-30 text-cool-gray rounded text-xs hover:bg-opacity-50"
+                    >
+                      Cancel
+                    </button>
                   </div>
-                  {editingZoneId !== zone.id && (
-                    <>
-                      {zone.channels.length > 0 && (
-                        <div className="text-cool-gray text-xs mb-2">
-                          Channels: {zone.channels.slice(0, 5).join(', ')}
-                          {zone.channels.length > 5 && ` +${zone.channels.length - 5} more`}
-                        </div>
-                      )}
-                      <div className="flex gap-2 justify-end">
-                        <button
-                          onClick={(e) => handleStartEdit(zone.id, zone.name, e)}
-                          className="px-2 py-0.5 bg-neon-cyan bg-opacity-50 text-neon-cyan rounded text-xs hover:bg-opacity-70 border border-neon-cyan border-opacity-50"
-                        >
-                          Rename
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm(`Delete zone "${zone.name}"? This cannot be undone.`)) {
-                              deleteZone(zone.id);
-                            }
-                          }}
-                          className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </>
+                ) : (
+                  <>
+                    <span className="text-white font-medium">{zone.name}</span>
+                    <span className="text-cool-gray text-xs">
+                      {zone.channels.length} channel{zone.channels.length !== 1 ? 's' : ''}
+                    </span>
+                  </>
+                )}
+              </div>
+              {editingZoneId !== zone.id && (
+                <>
+                  {zone.channels.length > 0 && (
+                    <div className="text-cool-gray text-xs mb-2">
+                      Channels: {zone.channels.slice(0, 5).join(', ')}
+                      {zone.channels.length > 5 && ` +${zone.channels.length - 5} more`}
+                    </div>
                   )}
-                </div>
-              ))}
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={(e) => handleStartEdit(zone.id, zone.name, e)}
+                      className="px-2 py-0.5 bg-neon-cyan bg-opacity-50 text-neon-cyan rounded text-xs hover:bg-opacity-70 border border-neon-cyan border-opacity-50"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Delete zone "${zone.name}"? This cannot be undone.`)) {
+                          deleteZone(zone.id);
+                        }
+                      }}
+                      className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
-          )}
-        </div>
+          ))}
       </div>
+    );
 
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan flex flex-col h-full">
-        <div className="p-4 border-b border-neon-cyan border-opacity-30 flex-shrink-0">
-          <h3 className="text-neon-cyan font-bold">
-            {selectedZoneData ? `Zone: ${selectedZoneData.name}` : 'Select a Zone'}
-          </h3>
-        </div>
-        {selectedZoneData ? (
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <ZoneEditor zone={selectedZoneData} />
-          </div>
-        ) : (
-          <div className="p-8 text-center">
-            <p className="text-cool-gray">Select a zone to edit</p>
-            <p className="text-cool-gray text-sm mt-2">Zones group channels for easy access</p>
-          </div>
-        )}
+  const detailContent = (
+    <Card padding="none" className="flex flex-col h-full">
+      <div className="p-4 border-b border-neon-cyan border-opacity-30 flex-shrink-0">
+        <SectionTitle as="h3" size="md" bold>
+          {selectedZoneData ? `Zone: ${selectedZoneData.name}` : 'Select a Zone'}
+        </SectionTitle>
       </div>
-    </div>
+      {selectedZoneData ? (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <ZoneEditor zone={selectedZoneData} />
+        </div>
+      ) : (
+        <EmptyState
+          message="Select a zone to edit"
+          secondary="Zones group channels for easy access"
+        />
+      )}
+    </Card>
+  );
+
+  return (
+    <ListDetailLayout
+      listTitle="Zones"
+      listSubtitle={`${zones.length}/250 zones`}
+      addInputPlaceholder="Zone name..."
+      addInputValue={newZoneName}
+      onAddInputChange={setNewZoneName}
+      onAdd={handleAddZone}
+      addDisabled={zones.length >= 250}
+      addInputMaxLength={10}
+      listContent={listContent}
+      detailContent={detailContent}
+      fullHeight
+    />
   );
 };
 

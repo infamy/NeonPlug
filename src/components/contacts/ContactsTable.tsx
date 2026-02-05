@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useContactsStore } from '../../store/contactsStore';
+import { EmptyState } from '../ui/EmptyState';
+import { Card } from '../ui/Card';
 
 const CONTACTS_PER_PAGE = 100;
 
@@ -41,15 +43,17 @@ export const ContactsTable: React.FC = () => {
 
   if (contacts.length === 0) {
     return (
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-8 text-center">
-        <p className="text-cool-gray mb-4">No DMR contacts loaded</p>
-        <p className="text-cool-gray text-sm">Use Import to load contacts from CSV or connect to a radio to read contacts</p>
-      </div>
+      <Card>
+        <EmptyState
+          message="No DMR contacts loaded"
+          secondary="Use Import to load contacts from CSV or connect to a radio to read contacts"
+        />
+      </Card>
     );
   }
 
   return (
-    <div className="bg-deep-gray rounded-lg border border-neon-cyan overflow-x-auto flex flex-col h-full">
+    <Card padding="none" className="overflow-x-auto flex flex-col h-full">
       {/* Search Bar */}
       <div className="p-3 border-b border-neon-cyan border-opacity-20 flex-shrink-0">
         <div className="flex items-center gap-2">
@@ -78,12 +82,10 @@ export const ContactsTable: React.FC = () => {
       
       <div className="flex-1 overflow-y-auto">
         {filteredContacts.length === 0 ? (
-          <div className="p-8 text-center">
-            <p className="text-cool-gray mb-2">No contacts found</p>
-            {searchQuery && (
-              <p className="text-cool-gray text-sm">No contacts match "{searchQuery}"</p>
-            )}
-          </div>
+          <EmptyState
+            message="No contacts found"
+            secondary={searchQuery ? `No contacts match "${searchQuery}"` : undefined}
+          />
         ) : (
           <table className="w-full border-collapse text-xs">
             <thead className="sticky top-0 bg-dark-charcoal z-10">
@@ -152,7 +154,7 @@ export const ContactsTable: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 };
 

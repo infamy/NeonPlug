@@ -15,6 +15,8 @@ import { importChannelsFromChirpCSV, exportChannelsToChirpCSV, downloadCSV } fro
 import type { Channel } from '../../models';
 import type { Zone } from '../../models';
 import { Button } from '../ui/Button';
+import { Card } from '../ui/Card';
+import { SectionTitle } from '../ui/SectionTitle';
 
 export const SmartImportTab: React.FC = () => {
   const { channels, setChannels } = useChannelsStore();
@@ -712,15 +714,15 @@ export const SmartImportTab: React.FC = () => {
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-neon-cyan mb-2">Smart Import/Export</h2>
+        <SectionTitle as="h2" size="xl" bold className="text-2xl">Smart Import/Export</SectionTitle>
         <p className="text-cool-gray">
           Import channels from CHIRP CSV format or export your channels to CHIRP CSV format
         </p>
       </div>
 
       {/* Chirp CSV Import/Export Section */}
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Analog CHIRP CSV Import/Export</h3>
+      <Card padding="tight" className="mb-4">
+        <SectionTitle as="h3" size="lg" className="mb-4">Analog CHIRP CSV Import/Export</SectionTitle>
         <p className="text-sm text-cool-gray mb-4">
           Import or export analog channels in CHIRP CSV format for use with other radio programming software. Digital channels are not supported by CHIRP and will be excluded from exports.
         </p>
@@ -797,18 +799,18 @@ export const SmartImportTab: React.FC = () => {
             )}
           </div>
         )}
-      </div>
+      </Card>
 
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-neon-cyan mb-2">Channel Wizard</h2>
+        <SectionTitle as="h2" size="xl" bold className="text-2xl">Channel Wizard</SectionTitle>
         <p className="text-cool-gray">
           Find nearby repeaters and automatically generate channels and zones based on your location
         </p>
       </div>
 
       {/* Location-Based Search Section */}
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Location-Based Search</h3>
+      <Card padding="tight" className="mb-4">
+        <SectionTitle as="h3" size="lg" className="mb-4">Location-Based Search</SectionTitle>
         <p className="text-sm text-cool-gray mb-4">
           Search for nearby airports, TAFL entries, and DMR repeaters based on your location
         </p>
@@ -1010,17 +1012,17 @@ export const SmartImportTab: React.FC = () => {
             )}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Airport Results */}
       {airports.length > 0 && (
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-4">Airports</h3>
+      <Card padding="tight" className="mb-4">
+        <SectionTitle as="h3" size="lg" className="mb-4">Airports</SectionTitle>
           <>
             <div className="flex justify-between items-center mb-4">
-              <h4 className="text-md font-semibold text-neon-cyan">
+              <SectionTitle as="h4" size="md">
                 Found {airports.length} Airport{airports.length !== 1 ? 's' : ''}
-              </h4>
+              </SectionTitle>
               <div className="flex gap-2">
                 <button
                   onClick={handleSelectAllAirports}
@@ -1044,7 +1046,7 @@ export const SmartImportTab: React.FC = () => {
                   className={`border rounded p-3 cursor-pointer transition-colors ${
                     selectedAirports.has(index)
                       ? 'border-neon-cyan bg-neon-cyan bg-opacity-10'
-                      : 'border-gray-600 hover:border-gray-500'
+                      : 'border-neon-cyan border-opacity-30 hover:border-neon-cyan border-opacity-50'
                   }`}
                   onClick={() => handleToggleAirport(index)}
                 >
@@ -1128,13 +1130,13 @@ export const SmartImportTab: React.FC = () => {
               </>
             )}
           </>
-      </div>
+      </Card>
       )}
 
       {/* TAFL Results */}
       {taflEntries.length > 0 && (
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-4">TAFL Entries</h3>
+      <Card padding="tight" className="mb-4">
+        <SectionTitle as="h3" size="lg" className="mb-4">TAFL Entries</SectionTitle>
         
         <div className="mb-4">
           <label className="block text-sm text-cool-gray mb-2">Filter by Name/Code</label>
@@ -1148,10 +1150,10 @@ export const SmartImportTab: React.FC = () => {
         </div>
           <>
             <div className="flex justify-between items-center mb-4">
-              <h4 className="text-md font-semibold text-neon-cyan">
+              <SectionTitle as="h4" size="md">
                 {filteredTaflEntries.length} of {taflEntries.length} TAFL Entr{filteredTaflEntries.length !== 1 ? 'ies' : 'y'}
                 {taflSearchFilter.trim() && ` (filtered)`}
-              </h4>
+              </SectionTitle>
               <div className="flex gap-2">
                 <button
                   onClick={handleSelectAllFilteredTafl}
@@ -1210,7 +1212,7 @@ export const SmartImportTab: React.FC = () => {
                     className={`border rounded transition-colors ${
                       someSelected
                         ? 'border-neon-cyan bg-neon-cyan bg-opacity-10'
-                        : 'border-gray-600'
+                        : 'border-neon-cyan border-opacity-30'
                     }`}
                   >
                     {isGroup && (
@@ -1273,10 +1275,10 @@ export const SmartImportTab: React.FC = () => {
                           return (
                             <div
                               key={`${entry.c}|${entry.f}`}
-                              className={`border-t border-gray-600 p-3 cursor-pointer transition-colors ${
+                              className={`border-t border-neon-cyan border-opacity-20 p-3 cursor-pointer transition-colors ${
                                 isSelected
                                   ? 'bg-neon-cyan bg-opacity-5'
-                                  : 'hover:bg-gray-800'
+                                  : 'hover:bg-deep-gray'
                               }`}
                               onClick={handleToggleEntry}
                             >
@@ -1336,7 +1338,7 @@ export const SmartImportTab: React.FC = () => {
               </Button>
             )}
           </>
-      </div>
+      </Card>
       )}
 
       {/* Error Display */}
@@ -1356,8 +1358,8 @@ export const SmartImportTab: React.FC = () => {
 
       {/* DMR Repeater Results */}
       {rptrs.length > 0 && (
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-4">DMR Repeaters</h3>
+      <Card padding="tight" className="mb-4">
+        <SectionTitle as="h3" size="lg" className="mb-4">DMR Repeaters</SectionTitle>
           <>
             <div className="mb-4">
               <input
@@ -1370,7 +1372,7 @@ export const SmartImportTab: React.FC = () => {
             </div>
             
             <div className="flex justify-between items-center mb-4">
-              <h4 className="text-md font-semibold text-neon-cyan">
+              <SectionTitle as="h4" size="md">
                 {rptrs.filter(r => {
                   if (!rptrsSearchFilter.trim()) return true;
                   const filter = rptrsSearchFilter.toLowerCase();
@@ -1380,7 +1382,7 @@ export const SmartImportTab: React.FC = () => {
                          r.ipsc_network.toLowerCase().includes(filter);
                 }).length} of {rptrs.length} DMR Repeater{rptrs.length !== 1 ? 's' : ''}
                 {rptrsSearchFilter.trim() && ` (filtered)`}
-              </h4>
+              </SectionTitle>
               <div className="flex gap-2">
                 <button
                   onClick={handleSelectAllRptrs}
@@ -1415,7 +1417,7 @@ export const SmartImportTab: React.FC = () => {
                       className={`border rounded p-3 cursor-pointer transition-colors ${
                         selectedRptrs.has(originalIndex)
                           ? 'border-neon-cyan bg-neon-cyan bg-opacity-10'
-                          : 'border-gray-600 hover:border-gray-500'
+                          : 'border-neon-cyan border-opacity-30 hover:border-neon-cyan border-opacity-50'
                       }`}
                       onClick={() => handleToggleRptr(originalIndex)}
                     >
@@ -1499,12 +1501,12 @@ export const SmartImportTab: React.FC = () => {
               </div>
             )}
           </>
-      </div>
+      </Card>
       )}
 
       {/* Fixed Channels Section */}
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-4 mb-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-2">Fixed Channels</h3>
+      <Card padding="tight" className="mb-4">
+        <SectionTitle as="h3" size="lg" className="mb-2">Fixed Channels</SectionTitle>
         <p className="text-sm text-cool-gray mb-4">
           Add standard channel sets that are location-independent (FRS, GMRS, MURS, etc.)
         </p>
@@ -1519,7 +1521,7 @@ export const SmartImportTab: React.FC = () => {
                 className={`border rounded transition-colors ${
                   selectedFixedSets.has(set.name)
                     ? 'border-neon-cyan bg-neon-cyan bg-opacity-10'
-                    : 'border-gray-600 hover:border-gray-500'
+                    : 'border-neon-cyan border-opacity-30 hover:border-neon-cyan border-opacity-50'
                 }`}
               >
                 <div
@@ -1558,13 +1560,13 @@ export const SmartImportTab: React.FC = () => {
                 </div>
                 
                 {isExpanded && (
-                  <div className="border-t border-gray-600 p-3 bg-black bg-opacity-30">
+                  <div className="border-t border-neon-cyan border-opacity-20 p-3 bg-black bg-opacity-30">
                     <div className="text-sm text-cool-gray mb-2 font-semibold">Channels:</div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       {set.channels.map((channel, index) => (
                         <div
                           key={index}
-                          className="bg-deep-gray rounded p-2 border border-gray-700"
+                          className="bg-deep-gray rounded p-2 border border-neon-cyan border-opacity-20"
                         >
                           <div className="font-semibold text-neon-cyan">{channel.name}</div>
                           <div className="text-cool-gray">
@@ -1597,7 +1599,7 @@ export const SmartImportTab: React.FC = () => {
               : `Add ${selectedFixedSets.size} Channel Set${selectedFixedSets.size !== 1 ? 's' : ''}`}
           </Button>
         )}
-      </div>
+      </Card>
 
     </div>
   );

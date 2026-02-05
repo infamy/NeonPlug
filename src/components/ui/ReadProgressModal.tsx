@@ -105,9 +105,9 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
               </div>
             </div>
             
-            <div className="bg-gray-800 bg-opacity-50 border border-gray-700 rounded-lg p-4 mb-4">
-              <p className="text-gray-300 text-sm font-medium mb-2">Troubleshooting:</p>
-              <ul className="text-gray-400 text-xs space-y-1 list-disc list-inside">
+            <div className="bg-deep-gray border border-neon-cyan border-opacity-20 rounded-lg p-4 mb-4">
+              <p className="text-white text-sm font-medium mb-2">Troubleshooting:</p>
+              <ul className="text-cool-gray text-xs space-y-1 list-disc list-inside">
                 <li>Ensure radio is powered on</li>
                 <li>Check USB cable connection</li>
                 <li>Verify radio is in programming mode</li>
@@ -116,24 +116,24 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
               </ul>
             </div>
 
-            <div className="border border-gray-700 rounded-lg overflow-hidden">
+            <div className="border border-neon-cyan border-opacity-20 rounded-lg overflow-hidden">
               <button
                 type="button"
                 onClick={() => setDebugExpanded((e) => !e)}
-                className="w-full px-4 py-2 text-left text-sm text-gray-400 hover:text-gray-300 bg-gray-800 bg-opacity-50 hover:bg-gray-800 flex items-center justify-between"
+                className="w-full px-4 py-2 text-left text-sm text-cool-gray hover:text-white bg-deep-gray hover:bg-deep-gray flex items-center justify-between"
               >
                 <span>Debug Info</span>
-                <span className="text-gray-500">{debugExpanded ? '▼' : '▶'}</span>
+                <span className="text-cool-gray">{debugExpanded ? '▼' : '▶'}</span>
               </button>
               {debugExpanded && (
-                <div className="p-3 border-t border-gray-700 bg-deep-gray">
-                  <pre className="text-xs text-gray-400 overflow-auto max-h-48 mb-3 p-2 bg-black bg-opacity-30 rounded font-mono whitespace-pre-wrap break-all">
+                <div className="p-3 border-t border-neon-cyan border-opacity-20 bg-deep-gray">
+                  <pre className="text-xs text-cool-gray overflow-auto max-h-48 mb-3 p-2 bg-black bg-opacity-30 rounded font-mono whitespace-pre-wrap break-all">
                     {debugText}
                   </pre>
                   <button
                     type="button"
                     onClick={handleCopyDebug}
-                    className="px-3 py-1.5 text-xs bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
+                    className="px-3 py-1.5 text-xs bg-deep-gray border border-neon-cyan border-opacity-30 text-cool-gray rounded hover:bg-neon-cyan hover:text-dark-charcoal"
                   >
                     {copied ? 'Copied!' : 'Copy to clipboard'}
                   </button>
@@ -149,7 +149,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
 
         {!isError && (
           <div className="space-y-2">
-            <div className="text-sm text-gray-400 mb-3">Progress Steps:</div>
+            <div className="text-sm text-cool-gray mb-3">Progress Steps:</div>
             {steps.map((step, index) => {
               const stepProgress = steps.indexOf(currentStep);
               const isCompleted = index < stepProgress;
@@ -166,7 +166,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
                         ? 'bg-neon-cyan bg-opacity-20 border border-neon-cyan'
                         : isCompleted
                         ? 'bg-green-500 bg-opacity-10 border border-green-500 border-opacity-30'
-                        : 'bg-gray-800 bg-opacity-50 border border-gray-700'
+                        : 'bg-deep-gray border border-neon-cyan border-opacity-20'
                     }
                   `}
                 >
@@ -178,7 +178,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
                           ? 'bg-neon-cyan text-black'
                           : isCompleted
                           ? 'bg-green-500 text-black'
-                          : 'bg-gray-700 text-gray-400'
+                          : 'bg-deep-gray text-cool-gray'
                       }
                     `}
                   >
@@ -192,7 +192,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
                           ? 'text-neon-cyan font-medium'
                           : isCompleted
                           ? 'text-green-400'
-                          : 'text-gray-400'
+                          : 'text-cool-gray'
                       }
                     `}
                   >
@@ -213,7 +213,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
           {isError && onClose && (
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-gray-700 text-gray-300 font-semibold rounded hover:bg-gray-600 transition-all border border-gray-600"
+              className="px-4 py-2 bg-deep-gray text-cool-gray font-semibold rounded hover:bg-neon-cyan hover:text-dark-charcoal transition-all border border-neon-cyan border-opacity-30"
             >
               Close
             </button>

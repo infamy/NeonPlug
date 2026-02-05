@@ -8,7 +8,9 @@ export default {
     extend: {
       colors: {
         'neon-cyan': '#00FFF7',
+        'neon-cyan-bright': '#33FFF9',
         'neon-magenta': '#FF00FF',
+        'neon-magenta-bright': '#FF33FF',
         'electric-purple': '#9B30FF',
         'neon-yellow': '#FFF200',
         'dark-charcoal': '#121212',

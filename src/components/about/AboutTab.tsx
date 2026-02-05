@@ -1,5 +1,8 @@
 import React from 'react';
 import { useDebugStore } from '../../store/debugStore';
+import { Card } from '../ui/Card';
+import { SectionTitle } from '../ui/SectionTitle';
+import { Button } from '../ui/Button';
 
 export const AboutTab: React.FC = () => {
   const { debugMode, setDebugMode } = useDebugStore();
@@ -9,14 +12,14 @@ export const AboutTab: React.FC = () => {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-neon-cyan mb-2">About NeonPlug</h2>
         <p className="text-cool-gray">
-          Channel Programming Software for the Baofeng DM-32UV radio
+          Channel programming software. Supports: DM-32UV, DP570UV.
         </p>
       </div>
 
       <div className="space-y-6">
         {/* Offline Version */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Offline Version</h3>
+        <Card>
+          <SectionTitle>Offline Version</SectionTitle>
           <div className="space-y-4">
             <p className="text-cool-gray">
               Download a single-file version of NeonPlug that works completely offline. 
@@ -29,7 +32,7 @@ export const AboutTab: React.FC = () => {
             </ul>
             
             <div className="flex flex-col gap-3">
-              <button
+              <Button
                 onClick={async () => {
                   try {
                     // Try to download from GitHub Pages
@@ -61,20 +64,21 @@ export const AboutTab: React.FC = () => {
                     }
                   }
                 }}
-                className="inline-flex items-center justify-center px-6 py-3 bg-electric-purple text-white rounded-lg hover:bg-opacity-90 transition-colors font-semibold"
+                variant="primary"
+                className="inline-flex items-center justify-center px-6 py-3"
               >
                 📥 Download Offline Version
-              </button>
+              </Button>
               
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted">
                 Downloads the single-file HTML version. If the button doesn't work, visit the{' '}
-                <a href="https://infamy.github.io/NeonPlug/" target="_blank" rel="noopener noreferrer" className="text-electric-purple hover:text-neon-magenta underline">live version</a>{' '}
+                <a href="https://infamy.github.io/NeonPlug/" target="_blank" rel="noopener noreferrer" className="link-accent">live version</a>{' '}
                 and use your browser's "Save Page As" feature.
               </p>
             </div>
 
-            <div className="mt-4 p-4 bg-dark-charcoal rounded border border-neon-cyan border-opacity-30">
-              <h4 className="text-neon-cyan font-semibold mb-2 text-sm">Building Locally</h4>
+            <Card variant="subdued" className="mt-4 border-opacity-30">
+              <SectionTitle as="h4" size="sm">Building Locally</SectionTitle>
               <p className="text-cool-gray text-sm mb-2">
                 To build your own offline version from source:
               </p>
@@ -87,39 +91,39 @@ npm run build:single</code>
               <p className="text-cool-gray text-xs mt-2">
                 The single-file HTML will be in the <code className="text-neon-cyan">dist/index.html</code> file.
               </p>
-            </div>
+            </Card>
 
-            <div className="mt-4 p-4 bg-dark-charcoal rounded border border-neon-cyan border-opacity-30">
-              <h4 className="text-neon-cyan font-semibold mb-2 text-sm">Using the Offline Version</h4>
+            <Card variant="subdued" className="mt-4 border-opacity-30">
+              <SectionTitle as="h4" size="sm">Using the Offline Version</SectionTitle>
               <ul className="list-disc list-inside text-cool-gray text-sm space-y-1 ml-4">
                 <li>Simply open the downloaded <code className="text-neon-cyan">neonplug.html</code> file in any modern web browser</li>
                 <li>No server or internet connection required - everything is in one file</li>
                 <li>The Web Serial API will still work for connecting to your radio</li>
                 <li>All features work exactly the same as the online version</li>
               </ul>
-            </div>
+            </Card>
           </div>
-        </div>
+        </Card>
 
         {/* Project Info */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Project Information</h3>
+        <Card>
+          <SectionTitle>Project Information</SectionTitle>
           <div className="space-y-3 text-cool-gray">
             <p>
-              <span className="text-neon-cyan font-semibold">NeonPlug</span> is a web-based Channel Programming Software (CPS) 
-              for the Baofeng DM-32UV radio. Built with a modern cyberpunk neon-themed UI, it provides 
+              <span className="text-neon-cyan font-semibold">NeonPlug</span> is a web-based Channel Programming Software (CPS)
+              for supported radios (DM-32UV / DP570UV). Built with a modern cyberpunk neon-themed UI, it provides
               an intuitive interface for managing channels, zones, scan lists, contacts, and radio settings.
             </p>
             <p>
-              This software implements the DM-32UV serial protocol specification, enabling full read and write 
+              This software implements the DM-32UV serial protocol specification, enabling full read and write
               operations directly from your web browser using the Web Serial API.
             </p>
           </div>
-        </div>
+        </Card>
 
         {/* Links */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Links</h3>
+        <Card>
+          <SectionTitle>Links</SectionTitle>
           <div className="space-y-3">
             <div>
               <span className="text-cool-gray">NeonPlug Repository: </span>
@@ -127,7 +131,7 @@ npm run build:single</code>
                 href="https://github.com/infamy/NeonPlug"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-electric-purple hover:text-neon-magenta transition-colors underline"
+                className="link-accent"
               >
                 https://github.com/infamy/NeonPlug
               </a>
@@ -138,17 +142,17 @@ npm run build:single</code>
                 href="https://github.com/infamy/DM32-Protocol-Spec"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-electric-purple hover:text-neon-magenta transition-colors underline"
+                className="link-accent"
               >
                 https://github.com/infamy/DM32-Protocol-Spec
               </a>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Credits */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Credits</h3>
+        <Card>
+          <SectionTitle>Credits</SectionTitle>
           <div className="space-y-3 text-cool-gray">
             <p>
               <span className="text-neon-cyan font-semibold">Developer:</span>{' '}
@@ -156,7 +160,7 @@ npm run build:single</code>
                 href="https://github.com/infamy"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-electric-purple hover:text-neon-magenta transition-colors underline"
+                className="link-accent"
               >
                 infamy
               </a>
@@ -166,10 +170,10 @@ npm run build:single</code>
               through analysis of serial port captures and the official CPS software.
             </p>
             <div className="mt-4 space-y-2">
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-cool-gray">
                 Built with React, TypeScript, Vite, and Tailwind CSS
               </p>
-              <div className="text-xs text-gray-600 font-mono">
+              <div className="text-xs text-cool-gray font-mono">
                 <div>
                   <span className="text-cool-gray">Version: </span>
                   <span className="text-neon-cyan">
@@ -187,11 +191,11 @@ npm run build:single</code>
               </div>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Data Sources & Attribution */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Data Sources & Attribution</h3>
+        <Card>
+          <SectionTitle>Data Sources & Attribution</SectionTitle>
           <div className="space-y-4 text-cool-gray">
             <p className="text-sm">
               NeonPlug uses data from the following sources. We are grateful to these organizations and projects for making their data available.
@@ -199,7 +203,7 @@ npm run build:single</code>
             
             <div className="space-y-3">
               <div>
-                <h4 className="text-neon-cyan font-semibold mb-1">RadioID.net</h4>
+                <SectionTitle as="h4" size="sm" className="mb-1">RadioID.net</SectionTitle>
                 <p className="text-sm mb-2">
                   DMR contact database and API for downloading contacts by country.
                 </p>
@@ -207,14 +211,14 @@ npm run build:single</code>
                   href="https://radioid.net"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                  className="link-accent text-sm"
                 >
                   https://radioid.net
                 </a>
               </div>
 
               <div>
-                <h4 className="text-neon-cyan font-semibold mb-1">TAFL Database</h4>
+                <SectionTitle as="h4" size="sm" className="mb-1">TAFL Database</SectionTitle>
                 <p className="text-sm mb-2">
                   Canadian radio frequency license data from the Technical Acceptance and Frequency List (TAFL), 
                   maintained by Innovation, Science and Economic Development Canada (ISED).
@@ -223,14 +227,14 @@ npm run build:single</code>
                   href="https://ised-isde.canada.ca/site/spectrum-management-telecommunications/en"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                  className="link-accent text-sm"
                 >
                   ISED Spectrum Management
                 </a>
               </div>
 
               <div>
-                <h4 className="text-neon-cyan font-semibold mb-1">Airport Frequency Data</h4>
+                <SectionTitle as="h4" size="sm" className="mb-1">Airport Frequency Data</SectionTitle>
                 <p className="text-sm mb-2">
                   Airport communication frequencies and location data from open aviation databases, 
                   including ICAO-compliant frequency information.
@@ -240,7 +244,7 @@ npm run build:single</code>
                     href="https://frequency.icao.int"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                    className="link-accent block text-sm"
                   >
                     ICAO Frequency Finder
                   </a>
@@ -248,7 +252,7 @@ npm run build:single</code>
                     href="https://airportmap.de/data"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                    className="link-accent block text-sm"
                   >
                     Airportmap Open Databases
                   </a>
@@ -257,22 +261,22 @@ npm run build:single</code>
             </div>
 
             <div className="mt-4 pt-3 border-t border-neon-cyan border-opacity-20">
-              <p className="text-xs text-gray-500 italic">
+              <p className="text-xs text-cool-gray italic">
                 Data accuracy and completeness may vary. Always verify critical frequency information 
                 with official sources before use.
               </p>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* License */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">License</h3>
+        <Card>
+          <SectionTitle>License</SectionTitle>
           <p className="text-cool-gray text-sm">
             This software is provided "as is" without warranty. Use at your own risk. 
             Ensure compliance with local radio regulations and manufacturer warranties.
           </p>
-        </div>
+        </Card>
 
         {/* Debug Mode */}
         <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">

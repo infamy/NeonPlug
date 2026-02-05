@@ -1,12 +1,15 @@
 import { create } from 'zustand';
 import type { QuickContact } from '../models/QuickContact';
-import { LIMITS } from '../protocol/dm32uv/constants';
+
+const DEFAULT_TALK_GROUPS_MAX = 800;
 
 interface QuickContactsState {
   contacts: QuickContact[];
   contactsLoaded: boolean;
+  maxTalkGroups: number;
   setContacts: (contacts: QuickContact[]) => void;
   setContactsLoaded: (loaded: boolean) => void;
+  setMaxTalkGroups: (max: number) => void;
   updateContact: (index: number, contact: Partial<QuickContact>) => void;
   addContact: (contact: Omit<QuickContact, 'index' | 'offset' | 'rawData' | 'hasHeader'>) => void;
   deleteContact: (index: number) => void;
@@ -28,11 +31,13 @@ const cleanContactName = (name: string): string => {
 export const useQuickContactsStore = create<QuickContactsState>((set, get) => ({
   contacts: [],
   contactsLoaded: false,
+  maxTalkGroups: DEFAULT_TALK_GROUPS_MAX,
   setContacts: (contacts) => set({ 
     contacts: contacts.map(c => ({ ...c, name: cleanContactName(c.name) })), 
     contactsLoaded: true 
   }),
   setContactsLoaded: (loaded) => set({ contactsLoaded: loaded }),
+  setMaxTalkGroups: (max) => set({ maxTalkGroups: max }),
   updateContact: (index, updates) => {
     const contacts = get().contacts.map(contact => {
       if (contact.index === index) {
@@ -48,9 +53,10 @@ export const useQuickContactsStore = create<QuickContactsState>((set, get) => ({
     set({ contacts });
   },
   addContact: (newContact) => {
-    const contacts = get().contacts;
-    if (contacts.length >= LIMITS.TALK_GROUPS_MAX) {
-      console.warn(`Maximum of ${LIMITS.TALK_GROUPS_MAX} talk groups allowed`);
+    const { contacts, maxTalkGroups } = get();
+    const max = maxTalkGroups ?? DEFAULT_TALK_GROUPS_MAX;
+    if (contacts.length >= max) {
+      console.warn(`Maximum of ${max} talk groups allowed`);
       return;
     }
     // New index is simply the next position (array length + 1)
