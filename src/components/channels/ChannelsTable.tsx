@@ -54,12 +54,16 @@ interface ChannelsTableProps {
   channels?: Channel[];
   scrollToChannel?: number | null;  // Channel number to scroll to
   onScrollComplete?: () => void;    // Callback after scroll completes
+  selectedChannelNumbers?: Set<number>;
+  onSelectionChange?: (set: Set<number>) => void;
 }
 
-export const ChannelsTable: React.FC<ChannelsTableProps> = ({ 
+export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   channels: channelsProp,
   scrollToChannel,
-  onScrollComplete 
+  onScrollComplete,
+  selectedChannelNumbers: selectedChannelNumbersProp,
+  onSelectionChange,
 }) => {
   const { channels: channelsFromStore, updateChannel, deleteChannel, addChannel } = useChannelsStore();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
@@ -71,7 +75,9 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const channels = channelsProp ?? channelsFromStore;
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [clonedChannelNumber, setClonedChannelNumber] = useState<number | null>(null);
-  const [selectedChannelNumbers, setSelectedChannelNumbers] = useState<Set<number>>(new Set());
+  const [internalSelection, setInternalSelection] = useState<Set<number>>(new Set());
+  const selectedChannelNumbers = selectedChannelNumbersProp ?? internalSelection;
+  const setSelectedChannelNumbers = onSelectionChange ?? setInternalSelection;
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
   // Scroll to channel when scrollToChannel changes
@@ -146,12 +152,10 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
 
   const toggleSelectChannel = (channelNumber: number) => {
     if (isVFOChannel(channelNumber)) return;
-    setSelectedChannelNumbers(prev => {
-      const next = new Set(prev);
-      if (next.has(channelNumber)) next.delete(channelNumber);
-      else next.add(channelNumber);
-      return next;
-    });
+    const next = new Set(selectedChannelNumbers);
+    if (next.has(channelNumber)) next.delete(channelNumber);
+    else next.add(channelNumber);
+    setSelectedChannelNumbers(next);
   };
 
   const toggleSelectAll = () => {
@@ -164,18 +168,6 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
 
   const isDigitalMode = (mode: Channel['mode']): boolean => {
     return mode === 'Digital' || mode === 'Fixed Digital';
-  };
-
-  const selectedCount = selectedChannelNumbers.size;
-  const handleDeleteSelected = () => {
-    const toDelete = Array.from(selectedChannelNumbers).filter(n => !isVFOChannel(n));
-    if (toDelete.length === 0) {
-      setSelectedChannelNumbers(new Set());
-      return;
-    }
-    if (!confirm(`Delete ${toDelete.length} selected channel${toDelete.length !== 1 ? 's' : ''}?`)) return;
-    toDelete.forEach(n => deleteChannel(n));
-    setSelectedChannelNumbers(new Set());
   };
 
   const handleCloneChannel = (channel: Channel) => {
@@ -239,25 +231,6 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
 
   return (
     <Card className="max-h-[calc(100vh-200px)] flex flex-col" padding="none">
-      {selectedCount > 0 && (
-        <div className="flex items-center gap-3 px-3 py-2 border-b border-neon-cyan border-opacity-20 bg-dark-charcoal">
-          <span className="text-cool-gray text-sm">{selectedCount} selected</span>
-          <button
-            onClick={handleDeleteSelected}
-            className="px-2 py-1 text-xs text-red-400 hover:text-red-300 border border-red-600 border-opacity-30 hover:border-opacity-60 rounded transition-colors"
-            title="Delete selected channels"
-          >
-            Delete selected ({selectedCount})
-          </button>
-          <button
-            onClick={() => setSelectedChannelNumbers(new Set())}
-            className="px-2 py-1 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-20 hover:border-opacity-50 rounded transition-colors"
-            title="Clear selection"
-          >
-            Clear selection
-          </button>
-        </div>
-      )}
       <div className="flex-1 overflow-auto">
         <div className="inline-block min-w-full">
           <table className="w-full border-collapse text-xs">

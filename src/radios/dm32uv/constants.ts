@@ -86,7 +86,7 @@ export const CONNECTION = {
   BAUD_RATE: 115200,
   INIT_DELAY: 200,          // ms after port open
   CLEAR_BUFFER_DELAY: 100,  // ms after clearing buffer
-  BLOCK_READ_DELAY: 50,     // ms between block reads
+  BLOCK_READ_DELAY: 100,    // ms between block reads (radio needs time after sending 4KB before next request)
   // Timeout values (in milliseconds)
   // Per-request timeout: 5s per message/ack cycle (matches C code), resets with each response
   TIMEOUT: {

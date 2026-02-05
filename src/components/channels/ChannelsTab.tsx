@@ -5,11 +5,14 @@ import { ChannelsTable } from './ChannelsTable';
 import { createDefaultChannel } from '../../utils/channelHelpers';
 import type { Channel } from '../../models/Channel';
 
+const isVFOChannel = (n: number) => n === 4001 || n === 4002;
+
 export const ChannelsTab: React.FC = () => {
-  const { channels, addChannel } = useChannelsStore();
+  const { channels, addChannel, deleteChannels } = useChannelsStore();
   const { settings: radioSettings } = useRadioSettingsStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [scrollToChannel, setScrollToChannel] = useState<number | null>(null);
+  const [selectedChannelNumbers, setSelectedChannelNumbers] = useState<Set<number>>(new Set());
 
   const handleAddChannel = () => {
     // Find the next available channel number
@@ -34,6 +37,20 @@ export const ChannelsTab: React.FC = () => {
   const handleScrollComplete = useCallback(() => {
     setScrollToChannel(null);
   }, []);
+
+  const selectedCount = selectedChannelNumbers.size;
+  const handleDeleteSelected = useCallback(() => {
+    const toDelete = Array.from(selectedChannelNumbers).filter(n => !isVFOChannel(n));
+    if (toDelete.length === 0) {
+      setSelectedChannelNumbers(new Set());
+      return;
+    }
+    if (!confirm(`Delete ${toDelete.length} selected channel${toDelete.length !== 1 ? 's' : ''}?`)) return;
+    deleteChannels(toDelete);
+    setSelectedChannelNumbers(new Set());
+  }, [selectedChannelNumbers, deleteChannels]);
+
+  const handleClearSelection = useCallback(() => setSelectedChannelNumbers(new Set()), []);
 
   // Create VFO channels with channel numbers 4001 and 4002
   const vfoChannels = useMemo(() => {
@@ -103,8 +120,8 @@ export const ChannelsTab: React.FC = () => {
           </button>
         </div>
       </div>
-      <div className="mb-3">
-        <div className="relative">
+      <div className="mb-3 flex items-center gap-3">
+        <div className="relative flex-1 min-w-0">
           <input
             type="text"
             value={searchQuery}
@@ -125,11 +142,32 @@ export const ChannelsTab: React.FC = () => {
             </button>
           )}
         </div>
+        {selectedCount > 0 && (
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-cool-gray text-sm whitespace-nowrap">{selectedCount} selected</span>
+            <button
+              onClick={handleDeleteSelected}
+              className="px-2 py-1.5 text-xs text-red-400 hover:text-red-300 border border-red-600 border-opacity-30 hover:border-opacity-60 rounded transition-colors whitespace-nowrap"
+              title="Delete selected channels"
+            >
+              Delete ({selectedCount})
+            </button>
+            <button
+              onClick={handleClearSelection}
+              className="px-2 py-1.5 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-20 hover:border-opacity-50 rounded transition-colors whitespace-nowrap"
+              title="Clear selection"
+            >
+              Clear
+            </button>
+          </div>
+        )}
       </div>
-      <ChannelsTable 
-        channels={filteredChannels} 
+      <ChannelsTable
+        channels={filteredChannels}
         scrollToChannel={scrollToChannel}
         onScrollComplete={handleScrollComplete}
+        selectedChannelNumbers={selectedChannelNumbers}
+        onSelectionChange={setSelectedChannelNumbers}
       />
     </div>
   );

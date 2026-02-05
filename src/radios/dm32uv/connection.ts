@@ -252,6 +252,8 @@ export class DM32Connection {
       }
       
       const data = await this.readBytes(responseLength);
+      // Brief settling delay after receiving block so radio is ready for next command
+      await this.delay(30);
       return data;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
