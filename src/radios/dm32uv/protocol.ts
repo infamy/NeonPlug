@@ -4,7 +4,17 @@
  */
 
 import { DM32Connection } from './connection';
-import { discoverMemoryBlocks, readChannelCount, type MemoryBlock } from './memory';
+import {
+  discoverMemoryBlocks,
+  readChannelCount,
+  requireConnection,
+  requireRadioInfo,
+  requireDiscoveredBlocks,
+  checkEmptyBlocks,
+  readAndConcatenateBlocks,
+  storeRawData,
+  type MemoryBlock,
+} from './memory';
 import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
 import type { RadioProtocol, RadioInfo } from '../../types/radio';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact } from '../../models';
@@ -12,16 +22,8 @@ import type { WebSerialPort, ProtocolDebugData } from './types';
 import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION, LIMITS } from './constants';
 import { BOOT_IMAGE } from '../../utils/bootImage';
 import { getContactCapacityWithFallback } from '../../utils/firmware';
-import { withTimeout } from './utils';
-import { 
-  requireConnection,
-  requireRadioInfo,
-  requireDiscoveredBlocks, 
-  checkEmptyBlocks,
-  readAndConcatenateBlocks,
-  storeRawData,
-} from './helpers';
-import { log } from './logger';
+import { withTimeout } from './connection';
+import { log } from '../../utils/protocolLogger';
 
 /**
  * DM-32UV Protocol Implementation

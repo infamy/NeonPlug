@@ -9,7 +9,7 @@ export const AboutTab: React.FC = () => {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-neon-cyan mb-2">About NeonPlug</h2>
         <p className="text-cool-gray">
-          Channel Programming Software for the Baofeng DM-32UV radio
+          Channel programming software. Supports: DM-32UV, DP570UV.
         </p>
       </div>
 
@@ -106,12 +106,12 @@ npm run build:single</code>
           <h3 className="text-lg font-semibold text-neon-cyan mb-4">Project Information</h3>
           <div className="space-y-3 text-cool-gray">
             <p>
-              <span className="text-neon-cyan font-semibold">NeonPlug</span> is a web-based Channel Programming Software (CPS) 
-              for the Baofeng DM-32UV radio. Built with a modern cyberpunk neon-themed UI, it provides 
+              <span className="text-neon-cyan font-semibold">NeonPlug</span> is a web-based Channel Programming Software (CPS)
+              for supported radios (DM-32UV / DP570UV). Built with a modern cyberpunk neon-themed UI, it provides
               an intuitive interface for managing channels, zones, scan lists, contacts, and radio settings.
             </p>
             <p>
-              This software implements the DM-32UV serial protocol specification, enabling full read and write 
+              This software implements the DM-32UV serial protocol specification, enabling full read and write
               operations directly from your web browser using the Web Serial API.
             </p>
           </div>

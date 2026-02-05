@@ -1,6 +1,7 @@
 import type { RadioSettings } from '../../models/RadioSettings';
 import type { Channel } from '../../models/Channel';
 import type { RadioBandLimits } from '../../types/radioCapabilities';
+import { DEFAULT_BAND_LIMITS } from '../../types/radioCapabilities';
 
 interface SettingsWithBandLimits {
   bandLimits: {
@@ -11,21 +12,16 @@ interface SettingsWithBandLimits {
   };
 }
 
-// Default ranges (DM-32UV: VHF 87-174 MHz, UHF 400-470 MHz). Used when no limits provided.
-const DEFAULT_VHF_MIN = 87;
-const DEFAULT_VHF_MAX = 174;
-const DEFAULT_UHF_MIN = 400;
-const DEFAULT_UHF_MAX = 470;
-
 /**
  * Check if a frequency is in the supported ranges.
  * When limits is provided (e.g. from getCapabilitiesForModel), uses those; otherwise uses default ranges.
  */
 export function isValidFrequencyRange(frequency: number, limits?: RadioBandLimits | null): boolean {
-  const vhfMin = limits?.vhfMin ?? DEFAULT_VHF_MIN;
-  const vhfMax = limits?.vhfMax ?? DEFAULT_VHF_MAX;
-  const uhfMin = limits?.uhfMin ?? DEFAULT_UHF_MIN;
-  const uhfMax = limits?.uhfMax ?? DEFAULT_UHF_MAX;
+  const resolved = limits ?? DEFAULT_BAND_LIMITS;
+  const vhfMin = resolved.vhfMin;
+  const vhfMax = resolved.vhfMax;
+  const uhfMin = resolved.uhfMin;
+  const uhfMax = resolved.uhfMax;
   const isVHF = frequency >= vhfMin && frequency <= vhfMax;
   const isUHF = frequency >= uhfMin && frequency <= uhfMax;
   return isVHF || isUHF;

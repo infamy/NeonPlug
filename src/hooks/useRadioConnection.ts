@@ -749,9 +749,9 @@ export function useRadioConnection() {
       
       // Step 3: Get radio info
       onProgress?.(10, 'Reading radio information...', steps[2]);
-      const radioInfo = await protocol.getRadioInfo();
+      const connectedRadioInfo = await protocol.getRadioInfo();
       
-      setRadioInfo(radioInfo);
+      setRadioInfo(connectedRadioInfo);
       setConnected(true);
       
       // Step 4: Write channels, zones, and scan lists (using filtered data)
@@ -856,7 +856,7 @@ export function useRadioConnection() {
         setIsConnecting(false);
       }
     }
-  }, [setConnected, setRadioInfo, setWriteBlockData, setZoneComparisonData, setConnectionError]);
+  }, [radioInfo, setConnected, setRadioInfo, setWriteBlockData, setZoneComparisonData, setConnectionError]);
 
   return {
     isConnecting,

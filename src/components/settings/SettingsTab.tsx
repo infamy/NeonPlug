@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Cropper, { Area } from 'react-easy-crop';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioConnection } from '../../hooks/useRadioConnection';

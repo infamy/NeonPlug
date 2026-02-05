@@ -40,6 +40,14 @@ export interface RadioBandLimits {
   uhfMax: number;
 }
 
+/** Fallback band limits when no radio/model is known (VHF 87–174, UHF 400–470 MHz). */
+export const DEFAULT_BAND_LIMITS: RadioBandLimits = {
+  vhfMin: 87,
+  vhfMax: 174,
+  uhfMin: 400,
+  uhfMax: 470,
+};
+
 export interface RadioCapabilities {
   diagnostics?: RadioCapabilitiesDiagnostics;
   digital?: RadioCapabilitiesDigital;

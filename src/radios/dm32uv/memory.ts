@@ -1,10 +1,11 @@
 /**
  * DM-32UV Memory Discovery and Reading
- * Handles metadata discovery to find channel blocks, zone blocks, etc.
+ * Handles metadata discovery, block reading, and shared helpers for protocol.
  */
 
 import { DM32Connection } from './connection';
-import { log } from './logger';
+import { BLOCK_SIZE, CONNECTION } from './constants';
+import { log } from '../../utils/protocolLogger';
 
 export interface MemoryBlock {
   address: number;
@@ -142,5 +143,108 @@ export async function readChannelBlocks(
 
   onProgress?.(100, `Read ${blocksRead} channel blocks`);
   return blocks;
+}
+
+// --- Helpers (block/memory utilities used by protocol) ---
+
+/**
+ * Validate that connection and radio info are available.
+ * @throws {Error} If not connected
+ */
+export function requireConnection(
+  connection: DM32Connection | null,
+  radioInfo: unknown
+): void {
+  if (!connection || !radioInfo) {
+    throw new Error('Not connected to radio');
+  }
+}
+
+/**
+ * Validate that radio info is available (for parsing methods that don't need connection).
+ * @throws {Error} If radio info not available
+ */
+export function requireRadioInfo(radioInfo: unknown): void {
+  if (!radioInfo) {
+    throw new Error('Radio info not available');
+  }
+}
+
+/**
+ * Validate that blocks have been discovered.
+ * @throws {Error} If no blocks discovered
+ */
+export function requireDiscoveredBlocks(discoveredBlocks: MemoryBlock[]): void {
+  if (discoveredBlocks.length === 0) {
+    throw new Error('No blocks discovered. Read channels first.');
+  }
+}
+
+/**
+ * Check if blocks are empty and return early with progress update.
+ */
+export function checkEmptyBlocks(
+  blocks: MemoryBlock[],
+  blockType: string,
+  onProgress?: (progress: number, message: string) => void
+): boolean {
+  if (blocks.length === 0) {
+    log.debug(`No ${blockType} blocks found`, 'Helpers');
+    onProgress?.(100, `No ${blockType}s found`);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Read and concatenate multiple memory blocks.
+ */
+export async function readAndConcatenateBlocks(
+  connection: DM32Connection,
+  blocks: MemoryBlock[],
+  onProgress?: (progress: number, message: string) => void,
+  onBlockRead?: (block: MemoryBlock, blockData: Uint8Array) => void
+): Promise<Uint8Array> {
+  let allData = new Uint8Array(0);
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const progress = Math.floor((i / blocks.length) * 50);
+    onProgress?.(progress, `Reading block ${i + 1} of ${blocks.length}...`);
+
+    const blockData = await connection.readMemory(block.address, BLOCK_SIZE.STANDARD);
+
+    if (onBlockRead) {
+      onBlockRead(block, blockData);
+    }
+
+    const newAllData = new Uint8Array(allData.length + blockData.length);
+    newAllData.set(allData);
+    newAllData.set(blockData, allData.length);
+    allData = newAllData;
+
+    if (i < blocks.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, CONNECTION.BLOCK_READ_DELAY));
+    }
+  }
+
+  return allData;
+}
+
+/**
+ * Store raw data for debug export (zones/scan lists).
+ */
+export function storeRawData<T extends { data: Uint8Array; [key: string]: unknown; offset: number }>(
+  storage: Map<string, T>,
+  key: string,
+  data: Uint8Array,
+  itemData: Omit<T, 'data' | 'offset'>,
+  offset: number
+): void {
+  storage.set(key, {
+    ...itemData,
+    data: new Uint8Array(data),
+    offset: offset,
+  } as T);
 }
 

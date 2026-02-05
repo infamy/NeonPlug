@@ -3,19 +3,12 @@
  * Referenced by the capabilities registry; no UI imports this directly.
  */
 import type { RadioCapabilities } from '../../types/radioCapabilities';
+import { DEFAULT_BAND_LIMITS } from '../../types/radioCapabilities';
 import { parseRadioSettings } from './structures';
-import { decodeBCDFrequency, decodeCTCSSDCS } from './encoding';
+import { decodeBCDFrequency, decodeCTCSSDCS } from './structures';
 import { parseEncryptionKeys, parseDigitalEmergencies } from './structures';
 import { LIMITS } from './constants';
 import { isFirmware049OrNewer } from '../../utils/firmware';
-
-// DM-32UV band limits (MHz)
-const DM32_BAND_LIMITS = {
-  vhfMin: 87,
-  vhfMax: 174,
-  uhfMin: 400,
-  uhfMax: 470,
-} as const;
 
 export const DM32UV_CAPABILITIES: RadioCapabilities = {
   diagnostics: {
@@ -34,6 +27,6 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
       SCAN_LISTS_MAX: LIMITS.SCAN_LISTS_MAX,
     },
   },
-  bandLimits: DM32_BAND_LIMITS,
+  bandLimits: DEFAULT_BAND_LIMITS,
   isFirmware049OrNewer,
 };

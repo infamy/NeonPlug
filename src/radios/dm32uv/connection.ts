@@ -4,12 +4,37 @@
  */
 
 import type { WebSerialPort } from './types';
-import { withTimeout } from './utils';
 import { CONNECTION } from './constants';
-import { log } from './logger';
+import { log } from '../../utils/protocolLogger';
 
 // Re-export for backward compatibility
 export type SerialPort = WebSerialPort;
+
+/**
+ * Wraps a promise with a timeout.
+ * Used by connection and protocol for timed operations.
+ */
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  operationName: string
+): Promise<T> {
+  const timeout = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeout]);
+}
+
+/**
+ * Get error message from unknown error type.
+ */
+export function getErrorMessage(error: unknown, defaultMessage: string = 'Unknown error'): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return defaultMessage;
+}
 
 export class DM32Connection {
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
