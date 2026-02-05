@@ -8,7 +8,7 @@ import { useZonesStore } from '../../store/zonesStore';
 import { useContactsStore } from '../../store/contactsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useCalibrationStore } from '../../store/calibrationStore';
-import { isFirmware049OrNewer } from '../../utils/firmware';
+import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { CALIBRATION_PARAM_NAMES } from '../../models/Calibration';
 import { Modal } from '../ui/Modal';
 import {
@@ -86,8 +86,9 @@ export const SettingsTab: React.FC = () => {
   const [showCalibration, setShowCalibration] = useState(false);
   const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
 
+  const caps = useMemo(() => getCapabilitiesForModel(radioInfo?.model), [radioInfo?.model]);
   const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
-  const isNewerFirmware = radioInfo?.firmware && isFirmware049OrNewer(radioInfo.firmware);
+  const isNewerFirmware = !!(radioInfo?.firmware && caps?.isFirmware049OrNewer?.(radioInfo.firmware));
   const needsFirmwareUpdate = radioInfo?.firmware && radioInfo.firmware !== EXPECTED_FIRMWARE && !isNewerFirmware;
 
 

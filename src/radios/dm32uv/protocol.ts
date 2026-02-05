@@ -2887,9 +2887,10 @@ export class DM32UVProtocol implements RadioProtocol {
   /**
    * Write Radio Settings to metadata 0x04 block
    */
-  async writeRadioSettings(settings: RadioSettings, changedFields?: string[]): Promise<void> {
+  async writeRadioSettings(settings: RadioSettings, options?: { changedFields?: string[] }): Promise<void> {
+    const changedFields = options?.changedFields;
     requireConnection(this.connection, this.radioInfo);
-    
+
     // Discover blocks if not already discovered
     if (this.discoveredBlocks.length === 0) {
       if (!this.radioInfo) {

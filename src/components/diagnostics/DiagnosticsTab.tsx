@@ -12,8 +12,7 @@ import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useLogStore } from '../../store/logStore';
-import { parseRadioSettings } from '../../radios/dm32uv/structures';
-import { decodeBCDFrequency, decodeCTCSSDCS } from '../../radios/dm32uv/encoding';
+import { getCapabilitiesForModel } from '../../radios/capabilities';
 import {
   POWER_ON_INTERFACE_OPTIONS,
   COLOR_OPTIONS,
@@ -43,6 +42,7 @@ export const DiagnosticsTab: React.FC = () => {
   const { messages: quickMessages } = useQuickMessagesStore();
   const { contacts: quickContacts } = useQuickContactsStore();
   const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
+  const caps = useMemo(() => getCapabilitiesForModel(radioInfo?.model), [radioInfo?.model]);
   const [showMetadataBlock, setShowMetadataBlock] = useState(false);
   const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
   const [showContactBlock, setShowContactBlock] = useState(true);
@@ -1018,9 +1018,12 @@ export const DiagnosticsTab: React.FC = () => {
 
         {/* Field Verification Table */}
         <CollapsibleSection title="Field Verification">
-          {rawRadioSettingsData && (() => {
+          {rawRadioSettingsData && !caps?.diagnostics && (
+            <p className="text-cool-gray">Field verification not available for this radio.</p>
+          )}
+          {rawRadioSettingsData && caps?.diagnostics && (() => {
             try {
-              const parsed = parseRadioSettings(rawRadioSettingsData);
+              const parsed = caps.diagnostics.parseRadioSettings(rawRadioSettingsData);
               const fields = [
                 { name: 'Power On Interface', offset: 0x00, parsed: parsed.powerOnInterface, ui: radioSettings?.powerOnInterface, rawHex: rawRadioSettingsData[0x00] },
                 { name: 'Backlight Brightness', offset: 0x30, parsed: parsed.backlightBrightness, ui: radioSettings?.backlightBrightness, rawHex: rawRadioSettingsData[0x30] },
@@ -2641,8 +2644,8 @@ export const DiagnosticsTab: React.FC = () => {
                   let rxFreq = 0;
                   let txFreq = 0;
                   try {
-                    rxFreq = decodeBCDFrequency(channelBytes.slice(0x10, 0x14));
-                    txFreq = decodeBCDFrequency(channelBytes.slice(0x14, 0x18));
+                    rxFreq = caps?.diagnostics?.decodeBCDFrequency(channelBytes.slice(0x10, 0x14)) ?? 0;
+                    txFreq = caps?.diagnostics?.decodeBCDFrequency(channelBytes.slice(0x14, 0x18)) ?? 0;
                   } catch (e) {
                     // Ignore
                   }
@@ -2687,14 +2690,14 @@ export const DiagnosticsTab: React.FC = () => {
 
                   let rxCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
                   try {
-                    rxCtcssDcs = decodeCTCSSDCS(channelBytes.slice(0x21, 0x23));
+                    rxCtcssDcs = caps?.diagnostics?.decodeCTCSSDCS(channelBytes.slice(0x21, 0x23)) ?? rxCtcssDcs;
                   } catch (e) {
                     // Ignore
                   }
 
                   let txCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
                   try {
-                    txCtcssDcs = decodeCTCSSDCS(channelBytes.slice(0x23, 0x25));
+                    txCtcssDcs = caps?.diagnostics?.decodeCTCSSDCS(channelBytes.slice(0x23, 0x25)) ?? txCtcssDcs;
                   } catch (e) {
                     // Ignore
                   }
@@ -3331,8 +3334,8 @@ export const DiagnosticsTab: React.FC = () => {
                     let rxFreq = 0;
                     let txFreq = 0;
                     try {
-                      rxFreq = decodeBCDFrequency(channelBytes.slice(0x10, 0x14));
-                      txFreq = decodeBCDFrequency(channelBytes.slice(0x14, 0x18));
+                      rxFreq = caps?.diagnostics?.decodeBCDFrequency(channelBytes.slice(0x10, 0x14)) ?? 0;
+                      txFreq = caps?.diagnostics?.decodeBCDFrequency(channelBytes.slice(0x14, 0x18)) ?? 0;
                     } catch (e) {
                       // Ignore
                     }
@@ -3373,14 +3376,14 @@ export const DiagnosticsTab: React.FC = () => {
 
                     let rxCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
                     try {
-                      rxCtcssDcs = decodeCTCSSDCS(channelBytes.slice(0x21, 0x23));
+                      rxCtcssDcs = caps?.diagnostics?.decodeCTCSSDCS(channelBytes.slice(0x21, 0x23)) ?? rxCtcssDcs;
                     } catch (e) {
                       // Ignore
                     }
 
                     let txCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
                     try {
-                      txCtcssDcs = decodeCTCSSDCS(channelBytes.slice(0x23, 0x25));
+                      txCtcssDcs = caps?.diagnostics?.decodeCTCSSDCS(channelBytes.slice(0x23, 0x25)) ?? txCtcssDcs;
                     } catch (e) {
                       // Ignore
                     }

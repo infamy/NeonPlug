@@ -57,7 +57,7 @@ export interface RadioProtocol {
 
   // Settings
   readRadioSettings(): Promise<RadioSettings | null>;
-  writeRadioSettings(settings: RadioSettings): Promise<void>;
+  writeRadioSettings(settings: RadioSettings, options?: { changedFields?: string[] }): Promise<void>;
 
   // Progress callbacks
   onProgress?: (progress: number, message: string) => void;

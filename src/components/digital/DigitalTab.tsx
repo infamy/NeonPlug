@@ -6,16 +6,22 @@ import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
-import { parseEncryptionKeys, parseDigitalEmergencies } from '../../radios/dm32uv/structures';
-import { LIMITS } from '../../radios/dm32uv/constants';
+import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { RXGroupsList } from '../rxgroups/RXGroupsList';
 
+const DEFAULT_TALK_GROUPS_MAX = 800;
+const DEFAULT_DMR_RADIO_IDS_MAX = 250;
+
 export const DigitalTab: React.FC = () => {
-  const { blockMetadata, blockData } = useRadioStore();
+  const { blockMetadata, blockData, radioInfo } = useRadioStore();
+  const caps = useMemo(() => getCapabilitiesForModel(radioInfo?.model), [radioInfo?.model]);
+  const limits = caps?.digital?.limits;
+  const talkGroupsMax = limits?.TALK_GROUPS_MAX ?? DEFAULT_TALK_GROUPS_MAX;
+  const dmrRadioIdsMax = limits?.DMR_RADIO_IDS_MAX ?? DEFAULT_DMR_RADIO_IDS_MAX;
   const { keys, setKeys, updateKey } = useEncryptionKeysStore();
   const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem } = useDigitalEmergencyStore();
   const { radioIds, radioIdsLoaded, updateRadioId, addRadioId, deleteRadioId } = useDMRRadioIDsStore();
-  const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact } = useQuickContactsStore();
+  const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact, setMaxTalkGroups } = useQuickContactsStore();
   const { groupsLoaded: rxGroupsLoaded } = useRXGroupsStore();
   const { messages, messagesLoaded, updateMessage, addMessage, deleteMessage } = useQuickMessagesStore();
 
@@ -33,30 +39,33 @@ export const DigitalTab: React.FC = () => {
 
   // Digital Emergency is also in block 0x10 (same block as encryption keys, different offset)
 
-  // Parse encryption keys when block data is available
+  // Sync max talk groups from capabilities when radio/model changes
   useEffect(() => {
-    if (block10Data) {
-      try {
-        const parsedKeys = parseEncryptionKeys(block10Data);
-        setKeys(parsedKeys);
-      } catch (error) {
-        console.error('Error parsing encryption keys:', error);
-      }
-    }
-  }, [block10Data, setKeys]);
+    setMaxTalkGroups(talkGroupsMax);
+  }, [talkGroupsMax, setMaxTalkGroups]);
 
-  // Parse digital emergency systems when block data is available (same block as encryption keys)
+  // Parse encryption keys when block data and digital capabilities are available
   useEffect(() => {
-    if (block10Data) {
-      try {
-        const { systems, config } = parseDigitalEmergencies(block10Data);
-        setDigitalEmergencies(systems);
-        setDigitalEmergencyConfig(config);
-      } catch (error) {
-        console.error('Error parsing digital emergency systems:', error);
-      }
+    if (!block10Data || !caps?.digital) return;
+    try {
+      const parsedKeys = caps.digital.parseEncryptionKeys(block10Data);
+      setKeys(parsedKeys);
+    } catch (error) {
+      console.error('Error parsing encryption keys:', error);
     }
-  }, [block10Data, setDigitalEmergencies, setDigitalEmergencyConfig]);
+  }, [block10Data, caps?.digital, setKeys]);
+
+  // Parse digital emergency systems when block data and digital capabilities are available
+  useEffect(() => {
+    if (!block10Data || !caps?.digital) return;
+    try {
+      const { systems, config } = caps.digital.parseDigitalEmergencies(block10Data);
+      setDigitalEmergencies(systems);
+      setDigitalEmergencyConfig(config);
+    } catch (error) {
+      console.error('Error parsing digital emergency systems:', error);
+    }
+  }, [block10Data, caps?.digital, setDigitalEmergencies, setDigitalEmergencyConfig]);
 
   const handleKeyChange = (entryNumber: number, field: keyof typeof keys[0], value: any) => {
     updateKey(entryNumber, { [field]: value });
@@ -92,8 +101,8 @@ export const DigitalTab: React.FC = () => {
   };
 
   const handleAddContact = () => {
-    if (quickContacts.length >= 800) {
-      alert('Maximum of 800 talk groups allowed.');
+    if (quickContacts.length >= talkGroupsMax) {
+      alert(`Maximum of ${talkGroupsMax} talk groups allowed.`);
       return;
     }
     addContact({
@@ -131,8 +140,8 @@ export const DigitalTab: React.FC = () => {
   };
 
   const handleAddRadioId = () => {
-    if (radioIds.length >= LIMITS.DMR_RADIO_IDS_MAX) {
-      alert(`Maximum of ${LIMITS.DMR_RADIO_IDS_MAX} DMR Radio IDs allowed.`);
+    if (radioIds.length >= dmrRadioIdsMax) {
+      alert(`Maximum of ${dmrRadioIdsMax} DMR Radio IDs allowed.`);
       return;
     }
     const newIndex = radioIds.length;
@@ -166,10 +175,10 @@ export const DigitalTab: React.FC = () => {
           <div>
             <h3 className="text-xl font-semibold text-neon-cyan mb-2">DMR Radio IDs</h3>
             <p className="text-cool-gray text-sm">
-              Manage DMR Radio IDs. Up to {LIMITS.DMR_RADIO_IDS_MAX} IDs can be configured.
+              Manage DMR Radio IDs. Up to {dmrRadioIdsMax} IDs can be configured.
             </p>
           </div>
-          {radioIdsLoaded && radioIds.length < LIMITS.DMR_RADIO_IDS_MAX && (
+          {radioIdsLoaded && radioIds.length < dmrRadioIdsMax && (
             <button
               onClick={handleAddRadioId}
               className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
@@ -281,11 +290,11 @@ export const DigitalTab: React.FC = () => {
           {quickContactsLoaded && (
             <div className="flex items-center gap-3">
               <div className="text-cool-gray text-sm">
-                {quickContacts.length}/800 talk groups
+                {quickContacts.length}/{talkGroupsMax} talk groups
               </div>
               <button
                 onClick={handleAddContact}
-                disabled={quickContacts.length >= 800}
+                disabled={quickContacts.length >= talkGroupsMax}
                 className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 + Add Group
