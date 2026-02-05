@@ -1,5 +1,7 @@
 import React from 'react';
 import { useDebugStore } from '../../store/debugStore';
+import { Card } from '../ui/Card';
+import { SectionTitle } from '../ui/SectionTitle';
 
 export const AboutTab: React.FC = () => {
   const { debugMode, setDebugMode } = useDebugStore();
@@ -15,8 +17,8 @@ export const AboutTab: React.FC = () => {
 
       <div className="space-y-6">
         {/* Offline Version */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Offline Version</h3>
+        <Card>
+          <SectionTitle>Offline Version</SectionTitle>
           <div className="space-y-4">
             <p className="text-cool-gray">
               Download a single-file version of NeonPlug that works completely offline. 
@@ -73,8 +75,8 @@ export const AboutTab: React.FC = () => {
               </p>
             </div>
 
-            <div className="mt-4 p-4 bg-dark-charcoal rounded border border-neon-cyan border-opacity-30">
-              <h4 className="text-neon-cyan font-semibold mb-2 text-sm">Building Locally</h4>
+            <Card variant="subdued" className="mt-4 border-opacity-30">
+              <SectionTitle as="h4" size="sm">Building Locally</SectionTitle>
               <p className="text-cool-gray text-sm mb-2">
                 To build your own offline version from source:
               </p>
@@ -87,23 +89,23 @@ npm run build:single</code>
               <p className="text-cool-gray text-xs mt-2">
                 The single-file HTML will be in the <code className="text-neon-cyan">dist/index.html</code> file.
               </p>
-            </div>
+            </Card>
 
-            <div className="mt-4 p-4 bg-dark-charcoal rounded border border-neon-cyan border-opacity-30">
-              <h4 className="text-neon-cyan font-semibold mb-2 text-sm">Using the Offline Version</h4>
+            <Card variant="subdued" className="mt-4 border-opacity-30">
+              <SectionTitle as="h4" size="sm">Using the Offline Version</SectionTitle>
               <ul className="list-disc list-inside text-cool-gray text-sm space-y-1 ml-4">
                 <li>Simply open the downloaded <code className="text-neon-cyan">neonplug.html</code> file in any modern web browser</li>
                 <li>No server or internet connection required - everything is in one file</li>
                 <li>The Web Serial API will still work for connecting to your radio</li>
                 <li>All features work exactly the same as the online version</li>
               </ul>
-            </div>
+            </Card>
           </div>
-        </div>
+        </Card>
 
         {/* Project Info */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Project Information</h3>
+        <Card>
+          <SectionTitle>Project Information</SectionTitle>
           <div className="space-y-3 text-cool-gray">
             <p>
               <span className="text-neon-cyan font-semibold">NeonPlug</span> is a web-based Channel Programming Software (CPS)
@@ -115,11 +117,11 @@ npm run build:single</code>
               operations directly from your web browser using the Web Serial API.
             </p>
           </div>
-        </div>
+        </Card>
 
         {/* Links */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Links</h3>
+        <Card>
+          <SectionTitle>Links</SectionTitle>
           <div className="space-y-3">
             <div>
               <span className="text-cool-gray">NeonPlug Repository: </span>
@@ -144,11 +146,11 @@ npm run build:single</code>
               </a>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Credits */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Credits</h3>
+        <Card>
+          <SectionTitle>Credits</SectionTitle>
           <div className="space-y-3 text-cool-gray">
             <p>
               <span className="text-neon-cyan font-semibold">Developer:</span>{' '}
@@ -187,11 +189,11 @@ npm run build:single</code>
               </div>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Data Sources & Attribution */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">Data Sources & Attribution</h3>
+        <Card>
+          <SectionTitle>Data Sources & Attribution</SectionTitle>
           <div className="space-y-4 text-cool-gray">
             <p className="text-sm">
               NeonPlug uses data from the following sources. We are grateful to these organizations and projects for making their data available.
@@ -199,7 +201,7 @@ npm run build:single</code>
             
             <div className="space-y-3">
               <div>
-                <h4 className="text-neon-cyan font-semibold mb-1">RadioID.net</h4>
+                <SectionTitle as="h4" size="sm" className="mb-1">RadioID.net</SectionTitle>
                 <p className="text-sm mb-2">
                   DMR contact database and API for downloading contacts by country.
                 </p>
@@ -214,7 +216,7 @@ npm run build:single</code>
               </div>
 
               <div>
-                <h4 className="text-neon-cyan font-semibold mb-1">TAFL Database</h4>
+                <SectionTitle as="h4" size="sm" className="mb-1">TAFL Database</SectionTitle>
                 <p className="text-sm mb-2">
                   Canadian radio frequency license data from the Technical Acceptance and Frequency List (TAFL), 
                   maintained by Innovation, Science and Economic Development Canada (ISED).
@@ -230,7 +232,7 @@ npm run build:single</code>
               </div>
 
               <div>
-                <h4 className="text-neon-cyan font-semibold mb-1">Airport Frequency Data</h4>
+                <SectionTitle as="h4" size="sm" className="mb-1">Airport Frequency Data</SectionTitle>
                 <p className="text-sm mb-2">
                   Airport communication frequencies and location data from open aviation databases, 
                   including ICAO-compliant frequency information.
@@ -263,16 +265,16 @@ npm run build:single</code>
               </p>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* License */}
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-          <h3 className="text-lg font-semibold text-neon-cyan mb-4">License</h3>
+        <Card>
+          <SectionTitle>License</SectionTitle>
           <p className="text-cool-gray text-sm">
             This software is provided "as is" without warranty. Use at your own risk. 
             Ensure compliance with local radio regulations and manufacturer warranties.
           </p>
-        </div>
+        </Card>
 
         {/* Debug Mode */}
         <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6">

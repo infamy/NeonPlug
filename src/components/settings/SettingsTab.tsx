@@ -11,6 +11,8 @@ import { useCalibrationStore } from '../../store/calibrationStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { CALIBRATION_PARAM_NAMES } from '../../models/Calibration';
 import { Modal } from '../ui/Modal';
+import { Card } from '../ui/Card';
+import { SectionTitle } from '../ui/SectionTitle';
 import {
   ANALOG_CALL_TYPE_OPTIONS,
   ONE_TOUCH_CALL_TYPE_OPTIONS,
@@ -369,16 +371,14 @@ export const SettingsTab: React.FC = () => {
       </div>
 
       {!radioInfo ? (
-        <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-30 p-8 text-center">
+        <Card variant="subdued" className="border-opacity-30 text-center">
           <p className="text-cool-gray">No radio information available. Read from radio to view details.</p>
-        </div>
+        </Card>
       ) : (
         <div className="space-y-6">
           {/* Device Information Section */}
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-            <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
-              Device Information
-            </h3>
+          <Card>
+            <SectionTitle underline>Device Information</SectionTitle>
             <div className="grid grid-cols-2 gap-4 mt-4">
               <div>
                 <span className="text-cool-gray text-sm block mb-1">Model</span>
@@ -424,17 +424,15 @@ export const SettingsTab: React.FC = () => {
                 </div>
               )}
             </div>
-          </div>
+          </Card>
 
           {/* Memory & Storage Section */}
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-            <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
-              Memory & Storage
-            </h3>
+          <Card>
+            <SectionTitle underline>Memory & Storage</SectionTitle>
             <div className="space-y-6 mt-4">
               {radioInfo?.memoryLayout && (
                 <div>
-                  <h4 className="text-md font-semibold text-neon-cyan mb-3">Memory Layout</h4>
+                  <SectionTitle as="h4" size="md">Memory Layout</SectionTitle>
                   <div className="space-y-2 font-mono text-sm">
                     <div className="flex justify-between items-center py-2 px-3 bg-dark-charcoal rounded">
                       <span className="text-cool-gray">Configuration Region:</span>
@@ -447,7 +445,7 @@ export const SettingsTab: React.FC = () => {
               )}
 
               <div>
-                <h4 className="text-md font-semibold text-neon-cyan mb-3">Usage Statistics</h4>
+                <SectionTitle as="h4" size="md">Usage Statistics</SectionTitle>
                 <div className="space-y-4">
                   <div>
                     <div className="flex justify-between items-center mb-2">
@@ -501,7 +499,7 @@ export const SettingsTab: React.FC = () => {
                 </div>
               </div>
             </div>
-          </div>
+          </Card>
 
           {/* Boot / Startup Image Section - only when profile declares bootImage feature */}
           {(() => {

@@ -4,6 +4,10 @@ import { useScanListsStore } from '../../store/scanListsStore';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { ScanList } from '../../models/ScanList';
 import type { Channel } from '../../models/Channel';
+import { ListDetailLayout } from '../ui/ListDetailLayout';
+import { Card } from '../ui/Card';
+import { SectionTitle } from '../ui/SectionTitle';
+import { EmptyState } from '../ui/EmptyState';
 
 export const ScanListsList: React.FC = () => {
   const { scanLists, selectedScanList, setSelectedScanList, addScanList, deleteScanList, renameScanList } = useScanListsStore();
@@ -64,151 +68,136 @@ export const ScanListsList: React.FC = () => {
     }
   };
 
-  const handleCancelEdit = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleCancelEdit = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setEditingScanList(null);
     setEditScanListName('');
   };
 
-  return (
-    <div className="grid grid-cols-2 gap-4">
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan">
-        <div className="p-4 border-b border-neon-cyan border-opacity-30 flex justify-between items-center">
-          <div>
-            <h3 className="text-neon-cyan font-bold">Scan Lists</h3>
-            <p className="text-cool-gray text-xs mt-1">{scanLists.length}/32 scan lists</p>
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newScanListName}
-              onChange={(e) => setNewScanListName(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleAddScanList()}
-              placeholder="Scan list name..."
-              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-32"
-              maxLength={16}
-              disabled={scanLists.length >= 32}
-            />
-            <button
-              onClick={handleAddScanList}
-              disabled={scanLists.length >= 32 || !newScanListName.trim()}
-              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded font-medium hover:bg-opacity-90 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-        <div className="overflow-y-auto max-h-[calc(100vh-250px)]">
-          {scanLists.length === 0 ? (
-            <div className="p-8 text-center">
-              <p className="text-cool-gray">No scan lists loaded</p>
-              <p className="text-cool-gray text-sm mt-2">Read from radio to view scan lists</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-neon-cyan divide-opacity-20">
-              {scanLists.map((scanList, index) => (
-                <div
-                  key={`${scanList.name}-${index}`}
-                  onClick={() => editingScanList !== scanList.name && setSelectedScanList(scanList.name)}
-                  className={`p-3 transition-colors ${
-                    editingScanList === scanList.name 
-                      ? 'bg-deep-gray-light'
-                      : selectedScanList === scanList.name
-                      ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan cursor-pointer'
-                      : 'hover:bg-deep-gray hover:bg-opacity-50 cursor-pointer'
-                  }`}
-                >
-                  <div className="flex justify-between items-center mb-1">
-                    {editingScanList === scanList.name ? (
-                      <div className="flex items-center gap-2 flex-1">
-                        <input
-                          type="text"
-                          value={editScanListName}
-                          onChange={(e) => setEditScanListName(e.target.value)}
-                          onKeyPress={(e) => {
-                            if (e.key === 'Enter') {
-                              handleSaveEdit(scanList.name);
-                            } else if (e.key === 'Escape') {
-                              handleCancelEdit(e as any);
-                            }
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex-1 bg-transparent border border-neon-cyan rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                          maxLength={16}
-                          autoFocus
-                        />
-                        <button
-                          onClick={(e) => handleSaveEdit(scanList.name, e)}
-                          className="px-2 py-1 bg-neon-cyan text-dark-charcoal rounded text-xs hover:bg-opacity-90"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={handleCancelEdit}
-                          className="px-2 py-1 bg-cool-gray bg-opacity-30 text-cool-gray rounded text-xs hover:bg-opacity-50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <span className="text-white font-medium">{scanList.name}</span>
-                        <span className="text-cool-gray text-xs">
-                          {scanList.channels.length} channel{scanList.channels.length !== 1 ? 's' : ''}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  {editingScanList !== scanList.name && (
-                    <>
-                      {scanList.channels.length > 0 && (
-                        <div className="text-cool-gray text-xs mb-2">
-                          Channels: {scanList.channels.slice(0, 5).join(', ')}
-                          {scanList.channels.length > 5 && ` +${scanList.channels.length - 5} more`}
-                        </div>
-                      )}
-                      <div className="flex gap-2 justify-end mt-2">
-                        <button
-                          onClick={(e) => handleStartEdit(scanList.name, e)}
-                          className="px-2 py-0.5 bg-neon-cyan bg-opacity-50 text-neon-cyan rounded text-xs hover:bg-opacity-70 border border-neon-cyan border-opacity-50"
-                        >
-                          Rename
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteScanList(scanList.name);
-                          }}
-                          className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </>
-                  )}
+  const listContent =
+    scanLists.length === 0 ? (
+      <EmptyState
+        message="No scan lists loaded"
+        secondary="Read from radio to view scan lists"
+      />
+    ) : (
+      <div className="divide-y divide-neon-cyan divide-opacity-20">
+        {scanLists.map((scanList, index) => (
+          <div
+            key={`${scanList.name}-${index}`}
+            onClick={() => editingScanList !== scanList.name && setSelectedScanList(scanList.name)}
+            className={`p-3 transition-colors ${
+              editingScanList === scanList.name
+                ? 'bg-deep-gray-light'
+                : selectedScanList === scanList.name
+                  ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan cursor-pointer'
+                  : 'hover:bg-deep-gray hover:bg-opacity-50 cursor-pointer'
+            }`}
+          >
+            <div className="flex justify-between items-center mb-1">
+              {editingScanList === scanList.name ? (
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    type="text"
+                    value={editScanListName}
+                    onChange={(e) => setEditScanListName(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveEdit(scanList.name);
+                      } else if (e.key === 'Escape') {
+                        handleCancelEdit();
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex-1 bg-transparent border border-neon-cyan rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    maxLength={16}
+                    autoFocus
+                  />
+                  <button
+                    onClick={(e) => handleSaveEdit(scanList.name, e)}
+                    className="px-2 py-1 bg-neon-cyan text-dark-charcoal rounded text-xs hover:bg-opacity-90"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="px-2 py-1 bg-cool-gray bg-opacity-30 text-cool-gray rounded text-xs hover:bg-opacity-50"
+                  >
+                    Cancel
+                  </button>
                 </div>
-              ))}
+              ) : (
+                <>
+                  <span className="text-white font-medium">{scanList.name}</span>
+                  <span className="text-cool-gray text-xs">
+                    {scanList.channels.length} channel{scanList.channels.length !== 1 ? 's' : ''}
+                  </span>
+                </>
+              )}
             </div>
-          )}
-        </div>
-      </div>
-
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan">
-        <div className="p-4 border-b border-neon-cyan border-opacity-30">
-          <h3 className="text-neon-cyan font-bold">
-            {selectedScanListData ? `Scan List: ${selectedScanListData.name}` : 'Select a Scan List'}
-          </h3>
-        </div>
-        {selectedScanListData ? (
-          <ScanListEditor scanList={selectedScanListData} />
-        ) : (
-          <div className="p-8 text-center">
-            <p className="text-cool-gray">Select a scan list to edit</p>
-            <p className="text-cool-gray text-sm mt-2">Scan lists define which channels to scan</p>
+            {editingScanList !== scanList.name && (
+              <>
+                {scanList.channels.length > 0 && (
+                  <div className="text-cool-gray text-xs mb-2">
+                    Channels: {scanList.channels.slice(0, 5).join(', ')}
+                    {scanList.channels.length > 5 && ` +${scanList.channels.length - 5} more`}
+                  </div>
+                )}
+                <div className="flex gap-2 justify-end mt-2">
+                  <button
+                    onClick={(e) => handleStartEdit(scanList.name, e)}
+                    className="px-2 py-0.5 bg-neon-cyan bg-opacity-50 text-neon-cyan rounded text-xs hover:bg-opacity-70 border border-neon-cyan border-opacity-50"
+                  >
+                    Rename
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteScanList(scanList.name);
+                    }}
+                    className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </>
+            )}
           </div>
-        )}
+        ))}
       </div>
-    </div>
+    );
+
+  const detailContent = (
+    <Card padding="none">
+      <div className="p-4 border-b border-neon-cyan border-opacity-30">
+        <SectionTitle as="h3" size="md" bold>
+          {selectedScanListData ? `Scan List: ${selectedScanListData.name}` : 'Select a Scan List'}
+        </SectionTitle>
+      </div>
+      {selectedScanListData ? (
+        <ScanListEditor scanList={selectedScanListData} />
+      ) : (
+        <EmptyState
+          message="Select a scan list to edit"
+          secondary="Scan lists define which channels to scan"
+        />
+      )}
+    </Card>
+  );
+
+  return (
+    <ListDetailLayout
+      listTitle="Scan Lists"
+      listSubtitle={`${scanLists.length}/32 scan lists`}
+      addInputPlaceholder="Scan list name..."
+      addInputValue={newScanListName}
+      onAddInputChange={setNewScanListName}
+      onAdd={handleAddScanList}
+      addDisabled={scanLists.length >= 32}
+      addInputMaxLength={16}
+      listContent={listContent}
+      detailContent={detailContent}
+    />
   );
 };
 
