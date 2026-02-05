@@ -8,6 +8,8 @@ import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import type { Channel } from '../../models/Channel';
 import { ChannelEditModal } from './ChannelEditModal';
+import { Card } from '../ui/Card';
+import { EmptyState } from '../ui/EmptyState';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
 
 // Frequency input component that only updates parent on blur (prevents cursor jumping)
@@ -192,15 +194,14 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
 
   if (channels.length === 0) {
     return (
-      <div className="bg-deep-gray rounded-lg border border-neon-cyan p-8 text-center">
-        <p className="text-cool-gray mb-4">No channels loaded</p>
-        <p className="text-cool-gray text-sm">Connect to a radio or import channels to get started</p>
-      </div>
+      <Card>
+        <EmptyState message="No channels loaded" secondary="Connect to a radio or import channels to get started" />
+      </Card>
     );
   }
 
   return (
-    <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-200px)] flex flex-col">
+    <Card className="max-h-[calc(100vh-200px)] flex flex-col" padding="none">
       <div className="flex-1 overflow-auto">
         <div className="inline-block min-w-full">
           <table className="w-full border-collapse text-xs">
@@ -981,6 +982,6 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
           talkGroups={talkGroups}
         />
       )}
-    </div>
+    </Card>
   );
 };

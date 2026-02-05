@@ -8,6 +8,9 @@ import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { RXGroupsList } from '../rxgroups/RXGroupsList';
+import { Card } from '../ui/Card';
+import { SectionTitle } from '../ui/SectionTitle';
+import { EmptyState } from '../ui/EmptyState';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
@@ -163,7 +166,7 @@ export const DigitalTab: React.FC = () => {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-neon-cyan mb-2">Digital Settings</h2>
+        <SectionTitle as="h2" size="xl" bold className="text-2xl">Digital Settings</SectionTitle>
         <p className="text-cool-gray text-sm">
           Manage encryption keys, digital emergency systems, DMR radio IDs, talk groups, RX groups, and quick messages.
         </p>
@@ -173,7 +176,7 @@ export const DigitalTab: React.FC = () => {
       <div className="mb-8">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-semibold text-neon-cyan mb-2">DMR Radio IDs</h3>
+            <SectionTitle as="h3" size="xl">DMR Radio IDs</SectionTitle>
             <p className="text-cool-gray text-sm">
               Manage DMR Radio IDs. Up to {dmrRadioIdsMax} IDs can be configured.
             </p>
@@ -189,17 +192,15 @@ export const DigitalTab: React.FC = () => {
         </div>
 
         {!radioIdsLoaded ? (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
-            <p className="text-cool-gray text-sm">
-              DMR Radio IDs will be loaded when you read from the radio.
-            </p>
-          </div>
+          <Card variant="subdued">
+            <EmptyState message="DMR Radio IDs will be loaded when you read from the radio." />
+          </Card>
         ) : radioIds.length === 0 ? (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
-            <p className="text-cool-gray text-sm">No DMR Radio IDs found on the radio.</p>
-          </div>
+          <Card variant="subdued">
+            <EmptyState message="No DMR Radio IDs found on the radio." />
+          </Card>
         ) : (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-400px)] flex flex-col">
+          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -274,7 +275,7 @@ export const DigitalTab: React.FC = () => {
                 </table>
               </div>
             </div>
-          </div>
+          </Card>
         )}
       </div>
 
@@ -282,7 +283,7 @@ export const DigitalTab: React.FC = () => {
       <div className="mb-8">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-semibold text-neon-cyan mb-2">Talk Groups</h3>
+            <SectionTitle as="h3" size="xl">Talk Groups</SectionTitle>
             <p className="text-cool-gray text-sm">
               Manage DMR talk groups (contacts) for group calls, private calls, and all calls.
             </p>
@@ -304,17 +305,15 @@ export const DigitalTab: React.FC = () => {
         </div>
 
         {!quickContactsLoaded ? (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
-            <p className="text-cool-gray text-sm">
-              Talk groups will be loaded when you read from the radio.
-            </p>
-          </div>
+          <Card variant="subdued">
+            <EmptyState message="Talk groups will be loaded when you read from the radio." />
+          </Card>
         ) : quickContacts.length === 0 ? (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
-            <p className="text-cool-gray text-sm">No talk groups found on the radio.</p>
-          </div>
+          <Card variant="subdued">
+            <EmptyState message="No talk groups found on the radio." />
+          </Card>
         ) : (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-400px)] flex flex-col">
+          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -382,25 +381,23 @@ export const DigitalTab: React.FC = () => {
                 </table>
               </div>
             </div>
-          </div>
+          </Card>
         )}
       </div>
 
       {/* DMR RX Groups Section */}
       <div className="mb-8">
         <div className="mb-4">
-          <h3 className="text-xl font-semibold text-neon-cyan mb-2">DMR RX Groups</h3>
+          <SectionTitle as="h3" size="xl">DMR RX Groups</SectionTitle>
           <p className="text-cool-gray text-sm">
             Manage DMR RX Groups
           </p>
         </div>
 
         {!rxGroupsLoaded ? (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
-            <p className="text-cool-gray text-sm">
-              DMR RX Groups will be loaded when you read from the radio.
-            </p>
-          </div>
+          <Card variant="subdued">
+            <EmptyState message="DMR RX Groups will be loaded when you read from the radio." />
+          </Card>
         ) : (
           <RXGroupsList />
         )}
@@ -409,7 +406,7 @@ export const DigitalTab: React.FC = () => {
       {/* Digital Emergency Systems Section */}
       <div className="mb-8">
         <div className="mb-4">
-          <h3 className="text-xl font-semibold text-neon-cyan mb-2">Digital Emergency Systems</h3>
+          <SectionTitle as="h3" size="xl">Digital Emergency Systems</SectionTitle>
           <p className="text-cool-gray text-sm">
             Manage digital emergency systems from metadata block 0x10 (offset 0x000).
           </p>
@@ -421,17 +418,15 @@ export const DigitalTab: React.FC = () => {
         </div>
 
         {!block10Data ? (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
-            <p className="text-cool-gray text-sm">
-              Block 0x10 not found. Read from radio to view digital emergency systems.
-            </p>
-          </div>
+          <Card variant="subdued">
+            <EmptyState message="Block 0x10 not found. Read from radio to view digital emergency systems." />
+          </Card>
         ) : digitalEmergencies.length === 0 ? (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
-            <p className="text-cool-gray text-sm">No digital emergency systems found.</p>
-          </div>
+          <Card variant="subdued">
+            <EmptyState message="No digital emergency systems found." />
+          </Card>
         ) : (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-400px)] flex flex-col">
+          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -483,14 +478,14 @@ export const DigitalTab: React.FC = () => {
                 </table>
               </div>
             </div>
-          </div>
+          </Card>
         )}
       </div>
 
       {/* Encryption Keys Section */}
       <div className="mb-8">
         <div className="mb-4">
-          <h3 className="text-xl font-semibold text-neon-cyan mb-2">Encryption Keys</h3>
+          <SectionTitle as="h3" size="xl">Encryption Keys</SectionTitle>
           <p className="text-cool-gray text-sm">
             Manage encryption keys from metadata block 0x10. Up to 8 keys can be configured.
           </p>
@@ -502,13 +497,11 @@ export const DigitalTab: React.FC = () => {
         </div>
 
         {!block10Data ? (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
-            <p className="text-cool-gray text-sm">
-              Block 0x10 not found. Read from radio to view encryption keys.
-            </p>
-          </div>
+          <Card variant="subdued">
+            <EmptyState message="Block 0x10 not found. Read from radio to view encryption keys." />
+          </Card>
         ) : (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-400px)] flex flex-col">
+          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -569,7 +562,7 @@ export const DigitalTab: React.FC = () => {
                 </table>
               </div>
             </div>
-          </div>
+          </Card>
         )}
       </div>
 
@@ -577,7 +570,7 @@ export const DigitalTab: React.FC = () => {
       <div className="mb-8">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-semibold text-neon-cyan mb-2">Quick Text Messages</h3>
+            <SectionTitle as="h3" size="xl">Quick Text Messages</SectionTitle>
             <p className="text-cool-gray text-sm">
               Manage quick text messages. Maximum 128 bytes per message, up to 20 messages.
             </p>
@@ -593,13 +586,11 @@ export const DigitalTab: React.FC = () => {
         </div>
 
         {!messagesLoaded ? (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan border-opacity-20 p-6">
-            <p className="text-cool-gray text-sm">
-              Quick messages will be loaded when you read from the radio.
-            </p>
-          </div>
+          <Card variant="subdued">
+            <EmptyState message="Quick messages will be loaded when you read from the radio." />
+          </Card>
         ) : (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan max-h-[calc(100vh-400px)] flex flex-col">
+          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -651,7 +642,7 @@ export const DigitalTab: React.FC = () => {
                 </table>
               </div>
             </div>
-          </div>
+          </Card>
         )}
       </div>
     </div>

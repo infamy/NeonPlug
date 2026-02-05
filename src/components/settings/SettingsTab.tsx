@@ -366,7 +366,7 @@ export const SettingsTab: React.FC = () => {
       </Modal>
 
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-neon-cyan">Settings</h2>
+        <SectionTitle as="h2" size="xl" bold className="text-2xl">Settings</SectionTitle>
         <p className="text-cool-gray text-sm mt-1">Radio information, memory usage, and configuration</p>
       </div>
 
@@ -506,10 +506,8 @@ export const SettingsTab: React.FC = () => {
             const profile = getSettingsProfileForModel(radioInfo?.model);
             return profile?.features?.includes('bootImage');
           })() && (
-          <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-            <h3 className="text-lg font-semibold text-neon-cyan mb-2 pb-2 border-b border-neon-cyan border-opacity-20">
-              Boot / Startup Image
-            </h3>
+          <Card>
+            <SectionTitle size="lg" underline>Boot / Startup Image</SectionTitle>
             <p className="text-cool-gray text-sm mb-6">
               Optionally read from the radio to see the current image, then import your image (drag and drop or click Import). It will be resized to 240×320 portrait. When it looks right, send it to the radio.
             </p>
@@ -627,7 +625,7 @@ export const SettingsTab: React.FC = () => {
                 </div>
               </div>
             </div>
-          </div>
+          </Card>
           )}
 
           {/* Radio Configuration - profile-driven */}
@@ -635,21 +633,19 @@ export const SettingsTab: React.FC = () => {
             const profile = getSettingsProfileForModel(radioInfo?.model);
             if (!profile) {
               return radioSettings ? (
-                <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
+                <Card>
                   <p className="text-cool-gray">Settings not available for this radio.</p>
-                </div>
+                </Card>
               ) : null;
             }
             if (!radioSettings) return null;
             return (
-              <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6">
-                <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
-                  Radio Configuration
-                </h3>
+              <Card>
+                <SectionTitle underline>Radio Configuration</SectionTitle>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
                   {profile.sections.map((section) => (
-                    <div key={section.id} className="bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20 p-4">
-                      <h4 className="text-md font-semibold text-neon-cyan mb-3">{section.title}</h4>
+                    <Card key={section.id} variant="subdued" padding="tight">
+                      <SectionTitle as="h4" size="md">{section.title}</SectionTitle>
                       <div className="space-y-3">
                         {section.fields.map((field) => (
                           <SettingsFieldRenderer
@@ -660,23 +656,21 @@ export const SettingsTab: React.FC = () => {
                           />
                         ))}
                       </div>
-                    </div>
+                    </Card>
                   ))}
                 </div>
-              </div>
+              </Card>
             );
           })()}
 
           {/* One Key Operation */}
           {radioSettings && (
-            <div className="bg-deep-gray rounded-lg border border-neon-cyan p-6 mt-6">
-              <h3 className="text-lg font-semibold text-neon-cyan mb-4 pb-2 border-b border-neon-cyan border-opacity-20">
-                One Key Operation
-              </h3>
+            <Card className="mt-6">
+              <SectionTitle underline>One Key Operation</SectionTitle>
 
               {/* Analog Call */}
               <div className="mb-6">
-                <h4 className="text-md font-semibold text-neon-cyan mb-3">Analog Call</h4>
+                <SectionTitle as="h4" size="md">Analog Call</SectionTitle>
                 <p className="text-cool-gray text-sm mb-4">Configure 4 analog call shortcuts</p>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse">
@@ -732,9 +726,9 @@ export const SettingsTab: React.FC = () => {
 
               {/* One Touch Call */}
               <div className="mb-6 pt-6 border-t border-neon-cyan border-opacity-20">
-              <h4 className="text-md font-semibold text-neon-cyan mb-3">One Touch Call</h4>
-              <p className="text-cool-gray text-sm mb-4">Configure 5 one-touch call shortcuts</p>
-              <div className="overflow-x-auto">
+                <SectionTitle as="h4" size="md">One Touch Call</SectionTitle>
+                <p className="text-cool-gray text-sm mb-4">Configure 5 one-touch call shortcuts</p>
+                <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b border-neon-cyan border-opacity-30">
@@ -819,9 +813,9 @@ export const SettingsTab: React.FC = () => {
 
               {/* Fun+ */}
               <div className="pt-6 border-t border-neon-cyan border-opacity-20">
-              <h4 className="text-md font-semibold text-neon-cyan mb-3">Fun+ (Function Key Shortcuts)</h4>
-              <p className="text-cool-gray text-sm mb-4">Configure 10 function key shortcuts (Fun+0 through Fun+9)</p>
-              <div className="overflow-x-auto">
+                <SectionTitle as="h4" size="md">Fun+ (Function Key Shortcuts)</SectionTitle>
+                <p className="text-cool-gray text-sm mb-4">Configure 10 function key shortcuts (Fun+0 through Fun+9)</p>
+                <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b border-neon-cyan border-opacity-30">
@@ -939,17 +933,17 @@ export const SettingsTab: React.FC = () => {
                 </table>
               </div>
             </div>
-          </div>
+          </Card>
           )}
         </div>
       )}
 
       {/* Calibration Data Section - Read Only */}
       {calibrationLoaded && (
-        <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-6 mt-6">
+        <Card className="mt-6 !border-yellow-600/30">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-yellow-400">Frequency Calibration Data</h3>
+              <SectionTitle className="!text-yellow-400">Frequency Calibration Data</SectionTitle>
               <span className="px-2 py-1 bg-yellow-900/30 text-yellow-400 text-xs rounded border border-yellow-600/30">
                 READ-ONLY
               </span>
@@ -978,7 +972,7 @@ export const SettingsTab: React.FC = () => {
               {/* Frequency Array 1 */}
               {calibration.data.frequencyArray1.size > 0 && (
                 <div>
-                  <h4 className="text-md font-semibold text-yellow-400 mb-2">Frequency Array 1</h4>
+                  <SectionTitle as="h4" size="md" className="!text-yellow-400 mb-2">Frequency Array 1</SectionTitle>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
                     {Array.from(calibration.data.frequencyArray1.entries())
                       .sort(([a], [b]) => a - b)
@@ -998,7 +992,7 @@ export const SettingsTab: React.FC = () => {
               {/* Frequency Array 2 */}
               {calibration.data.frequencyArray2.size > 0 && (
                 <div>
-                  <h4 className="text-md font-semibold text-yellow-400 mb-2">Frequency Array 2</h4>
+                  <SectionTitle as="h4" size="md" className="!text-yellow-400 mb-2">Frequency Array 2</SectionTitle>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
                     {Array.from(calibration.data.frequencyArray2.entries())
                       .sort(([a], [b]) => a - b)
@@ -1020,7 +1014,7 @@ export const SettingsTab: React.FC = () => {
                 calibration.data.valueArray2.size > 0 || 
                 calibration.data.valueArray3.size > 0) && (
                 <div>
-                  <h4 className="text-md font-semibold text-yellow-400 mb-2">Calibration Values</h4>
+                  <SectionTitle as="h4" size="md" className="!text-yellow-400 mb-2">Calibration Values</SectionTitle>
                   <div className="space-y-3">
                     {calibration.data.valueArray1.size > 0 && (
                       <div>
@@ -1089,7 +1083,7 @@ export const SettingsTab: React.FC = () => {
           )}
             </>
           )}
-        </div>
+        </Card>
       )}
       <Modal
         isOpen={showFirmwareWarning}

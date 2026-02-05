@@ -28,6 +28,9 @@ import { analyzeMetadata, generateMetadataReport } from '../../services/metadata
 import { exportCodeplug } from '../../services/codeplugExport';
 import { BOOT_IMAGE } from '../../utils/bootImage';
 import JSZip from 'jszip';
+import { Card } from '../ui/Card';
+import { SectionTitle } from '../ui/SectionTitle';
+import { EmptyState } from '../ui/EmptyState';
 
 export const DiagnosticsTab: React.FC = () => {
   const { rawRadioSettingsData, rawContactBlockAddress, rawContactBlocks, blockMetadata, blockData, writeBlockData, radioInfo, zoneComparisonData, bootImageRaw } = useRadioStore();
@@ -584,7 +587,7 @@ export const DiagnosticsTab: React.FC = () => {
       <div className="h-full overflow-y-auto">
         <div className="p-6">
           <div className="mb-6">
-            <h2 className="text-2xl font-bold text-yellow-400">Diagnostics & Debug</h2>
+            <SectionTitle as="h2" size="xl" bold className="text-2xl !text-yellow-400">Diagnostics & Debug</SectionTitle>
             <p className="text-cool-gray text-sm mt-1">Radio settings diagnostic tools</p>
           </div>
 
@@ -676,9 +679,9 @@ export const DiagnosticsTab: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-deep-gray rounded-lg border border-yellow-600/30 p-8 text-center">
-            <p className="text-cool-gray">No radio settings data available. Read from radio to view diagnostics.</p>
-          </div>
+          <Card className="!border-yellow-600/30">
+            <EmptyState message="No radio settings data available. Read from radio to view diagnostics." />
+          </Card>
         </div>
       </div>
     );
@@ -689,7 +692,7 @@ export const DiagnosticsTab: React.FC = () => {
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-yellow-400">Diagnostics & Debug</h2>
+            <SectionTitle as="h2" size="xl" bold className="text-2xl !text-yellow-400">Diagnostics & Debug</SectionTitle>
             <p className="text-cool-gray text-sm mt-1">Inspect raw memory offsets and verify field parsing</p>
           </div>
         </div>
