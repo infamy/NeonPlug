@@ -6,8 +6,8 @@ import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
-import { parseEncryptionKeys, parseDigitalEmergencies } from '../../protocol/dm32uv/structures';
-import { LIMITS } from '../../protocol/dm32uv/constants';
+import { parseEncryptionKeys, parseDigitalEmergencies } from '../../radios/dm32uv/structures';
+import { LIMITS } from '../../radios/dm32uv/constants';
 import { RXGroupsList } from '../rxgroups/RXGroupsList';
 
 export const DigitalTab: React.FC = () => {

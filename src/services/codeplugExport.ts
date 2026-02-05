@@ -12,7 +12,7 @@ import type { Contact } from '../models/Contact';
 import type { DigitalEmergency, DigitalEmergencyConfig } from '../models/DigitalEmergency';
 import type { AnalogEmergency } from '../models/AnalogEmergency';
 import type { RadioSettings } from '../models/RadioSettings';
-import type { RadioInfo } from '../protocol/interface';
+import type { RadioInfo } from '../types/radio';
 
 export interface CodeplugData {
   channels: Channel[];

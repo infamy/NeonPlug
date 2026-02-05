@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { RadioSettings, RadioInfo } from '../protocol/interface';
+import type { RadioSettings, RadioInfo } from '../types/radio';
 
 type ZoneComparisonData = Array<{
   blockIndex: number;

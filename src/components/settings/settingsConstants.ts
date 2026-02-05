@@ -133,7 +133,51 @@ export const FUN_PLUS_CALL_WAY_OPTIONS = [
   { value: 2, label: 'Digital' },
 ];
 
+export const DATA_DISPLAY_FORMAT_OPTIONS = [
+  { value: 0, label: 'yyy/m/d (Format 0)' },
+  { value: 1, label: 'd/m/yyy (Format 1)' },
+];
+
+export const LOCK_KEY_OPTIONS = [
+  { value: 0, label: 'Manual' },
+  { value: 1, label: 'Auto' },
+];
+
+export const ON_OFF_OPTIONS = [
+  { value: 0, label: 'Off' },
+  { value: 1, label: 'On' },
+];
+
 export const getColorHex = (colorValue: number): string => {
   const color = COLOR_OPTIONS.find(c => c.value === colorValue);
   return color?.hex || '#FFFFFF';
 };
+
+/** Option-set registry for profile-driven settings (optionsId → options array) */
+export type OptionItem = { value: number; label: string; hex?: string };
+
+const OPTIONS_REGISTRY: Record<string, OptionItem[]> = {
+  color: COLOR_OPTIONS,
+  powerOnInterface: POWER_ON_INTERFACE_OPTIONS,
+  autoPowerOff: AUTO_POWER_OFF_OPTIONS,
+  utcZone: UTC_ZONE_OPTIONS,
+  buttonFunction: BUTTON_FUNCTION_OPTIONS,
+  analogCallType: ANALOG_CALL_TYPE_OPTIONS,
+  oneTouchCallType: ONE_TOUCH_CALL_TYPE_OPTIONS,
+  digitalCallType: DIGITAL_CALL_TYPE_OPTIONS,
+  funPlusOperateMode: FUN_PLUS_OPERATE_MODE_OPTIONS,
+  funPlusMenuSelect: FUN_PLUS_MENU_SELECT_OPTIONS,
+  funPlusCallWay: FUN_PLUS_CALL_WAY_OPTIONS,
+  dataDisplayFormat: DATA_DISPLAY_FORMAT_OPTIONS,
+  lockKey: LOCK_KEY_OPTIONS,
+  onOff: ON_OFF_OPTIONS,
+};
+
+export function getOptionsForId(id: string): OptionItem[] {
+  const options = OPTIONS_REGISTRY[id];
+  if (!options) {
+    console.warn(`[settingsConstants] Unknown optionsId: ${id}`);
+    return [];
+  }
+  return options;
+}

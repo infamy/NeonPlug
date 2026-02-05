@@ -23,34 +23,33 @@ export interface RadioProtocol {
   connect(portOrOptions?: string | { forcePortSelection?: boolean }): Promise<void>;
   disconnect(): Promise<void>;
   isConnected(): boolean;
-  
+
   // Radio Info
   getRadioInfo(): Promise<RadioInfo>;
-  
+
   // Channels
   readChannels(): Promise<Channel[]>;
   writeChannels(channels: Channel[]): Promise<void>;
-  
+
   // Zones
   readZones(): Promise<Zone[]>;
   writeZones(zones: Zone[]): Promise<void>;
-  
+
   // Scan Lists
   readScanLists(): Promise<ScanList[]>;
-  
+
   // DMR Radio IDs
   readDMRRadioIDs(): Promise<DMRRadioID[]>;
   writeDMRRadioIDs(radioIds: DMRRadioID[]): Promise<void>;
-  
+
   // Contacts
   readContacts(): Promise<Contact[]>;
   writeContacts(contacts: Contact[]): Promise<void>;
-  
+
   // Settings
   readRadioSettings(): Promise<RadioSettings | null>;
   writeRadioSettings(settings: RadioSettings): Promise<void>;
-  
+
   // Progress callbacks
   onProgress?: (progress: number, message: string) => void;
 }
-

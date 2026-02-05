@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { QuickContact } from '../models/QuickContact';
-import { LIMITS } from '../protocol/dm32uv/constants';
+import { LIMITS } from '../radios/dm32uv/constants';
 
 interface QuickContactsState {
   contacts: QuickContact[];

@@ -12,8 +12,8 @@ import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useLogStore } from '../../store/logStore';
-import { parseRadioSettings } from '../../protocol/dm32uv/structures';
-import { decodeBCDFrequency, decodeCTCSSDCS } from '../../protocol/dm32uv/encoding';
+import { parseRadioSettings } from '../../radios/dm32uv/structures';
+import { decodeBCDFrequency, decodeCTCSSDCS } from '../../radios/dm32uv/encoding';
 import {
   POWER_ON_INTERFACE_OPTIONS,
   COLOR_OPTIONS,

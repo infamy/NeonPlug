@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { DM32UVProtocol } from '../protocol/dm32uv/protocol';
+import { DM32UVProtocol } from '../radios/dm32uv/protocol';
 import type { Contact } from '../models/Contact';
 import { useRadioStore } from '../store/radioStore';
 import { useChannelsStore } from '../store/channelsStore';
