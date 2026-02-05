@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from './Button';
+import { ConfirmModal } from './ConfirmModal';
 import { DM32_MODEL_IDS } from '../../radios';
 import { isWebSerialSupported, getSupportedBrowsers } from '../../utils/browserSupport';
 
@@ -12,12 +13,22 @@ interface StartupModalProps {
   onDismiss?: () => void;
 }
 
+const OFFLINE_FALLBACK_MESSAGE =
+  'The offline version is available on GitHub Pages.\n\n' +
+  'Click OK to open it, then:\n' +
+  '1. Right-click on the page\n' +
+  '2. Select "Save As" or "Save Page As"\n' +
+  '3. Save as "neonplug.html"\n\n' +
+  'Or build it locally using the instructions in the About tab.';
+
 export const StartupModal: React.FC<StartupModalProps> = ({
   isOpen,
   onReadFromRadio,
   onLoadFile,
   onDismiss,
 }) => {
+  const [offlineFallbackOpen, setOfflineFallbackOpen] = useState(false);
+
   if (!isOpen) return null;
 
   const webSerialSupported = isWebSerialSupported();
@@ -97,17 +108,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                   document.body.removeChild(a);
                   URL.revokeObjectURL(url);
                 } catch {
-                  const confirmed = window.confirm(
-                    'The offline version is available on GitHub Pages.\n\n' +
-                      'Click OK to open it, then:\n' +
-                      '1. Right-click on the page\n' +
-                      '2. Select "Save As" or "Save Page As"\n' +
-                      '3. Save as "neonplug.html"\n\n' +
-                      'Or build it locally using the instructions in the About tab.'
-                  );
-                  if (confirmed) {
-                    window.open(OFFLINE_VERSION_URL, '_blank');
-                  }
+                  setOfflineFallbackOpen(true);
                 }
               }}
               className="text-neon-cyan hover:underline bg-transparent border-none cursor-pointer p-0 font-inherit text-inherit"
@@ -126,6 +127,15 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           )}
         </div>
       </div>
+      <ConfirmModal
+        isOpen={offlineFallbackOpen}
+        onClose={() => setOfflineFallbackOpen(false)}
+        onConfirm={() => window.open(OFFLINE_VERSION_URL, '_blank')}
+        title="Download offline version"
+        message={OFFLINE_FALLBACK_MESSAGE}
+        confirmLabel="OK"
+        variant="alert"
+      />
     </div>
   );
 };

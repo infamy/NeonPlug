@@ -22,6 +22,12 @@ import type { ScanList } from '../models/ScanList';
 import { isValidChannelFrequency } from '../services/validation/frequencyValidator';
 import { parseBootImageHeader } from '../utils/bootImage';
 
+/** Augment error message when tab was hidden during a serial operation (better reporting). */
+function withVisibilityContext(message: string, tabWentHidden: boolean): string {
+  if (!tabWentHidden) return message;
+  return `${message}\n\nTab was in background during operation; this can cause serial communication failures.`;
+}
+
 // Export steps so UI components can use them (single source of truth)
 const READ_STEPS: string[] = [
   'Selecting port',
@@ -66,6 +72,11 @@ export function useRadioConnection() {
     setConnectionError(null);
     
     let protocol: RadioProtocol | null = null;
+    let tabWentHiddenDuringOperation = false;
+    const onVisibilityChange = () => {
+      if (document.hidden) tabWentHiddenDuringOperation = true;
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     // Define steps once - this is the single source of truth
     // Use the exported READ_STEPS array (single source of truth)
@@ -268,8 +279,9 @@ export function useRadioConnection() {
       // Step 6: Complete (contacts are read separately on demand)
       onProgress?.(100, 'Read complete!', steps[5]);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Read failed';
-      const isPortSelectionCancelled = errorMessage.includes('cancelled') || errorMessage.includes('Port selection cancelled');
+      const rawMessage = err instanceof Error ? err.message : 'Read failed';
+      const errorMessage = withVisibilityContext(rawMessage, tabWentHiddenDuringOperation);
+      const isPortSelectionCancelled = rawMessage.includes('cancelled') || rawMessage.includes('Port selection cancelled');
       
       // If it's not a port selection cancellation, try retrying with forced port selection
       if (!isPortSelectionCancelled && protocol) {
@@ -432,7 +444,8 @@ export function useRadioConnection() {
         } catch (retryErr) {
           // Retry also failed, fall through to show error
           console.error('Retry with port selection also failed:', retryErr);
-          const retryErrorMessage = retryErr instanceof Error ? retryErr.message : 'Read failed';
+          const retryRawMessage = retryErr instanceof Error ? retryErr.message : 'Read failed';
+          const retryErrorMessage = withVisibilityContext(retryRawMessage, tabWentHiddenDuringOperation);
           setError(retryErrorMessage);
           setConnectionError(retryErrorMessage);
           onProgress?.(0, `Error: ${retryErrorMessage}`, 'Error');
@@ -453,7 +466,7 @@ export function useRadioConnection() {
       setError(errorMessage);
       setConnectionError(errorMessage);
       onProgress?.(0, `Error: ${errorMessage}`, 'Error');
-      
+
       console.error('Radio read error:', err);
       
       // Set connecting to false so modal can show error state
@@ -472,6 +485,7 @@ export function useRadioConnection() {
       // Re-throw the error so the caller (Toolbar) can handle it and show error in modal
       throw err;
     } finally {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       // Only set connecting to false if we didn't already (success case)
       // On error, we set it in the catch block so modal stays open to show error
       if (!error) {
@@ -693,6 +707,11 @@ export function useRadioConnection() {
     
     let protocol: RadioProtocol | null = null;
     const steps = WRITE_CHANNELS_STEPS;
+    let tabWentHiddenDuringOperation = false;
+    const onVisibilityChange = () => {
+      if (document.hidden) tabWentHiddenDuringOperation = true;
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     try {
       // Filter channels to only include those with valid frequencies
@@ -827,16 +846,17 @@ export function useRadioConnection() {
         onProgress?.(100, `Successfully wrote ${summary} to radio!`, steps[4]);
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Write failed';
+      const rawMessage = err instanceof Error ? err.message : 'Write failed';
+      const errorMessage = withVisibilityContext(rawMessage, tabWentHiddenDuringOperation);
       setError(errorMessage);
       setConnectionError(errorMessage);
       onProgress?.(0, `Error: ${errorMessage}`, 'Error');
-      
+
       console.error('Radio write error:', err);
-      
+
       // Set connecting to false so modal can show error state
       setIsConnecting(false);
-      
+
       // Try to disconnect on error (if connection exists)
       if (protocol) {
         try {
@@ -846,10 +866,11 @@ export function useRadioConnection() {
           console.warn('Error during disconnect cleanup:', disconnectErr);
         }
       }
-      
+
       // Re-throw the error so the caller can handle it and show error in modal
       throw err;
     } finally {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       // Only set connecting to false if we didn't already (success case)
       // On error, we set it in the catch block so modal stays open to show error
       if (!error) {
