@@ -8,15 +8,43 @@
   }
 }
 
+/* Theme: reusable semantic classes (see PLAN.md Color Palette) */
+@layer components {
+  /* Secondary / muted text */
+  .text-muted {
+    @apply text-cool-gray;
+  }
+
+  /* Panel and card borders (default strength) */
+  .border-panel {
+    @apply border border-neon-cyan border-opacity-20;
+  }
+
+  /* Slightly stronger panel border (inputs, selected states) */
+  .border-panel-strong {
+    @apply border border-neon-cyan border-opacity-30;
+  }
+
+  /* Accent links: cyan with bright hover */
+  .link-accent {
+    @apply text-neon-cyan hover:text-neon-cyan-bright transition-colors underline;
+  }
+
+  /* Panel background (cards, sections) */
+  .bg-panel {
+    @apply bg-deep-gray;
+  }
+}
+
 @layer utilities {
   .glow-cyan {
     text-shadow: 0 0 4px #00fff7, 0 0 10px #00fff7;
   }
-  
+
   .glow-magenta {
     box-shadow: 0 0 6px #ff00ff, 0 0 15px #ff00ff;
   }
-  
+
   .glow-purple {
     box-shadow: 0 0 6px #9B30FF, 0 0 15px #9B30FF;
   }

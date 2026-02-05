@@ -29,57 +29,13 @@ If you're a developer, keep reading for technical setup and guidelines!
 
 ---
 
-## 🗺️ Roadmap
-
-Here's where we're headed. Items marked with ✅ are complete, and ⚠️ indicates work in progress.
-
-### Phase 1: Read & Parse (Complete) ✅
-- [x] Connect to radio via Web Serial API
-- [x] Read full codeplug from radio
-- [x] Parse all data structures (channels, contacts, zones, scan lists, RX groups)
-- [x] Display parsed data in editable tables
-- [x] Basic validation for frequency ranges and DMR settings
-
-### Phase 2: Import & Export (Complete) ✅
-- [x] CSV export (CHIRP compatible)
-- [x] CSV import with validation
-- [x] Location-based channel wizard (repeater databases)
-- [x] Airport frequency generation
-- [x] Bulk channel generation from repeater databases
-
-### Phase 3: Write Operations (Mostly Complete) ✅
-- [x] Write complete codeplug to radio
-- [x] Write individual channels
-- [x] Write contacts and groups
-- [x] Write zones and scan lists
-- [ ] Write support for roaming channels/zones
-- [ ] Full backup/restore functionality
-
-### Phase 4: Advanced Features (Planned)
-- [x] Encrypted channel support
-- [ ] Boot picture read/write support
-- [ ] Firmware backup/restore
-- [ ] Multi-radio profile support (save/load different configurations)
-- [ ] Advanced filtering and search
-- [ ] Bulk operations (duplicate, batch edit)
-
-### Phase 5: Community & Integration
-- [ ] Plugin system for custom repeater databases
-- [ ] Collaborative codeplug sharing
-- [ ] Integration with RadioID database
-- [ ] Mobile-responsive UI improvements
-
-**Want to help?** Pick an item from the roadmap and let us know in Discord!
-
----
-
 ## 🛠️ Tech Stack
 
 Built with modern web technologies for performance and reliability:
 
 - **React** + **TypeScript** - Type-safe component architecture
 - **Vite** - Lightning-fast build tooling
-- **Tailwind CSS** - Custom cyberpunk neon theme
+- **Tailwind CSS** - Custom cyberpunk neon theme (see PLAN.md for the colour palette and usage guidelines)
 - **Zustand** - Lightweight state management
 - **Web Serial API** - Direct hardware communication
 
@@ -94,7 +50,7 @@ Built with modern web technologies for performance and reliability:
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/NeonPlug.git
+git clone https://github.com/infamy/NeonPlug.git
 cd NeonPlug
 npm install
 ```
@@ -121,40 +77,63 @@ The built files will be in the `dist/` directory.
 npm run lint
 ```
 
+### UI and colour consistency
+
+Use the theme colours defined in `tailwind.config.js` and documented in PLAN.md (Color Palette). Prefer `neon-cyan`, `cool-gray`, `deep-gray`, and `dark-charcoal` over raw Tailwind grays so the neon theme stays consistent.
+
 ---
 
 ## 📁 Project Structure
 
 ```
 src/
-├── components/     # UI components organized by feature
-│   ├── channels/  # Channel management UI
-│   ├── contacts/  # Contact management UI
-│   ├── zones/     # Zone management UI
-│   ├── import/    # Smart import wizard
-│   ├── layout/    # App layout and navigation
-│   └── ui/        # Reusable UI components
-├── models/         # TypeScript data models for radio structures
-│   ├── Channel.ts
-│   ├── Contact.ts
-│   ├── Zone.ts
+├── components/       # UI components organized by feature
+│   ├── about/       # About tab
+│   ├── channels/    # Channel management (table, edit modal, tab)
+│   ├── contacts/    # Contacts tab and table
+│   ├── diagnostics/ # Diagnostics tab, collapsible sections, offset inspector
+│   ├── digital/     # Digital tab (DMR IDs, talk groups, encryption, etc.)
+│   ├── import/      # Smart import wizard
+│   ├── layout/      # Main layout, status bar, tab navigation, toolbar
+│   ├── rxgroups/    # RX groups list
+│   ├── scanlists/   # Scan lists list and tab
+│   ├── settings/    # Settings tab and field renderers (settings/fields/)
+│   ├── ui/          # Reusable UI (Button, Card, Modal, EmptyState, etc.)
+│   └── zones/       # Zones list and tab
+├── constants/       # App constants (e.g. countries)
+├── data/            # Static data and config
+│   ├── settingsProfiles/  # Radio-specific settings profiles
+│   ├── airportsData.ts, taflData.ts, rptrsData.ts, etc.
 │   └── ...
-├── protocol/       # DM-32UV protocol implementation
-│   └── dm32uv/    # Memory maps, encoding, and communication
-│       ├── protocol.ts    # Main protocol handler
-│       ├── structures.ts  # Data structure definitions
-│       ├── memory.ts      # Memory map constants
-│       └── encoding.ts    # Character encoding
-├── services/       # Business logic (import, validation, generation)
-│   ├── smartImporter.ts   # Location-based channel generation
-│   ├── validation/        # Validation services
-│   └── csv/              # CSV import/export
-├── store/          # Zustand stores for app state
-│   ├── channelsStore.ts
-│   ├── contactsStore.ts
+├── hooks/           # React hooks (e.g. useRadioConnection)
+├── models/          # TypeScript data models
+│   ├── Channel.ts, Contact.ts, Zone.ts, RadioSettings.ts
+│   ├── RXGroup.ts, ScanList.ts, EncryptionKey.ts, etc.
+│   └── index.ts
+├── radios/          # Radio protocol layer (multi-radio support)
+│   ├── index.ts           # Protocol factory, model IDs
+│   ├── capabilities.ts    # Capabilities registry
+│   ├── dm32uv/            # DM-32UV / DP570UV implementation
+│   │   ├── protocol.ts, structures.ts, memory.ts, connection.ts
+│   │   ├── capabilities.ts, settingsProfile.ts, types.ts
+│   │   └── ...
+│   └── README.md
+├── services/        # Business logic
+│   ├── csv/         # CHIRP and CSV import/export
+│   ├── validation/  # Channel, frequency, DMR validators
+│   ├── smartImporter.ts, repeaterFinder.ts, locationService.ts
+│   ├── airportChannels.ts, taflChannels.ts, rptrsChannels.ts
+│   ├── codeplugExport.ts, debugExport.ts, metadataAnalysis.ts
 │   └── ...
-├── data/           # Static data (repeater databases, airports, etc.)
-└── styles/         # Global styles and Tailwind config
+├── store/           # Zustand stores (channels, zones, contacts, radio, etc.)
+│   ├── channelsStore.ts, zonesStore.ts, contactsStore.ts
+│   ├── radioStore.ts, radioSettingsStore.ts, debugStore.ts
+│   └── ...
+├── types/           # Shared types (radio, capabilities, settings profile)
+├── utils/            # Helpers (formatHelpers, ctcssConstants, zoneHelpers, etc.)
+├── styles/          # Global styles (globals.css, theme classes)
+├── App.tsx
+└── main.tsx
 ```
 
 ---
@@ -169,15 +148,18 @@ NeonPlug uses **Zustand** for state management. Each major feature has its own s
 - `contactsStore.ts` - DMR contacts
 - `zonesStore.ts` - Zone configuration
 - `radioStore.ts` - Radio connection state
+- Plus stores for settings, scan lists, RX groups, encryption keys, quick contacts/messages, DMR radio IDs, emergencies, calibration, debug, and logs
 
 ### Protocol Layer
 
-The DM-32UV protocol is implemented in `src/protocol/dm32uv/`:
+The radio protocol layer lives under `src/radios/`. The DM-32UV (aka DP570UV) implementation is in `src/radios/dm32uv/`:
 
 - **protocol.ts** - Main protocol interface (read/write operations)
-- **structures.ts** - TypeScript definitions for radio data structures
-- **memory.ts** - Memory address maps
-- **encoding.ts** - Character encoding/decoding for radio display
+- **structures.ts** - Data structure definitions and encoding
+- **memory.ts** - Memory maps and block handling
+- **connection.ts** - Serial connection and handshake
+- **capabilities.ts** - Radio-specific limits and parsers
+- **settingsProfile.ts** - Settings field layout for this model
 
 ### Validation
 
@@ -196,25 +178,23 @@ Currently, testing is done manually with actual hardware. Automated testing infr
 To test with a radio:
 1. Connect your DM-32UV via USB
 2. Click "Connect to Radio" in the app
-3. Use the Diagnostics tab to inspect raw data
+3. Enable **Debug Mode** from the About tab to reveal the Diagnostics tab, then use it to inspect raw data
 4. Test read/write operations
 
 ---
 
 ## 🎨 Styling
 
-The app uses **Tailwind CSS** with a custom cyberpunk theme defined in `tailwind.config.js`.
+The app uses **Tailwind CSS** with a custom cyberpunk neon theme defined in `tailwind.config.js`. See **PLAN.md** (Color Palette table) and the **UI and colour consistency** section above for full guidelines.
 
-Color palette:
-- Primary: Cyan (`#00ffff`)
-- Secondary: Magenta (`#ff00ff`)
-- Accent: Purple (`#9333ea`)
-- Background: Dark grays
+**Palette (from `tailwind.config.js`):**
+- Primary accent: `neon-cyan` (#00FFF7) — primary buttons, highlights, borders
+- Secondary accent: `neon-magenta` (#FF00FF) — tabs, selection, alerts
+- Highlight: `electric-purple` (#9B30FF) — modal headers, secondary accents
+- Secondary text: `cool-gray` (#B0B0B0) — labels, muted text
+- Backgrounds: `dark-charcoal`, `deep-gray` (#121212, #1E1E1E)
 
-Use semantic color classes when possible:
-- `text-primary` for cyan text
-- `border-primary` for cyan borders
-- `bg-gray-800` for panels
+**Reusable semantic classes** in `src/styles/globals.css`: `text-muted`, `border-panel`, `border-panel-strong`, `link-accent`, `bg-panel`. Prefer these and the theme tokens over raw Tailwind grays.
 
 ---
 
@@ -239,7 +219,7 @@ Open an issue with:
 ### Submitting Pull Requests
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+2. Create a feature branch (`git switch -c feature/amazing-feature`)
 3. Make your changes
 4. Test thoroughly
 5. Commit your changes (`git commit -m 'Add amazing feature'`)

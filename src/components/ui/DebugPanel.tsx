@@ -283,8 +283,8 @@ export const DebugPanel: React.FC = () => {
       case 'warn': return 'text-yellow-400';
       case 'info': return 'text-cyan-400';
       case 'debug': return 'text-green-400';
-      case 'verbose': return 'text-gray-400';
-      default: return 'text-gray-300';
+      case 'verbose': return 'text-cool-gray';
+      default: return 'text-cool-gray';
     }
   };
 
@@ -333,8 +333,8 @@ export const DebugPanel: React.FC = () => {
           <div className="bg-black border-neon-cyan border-opacity-30 flex-1 overflow-hidden flex flex-col rounded-b-lg">
           <div className="flex items-center justify-between px-4 py-2 border-b border-neon-cyan border-opacity-20">
             <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-400">Console Output</span>
-              <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer">
+              <span className="text-xs text-cool-gray">Console Output</span>
+              <label className="flex items-center gap-1 text-xs text-cool-gray cursor-pointer">
                 <input
                   type="checkbox"
                   checked={showProtocolLogs}
@@ -379,7 +379,7 @@ export const DebugPanel: React.FC = () => {
           {metadataSummary && (
             <div className="px-4 py-2 border-b border-neon-cyan border-opacity-20 bg-deep-gray text-xs">
               <div className="text-neon-cyan font-semibold mb-1">Metadata Summary:</div>
-              <div className="text-gray-300 space-y-0.5">
+              <div className="text-cool-gray space-y-0.5">
                 <div>Total: {metadataSummary.totalBlocks} | Known: {metadataSummary.knownBlocks} | Unknown: {metadataSummary.unknownBlocks} | Empty: {metadataSummary.emptyBlocks}</div>
                 {metadataSummary.unknownMetadataValues.length > 0 && (
                   <div className="text-yellow-400">
@@ -392,22 +392,22 @@ export const DebugPanel: React.FC = () => {
           
           <div className="flex-1 overflow-y-auto p-2 font-mono text-xs">
             {allLogs.length === 0 ? (
-              <div className="text-gray-500 text-center py-4">No logs yet...</div>
+              <div className="text-cool-gray text-center py-4">No logs yet...</div>
             ) : (
               allLogs.map((log, index) => (
                 <div
                   key={index}
                   className={`mb-1 ${getLogColor(log.level)}`}
                 >
-                  <span className="text-gray-500 mr-2">
+                  <span className="text-cool-gray mr-2">
                     [{formatTime(log.timestamp)}]
                   </span>
-                  <span className="text-gray-400 mr-2">
+                  <span className="text-cool-gray mr-2">
                     [{log.level.toUpperCase()}]
                   </span>
                   <span>{log.message}</span>
                   {log.data && (
-                    <pre className="text-gray-400 text-xs mt-1 ml-8 whitespace-pre-wrap">
+                    <pre className="text-cool-gray text-xs mt-1 ml-8 whitespace-pre-wrap">
                       {JSON.stringify(log.data, null, 2)}
                     </pre>
                   )}

@@ -3753,14 +3753,14 @@ export const DiagnosticsTab: React.FC = () => {
                     WARN: 'text-yellow-400',
                     INFO: 'text-blue-400',
                     DEBUG: 'text-green-400',
-                    VERBOSE: 'text-gray-400',
+                    VERBOSE: 'text-cool-gray',
                   };
                   const levelBg = {
                     ERROR: 'bg-red-900/20',
                     WARN: 'bg-yellow-900/20',
                     INFO: 'bg-blue-900/20',
                     DEBUG: 'bg-green-900/20',
-                    VERBOSE: 'bg-gray-900/20',
+                    VERBOSE: 'bg-deep-gray/30',
                   };
 
                   return (
@@ -3771,14 +3771,14 @@ export const DiagnosticsTab: React.FC = () => {
                         log.level === 'WARN' ? 'border-yellow-500' :
                         log.level === 'INFO' ? 'border-blue-500' :
                         log.level === 'DEBUG' ? 'border-green-500' :
-                        'border-gray-500'
+                        'border-neon-cyan border-opacity-30'
                       }`}
                     >
                       <div className="flex items-start gap-2">
                         <span className={`${levelColors[log.level]} font-semibold min-w-[60px]`}>
                           {log.level}
                         </span>
-                        <span className="text-gray-500 min-w-[80px]">{timestamp}</span>
+                        <span className="text-cool-gray min-w-[80px]">{timestamp}</span>
                         {log.context && (
                           <span className="text-purple-400 min-w-[100px]">[{log.context}]</span>
                         )}

@@ -1046,7 +1046,7 @@ export const SmartImportTab: React.FC = () => {
                   className={`border rounded p-3 cursor-pointer transition-colors ${
                     selectedAirports.has(index)
                       ? 'border-neon-cyan bg-neon-cyan bg-opacity-10'
-                      : 'border-gray-600 hover:border-gray-500'
+                      : 'border-neon-cyan border-opacity-30 hover:border-neon-cyan border-opacity-50'
                   }`}
                   onClick={() => handleToggleAirport(index)}
                 >
@@ -1212,7 +1212,7 @@ export const SmartImportTab: React.FC = () => {
                     className={`border rounded transition-colors ${
                       someSelected
                         ? 'border-neon-cyan bg-neon-cyan bg-opacity-10'
-                        : 'border-gray-600'
+                        : 'border-neon-cyan border-opacity-30'
                     }`}
                   >
                     {isGroup && (
@@ -1275,10 +1275,10 @@ export const SmartImportTab: React.FC = () => {
                           return (
                             <div
                               key={`${entry.c}|${entry.f}`}
-                              className={`border-t border-gray-600 p-3 cursor-pointer transition-colors ${
+                              className={`border-t border-neon-cyan border-opacity-20 p-3 cursor-pointer transition-colors ${
                                 isSelected
                                   ? 'bg-neon-cyan bg-opacity-5'
-                                  : 'hover:bg-gray-800'
+                                  : 'hover:bg-deep-gray'
                               }`}
                               onClick={handleToggleEntry}
                             >
@@ -1417,7 +1417,7 @@ export const SmartImportTab: React.FC = () => {
                       className={`border rounded p-3 cursor-pointer transition-colors ${
                         selectedRptrs.has(originalIndex)
                           ? 'border-neon-cyan bg-neon-cyan bg-opacity-10'
-                          : 'border-gray-600 hover:border-gray-500'
+                          : 'border-neon-cyan border-opacity-30 hover:border-neon-cyan border-opacity-50'
                       }`}
                       onClick={() => handleToggleRptr(originalIndex)}
                     >
@@ -1521,7 +1521,7 @@ export const SmartImportTab: React.FC = () => {
                 className={`border rounded transition-colors ${
                   selectedFixedSets.has(set.name)
                     ? 'border-neon-cyan bg-neon-cyan bg-opacity-10'
-                    : 'border-gray-600 hover:border-gray-500'
+                    : 'border-neon-cyan border-opacity-30 hover:border-neon-cyan border-opacity-50'
                 }`}
               >
                 <div
@@ -1560,13 +1560,13 @@ export const SmartImportTab: React.FC = () => {
                 </div>
                 
                 {isExpanded && (
-                  <div className="border-t border-gray-600 p-3 bg-black bg-opacity-30">
+                  <div className="border-t border-neon-cyan border-opacity-20 p-3 bg-black bg-opacity-30">
                     <div className="text-sm text-cool-gray mb-2 font-semibold">Channels:</div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       {set.channels.map((channel, index) => (
                         <div
                           key={index}
-                          className="bg-deep-gray rounded p-2 border border-gray-700"
+                          className="bg-deep-gray rounded p-2 border border-neon-cyan border-opacity-20"
                         >
                           <div className="font-semibold text-neon-cyan">{channel.name}</div>
                           <div className="text-cool-gray">

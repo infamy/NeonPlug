@@ -14,8 +14,8 @@ const PADDING_CLASSES = {
 } as const;
 
 const VARIANT_CLASSES = {
-  default: 'bg-deep-gray rounded-lg border border-neon-cyan',
-  subdued: 'bg-dark-charcoal rounded-lg border border-neon-cyan border-opacity-20',
+  default: 'bg-panel rounded-lg border border-neon-cyan',
+  subdued: 'bg-dark-charcoal rounded-lg border-panel',
 } as const;
 
 export const Card: React.FC<CardProps> = ({

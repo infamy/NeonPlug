@@ -2,6 +2,7 @@ import React from 'react';
 import { useDebugStore } from '../../store/debugStore';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
+import { Button } from '../ui/Button';
 
 export const AboutTab: React.FC = () => {
   const { debugMode, setDebugMode } = useDebugStore();
@@ -31,7 +32,7 @@ export const AboutTab: React.FC = () => {
             </ul>
             
             <div className="flex flex-col gap-3">
-              <button
+              <Button
                 onClick={async () => {
                   try {
                     // Try to download from GitHub Pages
@@ -63,14 +64,15 @@ export const AboutTab: React.FC = () => {
                     }
                   }
                 }}
-                className="inline-flex items-center justify-center px-6 py-3 bg-electric-purple text-white rounded-lg hover:bg-opacity-90 transition-colors font-semibold"
+                variant="primary"
+                className="inline-flex items-center justify-center px-6 py-3"
               >
                 📥 Download Offline Version
-              </button>
+              </Button>
               
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted">
                 Downloads the single-file HTML version. If the button doesn't work, visit the{' '}
-                <a href="https://infamy.github.io/NeonPlug/" target="_blank" rel="noopener noreferrer" className="text-electric-purple hover:text-neon-magenta underline">live version</a>{' '}
+                <a href="https://infamy.github.io/NeonPlug/" target="_blank" rel="noopener noreferrer" className="link-accent">live version</a>{' '}
                 and use your browser's "Save Page As" feature.
               </p>
             </div>
@@ -129,7 +131,7 @@ npm run build:single</code>
                 href="https://github.com/infamy/NeonPlug"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-electric-purple hover:text-neon-magenta transition-colors underline"
+                className="link-accent"
               >
                 https://github.com/infamy/NeonPlug
               </a>
@@ -140,7 +142,7 @@ npm run build:single</code>
                 href="https://github.com/infamy/DM32-Protocol-Spec"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-electric-purple hover:text-neon-magenta transition-colors underline"
+                className="link-accent"
               >
                 https://github.com/infamy/DM32-Protocol-Spec
               </a>
@@ -158,7 +160,7 @@ npm run build:single</code>
                 href="https://github.com/infamy"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-electric-purple hover:text-neon-magenta transition-colors underline"
+                className="link-accent"
               >
                 infamy
               </a>
@@ -168,10 +170,10 @@ npm run build:single</code>
               through analysis of serial port captures and the official CPS software.
             </p>
             <div className="mt-4 space-y-2">
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-cool-gray">
                 Built with React, TypeScript, Vite, and Tailwind CSS
               </p>
-              <div className="text-xs text-gray-600 font-mono">
+              <div className="text-xs text-cool-gray font-mono">
                 <div>
                   <span className="text-cool-gray">Version: </span>
                   <span className="text-neon-cyan">
@@ -209,7 +211,7 @@ npm run build:single</code>
                   href="https://radioid.net"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                  className="link-accent text-sm"
                 >
                   https://radioid.net
                 </a>
@@ -225,7 +227,7 @@ npm run build:single</code>
                   href="https://ised-isde.canada.ca/site/spectrum-management-telecommunications/en"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                  className="link-accent text-sm"
                 >
                   ISED Spectrum Management
                 </a>
@@ -242,7 +244,7 @@ npm run build:single</code>
                     href="https://frequency.icao.int"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                    className="link-accent block text-sm"
                   >
                     ICAO Frequency Finder
                   </a>
@@ -250,7 +252,7 @@ npm run build:single</code>
                     href="https://airportmap.de/data"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block text-electric-purple hover:text-neon-magenta transition-colors underline text-sm"
+                    className="link-accent block text-sm"
                   >
                     Airportmap Open Databases
                   </a>
@@ -259,7 +261,7 @@ npm run build:single</code>
             </div>
 
             <div className="mt-4 pt-3 border-t border-neon-cyan border-opacity-20">
-              <p className="text-xs text-gray-500 italic">
+              <p className="text-xs text-cool-gray italic">
                 Data accuracy and completeness may vary. Always verify critical frequency information 
                 with official sources before use.
               </p>

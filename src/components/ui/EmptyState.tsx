@@ -13,9 +13,9 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
 }) => {
   return (
     <div className={`p-8 text-center ${className}`.trim()}>
-      <p className="text-cool-gray">{message}</p>
+      <p className="text-muted">{message}</p>
       {secondary && (
-        <p className="text-cool-gray text-sm mt-2">{secondary}</p>
+        <p className="text-muted text-sm mt-2">{secondary}</p>
       )}
     </div>
   );

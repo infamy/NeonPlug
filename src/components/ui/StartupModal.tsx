@@ -60,7 +60,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           <Button
             variant="primary"
             onClick={onReadFromRadio}
-            className="w-full py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-600 disabled:text-gray-400 disabled:shadow-none"
+            className="w-full py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-deep-gray disabled:text-cool-gray disabled:shadow-none"
             glow={webSerialSupported}
             disabled={!webSerialSupported}
             title={!webSerialSupported ? 'Web Serial API not supported in this browser' : 'Read codeplug from connected radio'}
