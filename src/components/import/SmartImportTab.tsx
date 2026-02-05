@@ -768,7 +768,7 @@ export const SmartImportTab: React.FC = () => {
           <div className={`rounded p-3 mb-4 ${
             chirpImportResult.errors && chirpImportResult.errors.length > 0
               ? 'bg-yellow-900 border border-yellow-500 text-yellow-200'
-              : 'bg-green-900 border border-green-500 text-green-200'
+              : 'bg-deep-gray border border-neon-cyan text-neon-cyan'
           }`}>
             <div className="font-semibold mb-1">
               {chirpImportResult.operation === 'import' 
@@ -1350,7 +1350,7 @@ export const SmartImportTab: React.FC = () => {
 
       {/* Success Message */}
       {generationResult && (
-        <div className="bg-green-900 border border-green-500 rounded p-3 mb-4 text-green-200">
+        <div className="bg-deep-gray border border-neon-cyan rounded p-3 mb-4 text-neon-cyan">
           Successfully generated {generationResult.channels} channels and {generationResult.zones} zones!
         </div>
       )}

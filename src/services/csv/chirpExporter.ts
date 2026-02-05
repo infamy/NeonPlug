@@ -9,7 +9,7 @@ import type { Channel } from '../../models';
  * - Frequency: RX Frequency (MHz)
  * - Duplex: Duplex mode (+, -, off, split)
  * - Offset: Offset in MHz
- * - Tone: Tone mode (Tone, TSQL, DTCS, Cross, None)
+ * - Tone: Tone mode ('', Tone, TSQL, DTCS, DTCS-R, TSQL-R, Cross)
  * - rToneFreq: RX tone frequency (Hz)
  * - cToneFreq: TX tone frequency (Hz)
  * - DtcsCode: DCS code
@@ -70,13 +70,19 @@ export function exportChannelsToChirpCSV(channels: Channel[]): string {
       offsetStr = Math.abs(offset).toFixed(6);
     }
 
-    // Determine tone mode
-    let tone = 'None';
-    let rToneFreq = '';
-    let cToneFreq = '';
-    let dtcsCode = '';
-    let dtcsPolarity = '';
-    let rxDtcsCode = '';
+    // Determine tone mode (CHIRP expects '' for no tone). rToneFreq/cToneFreq must be
+    // a valid CTCSS frequency (CHIRP rejects 0.0). When Tone is '', CHIRP ignores the values;
+    // use 88.5 Hz as a standard placeholder so validation passes.
+    const NO_TONE_PLACEHOLDER = '88.5';
+    // When no DCS, CHIRP requires a valid DCS code; many drivers don't support 000. Use 023 (sample CSV); Tone='' means it's ignored.
+    const NO_DCS_PLACEHOLDER = '023';
+    let tone = '';
+    let rToneFreq = NO_TONE_PLACEHOLDER;
+    let cToneFreq = NO_TONE_PLACEHOLDER;
+    let dtcsCode = NO_DCS_PLACEHOLDER;
+    // CHIRP DtcsPolarity must be one of 'NN', 'NR', 'RN', 'RR' (RX then TX)
+    let dtcsPolarity = 'NN';
+    let rxDtcsCode = NO_DCS_PLACEHOLDER;
 
     // RX tone
     if (channel.rxCtcssDcs.type === 'CTCSS' && channel.rxCtcssDcs.value) {
@@ -92,10 +98,12 @@ export function exportChannelsToChirpCSV(channels: Channel[]): string {
         tone = 'Tone';
       }
     } else if (channel.rxCtcssDcs.type === 'DCS' && channel.rxCtcssDcs.value) {
-      rxDtcsCode = channel.rxCtcssDcs.value.toString();
-      dtcsPolarity = channel.rxCtcssDcs.polarity || 'N';
+      rxDtcsCode = channel.rxCtcssDcs.value.toString().padStart(3, '0');
+      const rxPol = channel.rxCtcssDcs.polarity === 'P' ? 'R' : 'N';
+      const txPol = (channel.txCtcssDcs.type === 'DCS' && channel.txCtcssDcs.polarity === 'P') ? 'R' : 'N';
+      dtcsPolarity = rxPol + txPol;
       if (channel.txCtcssDcs.type === 'DCS' && channel.txCtcssDcs.value) {
-        dtcsCode = channel.txCtcssDcs.value.toString();
+        dtcsCode = channel.txCtcssDcs.value.toString().padStart(3, '0');
         if (rxDtcsCode === dtcsCode) {
           tone = 'DTCS';
         } else {
@@ -107,14 +115,14 @@ export function exportChannelsToChirpCSV(channels: Channel[]): string {
     }
 
     // TX tone (if not already set)
-    if (!cToneFreq && channel.txCtcssDcs.type === 'CTCSS' && channel.txCtcssDcs.value) {
+    if (cToneFreq === NO_TONE_PLACEHOLDER && channel.txCtcssDcs.type === 'CTCSS' && channel.txCtcssDcs.value) {
       cToneFreq = channel.txCtcssDcs.value.toFixed(1);
     }
-    if (!dtcsCode && channel.txCtcssDcs.type === 'DCS' && channel.txCtcssDcs.value) {
-      dtcsCode = channel.txCtcssDcs.value.toString();
-      if (!dtcsPolarity) {
-        dtcsPolarity = channel.txCtcssDcs.polarity || 'N';
-      }
+    if (dtcsCode === NO_DCS_PLACEHOLDER && channel.txCtcssDcs.type === 'DCS' && channel.txCtcssDcs.value) {
+      dtcsCode = channel.txCtcssDcs.value.toString().padStart(3, '0');
+      const rxPol = channel.rxCtcssDcs.polarity === 'P' ? 'R' : 'N';
+      const txPol = channel.txCtcssDcs.polarity === 'P' ? 'R' : 'N';
+      dtcsPolarity = rxPol + txPol;
     }
 
     // Determine mode (only analog channels reach here after filtering)
@@ -136,14 +144,16 @@ export function exportChannelsToChirpCSV(channels: Channel[]): string {
     // Skip flag
     const skip = channel.scanAdd ? '' : 'S';
 
-    // Power level - Chirp uses "High", "Low", "Medium"
-    let power: string;
-    if (channel.power === 'Low' || channel.power === 'Medium' || channel.power === 'High') {
-      power = channel.power;
-    } else {
-      // Default to High if power is somehow undefined or invalid
-      console.warn(`Channel ${channel.number} has invalid power value: ${channel.power}, defaulting to High`);
-      power = 'High';
+    // Power level - generic_csv expects wattage like "5.0W", "1.0W" (see CHIRP sample CSV)
+    const powerMap: Record<string, string> = {
+      High: '5.0W',
+      Medium: '2.5W',
+      Low: '1.0W',
+    };
+    let power = powerMap[channel.power ?? ''];
+    if (!power) {
+      console.warn(`Channel ${channel.number} has invalid power value: ${channel.power}, defaulting to 5.0W`);
+      power = '5.0W';
     }
 
     // Comment
@@ -167,7 +177,7 @@ export function exportChannelsToChirpCSV(channels: Channel[]): string {
       dtcsCode,
       dtcsPolarity,
       rxDtcsCode,
-      '', // CrossMode
+      'Tone->Tone', // CrossMode (CHIRP requires a valid value; sample uses Tone->Tone when not Cross)
       mode,
       tStep.toString(),
       skip,
