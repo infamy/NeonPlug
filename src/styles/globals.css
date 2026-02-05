@@ -50,6 +50,31 @@
   }
 }
 
+/* Themed checkboxes: dark background, cyan border, cyan check */
+input[type="checkbox"] {
+  @apply w-4 h-4 rounded cursor-pointer border-2 border-neon-cyan/40 bg-deep-gray;
+  @apply focus:outline-none focus:ring-2 focus:ring-neon-cyan/60 focus:ring-offset-0;
+  accent-color: #00FFF7;
+  appearance: none;
+  -webkit-appearance: none;
+  background-position: center;
+  background-size: 0.75rem;
+  background-repeat: no-repeat;
+}
+input[type="checkbox"]:checked {
+  background-color: rgba(0, 255, 247, 0.15);
+  border-color: #00FFF7;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2300FFF7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8l3 3 7-7'/%3E%3C/svg%3E");
+}
+input[type="checkbox"]:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+input[type="checkbox"]:indeterminate {
+  background-color: rgba(0, 255, 247, 0.2);
+  border-color: #00FFF7;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%2300FFF7' d='M4 7h8v2H4z'/%3E%3C/svg%3E");
+}
+
 /* Select dropdown with visible arrow */
 select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2300fff7' d='M6 9L1 4h10z'/%3E%3C/svg%3E");

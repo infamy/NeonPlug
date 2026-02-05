@@ -71,6 +71,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const channels = channelsProp ?? channelsFromStore;
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [clonedChannelNumber, setClonedChannelNumber] = useState<number | null>(null);
+  const [selectedChannelNumbers, setSelectedChannelNumbers] = useState<Set<number>>(new Set());
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
   // Scroll to channel when scrollToChannel changes
@@ -112,19 +113,21 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
     field: keyof Channel,
     value: string | number | boolean | Channel['rxCtcssDcs']
   ) => {
-    // Handle VFO channels (4001 and 4002)
-    if (channelNumber === 4001 && radioSettings?.vfoA) {
-      // VFO A
-      updateSettings({ vfoA: { ...radioSettings.vfoA, [field]: value } });
-      return;
+    const applyToNumbers = selectedChannelNumbers.size > 0 && selectedChannelNumbers.has(channelNumber)
+      ? Array.from(selectedChannelNumbers)
+      : [channelNumber];
+
+    for (const num of applyToNumbers) {
+      if (num === 4001 && radioSettings?.vfoA) {
+        updateSettings({ vfoA: { ...radioSettings.vfoA, [field]: value } });
+        continue;
+      }
+      if (num === 4002 && radioSettings?.vfoB) {
+        updateSettings({ vfoB: { ...radioSettings.vfoB, [field]: value } });
+        continue;
+      }
+      updateChannel(num, { [field]: value });
     }
-    if (channelNumber === 4002 && radioSettings?.vfoB) {
-      // VFO B
-      updateSettings({ vfoB: { ...radioSettings.vfoB, [field]: value } });
-      return;
-    }
-    // Regular channels
-    updateChannel(channelNumber, { [field]: value });
   };
 
   const isVFOChannel = (channelNumber: number): boolean => {
@@ -137,8 +140,42 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
     return channelNumber.toString();
   };
 
+  const selectableChannelNumbers = channels.filter(ch => !isVFOChannel(ch.number)).map(ch => ch.number);
+  const allSelectableSelected = selectableChannelNumbers.length > 0 && selectableChannelNumbers.every(n => selectedChannelNumbers.has(n));
+  const someSelectableSelected = selectableChannelNumbers.some(n => selectedChannelNumbers.has(n));
+
+  const toggleSelectChannel = (channelNumber: number) => {
+    if (isVFOChannel(channelNumber)) return;
+    setSelectedChannelNumbers(prev => {
+      const next = new Set(prev);
+      if (next.has(channelNumber)) next.delete(channelNumber);
+      else next.add(channelNumber);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allSelectableSelected) {
+      setSelectedChannelNumbers(new Set());
+    } else {
+      setSelectedChannelNumbers(new Set(selectableChannelNumbers));
+    }
+  };
+
   const isDigitalMode = (mode: Channel['mode']): boolean => {
     return mode === 'Digital' || mode === 'Fixed Digital';
+  };
+
+  const selectedCount = selectedChannelNumbers.size;
+  const handleDeleteSelected = () => {
+    const toDelete = Array.from(selectedChannelNumbers).filter(n => !isVFOChannel(n));
+    if (toDelete.length === 0) {
+      setSelectedChannelNumbers(new Set());
+      return;
+    }
+    if (!confirm(`Delete ${toDelete.length} selected channel${toDelete.length !== 1 ? 's' : ''}?`)) return;
+    toDelete.forEach(n => deleteChannel(n));
+    setSelectedChannelNumbers(new Set());
   };
 
   const handleCloneChannel = (channel: Channel) => {
@@ -202,13 +239,42 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
 
   return (
     <Card className="max-h-[calc(100vh-200px)] flex flex-col" padding="none">
+      {selectedCount > 0 && (
+        <div className="flex items-center gap-3 px-3 py-2 border-b border-neon-cyan border-opacity-20 bg-dark-charcoal">
+          <span className="text-cool-gray text-sm">{selectedCount} selected</span>
+          <button
+            onClick={handleDeleteSelected}
+            className="px-2 py-1 text-xs text-red-400 hover:text-red-300 border border-red-600 border-opacity-30 hover:border-opacity-60 rounded transition-colors"
+            title="Delete selected channels"
+          >
+            Delete selected ({selectedCount})
+          </button>
+          <button
+            onClick={() => setSelectedChannelNumbers(new Set())}
+            className="px-2 py-1 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-20 hover:border-opacity-50 rounded transition-colors"
+            title="Clear selection"
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
       <div className="flex-1 overflow-auto">
         <div className="inline-block min-w-full">
           <table className="w-full border-collapse text-xs">
         <thead className="sticky top-0 z-20">
           <tr className="bg-dark-charcoal border-b border-neon-cyan">
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-0 bg-dark-charcoal z-30 min-w-[40px]">#</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[40px] bg-dark-charcoal z-30 min-w-[120px]">Name</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-0 bg-dark-charcoal z-30 min-w-[28px] w-[28px]">
+              <input
+                type="checkbox"
+                checked={allSelectableSelected}
+                ref={(el) => { if (el) el.indeterminate = someSelectableSelected && !allSelectableSelected; }}
+                onChange={toggleSelectAll}
+                className="checkbox-theme"
+                title="Select all"
+              />
+            </th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[28px] bg-dark-charcoal z-30 min-w-[40px]">#</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[68px] bg-dark-charcoal z-30 min-w-[120px]">Name</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">RX Freq</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">TX Freq</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[50px]">Mode</th>
@@ -266,10 +332,20 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                 }}
                 className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
               >
-                <td className="px-2 py-2 text-white sticky left-0 bg-deep-gray z-10 text-sm font-medium">
+                <td className="px-2 py-2 sticky left-0 bg-deep-gray z-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedChannelNumbers.has(channel.number)}
+                    disabled={isVFOChannel(channel.number)}
+                    onChange={() => toggleSelectChannel(channel.number)}
+                    className="checkbox-theme"
+                    title={isVFOChannel(channel.number) ? 'VFO cannot be selected' : 'Select channel'}
+                  />
+                </td>
+                <td className="px-2 py-2 text-white sticky left-[28px] bg-deep-gray z-10 text-sm font-medium">
                   {isVFOChannel(channel.number) ? getVFOIdentifier(channel.number) : channel.number}
                 </td>
-                <td className="px-2 py-2 sticky left-[40px] bg-deep-gray z-10">
+                <td className="px-2 py-2 sticky left-[68px] bg-deep-gray z-10">
                   <input
                     type="text"
                     value={isVFOChannel(channel.number) ? '' : channel.name}
@@ -354,7 +430,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.forbidTx}
                     onChange={(e) => handleCellChange(channel.number, 'forbidTx', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                   />
                 </td>
                 <td className="px-2 py-2">
@@ -526,7 +602,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.loneWorker}
                     onChange={(e) => handleCellChange(channel.number, 'loneWorker', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                     title="Lone Worker"
                   />
                 </td>
@@ -549,7 +625,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.forbidTalkaround}
                     onChange={(e) => handleCellChange(channel.number, 'forbidTalkaround', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                   />
                 </td>
                 <td className="px-2 py-2 text-center">
@@ -557,7 +633,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.emergencyIndicator}
                     onChange={(e) => handleCellChange(channel.number, 'emergencyIndicator', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                   />
                 </td>
                 <td className="px-2 py-2 text-center">
@@ -565,7 +641,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.emergencyAck}
                     onChange={(e) => handleCellChange(channel.number, 'emergencyAck', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                   />
                 </td>
                 <td className="px-2 py-2">
@@ -583,7 +659,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.aprsReceive}
                     onChange={(e) => handleCellChange(channel.number, 'aprsReceive', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                   />
                 </td>
                 <td className="px-2 py-2 text-center">
@@ -591,7 +667,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.aprsReportMode === 'Digital'}
                     onChange={(e) => handleCellChange(channel.number, 'aprsReportMode', e.target.checked ? 'Digital' : 'Off')}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                   />
                 </td>
                 <td className="px-2 py-2 text-center">
@@ -602,7 +678,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                       type="checkbox"
                       checked={channel.voxFunction}
                       onChange={(e) => handleCellChange(channel.number, 'voxFunction', e.target.checked)}
-                      className="w-4 h-4 accent-neon-cyan"
+                      className="checkbox-theme"
                     />
                   )}
                 </td>
@@ -611,7 +687,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.scramble}
                     onChange={(e) => handleCellChange(channel.number, 'scramble', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                     title="Scramble"
                   />
                 </td>
@@ -620,7 +696,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.compander}
                     onChange={(e) => handleCellChange(channel.number, 'compander', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                     title="Compander"
                   />
                 </td>
@@ -629,7 +705,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.talkback}
                     onChange={(e) => handleCellChange(channel.number, 'talkback', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                     title="Talkback"
                   />
                 </td>
@@ -638,7 +714,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.companderDup}
                     onChange={(e) => handleCellChange(channel.number, 'companderDup', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                     title="Compander Dup"
                   />
                 </td>
@@ -660,7 +736,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                       type="checkbox"
                       checked={channel.pttIdDisplay}
                       onChange={(e) => handleCellChange(channel.number, 'pttIdDisplay', e.target.checked)}
-                      className="w-4 h-4 accent-neon-cyan"
+                      className="checkbox-theme"
                     />
                   )}
                 </td>
@@ -683,7 +759,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     type="checkbox"
                     checked={channel.voxRelated}
                     onChange={(e) => handleCellChange(channel.number, 'voxRelated', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan"
+                    className="checkbox-theme"
                   />
                 </td>
                 <td className="px-2 py-2">
@@ -807,7 +883,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                       type="checkbox"
                       checked={channel.encryption ?? false}
                       onChange={(e) => handleCellChange(channel.number, 'encryption', e.target.checked)}
-                      className="w-4 h-4 accent-neon-cyan"
+                      className="checkbox-theme"
                       title="Encryption"
                     />
                   ) : (
@@ -841,7 +917,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                       type="checkbox"
                       checked={channel.tdmaDirectMode ?? false}
                       onChange={(e) => handleCellChange(channel.number, 'tdmaDirectMode', e.target.checked)}
-                      className="w-4 h-4 accent-neon-cyan"
+                      className="checkbox-theme"
                       title="TDMA Direct Mode"
                     />
                   ) : (
@@ -854,7 +930,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                       type="checkbox"
                       checked={channel.shortDataConfirm ?? false}
                       onChange={(e) => handleCellChange(channel.number, 'shortDataConfirm', e.target.checked)}
-                      className="w-4 h-4 accent-neon-cyan"
+                      className="checkbox-theme"
                       title="Short Data Confirm"
                     />
                   ) : (
@@ -867,7 +943,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                       type="checkbox"
                       checked={channel.privateConfirm ?? false}
                       onChange={(e) => handleCellChange(channel.number, 'privateConfirm', e.target.checked)}
-                      className="w-4 h-4 accent-neon-cyan"
+                      className="checkbox-theme"
                       title="Private Confirm"
                     />
                   ) : (

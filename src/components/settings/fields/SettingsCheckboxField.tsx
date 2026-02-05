@@ -1,7 +1,7 @@
 import React from 'react';
 import type { SettingsCheckboxFieldDescriptor } from '../../../types/settingsProfile';
 
-const checkboxClass = 'w-4 h-4 text-neon-cyan bg-dark-charcoal border-neon-cyan rounded focus:ring-neon-cyan';
+const checkboxClass = '';
 const labelClass = 'text-cool-gray text-sm';
 
 interface Props {
