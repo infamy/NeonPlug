@@ -4,13 +4,11 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { Button } from '../ui/Button';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { downloadOfflineAsZip } from '../../utils/offlineDownload';
 
 const OFFLINE_FALLBACK_MESSAGE =
   'The offline version is available on GitHub Pages.\n\n' +
-  'Click OK to open it, then:\n' +
-  '1. Right-click on the page\n' +
-  '2. Select "Save As" or "Save Page As"\n' +
-  '3. Save as "neonplug.html"\n\n' +
+  'Click OK to open it, then use your browser\'s "Save Page As" to save as neonplug.html.\n\n' +
   'Or build it locally using the instructions below.';
 
 const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
@@ -48,18 +46,7 @@ export const AboutTab: React.FC = () => {
               <Button
                 onClick={async () => {
                   try {
-                    const response = await fetch(OFFLINE_VERSION_URL);
-                    if (!response.ok) throw new Error('Not available');
-                    const html = await response.text();
-                    const blob = new Blob([html], { type: 'text/html' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'neonplug.html';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
+                    await downloadOfflineAsZip();
                   } catch {
                     setOfflineFallbackOpen(true);
                   }
@@ -67,11 +54,15 @@ export const AboutTab: React.FC = () => {
                 variant="primary"
                 className="inline-flex items-center justify-center px-6 py-3"
               >
-                📥 Download Offline Version
+                📥 Download Offline Version (ZIP)
               </Button>
               
               <p className="text-xs text-muted">
-                Downloads the single-file HTML version. If the button doesn't work, visit the{' '}
+                Downloads a ZIP containing neonplug.html. Unzip and open the HTML file in your browser.
+                {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
+                  <> From the dev server the downloaded file is the dev build (not standalone). For a single-file offline build, use the live site or run <code className="text-neon-cyan">npm run build:single</code>.</>
+                )}
+                {' '}If the button doesn't work, visit the{' '}
                 <a href="https://infamy.github.io/NeonPlug/" target="_blank" rel="noopener noreferrer" className="link-accent">live version</a>{' '}
                 and use your browser's "Save Page As" feature.
               </p>
