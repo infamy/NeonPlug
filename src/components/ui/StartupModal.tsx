@@ -3,6 +3,7 @@ import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { DM32_MODEL_IDS } from '../../radios';
 import { isWebSerialSupported, getSupportedBrowsers } from '../../utils/browserSupport';
+import { downloadOfflineAsZip } from '../../utils/offlineDownload';
 
 const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
 
@@ -15,10 +16,7 @@ interface StartupModalProps {
 
 const OFFLINE_FALLBACK_MESSAGE =
   'The offline version is available on GitHub Pages.\n\n' +
-  'Click OK to open it, then:\n' +
-  '1. Right-click on the page\n' +
-  '2. Select "Save As" or "Save Page As"\n' +
-  '3. Save as "neonplug.html"\n\n' +
+  'Click OK to open it, then use your browser\'s "Save Page As" to save as neonplug.html.\n\n' +
   'Or build it locally using the instructions in the About tab.';
 
 export const StartupModal: React.FC<StartupModalProps> = ({
@@ -95,25 +93,14 @@ export const StartupModal: React.FC<StartupModalProps> = ({
               type="button"
               onClick={async () => {
                 try {
-                  const response = await fetch(OFFLINE_VERSION_URL);
-                  if (!response.ok) throw new Error('Not available');
-                  const html = await response.text();
-                  const blob = new Blob([html], { type: 'text/html' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'neonplug.html';
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
+                  await downloadOfflineAsZip();
                 } catch {
                   setOfflineFallbackOpen(true);
                 }
               }}
               className="text-neon-cyan hover:underline bg-transparent border-none cursor-pointer p-0 font-inherit text-inherit"
             >
-              Download offline version (single file)
+              Download offline version (ZIP)
             </button>
           </p>
 
