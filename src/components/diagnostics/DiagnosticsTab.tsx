@@ -545,7 +545,7 @@ export const DiagnosticsTab: React.FC = () => {
         version: '1.0.0',
       };
 
-      const xlsxBlob = exportCodeplug(codeplugData, true);
+      const xlsxBlob = await exportCodeplug(codeplugData, true);
       if (xlsxBlob instanceof Blob) {
         zip.file('codeplug.xlsx', xlsxBlob);
       }

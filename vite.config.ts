@@ -44,8 +44,8 @@ export default defineConfig(({ mode }) => {
       rollupOptions: isSingleFile ? undefined : {
         treeshake: {
           moduleSideEffects: (id) => {
-            // Allow tree-shaking for xlsx - it has sideEffects: false in package.json
-            if (id.includes('xlsx')) {
+            // Allow tree-shaking for exceljs
+            if (id.includes('exceljs')) {
               return false;
             }
             // Default behavior for other modules
@@ -58,9 +58,9 @@ export default defineConfig(({ mode }) => {
           manualChunks: (id) => {
             // Split vendor libraries
             if (id.includes('node_modules')) {
-              // Separate xlsx as it's very large (400KB+)
-              if (id.includes('xlsx')) {
-                return 'xlsx';
+              // Separate exceljs as it's large
+              if (id.includes('exceljs')) {
+                return 'exceljs';
               }
               // Combine all other vendor code into one chunk to avoid circular dependencies
               // This includes react, react-dom, zustand, reactgrid, and all other dependencies
@@ -92,8 +92,7 @@ export default defineConfig(({ mode }) => {
     },
     // Optimize dependencies
     optimizeDeps: {
-      include: ['react', 'react-dom', 'zustand'],
-      exclude: ['xlsx'], // Exclude xlsx from pre-bundling (lazy load when needed)
+      include: ['react', 'react-dom', 'zustand', 'exceljs'], // Include exceljs so it gets a proper ESM default export
     },
     // Base path for deployment (empty for root)
     base: './',

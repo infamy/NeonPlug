@@ -119,10 +119,10 @@ function App() {
     const fileName = file.name.toLowerCase();
     const fileExtension = fileName.split('.').pop()?.toLowerCase();
 
-    // Check if it's a codeplug XLSX file
-    if (fileExtension === 'xlsx' || fileExtension === 'xls') {
+    // Check if it's a codeplug XLSX file (ExcelJS supports .xlsx only; .xls is not supported)
+    if (fileExtension === 'xlsx') {
       try {
-        // Lazy load XLSX library only when needed
+        // Lazy load Excel library only when needed
         const { importCodeplug } = await import('./services/codeplugExport');
         const codeplugData = await importCodeplug(file);
         
@@ -180,7 +180,7 @@ function App() {
           setAlertOpen(true);
         }
       } else {
-        setAlertMessage('File must be a codeplug (.xlsx/.xls) or CSV file containing "channel" or "contact" in the filename');
+        setAlertMessage('File must be a codeplug (.xlsx) or CSV file containing "channel" or "contact" in the filename');
         setAlertOpen(true);
       }
     }
@@ -247,7 +247,7 @@ function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".csv,.xlsx,.xls"
+        accept=".csv,.xlsx"
         onChange={handleFileSelect}
         className="hidden"
       />
