@@ -8,7 +8,7 @@
 
 Program your DMR radio directly from your browser—no software installation required. NeonPlug brings a sleek, cyberpunk-themed interface with powerful features for managing channels, contacts, zones, and more.
 
-**🚀 Try it live:** [https://neonplug.app](https://neonplug.app)
+**🚀 Try it live:** [https://neonplug.app](https://neonplug.app) · **📥 [Download offline version](https://neonplug.app)** (single-file, no install)
 
 **💬 Join us:** [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/9ckzrcKU)
 
@@ -56,6 +56,16 @@ Just visit **[neonplug.app](https://neonplug.app)** in a Chrome-based browser (C
 **Requirements:**
 - Chrome, Edge, Opera, or Brave browser (for Web Serial API support)
 - Baofeng DM-32UV radio with USB cable
+
+### 📥 Offline mode
+
+You can use NeonPlug without an internet connection. From the live app:
+
+1. On the startup screen, click **Download offline version (ZIP)**  
+   — or open **Settings → About** and click **Download Offline Version (ZIP)**.
+2. Save the ZIP, unzip it, and open **neonplug.html** in your browser.
+
+The file is a single, self-contained HTML (all assets inlined). No server or network required; Web Serial for the radio still works when the file is opened locally.
 
 ---
 
