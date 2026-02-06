@@ -77,9 +77,9 @@ We welcome contributions from everyone—not just developers!
 - 🧪 **Test the app** and report bugs or issues
 - 💡 **Share ideas** for new features
 - 📣 **Spread the word** about NeonPlug to other radio enthusiasts
-- 💻 **Code contributions** - Check out our [Contributing & Roadmap Guide](CONTRIBUTING.md)
+- 💻 **Code contributions** - Check out our [Contributing Guide](CONTRIBUTING.md)
 
-**For developers:** See our [Contributing & Roadmap Guide](CONTRIBUTING.md) for setup instructions, architecture overview, development roadmap, and guidelines.
+**For developers:** See our [Contributing Guide](CONTRIBUTING.md) for setup instructions, architecture overview, and guidelines.
 
 This project was built with the assistance of AI, but all design decisions and architecture are intentional and human-guided.
 
