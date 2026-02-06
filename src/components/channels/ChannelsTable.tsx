@@ -78,6 +78,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const [channelToDelete, setChannelToDelete] = useState<Channel | null>(null);
   const [clonedChannelNumber, setClonedChannelNumber] = useState<number | null>(null);
   const [internalSelection, setInternalSelection] = useState<Set<number>>(new Set());
+  const [anchorChannelNumber, setAnchorChannelNumber] = useState<number | null>(null);
   const selectedChannelNumbers = selectedChannelNumbersProp ?? internalSelection;
   const setSelectedChannelNumbers = onSelectionChange ?? setInternalSelection;
   const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
@@ -149,23 +150,39 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   };
 
   const selectableChannelNumbers = channels.filter(ch => !isVFOChannel(ch.number)).map(ch => ch.number);
-  const allSelectableSelected = selectableChannelNumbers.length > 0 && selectableChannelNumbers.every(n => selectedChannelNumbers.has(n));
   const someSelectableSelected = selectableChannelNumbers.some(n => selectedChannelNumbers.has(n));
 
-  const toggleSelectChannel = (channelNumber: number) => {
+  /** Row click: toggle this channel, or shift+click for range. Skip when clicking inputs/buttons. */
+  const handleRowClick = (channelNumber: number, e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('input, button, select, [role="button"]')) return;
     if (isVFOChannel(channelNumber)) return;
-    const next = new Set(selectedChannelNumbers);
-    if (next.has(channelNumber)) next.delete(channelNumber);
-    else next.add(channelNumber);
-    setSelectedChannelNumbers(next);
+    if (e.shiftKey) {
+      const anchor = anchorChannelNumber != null && selectableChannelNumbers.includes(anchorChannelNumber)
+        ? anchorChannelNumber
+        : channelNumber;
+      const fromIdx = selectableChannelNumbers.indexOf(anchor);
+      const toIdx = selectableChannelNumbers.indexOf(channelNumber);
+      if (fromIdx === -1 || toIdx === -1) {
+        setSelectedChannelNumbers(new Set([channelNumber]));
+        setAnchorChannelNumber(channelNumber);
+        return;
+      }
+      const [lo, hi] = fromIdx <= toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
+      const range = new Set(selectableChannelNumbers.slice(lo, hi + 1));
+      range.add(channelNumber);
+      setSelectedChannelNumbers(range);
+    } else {
+      const next = new Set(selectedChannelNumbers);
+      if (next.has(channelNumber)) next.delete(channelNumber);
+      else next.add(channelNumber);
+      setSelectedChannelNumbers(next);
+      setAnchorChannelNumber(channelNumber);
+    }
   };
 
-  const toggleSelectAll = () => {
-    if (allSelectableSelected) {
-      setSelectedChannelNumbers(new Set());
-    } else {
-      setSelectedChannelNumbers(new Set(selectableChannelNumbers));
-    }
+  const clearSelection = () => {
+    setSelectedChannelNumbers(new Set());
   };
 
   const isDigitalMode = (mode: Channel['mode']): boolean => {
@@ -241,11 +258,10 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-0 bg-dark-charcoal z-30 min-w-[28px] w-[28px]">
               <input
                 type="checkbox"
-                checked={allSelectableSelected}
-                ref={(el) => { if (el) el.indeterminate = someSelectableSelected && !allSelectableSelected; }}
-                onChange={toggleSelectAll}
+                checked={someSelectableSelected}
+                onChange={clearSelection}
                 className="checkbox-theme"
-                title="Select all"
+                title="Clear selection"
               />
             </th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[28px] bg-dark-charcoal z-30 min-w-[40px]">#</th>
@@ -305,22 +321,23 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                   if (el) rowRefs.current.set(channel.number, el);
                   else rowRefs.current.delete(channel.number);
                 }}
-                className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
+                onMouseDown={(e) => {
+                  if (e.shiftKey && !(e.target as HTMLElement).closest('input, button, select')) {
+                    e.preventDefault();
+                  }
+                }}
+                onClick={(e) => handleRowClick(channel.number, e)}
+                className={`border-b border-neon-cyan border-opacity-20 transition-colors cursor-pointer ${
+                  selectedChannelNumbers.has(channel.number)
+                    ? 'bg-neon-cyan bg-opacity-20'
+                    : 'hover:bg-deep-gray hover:bg-opacity-50'
+                }`}
               >
-                <td className="px-2 py-2 sticky left-0 bg-deep-gray z-10">
-                  <input
-                    type="checkbox"
-                    checked={selectedChannelNumbers.has(channel.number)}
-                    disabled={isVFOChannel(channel.number)}
-                    onChange={() => toggleSelectChannel(channel.number)}
-                    className="checkbox-theme"
-                    title={isVFOChannel(channel.number) ? 'VFO cannot be selected' : 'Select channel'}
-                  />
-                </td>
-                <td className="px-2 py-2 text-white sticky left-[28px] bg-deep-gray z-10 text-sm font-medium">
+                <td className={`px-2 py-2 sticky left-0 z-10 min-w-[28px] w-[28px] ${selectedChannelNumbers.has(channel.number) ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`} title={isVFOChannel(channel.number) ? 'VFO' : 'Click to select, Shift+click for range'} />
+                <td className={`px-2 py-2 text-white sticky left-[28px] z-10 text-sm font-medium ${selectedChannelNumbers.has(channel.number) ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`}>
                   {isVFOChannel(channel.number) ? getVFOIdentifier(channel.number) : channel.number}
                 </td>
-                <td className="px-2 py-2 sticky left-[68px] bg-deep-gray z-10">
+                <td className={`px-2 py-2 sticky left-[68px] z-10 ${selectedChannelNumbers.has(channel.number) ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`}>
                   <input
                     type="text"
                     value={isVFOChannel(channel.number) ? '' : channel.name}
@@ -979,7 +996,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     <span className="text-cool-gray text-xs text-center block">-</span>
                   )}
                 </td>
-                <td className="px-2 py-2 text-center sticky right-0 bg-deep-gray z-10">
+                <td className={`px-2 py-2 text-center sticky right-0 z-10 ${selectedChannelNumbers.has(channel.number) ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`}>
                   <div className="flex items-center justify-center gap-1">
                     <button
                       onClick={() => setEditingChannel(channel)}

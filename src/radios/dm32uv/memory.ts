@@ -247,4 +247,3 @@ export function storeRawData<T extends { data: Uint8Array; [key: string]: unknow
     offset: offset,
   } as T);
 }
-
