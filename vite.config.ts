@@ -92,8 +92,7 @@ export default defineConfig(({ mode }) => {
     },
     // Optimize dependencies
     optimizeDeps: {
-      include: ['react', 'react-dom', 'zustand'],
-      exclude: ['exceljs'], // Exclude exceljs from pre-bundling (lazy load when needed)
+      include: ['react', 'react-dom', 'zustand', 'exceljs'], // Include exceljs so it gets a proper ESM default export
     },
     // Base path for deployment (empty for root)
     base: './',

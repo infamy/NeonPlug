@@ -3,8 +3,8 @@
  * Enhanced importer with validation, error reporting, and flexible field matching
  */
 
-import ExcelJS from 'exceljs';
-import { sheetToJson } from './codeplugExport';
+import { sheetToJson, loadExcelJS } from './codeplugExport';
+import type { Worksheet } from 'exceljs';
 import type { Channel, Zone, ScanList, Contact } from '../models';
 import type { CodeplugData } from './codeplugExport';
 import { generateZoneId } from '../utils/zoneHelpers';
@@ -80,10 +80,10 @@ function findColumn(columns: string[], patterns: string[]): string | null {
 /**
  * Get all column names from first row of an ExcelJS worksheet
  */
-function getColumnNames(worksheet: ExcelJS.Worksheet): string[] {
+function getColumnNames(worksheet: Worksheet): string[] {
   const columns: string[] = [];
   const headerRow = worksheet.getRow(1);
-  headerRow.eachCell({ includeEmpty: true }, (cell) => {
+  headerRow.eachCell({ includeEmpty: true }, (cell: { value: unknown }) => {
     const v = cell.value;
     if (v != null && typeof v === 'object' && 'result' in v) {
       columns.push(String((v as { result: unknown }).result));
@@ -186,6 +186,7 @@ export async function smartImportCodeplug(
 
   onProgress?.(0, 'Reading file...');
 
+  const ExcelJS = (await loadExcelJS()) as any;
   const buffer = await file.arrayBuffer();
   onProgress?.(10, 'Parsing Excel file...');
   const workbook = new ExcelJS.Workbook();
@@ -213,10 +214,10 @@ export async function smartImportCodeplug(
     sheets: { found: [], missing: [] },
   };
 
-  const sheetNames = workbook.worksheets.map(ws => ws.name);
+  const sheetNames = workbook.worksheets.map((ws: { name: string }) => ws.name);
   const expectedSheets = ['Channels', 'Zones', 'Scan Lists', 'Contacts', 'Digital Emergency', 'Analog Emergency', 'Radio Settings', 'Radio Info'];
-  summary.sheets.found = sheetNames.filter(name => expectedSheets.includes(name));
-  summary.sheets.missing = expectedSheets.filter(name => !sheetNames.includes(name));
+  summary.sheets.found = sheetNames.filter((name: string) => expectedSheets.includes(name));
+  summary.sheets.missing = expectedSheets.filter((name: string) => !sheetNames.includes(name));
 
   for (const sheetName of summary.sheets.missing) {
     warnings.push({

@@ -3,7 +3,33 @@
  * Exports and imports full codeplug data to/from XLSX format (ExcelJS)
  */
 
-import ExcelJS from 'exceljs';
+// ExcelJS is CJS/UMD; resolve lazily when first needed so the chunk is fully loaded
+import type { Worksheet } from 'exceljs';
+
+let excelJSCache: Record<string, unknown> | null = null;
+
+export async function loadExcelJS(): Promise<Record<string, unknown>> {
+  if (excelJSCache != null && typeof excelJSCache.Workbook === 'function') return excelJSCache;
+  const mod = await import('exceljs');
+  const ns = mod as Record<string, unknown>;
+  const fromDefault = ns?.default as Record<string, unknown> | undefined;
+  if (fromDefault && typeof fromDefault.Workbook === 'function') {
+    excelJSCache = fromDefault;
+    return fromDefault;
+  }
+  if (typeof ns.Workbook === 'function') {
+    excelJSCache = ns;
+    return ns;
+  }
+  const global = typeof globalThis !== 'undefined' ? (globalThis as Record<string, unknown>).ExcelJS : undefined;
+  if (global && typeof (global as Record<string, unknown>).Workbook === 'function') {
+    excelJSCache = global as Record<string, unknown>;
+    return excelJSCache;
+  }
+  throw new Error(
+    'ExcelJS: Workbook not found. Restart the dev server (npm run dev). If it persists, delete node_modules/.vite and restart.'
+  );
+}
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
@@ -30,14 +56,14 @@ export interface CodeplugData {
 const CODEPLUG_VERSION = '1.0.0';
 
 /** Convert ExcelJS worksheet to array of row objects (first row = headers). Exported for use by smartImporter. */
-export function sheetToJson(worksheet: ExcelJS.Worksheet): Record<string, unknown>[] {
+export function sheetToJson(worksheet: Worksheet): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];
   const rowCount = worksheet.rowCount ?? 0;
   if (rowCount < 2) return rows;
 
   const headerRow = worksheet.getRow(1);
   const headers: string[] = [];
-  headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+  headerRow.eachCell({ includeEmpty: true }, (cell: { value: unknown }, colNumber: number) => {
     const v = cell.value;
     headers[colNumber - 1] = v != null ? String(v) : '';
   });
@@ -60,13 +86,13 @@ export function sheetToJson(worksheet: ExcelJS.Worksheet): Record<string, unknow
 }
 
 /** Get worksheet as array of arrays (row-major), for Radio Settings style sheets */
-function sheetToArrays(worksheet: ExcelJS.Worksheet): unknown[][] {
+function sheetToArrays(worksheet: Worksheet): unknown[][] {
   const out: unknown[][] = [];
   const rowCount = worksheet.rowCount ?? 0;
   for (let r = 1; r <= rowCount; r++) {
     const row = worksheet.getRow(r);
     const arr: unknown[] = [];
-    row.eachCell({ includeEmpty: true }, (cell) => {
+    row.eachCell({ includeEmpty: true }, (cell: { value: unknown }) => {
       const v = cell.value;
       if (v != null && typeof v === 'object' && 'result' in v) {
         arr.push((v as { result: unknown }).result);
@@ -85,6 +111,7 @@ function sheetToArrays(worksheet: ExcelJS.Worksheet): unknown[][] {
  * @param returnBlob If true, returns a Blob instead of downloading. For use in zip archives.
  */
 export async function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Promise<Blob | void> {
+  const ExcelJS = (await loadExcelJS()) as any;
   const workbook = new ExcelJS.Workbook();
 
   // Sheet 1: Channels
@@ -339,6 +366,7 @@ export async function exportCodeplug(data: CodeplugData, returnBlob?: boolean): 
  * Import codeplug data from XLSX file
  */
 export async function importCodeplug(file: File): Promise<CodeplugData> {
+  const ExcelJS = (await loadExcelJS()) as any;
   const buffer = await file.arrayBuffer();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
