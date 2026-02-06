@@ -14,7 +14,11 @@ export async function downloadOfflineAsZip(): Promise<void> {
   const zip = new JSZip();
   zip.file('neonplug.html', html);
 
-  const blob = await zip.generateAsync({ type: 'blob' });
+  const blob = await zip.generateAsync({
+    type: 'blob',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 },
+  });
   const blobUrl = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = blobUrl;
