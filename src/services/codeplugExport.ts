@@ -1,10 +1,9 @@
 /**
  * Codeplug Export/Import Service
- * Exports and imports full codeplug data to/from XLSX format
+ * Exports and imports full codeplug data to/from XLSX format (ExcelJS)
  */
 
-// Use writeFileXLSX instead of writeFile to only include XLSX writer (smaller bundle)
-import { read, write, writeFileXLSX, utils } from 'xlsx';
+import ExcelJS from 'exceljs';
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
@@ -30,15 +29,65 @@ export interface CodeplugData {
 
 const CODEPLUG_VERSION = '1.0.0';
 
+/** Convert ExcelJS worksheet to array of row objects (first row = headers). Exported for use by smartImporter. */
+export function sheetToJson(worksheet: ExcelJS.Worksheet): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+  const rowCount = worksheet.rowCount ?? 0;
+  if (rowCount < 2) return rows;
+
+  const headerRow = worksheet.getRow(1);
+  const headers: string[] = [];
+  headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    const v = cell.value;
+    headers[colNumber - 1] = v != null ? String(v) : '';
+  });
+
+  for (let r = 2; r <= rowCount; r++) {
+    const row = worksheet.getRow(r);
+    const obj: Record<string, unknown> = {};
+    headers.forEach((h, i) => {
+      const cell = row.getCell(i + 1);
+      const val = cell.value;
+      if (val != null && typeof val === 'object' && 'result' in val) {
+        obj[h] = (val as { result: unknown }).result;
+      } else {
+        obj[h] = val;
+      }
+    });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+/** Get worksheet as array of arrays (row-major), for Radio Settings style sheets */
+function sheetToArrays(worksheet: ExcelJS.Worksheet): unknown[][] {
+  const out: unknown[][] = [];
+  const rowCount = worksheet.rowCount ?? 0;
+  for (let r = 1; r <= rowCount; r++) {
+    const row = worksheet.getRow(r);
+    const arr: unknown[] = [];
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      const v = cell.value;
+      if (v != null && typeof v === 'object' && 'result' in v) {
+        arr.push((v as { result: unknown }).result);
+      } else {
+        arr.push(v);
+      }
+    });
+    out.push(arr);
+  }
+  return out;
+}
+
 /**
  * Export codeplug data to XLSX file
  * @param data Codeplug data to export
  * @param returnBlob If true, returns a Blob instead of downloading. For use in zip archives.
  */
-export function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Blob | void {
-  const workbook = utils.book_new();
+export async function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Promise<Blob | void> {
+  const workbook = new ExcelJS.Workbook();
 
-  // Sheet 1: Channels - Enhanced with more fields and better formatting
+  // Sheet 1: Channels
   if (data.channels.length > 0) {
     const channelRows = data.channels.map(ch => ({
       'Channel #': ch.number,
@@ -48,22 +97,22 @@ export function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Blob |
       'Mode': ch.mode,
       'Bandwidth': ch.bandwidth,
       'Power': ch.power,
-      'RX CTCSS/DCS': ch.rxCtcssDcs.type === 'None' ? 'None' : 
-                     ch.rxCtcssDcs.type === 'CTCSS' ? `CTCSS ${ch.rxCtcssDcs.value || 0}` :
-                     ch.rxCtcssDcs.type === 'DCS' ? `DCS ${ch.rxCtcssDcs.value || 0}${ch.rxCtcssDcs.polarity === 'P' ? 'P' : 'N'}` : 'None',
-      'TX CTCSS/DCS': ch.txCtcssDcs.type === 'None' ? 'None' : 
-                     ch.txCtcssDcs.type === 'CTCSS' ? `CTCSS ${ch.txCtcssDcs.value || 0}` :
-                     ch.txCtcssDcs.type === 'DCS' ? `DCS ${ch.txCtcssDcs.value || 0}${ch.txCtcssDcs.polarity === 'P' ? 'P' : 'N'}` : 'None',
-      'Color Code': ch.colorCode || 0,
-      'Contact ID': ch.contactId || 0,
+      'RX CTCSS/DCS': ch.rxCtcssDcs.type === 'None' ? 'None' :
+                     ch.rxCtcssDcs.type === 'CTCSS' ? `CTCSS ${ch.rxCtcssDcs.value ?? 0}` :
+                     ch.rxCtcssDcs.type === 'DCS' ? `DCS ${ch.rxCtcssDcs.value ?? 0}${ch.rxCtcssDcs.polarity === 'P' ? 'P' : 'N'}` : 'None',
+      'TX CTCSS/DCS': ch.txCtcssDcs.type === 'None' ? 'None' :
+                     ch.txCtcssDcs.type === 'CTCSS' ? `CTCSS ${ch.txCtcssDcs.value ?? 0}` :
+                     ch.txCtcssDcs.type === 'DCS' ? `DCS ${ch.txCtcssDcs.value ?? 0}${ch.txCtcssDcs.polarity === 'P' ? 'P' : 'N'}` : 'None',
+      'Color Code': ch.colorCode ?? 0,
+      'Contact ID': ch.contactId ?? 0,
       'Scan List': ch.scanListId,
       'Forbid TX': ch.forbidTx ? 'Yes' : 'No',
       'Forbid Talkaround': ch.forbidTalkaround ? 'Yes' : 'No',
       'Lone Worker': ch.loneWorker ? 'Yes' : 'No',
       'APRS Receive': ch.aprsReceive ? 'Yes' : 'No',
       'APRS Report': ch.aprsReportMode,
-      'Squelch': ch.squelchLevel || 0,
-      'Emergency ID': ch.emergencySystemId || 0,
+      'Squelch': ch.squelchLevel ?? 0,
+      'Emergency ID': ch.emergencySystemId ?? 0,
       'Emergency': ch.emergencyIndicator ? 'Yes' : 'No',
       'Emergency Ack': ch.emergencyAck ? 'Yes' : 'No',
       'VOX': ch.voxFunction ? 'Yes' : 'No',
@@ -71,55 +120,20 @@ export function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Blob |
       'Compander': ch.compander ? 'Yes' : 'No',
       'Talkback': ch.talkback ? 'Yes' : 'No',
       'PTT ID Display': ch.pttIdDisplay ? 'Yes' : 'No',
-      'PTT ID': ch.pttId || 0,
+      'PTT ID': ch.pttId ?? 0,
       'PTT ID Type': ch.pttIdType,
       'RX Squelch Mode': ch.rxSquelchMode,
-      'Step Frequency': ch.stepFrequency || 0,
+      'Step Frequency': ch.stepFrequency ?? 0,
       'Signaling Type': ch.signalingType,
       'Compander Dup': ch.companderDup ? 'Yes' : 'No',
       'VOX Related': ch.voxRelated ? 'Yes' : 'No',
     }));
-    const channelsSheet = utils.json_to_sheet(channelRows);
-    
-    // Set column widths for better readability
-    const channelColWidths = [
-      { wch: 10 },  // Channel #
-      { wch: 20 },  // Name
-      { wch: 12 },  // RX Freq
-      { wch: 12 },  // TX Freq
-      { wch: 12 },  // Mode
-      { wch: 10 },  // Bandwidth
-      { wch: 8 },   // Power
-      { wch: 15 },  // RX CTCSS/DCS
-      { wch: 15 },  // TX CTCSS/DCS
-      { wch: 10 },  // Color Code
-      { wch: 10 },  // Contact ID
-      { wch: 10 },  // Scan List
-      { wch: 10 },  // Forbid TX
-      { wch: 15 },  // Forbid Talkaround
-      { wch: 12 },  // Lone Worker
-      { wch: 12 },  // APRS Receive
-      { wch: 12 },  // APRS Report
-      { wch: 10 },  // Squelch
-      { wch: 12 },  // Emergency ID
-      { wch: 10 },  // Emergency
-      { wch: 12 },  // Emergency Ack
-      { wch: 8 },   // VOX
-      { wch: 10 },  // Scramble
-      { wch: 10 },  // Compander
-      { wch: 10 },  // Talkback
-      { wch: 12 },  // PTT ID Display
-      { wch: 8 },   // PTT ID
-      { wch: 12 },  // PTT ID Type
-      { wch: 15 },  // RX Squelch Mode
-      { wch: 12 },  // Step Frequency
-      { wch: 15 },  // Signaling Type
-      { wch: 12 },  // Compander Dup
-      { wch: 12 },  // VOX Related
-    ];
-    channelsSheet['!cols'] = channelColWidths;
-    
-    utils.book_append_sheet(workbook, channelsSheet, 'Channels');
+    const headers = Object.keys(channelRows[0]!);
+    const ws = workbook.addWorksheet('Channels');
+    const channelColWidths = [10, 20, 12, 12, 12, 10, 8, 15, 15, 10, 10, 10, 10, 15, 12, 12, 12, 10, 12, 10, 12, 8, 10, 10, 10, 12, 8, 12, 15, 12, 15, 12, 12];
+    channelColWidths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    ws.addRow(headers);
+    channelRows.forEach(row => ws.addRow(headers.map(h => (row as Record<string, unknown>)[h])));
   }
 
   // Sheet 2: Zones
@@ -129,9 +143,13 @@ export function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Blob |
       'Channel Count': zone.channels.length,
       'Channels': zone.channels.join(', '),
     }));
-    const zonesSheet = utils.json_to_sheet(zoneRows);
-    zonesSheet['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 50 }];
-    utils.book_append_sheet(workbook, zonesSheet, 'Zones');
+    const headers = Object.keys(zoneRows[0]!);
+    const ws = workbook.addWorksheet('Zones');
+    ws.getColumn(1).width = 20;
+    ws.getColumn(2).width = 12;
+    ws.getColumn(3).width = 50;
+    ws.addRow(headers);
+    zoneRows.forEach(row => ws.addRow(headers.map(h => (row as Record<string, unknown>)[h])));
   }
 
   // Sheet 3: Scan Lists
@@ -140,18 +158,20 @@ export function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Blob |
       'Scan List Name': sl.name,
       'CTC Scan Mode': sl.ctcScanMode,
       'Scan TX Mode': sl.scanTxMode,
-      'Hang Time (tenths)': sl.hangTime || '',
-      'Priority 1 Type': sl.priority1Type || 0,
-      'Priority 2 Type': sl.priority2Type || 0,
-      'Priority Channel 1': sl.priorityChannel1 || '',
-      'Priority Channel 2': sl.priorityChannel2 || '',
-      'Designated TX Channel': sl.designatedTxChannel || '',
+      'Hang Time (tenths)': sl.hangTime ?? '',
+      'Priority 1 Type': sl.priority1Type ?? 0,
+      'Priority 2 Type': sl.priority2Type ?? 0,
+      'Priority Channel 1': sl.priorityChannel1 ?? '',
+      'Priority Channel 2': sl.priorityChannel2 ?? '',
+      'Designated TX Channel': sl.designatedTxChannel ?? '',
       'Channel Count': sl.channels.length,
       'Channels': sl.channels.join(', '),
     }));
-    const scanListsSheet = utils.json_to_sheet(scanListRows);
-    scanListsSheet['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 50 }];
-    utils.book_append_sheet(workbook, scanListsSheet, 'Scan Lists');
+    const headers = Object.keys(scanListRows[0]!);
+    const ws = workbook.addWorksheet('Scan Lists');
+    [20, 12, 12, 12, 12, 18, 18, 20, 12, 50].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    ws.addRow(headers);
+    scanListRows.forEach(row => ws.addRow(headers.map(h => (row as Record<string, unknown>)[h])));
   }
 
   // Sheet 4: Contacts
@@ -159,25 +179,30 @@ export function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Blob |
     const contactRows = data.contacts.map(contact => ({
       'ID': contact.id,
       'Name': contact.name,
-      'Call Sign': contact.callSign || '',
-      'DMR ID': contact.dmrId || '',
+      'Call Sign': contact.callSign ?? '',
+      'DMR ID': contact.dmrId ?? '',
     }));
-    const contactsSheet = utils.json_to_sheet(contactRows);
-    contactsSheet['!cols'] = [{ wch: 8 }, { wch: 25 }, { wch: 15 }, { wch: 12 }];
-    utils.book_append_sheet(workbook, contactsSheet, 'Contacts');
+    const headers = Object.keys(contactRows[0]!);
+    const ws = workbook.addWorksheet('Contacts');
+    ws.getColumn(1).width = 8;
+    ws.getColumn(2).width = 25;
+    ws.getColumn(3).width = 15;
+    ws.getColumn(4).width = 12;
+    ws.addRow(headers);
+    contactRows.forEach(row => ws.addRow(headers.map(h => (row as Record<string, unknown>)[h])));
   }
 
-  // Sheet 5: Digital Emergency Systems
+  // Sheet 5: Digital Emergency
   if (data.digitalEmergencies.length > 0) {
     const digitalEmergencyRows = data.digitalEmergencies.map(de => ({
       'Index': de.index,
       'Name': de.name,
       'Fields (Hex)': Array.from(de.fields).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase(),
     }));
-    const digitalEmergencySheet = utils.json_to_sheet(digitalEmergencyRows);
-    utils.book_append_sheet(workbook, digitalEmergencySheet, 'Digital Emergency');
-    
-    // Add config as a separate sheet if available
+    const headers = Object.keys(digitalEmergencyRows[0]!);
+    const ws = workbook.addWorksheet('Digital Emergency');
+    ws.addRow(headers);
+    digitalEmergencyRows.forEach(row => ws.addRow(headers.map(h => (row as Record<string, unknown>)[h])));
     if (data.digitalEmergencyConfig) {
       const configRows = [{
         'Count/Index': data.digitalEmergencyConfig.countIndex,
@@ -194,12 +219,14 @@ export function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Blob |
         'Bit Flags': data.digitalEmergencyConfig.bitFlags,
         'Index/Count': data.digitalEmergencyConfig.indexCount,
       }];
-      const configSheet = utils.json_to_sheet(configRows);
-      utils.book_append_sheet(workbook, configSheet, 'Digital Emergency Config');
+      const configHeaders = Object.keys(configRows[0]!);
+      const wsConfig = workbook.addWorksheet('Digital Emergency Config');
+      wsConfig.addRow(configHeaders);
+      wsConfig.addRow(configHeaders.map(h => (configRows[0] as Record<string, unknown>)[h]));
     }
   }
 
-  // Sheet 6: Analog Emergency Systems
+  // Sheet 6: Analog Emergency
   if (data.analogEmergencies.length > 0) {
     const analogEmergencyRows = data.analogEmergencies.map(ae => ({
       'Index': ae.index,
@@ -214,11 +241,13 @@ export function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Blob |
       'Flags': ae.flags,
       'Frequency/ID': ae.frequencyId,
     }));
-    const analogEmergencySheet = utils.json_to_sheet(analogEmergencyRows);
-    utils.book_append_sheet(workbook, analogEmergencySheet, 'Analog Emergency');
+    const headers = Object.keys(analogEmergencyRows[0]!);
+    const ws = workbook.addWorksheet('Analog Emergency');
+    ws.addRow(headers);
+    analogEmergencyRows.forEach(row => ws.addRow(headers.map(h => (row as Record<string, unknown>)[h])));
   }
 
-  // Sheet 7: Radio Settings - Row layout (field names in column A, values in column B)
+  // Sheet 7: Radio Settings (array of arrays)
   if (data.radioSettings) {
     const radioSettingsRows = [
       ['Field', 'Value'],
@@ -247,34 +276,31 @@ export function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Blob |
       ['Zone Enabled', data.radioSettings.zoneEnabled ? 'Yes' : 'No'],
       ['Unknown Value (0x332)', data.radioSettings.unknownValue],
     ];
-    const radioSettingsSheet = utils.aoa_to_sheet(radioSettingsRows);
-    
-    // Set column widths
-    radioSettingsSheet['!cols'] = [
-      { wch: 30 },  // Field names
-      { wch: 25 },  // Values
-    ];
-    
-    utils.book_append_sheet(workbook, radioSettingsSheet, 'Radio Settings');
+    const ws = workbook.addWorksheet('Radio Settings');
+    ws.getColumn(1).width = 30;
+    ws.getColumn(2).width = 25;
+    ws.addRows(radioSettingsRows);
   }
 
-  // Sheet 8: Radio Info (Metadata)
+  // Sheet 8: Radio Info
   if (data.radioInfo) {
     const radioInfoRows = [{
-      'Model': data.radioInfo.model || '',
-      'Firmware': data.radioInfo.firmware || '',
-      'Build Date': data.radioInfo.buildDate || '',
-      'DSP Version': data.radioInfo.dspVersion || '',
-      'Radio Version': data.radioInfo.radioVersion || '',
-      'Codeplug Version': data.radioInfo.codeplugVersion || '',
-      'Config Start': data.radioInfo.memoryLayout?.configStart ? `0x${data.radioInfo.memoryLayout.configStart.toString(16)}` : '',
-      'Config End': data.radioInfo.memoryLayout?.configEnd ? `0x${data.radioInfo.memoryLayout.configEnd.toString(16)}` : '',
+      'Model': data.radioInfo.model ?? '',
+      'Firmware': data.radioInfo.firmware ?? '',
+      'Build Date': data.radioInfo.buildDate ?? '',
+      'DSP Version': data.radioInfo.dspVersion ?? '',
+      'Radio Version': data.radioInfo.radioVersion ?? '',
+      'Codeplug Version': data.radioInfo.codeplugVersion ?? '',
+      'Config Start': data.radioInfo.memoryLayout?.configStart != null ? `0x${data.radioInfo.memoryLayout.configStart.toString(16)}` : '',
+      'Config End': data.radioInfo.memoryLayout?.configEnd != null ? `0x${data.radioInfo.memoryLayout.configEnd.toString(16)}` : '',
     }];
-    const radioInfoSheet = utils.json_to_sheet(radioInfoRows);
-    utils.book_append_sheet(workbook, radioInfoSheet, 'Radio Info');
+    const headers = Object.keys(radioInfoRows[0]!);
+    const ws = workbook.addWorksheet('Radio Info');
+    ws.addRow(headers);
+    ws.addRow(headers.map(h => (radioInfoRows[0] as Record<string, unknown>)[h]));
   }
 
-  // Sheet 9: Export Metadata
+  // Sheet 9: Export Info
   const metadataRows = [{
     'Export Date': data.exportDate,
     'Codeplug Version': data.version,
@@ -285,374 +311,352 @@ export function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Blob |
     'Digital Emergency Count': data.digitalEmergencies.length,
     'Analog Emergency Count': data.analogEmergencies.length,
   }];
-  const metadataSheet = utils.json_to_sheet(metadataRows);
-  utils.book_append_sheet(workbook, metadataSheet, 'Export Info');
+  const metaHeaders = Object.keys(metadataRows[0]!);
+  const wsMeta = workbook.addWorksheet('Export Info');
+  wsMeta.addRow(metaHeaders);
+  wsMeta.addRow(metaHeaders.map(h => (metadataRows[0] as Record<string, unknown>)[h]));
 
-  // Generate filename with timestamp
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
   const filename = `codeplug-export-${timestamp}.xlsx`;
 
-  // Write file or return blob
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
   if (returnBlob) {
-    const wbout = write(workbook, { bookType: 'xlsx', type: 'array' });
-    return new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  } else {
-    writeFileXLSX(workbook, filename);
+    return blob;
   }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 /**
  * Import codeplug data from XLSX file
  */
 export async function importCodeplug(file: File): Promise<CodeplugData> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = read(data, { type: 'array' });
+  const buffer = await file.arrayBuffer();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
 
-        const result: CodeplugData = {
-          channels: [],
-          zones: [],
-          scanLists: [],
-          contacts: [],
-          digitalEmergencies: [],
-          digitalEmergencyConfig: null,
-          analogEmergencies: [],
-          radioSettings: null,
-          radioInfo: null,
-          exportDate: new Date().toISOString(),
-          version: CODEPLUG_VERSION,
-        };
+  const result: CodeplugData = {
+    channels: [],
+    zones: [],
+    scanLists: [],
+    contacts: [],
+    digitalEmergencies: [],
+    digitalEmergencyConfig: null,
+    analogEmergencies: [],
+    radioSettings: null,
+    radioInfo: null,
+    exportDate: new Date().toISOString(),
+    version: CODEPLUG_VERSION,
+  };
 
-        // Import Channels
-        if (workbook.SheetNames.includes('Channels')) {
-          const sheet = workbook.Sheets['Channels'];
-          const rows = utils.sheet_to_json(sheet) as any[];
-          result.channels = rows.map(row => {
-            // Parse CTCSS/DCS
-            const parseCTCSSDCS = (str: string) => {
-              if (!str || str === 'None') return { type: 'None' as const };
-              const ctcssMatch = str.match(/CTCSS\s+(\d+\.?\d*)/);
-              if (ctcssMatch) {
-                return { type: 'CTCSS' as const, value: parseFloat(ctcssMatch[1]) };
-              }
-              const dcsMatch = str.match(/DCS\s+(\d+)([NP])?/);
-              if (dcsMatch) {
-                return { type: 'DCS' as const, value: parseInt(dcsMatch[1]), polarity: (dcsMatch[2] === 'P' ? 'P' : 'N') as 'N' | 'P' };
-              }
-              return { type: 'None' as const };
-            };
+  const getSheet = (name: string) => workbook.getWorksheet(name);
 
-            const rxCTCSSDCS = parseCTCSSDCS(row['RX CTCSS/DCS']);
-            const txCTCSSDCS = parseCTCSSDCS(row['TX CTCSS/DCS']);
-            
-            return {
-              number: row['Channel #'] || row['Channel Number'] || 0,
-              name: row['Name'] || '',
-              rxFrequency: parseFloat(row['RX Freq (MHz)'] || row['RX Frequency (MHz)']) || 0,
-              txFrequency: parseFloat(row['TX Freq (MHz)'] || row['TX Frequency (MHz)']) || 0,
-              mode: row['Mode'] || 'Analog',
-              bandwidth: row['Bandwidth'] || '12.5kHz',
-              rxCtcssDcs: rxCTCSSDCS,
-              txCtcssDcs: txCTCSSDCS,
-              power: row['Power'] || 'High',
-              scanListId: parseInt(row['Scan List'] || row['Scan List ID']) || 0,
-              forbidTalkaround: row['Forbid Talkaround'] === 'Yes',
-              forbidTx: row['Forbid TX'] === 'Yes',
-              loneWorker: row['Lone Worker'] === 'Yes',
-              aprsReceive: row['APRS Receive'] === 'Yes',
-              aprsReportMode: row['APRS Report'] || row['APRS Report Mode'] || 'Off',
-              contactId: parseInt(row['Contact ID']) || 0,
-              colorCode: parseInt(row['Color Code']) || 0,
-              squelchLevel: parseInt(row['Squelch'] || row['Squelch Level']) || 3,
-              emergencySystemId: parseInt(row['Emergency ID'] || row['Emergency System ID']) || 0,
-              // Import additional fields if present
-              emergencyIndicator: row['Emergency'] === 'Yes',
-              emergencyAck: row['Emergency Ack'] === 'Yes',
-              voxFunction: row['VOX'] === 'Yes',
-              scramble: row['Scramble'] === 'Yes',
-              compander: row['Compander'] === 'Yes',
-              talkback: row['Talkback'] === 'Yes',
-              pttIdDisplay: row['PTT ID Display'] === 'Yes',
-              pttId: parseInt(row['PTT ID']) || 0,
-              companderDup: row['Compander Dup'] === 'Yes',
-              voxRelated: row['VOX Related'] === 'Yes',
-              rxSquelchMode: row['RX Squelch Mode'] || 'Carrier/CTC',
-              stepFrequency: parseInt(row['Step Frequency']) || 0,
-              signalingType: row['Signaling Type'] || 'None',
-              pttIdType: row['PTT ID Type'] || 'Off',
-              scanAdd: false, // Not used in UI, default to false
-            } as Channel;
-          });
-        }
-
-        // Import Zones
-        if (workbook.SheetNames.includes('Zones')) {
-          const sheet = workbook.Sheets['Zones'];
-          const rows = utils.sheet_to_json(sheet) as any[];
-          result.zones = rows.map(row => ({
-            name: row['Zone Name'] || '',
-            channels: (row['Channels'] || '').toString().split(',').map((c: string) => parseInt(c.trim())).filter((n: number) => !isNaN(n)),
-          } as Zone));
-        }
-
-        // Import Scan Lists
-        if (workbook.SheetNames.includes('Scan Lists')) {
-          const sheet = workbook.Sheets['Scan Lists'];
-          const rows = utils.sheet_to_json(sheet) as any[];
-          result.scanLists = rows.map(row => {
-            const priorityCh1 = row['Priority Channel 1'];
-            const priorityCh2 = row['Priority Channel 2'];
-            const designatedTx = row['Designated TX Channel'];
-            
-            return {
-              name: row['Scan List Name'] || '',
-              ctcScanMode: parseInt(row['CTC Scan Mode']) || 0,
-              scanTxMode: parseInt(row['Scan TX Mode']) || 0,
-              hangTime: row['Hang Time (tenths)'] ? parseInt(String(row['Hang Time (tenths)'])) : undefined,
-              priority1Type: row['Priority 1 Type'] ? parseInt(String(row['Priority 1 Type'])) : 0,
-              priority2Type: row['Priority 2 Type'] ? parseInt(String(row['Priority 2 Type'])) : 0,
-              priorityChannel1: priorityCh1 && priorityCh1 !== '' ? parseInt(priorityCh1) : undefined,
-              priorityChannel2: priorityCh2 && priorityCh2 !== '' ? parseInt(priorityCh2) : undefined,
-              designatedTxChannel: designatedTx && designatedTx !== '' ? parseInt(designatedTx) : undefined,
-              channels: (row['Channels'] || '').toString().split(',').map((c: string) => parseInt(c.trim())).filter((n: number) => !isNaN(n)),
-            } as ScanList;
-          });
-        }
-
-        // Import Contacts
-        if (workbook.SheetNames.includes('Contacts')) {
-          const sheet = workbook.Sheets['Contacts'];
-          const rows = utils.sheet_to_json(sheet) as any[];
-          result.contacts = rows.map(row => ({
-            id: parseInt(row['ID']) || 0,
-            name: row['Name'] || '',
-            callSign: row['Call Sign'] || '',
-            dmrId: row['DMR ID'] || '',
-          } as Contact));
-        }
-
-        // Import Digital Emergency Systems
-        if (workbook.SheetNames.includes('Digital Emergency')) {
-          const sheet = workbook.Sheets['Digital Emergency'];
-          const rows = utils.sheet_to_json(sheet) as any[];
-          result.digitalEmergencies = rows.map(row => {
-            // Parse hex fields string back to bytes
-            const fieldsHex = (row['Fields (Hex)'] || '').toString().replace(/[^0-9A-Fa-f]/g, '').slice(0, 20);
-            const fields = new Uint8Array(10);
-            for (let i = 0; i < fieldsHex.length && i < 20; i += 2) {
-              const hexByte = fieldsHex.slice(i, i + 2);
-              if (hexByte.length === 2) {
-                fields[i / 2] = parseInt(hexByte, 16);
-              }
-            }
-            return {
-              index: parseInt(row['Index']) || 0,
-              name: row['Name'] || '',
-              fields,
-            };
-          });
-        }
-
-        // Import Digital Emergency Config
-        if (workbook.SheetNames.includes('Digital Emergency Config')) {
-          const sheet = workbook.Sheets['Digital Emergency Config'];
-          const rows = utils.sheet_to_json(sheet) as any[];
-          if (rows.length > 0) {
-            const row = rows[0];
-            result.digitalEmergencyConfig = {
-              countIndex: parseInt(row['Count/Index']) || 0,
-              unknown: parseInt(row['Unknown']) || 0,
-              numericFields: [
-                parseInt(row['Numeric Field 1']) || 0,
-                parseInt(row['Numeric Field 2']) || 0,
-                parseInt(row['Numeric Field 3']) || 0,
-              ] as [number, number, number],
-              byteFields: [
-                parseInt(row['Byte Field 1']) || 0,
-                parseInt(row['Byte Field 2']) || 0,
-              ] as [number, number],
-              values16bit: [
-                parseInt(row['16-bit Value 1']) || 0,
-                parseInt(row['16-bit Value 2']) || 0,
-                parseInt(row['16-bit Value 3']) || 0,
-                parseInt(row['16-bit Value 4']) || 0,
-              ] as [number, number, number, number],
-              bitFlags: parseInt(row['Bit Flags']) || 0,
-              indexCount: parseInt(row['Index/Count']) || 0,
-              entryArray: [],
-              additionalConfig: new Uint8Array(192),
-            };
-          }
-        }
-
-        // Import Analog Emergency Systems
-        if (workbook.SheetNames.includes('Analog Emergency')) {
-          const sheet = workbook.Sheets['Analog Emergency'];
-          const rows = utils.sheet_to_json(sheet) as any[];
-          result.analogEmergencies = rows.map(row => ({
-            index: parseInt(row['Index']) || 0,
-            name: row['Name'] || '',
-            enabled: row['Enabled'] === 'Yes',
-            alarmType: parseInt(row['Alarm Type']) || 0,
-            alarmMode: parseInt(row['Alarm Mode']) || 0,
-            signalling: parseInt(row['Signalling']) || 0,
-            revertChannel: parseInt(row['Revert Channel']) || 0,
-            squelchMode: parseInt(row['Squelch Mode']) || 0,
-            idType: parseInt(row['ID Type']) || 0,
-            flags: parseInt(row['Flags']) || 0,
-            frequencyId: parseInt(row['Frequency/ID']) || 0,
-          } as AnalogEmergency));
-        }
-
-        // Import Radio Settings (row-based layout: Field in column A, Value in column B)
-        if (workbook.SheetNames.includes('Radio Settings') || workbook.SheetNames.includes('VFO Settings')) {
-          const sheet = workbook.Sheets[workbook.SheetNames.includes('Radio Settings') ? 'Radio Settings' : 'VFO Settings'];
-          
-          // Try to detect layout: if first cell is "Field", it's row layout
-          const firstCell = sheet['A1']?.v;
-          const settingsData: any = {};
-          
-          if (firstCell === 'Field') {
-            // Row layout: Field names in column A, values in column B
-            const rows = utils.sheet_to_json(sheet, { header: 1, defval: '' }) as any[][];
-            for (let i = 1; i < rows.length; i++) {
-              const [field, value] = rows[i];
-              if (field && value !== undefined && value !== '') {
-                // Map field names to settings properties
-                if (field.includes('Power On Display Line 1')) settingsData.powerOnDisplayLine1 = String(value);
-                else if (field.includes('Power On Display Line 2')) settingsData.powerOnDisplayLine2 = String(value);
-                else if (field.includes('Unknown Flag')) settingsData.unknownFlag = parseInt(String(value)) || 0;
-                else if (field.includes('Allow Reset')) settingsData.allowReset = String(value).toLowerCase() === 'yes';
-                else if (field.includes('Power On Interface')) settingsData.powerOnInterface = parseInt(String(value)) || 0;
-                else if (field.includes('Alert Tone Flags') && !field.includes('Cont')) settingsData.alertToneFlags = parseInt(String(value)) || 0;
-                else if (field.includes('Alert Tone Flags Cont')) settingsData.alertToneFlagsCont = parseInt(String(value)) || 0;
-                else if (field.includes('Unknown Radio Setting')) settingsData.unknownRadioSetting = parseInt(String(value)) || 0;
-                else if (field.includes('Radio Enabled')) settingsData.radioEnabled = String(value).toLowerCase() === 'yes';
-                else if (field === 'Latitude') settingsData.latitude = String(value);
-                else if (field === 'Latitude Direction') settingsData.latitudeDirection = String(value) === 'S' ? 'S' : 'N';
-                else if (field === 'Longitude') settingsData.longitude = String(value);
-                else if (field === 'Longitude Direction') settingsData.longitudeDirection = String(value) === 'W' ? 'W' : 'E';
-                else if (field === 'Current Channel A') settingsData.currentChannelA = String(value) === 'None' ? 0 : parseInt(String(value)) || 0;
-                else if (field === 'Current Channel B') settingsData.currentChannelB = String(value) === 'None' ? 0 : parseInt(String(value)) || 0;
-                else if (field === 'Channel Setting 3') settingsData.channelSetting3 = parseInt(String(value)) || 0;
-                else if (field === 'Channel Setting 4') settingsData.channelSetting4 = parseInt(String(value)) || 0;
-                else if (field === 'Channel Setting 5') settingsData.channelSetting5 = parseInt(String(value)) || 0;
-                else if (field === 'Channel Setting 6') settingsData.channelSetting6 = parseInt(String(value)) || 0;
-                else if (field === 'Channel Setting 7') settingsData.channelSetting7 = parseInt(String(value)) || 0;
-                else if (field === 'Channel Setting 8') settingsData.channelSetting8 = parseInt(String(value)) || 0;
-                else if (field === 'Current Zone') settingsData.currentZone = String(value) === 'None' ? 0 : parseInt(String(value)) || 0;
-                else if (field === 'Zone Enabled') settingsData.zoneEnabled = String(value).toLowerCase() === 'yes';
-                else if (field.includes('Unknown Value')) settingsData.unknownValue = String(value);
-              }
-            }
-          }
-          
-          // Merge with defaults
-          result.radioSettings = {
-            unknownFlag: settingsData.unknownFlag ?? 0,
-            powerOnDisplayLine1: settingsData.powerOnDisplayLine1 ?? '',
-            powerOnDisplayLine2: settingsData.powerOnDisplayLine2 ?? '',
-            allowReset: settingsData.allowReset ?? false,
-            powerOnInterface: settingsData.powerOnInterface ?? 0,
-            alertToneFlags: settingsData.alertToneFlags ?? 0,
-            alertToneFlagsCont: settingsData.alertToneFlagsCont ?? 0,
-            channelAColor: settingsData.channelAColor ?? 0,
-            channelBColor: settingsData.channelBColor ?? 0,
-            unknownDisplay: settingsData.unknownDisplay ?? 0,
-            displayFlags: settingsData.displayFlags ?? 0,
-            backlightBrightness: settingsData.backlightBrightness ?? 3,
-            autoBacklightDuration: settingsData.autoBacklightDuration ?? 10,
-            menuExitTime: settingsData.menuExitTime ?? 5,
-            standbyCharacterColor1: settingsData.standbyCharacterColor1 ?? 0,
-            standbyCharacterColor2: settingsData.standbyCharacterColor2 ?? 0,
-            zoneAColor: settingsData.zoneAColor ?? 0,
-            zoneBColor: settingsData.zoneBColor ?? 0,
-            workModeFlags: settingsData.workModeFlags ?? 0,
-            utcZone: settingsData.utcZone ?? 0,
-            measurePeriodInterval: settingsData.measurePeriodInterval ?? 5,
-            unknownFlags: settingsData.unknownFlags ?? 0,
-            gpsAprsFlags: settingsData.gpsAprsFlags ?? 0,
-            callHoldTime: settingsData.callHoldTime ?? 0,
-            activeWaitTime: settingsData.activeWaitTime ?? 1,
-            activeRetriesTime: settingsData.activeRetriesTime ?? 1,
-            preCarrierTime: settingsData.preCarrierTime ?? 0,
-            digitalSettingsFlags: settingsData.digitalSettingsFlags ?? 0,
-            remoteMonitorTime: settingsData.remoteMonitorTime ?? 0,
-            digitalSettingsCont: settingsData.digitalSettingsCont ?? 0,
-            vfoEmbeddedFlags: settingsData.vfoEmbeddedFlags ?? 0,
-            txDwellTime: settingsData.txDwellTime ?? 0,
-            languageOtherSettings: settingsData.languageOtherSettings ?? new Uint8Array(8),
-            unknownRadioSetting: settingsData.unknownRadioSetting ?? 0,
-            radioEnabled: settingsData.radioEnabled ?? false,
-            latitude: settingsData.latitude ?? '',
-            latitudeDirection: settingsData.latitudeDirection ?? 'N',
-            longitude: settingsData.longitude ?? '',
-            longitudeDirection: settingsData.longitudeDirection ?? 'E',
-            currentChannelA: settingsData.currentChannelA ?? 0,
-            currentChannelB: settingsData.currentChannelB ?? 0,
-            channelSetting3: settingsData.channelSetting3 ?? 0,
-            channelSetting4: settingsData.channelSetting4 ?? 0,
-            channelSetting5: settingsData.channelSetting5 ?? 0,
-            channelSetting6: settingsData.channelSetting6 ?? 0,
-            channelSetting7: settingsData.channelSetting7 ?? 0,
-            channelSetting8: settingsData.channelSetting8 ?? 0,
-            currentZone: settingsData.currentZone ?? 0,
-            zoneEnabled: settingsData.zoneEnabled ?? false,
-            unknownValue: settingsData.unknownValue ?? '000000',
-          } as RadioSettings;
-        }
-
-        // Import Radio Info
-        if (workbook.SheetNames.includes('Radio Info')) {
-          const sheet = workbook.Sheets['Radio Info'];
-          const rows = utils.sheet_to_json(sheet) as any[];
-          if (rows.length > 0) {
-            const row = rows[0];
-            const parseHex = (str: string) => {
-              if (!str) return undefined;
-              const match = str.match(/0x([0-9a-fA-F]+)/);
-              return match ? parseInt(match[1], 16) : undefined;
-            };
-            const configStart = parseHex(row['Config Start']);
-            const configEnd = parseHex(row['Config End']);
-            result.radioInfo = {
-              model: row['Model'] || '',
-              firmware: row['Firmware'] || '',
-              buildDate: row['Build Date'] || '',
-              dspVersion: row['DSP Version'] || undefined,
-              radioVersion: row['Radio Version'] || undefined,
-              codeplugVersion: row['Codeplug Version'] || undefined,
-              ...(configStart !== undefined && configEnd !== undefined && {
-                memoryLayout: { configStart, configEnd },
-              }),
-            } as RadioInfo;
-          }
-        }
-
-        resolve(result);
-      } catch (error) {
-        reject(new Error(`Failed to import codeplug: ${error instanceof Error ? error.message : 'Unknown error'}`));
+  // Import Channels
+  const channelsSheet = getSheet('Channels');
+  if (channelsSheet) {
+    const rows = sheetToJson(channelsSheet) as Record<string, unknown>[];
+    const parseCTCSSDCS = (str: string) => {
+      if (!str || str === 'None') return { type: 'None' as const };
+      const ctcssMatch = String(str).match(/CTCSS\s+(\d+\.?\d*)/);
+      if (ctcssMatch) {
+        return { type: 'CTCSS' as const, value: parseFloat(ctcssMatch[1]) };
       }
+      const dcsMatch = String(str).match(/DCS\s+(\d+)([NP])?/);
+      if (dcsMatch) {
+        return { type: 'DCS' as const, value: parseInt(dcsMatch[1], 10), polarity: (dcsMatch[2] === 'P' ? 'P' : 'N') as 'N' | 'P' };
+      }
+      return { type: 'None' as const };
     };
+    result.channels = rows.map(row => {
+      const rxCTCSSDCS = parseCTCSSDCS(String(row['RX CTCSS/DCS'] ?? ''));
+      const txCTCSSDCS = parseCTCSSDCS(String(row['TX CTCSS/DCS'] ?? ''));
+      return {
+        number: Number(row['Channel #'] ?? row['Channel Number'] ?? 0),
+        name: String(row['Name'] ?? ''),
+        rxFrequency: parseFloat(String(row['RX Freq (MHz)'] ?? row['RX Frequency (MHz)'] ?? '0')) || 0,
+        txFrequency: parseFloat(String(row['TX Freq (MHz)'] ?? row['TX Frequency (MHz)'] ?? '0')) || 0,
+        mode: String(row['Mode'] ?? 'Analog'),
+        bandwidth: String(row['Bandwidth'] ?? '12.5kHz'),
+        rxCtcssDcs: rxCTCSSDCS,
+        txCtcssDcs: txCTCSSDCS,
+        power: String(row['Power'] ?? 'High'),
+        scanListId: parseInt(String(row['Scan List'] ?? row['Scan List ID'] ?? '0'), 10) || 0,
+        forbidTalkaround: row['Forbid Talkaround'] === 'Yes',
+        forbidTx: row['Forbid TX'] === 'Yes',
+        loneWorker: row['Lone Worker'] === 'Yes',
+        aprsReceive: row['APRS Receive'] === 'Yes',
+        aprsReportMode: String(row['APRS Report'] ?? row['APRS Report Mode'] ?? 'Off'),
+        contactId: parseInt(String(row['Contact ID'] ?? '0'), 10) || 0,
+        colorCode: parseInt(String(row['Color Code'] ?? '0'), 10) || 0,
+        squelchLevel: parseInt(String(row['Squelch'] ?? row['Squelch Level'] ?? '3'), 10) || 3,
+        emergencySystemId: parseInt(String(row['Emergency ID'] ?? row['Emergency System ID'] ?? '0'), 10) || 0,
+        emergencyIndicator: row['Emergency'] === 'Yes',
+        emergencyAck: row['Emergency Ack'] === 'Yes',
+        voxFunction: row['VOX'] === 'Yes',
+        scramble: row['Scramble'] === 'Yes',
+        compander: row['Compander'] === 'Yes',
+        talkback: row['Talkback'] === 'Yes',
+        pttIdDisplay: row['PTT ID Display'] === 'Yes',
+        pttId: parseInt(String(row['PTT ID'] ?? '0'), 10) || 0,
+        companderDup: row['Compander Dup'] === 'Yes',
+        voxRelated: row['VOX Related'] === 'Yes',
+        rxSquelchMode: String(row['RX Squelch Mode'] ?? 'Carrier/CTC'),
+        stepFrequency: parseInt(String(row['Step Frequency'] ?? '0'), 10) || 0,
+        signalingType: String(row['Signaling Type'] ?? 'None'),
+        pttIdType: String(row['PTT ID Type'] ?? 'Off'),
+        scanAdd: false,
+      } as Channel;
+    });
+  }
 
-    reader.onerror = () => {
-      reject(new Error('Failed to read file'));
-    };
+  // Import Zones
+  const zonesSheet = getSheet('Zones');
+  if (zonesSheet) {
+    const rows = sheetToJson(zonesSheet) as Record<string, unknown>[];
+    result.zones = rows.map(row => ({
+      name: String(row['Zone Name'] ?? ''),
+      channels: String(row['Channels'] ?? '').split(',').map((c: string) => parseInt(c.trim(), 10)).filter((n: number) => !isNaN(n)),
+    } as Zone));
+  }
 
-    reader.readAsArrayBuffer(file);
-  });
+  // Import Scan Lists
+  const scanListsSheet = getSheet('Scan Lists');
+  if (scanListsSheet) {
+    const rows = sheetToJson(scanListsSheet) as Record<string, unknown>[];
+    result.scanLists = rows.map(row => {
+      const priorityCh1 = row['Priority Channel 1'];
+      const priorityCh2 = row['Priority Channel 2'];
+      const designatedTx = row['Designated TX Channel'];
+      return {
+        name: String(row['Scan List Name'] ?? ''),
+        ctcScanMode: parseInt(String(row['CTC Scan Mode'] ?? '0'), 10) || 0,
+        scanTxMode: parseInt(String(row['Scan TX Mode'] ?? '0'), 10) || 0,
+        hangTime: row['Hang Time (tenths)'] != null && row['Hang Time (tenths)'] !== '' ? parseInt(String(row['Hang Time (tenths)']), 10) : undefined,
+        priority1Type: row['Priority 1 Type'] != null ? parseInt(String(row['Priority 1 Type']), 10) : 0,
+        priority2Type: row['Priority 2 Type'] != null ? parseInt(String(row['Priority 2 Type']), 10) : 0,
+        priorityChannel1: priorityCh1 != null && priorityCh1 !== '' ? parseInt(String(priorityCh1), 10) : undefined,
+        priorityChannel2: priorityCh2 != null && priorityCh2 !== '' ? parseInt(String(priorityCh2), 10) : undefined,
+        designatedTxChannel: designatedTx != null && designatedTx !== '' ? parseInt(String(designatedTx), 10) : undefined,
+        channels: String(row['Channels'] ?? '').split(',').map((c: string) => parseInt(c.trim(), 10)).filter((n: number) => !isNaN(n)),
+      } as ScanList;
+    });
+  }
+
+  // Import Contacts
+  const contactsSheet = getSheet('Contacts');
+  if (contactsSheet) {
+    const rows = sheetToJson(contactsSheet) as Record<string, unknown>[];
+    result.contacts = rows.map(row => ({
+      id: parseInt(String(row['ID'] ?? '0'), 10) || 0,
+      name: String(row['Name'] ?? ''),
+      callSign: String(row['Call Sign'] ?? ''),
+      dmrId: parseInt(String(row['DMR ID'] ?? '0'), 10) || 0,
+    } as Contact));
+  }
+
+  // Import Digital Emergency
+  const digitalEmergencySheet = getSheet('Digital Emergency');
+  if (digitalEmergencySheet) {
+    const rows = sheetToJson(digitalEmergencySheet) as Record<string, unknown>[];
+    result.digitalEmergencies = rows.map(row => {
+      const fieldsHex = String(row['Fields (Hex)'] ?? '').replace(/[^0-9A-Fa-f]/g, '').slice(0, 20);
+      const fields = new Uint8Array(10);
+      for (let i = 0; i < fieldsHex.length && i < 20; i += 2) {
+        const hexByte = fieldsHex.slice(i, i + 2);
+        if (hexByte.length === 2) fields[i / 2] = parseInt(hexByte, 16);
+      }
+      return {
+        index: parseInt(String(row['Index'] ?? '0'), 10) || 0,
+        name: String(row['Name'] ?? ''),
+        fields,
+      };
+    });
+  }
+
+  // Import Digital Emergency Config
+  const digitalConfigSheet = getSheet('Digital Emergency Config');
+  if (digitalConfigSheet) {
+    const rows = sheetToJson(digitalConfigSheet) as Record<string, unknown>[];
+    if (rows.length > 0) {
+      const row = rows[0];
+      result.digitalEmergencyConfig = {
+        countIndex: parseInt(String(row['Count/Index'] ?? '0'), 10) || 0,
+        unknown: parseInt(String(row['Unknown'] ?? '0'), 10) || 0,
+        numericFields: [
+          parseInt(String(row['Numeric Field 1'] ?? '0'), 10) || 0,
+          parseInt(String(row['Numeric Field 2'] ?? '0'), 10) || 0,
+          parseInt(String(row['Numeric Field 3'] ?? '0'), 10) || 0,
+        ] as [number, number, number],
+        byteFields: [
+          parseInt(String(row['Byte Field 1'] ?? '0'), 10) || 0,
+          parseInt(String(row['Byte Field 2'] ?? '0'), 10) || 0,
+        ] as [number, number],
+        values16bit: [
+          parseInt(String(row['16-bit Value 1'] ?? '0'), 10) || 0,
+          parseInt(String(row['16-bit Value 2'] ?? '0'), 10) || 0,
+          parseInt(String(row['16-bit Value 3'] ?? '0'), 10) || 0,
+          parseInt(String(row['16-bit Value 4'] ?? '0'), 10) || 0,
+        ] as [number, number, number, number],
+        bitFlags: parseInt(String(row['Bit Flags'] ?? '0'), 10) || 0,
+        indexCount: parseInt(String(row['Index/Count'] ?? '0'), 10) || 0,
+        entryArray: [],
+        additionalConfig: new Uint8Array(192),
+      };
+    }
+  }
+
+  // Import Analog Emergency
+  const analogSheet = getSheet('Analog Emergency');
+  if (analogSheet) {
+    const rows = sheetToJson(analogSheet) as Record<string, unknown>[];
+    result.analogEmergencies = rows.map(row => ({
+      index: parseInt(String(row['Index'] ?? '0'), 10) || 0,
+      name: String(row['Name'] ?? ''),
+      enabled: row['Enabled'] === 'Yes',
+      alarmType: parseInt(String(row['Alarm Type'] ?? '0'), 10) || 0,
+      alarmMode: parseInt(String(row['Alarm Mode'] ?? '0'), 10) || 0,
+      signalling: parseInt(String(row['Signalling'] ?? '0'), 10) || 0,
+      revertChannel: parseInt(String(row['Revert Channel'] ?? '0'), 10) || 0,
+      squelchMode: parseInt(String(row['Squelch Mode'] ?? '0'), 10) || 0,
+      idType: parseInt(String(row['ID Type'] ?? '0'), 10) || 0,
+      flags: parseInt(String(row['Flags'] ?? '0'), 10) || 0,
+      frequencyId: parseInt(String(row['Frequency/ID'] ?? '0'), 10) || 0,
+    } as AnalogEmergency));
+  }
+
+  // Import Radio Settings (row layout)
+  const radioSettingsSheet = getSheet('Radio Settings') ?? getSheet('VFO Settings');
+  if (radioSettingsSheet) {
+    const rows = sheetToArrays(radioSettingsSheet) as (string | number)[][];
+    const firstCell = rows[0]?.[0];
+    const settingsData: Record<string, unknown> = {};
+    if (firstCell === 'Field' && rows.length > 1) {
+      for (let i = 1; i < rows.length; i++) {
+        const [field, value] = rows[i] ?? [];
+        if (field && value !== undefined && value !== '') {
+          const f = String(field);
+          const v = value;
+          if (f.includes('Power On Display Line 1')) settingsData.powerOnDisplayLine1 = String(v);
+          else if (f.includes('Power On Display Line 2')) settingsData.powerOnDisplayLine2 = String(v);
+          else if (f.includes('Unknown Flag')) settingsData.unknownFlag = parseInt(String(v), 10) || 0;
+          else if (f.includes('Allow Reset')) settingsData.allowReset = String(v).toLowerCase() === 'yes';
+          else if (f.includes('Power On Interface')) settingsData.powerOnInterface = parseInt(String(v), 10) || 0;
+          else if (f.includes('Alert Tone Flags') && !f.includes('Cont')) settingsData.alertToneFlags = parseInt(String(v), 10) || 0;
+          else if (f.includes('Alert Tone Flags Cont')) settingsData.alertToneFlagsCont = parseInt(String(v), 10) || 0;
+          else if (f.includes('Unknown Radio Setting')) settingsData.unknownRadioSetting = parseInt(String(v), 10) || 0;
+          else if (f.includes('Radio Enabled')) settingsData.radioEnabled = String(v).toLowerCase() === 'yes';
+          else if (f === 'Latitude') settingsData.latitude = String(v);
+          else if (f === 'Latitude Direction') settingsData.latitudeDirection = String(v) === 'S' ? 'S' : 'N';
+          else if (f === 'Longitude') settingsData.longitude = String(v);
+          else if (f === 'Longitude Direction') settingsData.longitudeDirection = String(v) === 'W' ? 'W' : 'E';
+          else if (f === 'Current Channel A') settingsData.currentChannelA = String(v) === 'None' ? 0 : parseInt(String(v), 10) || 0;
+          else if (f === 'Current Channel B') settingsData.currentChannelB = String(v) === 'None' ? 0 : parseInt(String(v), 10) || 0;
+          else if (f === 'Channel Setting 3') settingsData.channelSetting3 = parseInt(String(v), 10) || 0;
+          else if (f === 'Channel Setting 4') settingsData.channelSetting4 = parseInt(String(v), 10) || 0;
+          else if (f === 'Channel Setting 5') settingsData.channelSetting5 = parseInt(String(v), 10) || 0;
+          else if (f === 'Channel Setting 6') settingsData.channelSetting6 = parseInt(String(v), 10) || 0;
+          else if (f === 'Channel Setting 7') settingsData.channelSetting7 = parseInt(String(v), 10) || 0;
+          else if (f === 'Channel Setting 8') settingsData.channelSetting8 = parseInt(String(v), 10) || 0;
+          else if (f === 'Current Zone') settingsData.currentZone = String(v) === 'None' ? 0 : parseInt(String(v), 10) || 0;
+          else if (f === 'Zone Enabled') settingsData.zoneEnabled = String(v).toLowerCase() === 'yes';
+          else if (f.includes('Unknown Value')) settingsData.unknownValue = String(v);
+        }
+      }
+    }
+    result.radioSettings = {
+      unknownFlag: (settingsData.unknownFlag as number) ?? 0,
+      powerOnDisplayLine1: (settingsData.powerOnDisplayLine1 as string) ?? '',
+      powerOnDisplayLine2: (settingsData.powerOnDisplayLine2 as string) ?? '',
+      allowReset: (settingsData.allowReset as boolean) ?? false,
+      powerOnInterface: (settingsData.powerOnInterface as number) ?? 0,
+      alertToneFlags: (settingsData.alertToneFlags as number) ?? 0,
+      alertToneFlagsCont: (settingsData.alertToneFlagsCont as number) ?? 0,
+      channelAColor: (settingsData.channelAColor as number) ?? 0,
+      channelBColor: (settingsData.channelBColor as number) ?? 0,
+      unknownDisplay: (settingsData.unknownDisplay as number) ?? 0,
+      displayFlags: (settingsData.displayFlags as number) ?? 0,
+      backlightBrightness: (settingsData.backlightBrightness as number) ?? 3,
+      autoBacklightDuration: (settingsData.autoBacklightDuration as number) ?? 10,
+      menuExitTime: (settingsData.menuExitTime as number) ?? 5,
+      standbyCharacterColor1: (settingsData.standbyCharacterColor1 as number) ?? 0,
+      standbyCharacterColor2: (settingsData.standbyCharacterColor2 as number) ?? 0,
+      zoneAColor: (settingsData.zoneAColor as number) ?? 0,
+      zoneBColor: (settingsData.zoneBColor as number) ?? 0,
+      workModeFlags: (settingsData.workModeFlags as number) ?? 0,
+      utcZone: (settingsData.utcZone as number) ?? 0,
+      measurePeriodInterval: (settingsData.measurePeriodInterval as number) ?? 5,
+      unknownFlags: (settingsData.unknownFlags as number) ?? 0,
+      gpsAprsFlags: (settingsData.gpsAprsFlags as number) ?? 0,
+      callHoldTime: (settingsData.callHoldTime as number) ?? 0,
+      activeWaitTime: (settingsData.activeWaitTime as number) ?? 1,
+      activeRetriesTime: (settingsData.activeRetriesTime as number) ?? 1,
+      preCarrierTime: (settingsData.preCarrierTime as number) ?? 0,
+      digitalSettingsFlags: (settingsData.digitalSettingsFlags as number) ?? 0,
+      remoteMonitorTime: (settingsData.remoteMonitorTime as number) ?? 0,
+      digitalSettingsCont: (settingsData.digitalSettingsCont as number) ?? 0,
+      vfoEmbeddedFlags: (settingsData.vfoEmbeddedFlags as number) ?? 0,
+      txDwellTime: (settingsData.txDwellTime as number) ?? 0,
+      languageOtherSettings: (settingsData.languageOtherSettings as Uint8Array) ?? new Uint8Array(8),
+      unknownRadioSetting: (settingsData.unknownRadioSetting as number) ?? 0,
+      radioEnabled: (settingsData.radioEnabled as boolean) ?? false,
+      latitude: (settingsData.latitude as string) ?? '',
+      latitudeDirection: (settingsData.latitudeDirection as string) ?? 'N',
+      longitude: (settingsData.longitude as string) ?? '',
+      longitudeDirection: (settingsData.longitudeDirection as string) ?? 'E',
+      currentChannelA: (settingsData.currentChannelA as number) ?? 0,
+      currentChannelB: (settingsData.currentChannelB as number) ?? 0,
+      channelSetting3: (settingsData.channelSetting3 as number) ?? 0,
+      channelSetting4: (settingsData.channelSetting4 as number) ?? 0,
+      channelSetting5: (settingsData.channelSetting5 as number) ?? 0,
+      channelSetting6: (settingsData.channelSetting6 as number) ?? 0,
+      channelSetting7: (settingsData.channelSetting7 as number) ?? 0,
+      channelSetting8: (settingsData.channelSetting8 as number) ?? 0,
+      currentZone: (settingsData.currentZone as number) ?? 0,
+      zoneEnabled: (settingsData.zoneEnabled as boolean) ?? false,
+      unknownValue: (settingsData.unknownValue as string) ?? '000000',
+    } as RadioSettings;
+  }
+
+  // Import Radio Info
+  const radioInfoSheet = getSheet('Radio Info');
+  if (radioInfoSheet) {
+    const rows = sheetToJson(radioInfoSheet) as Record<string, unknown>[];
+    if (rows.length > 0) {
+      const row = rows[0];
+      const parseHex = (str: string) => {
+        if (!str) return undefined;
+        const match = String(str).match(/0x([0-9a-fA-F]+)/);
+        return match ? parseInt(match[1], 16) : undefined;
+      };
+      const configStart = parseHex(String(row['Config Start'] ?? ''));
+      const configEnd = parseHex(String(row['Config End'] ?? ''));
+      result.radioInfo = {
+        model: String(row['Model'] ?? ''),
+        firmware: String(row['Firmware'] ?? ''),
+        buildDate: String(row['Build Date'] ?? ''),
+        dspVersion: row['DSP Version'] != null ? String(row['DSP Version']) : undefined,
+        radioVersion: row['Radio Version'] != null ? String(row['Radio Version']) : undefined,
+        codeplugVersion: row['Codeplug Version'] != null ? String(row['Codeplug Version']) : undefined,
+        ...(configStart !== undefined && configEnd !== undefined && { memoryLayout: { configStart, configEnd } }),
+      } as RadioInfo;
+    }
+  }
+
+  return result;
 }
 
 /**
  * Get codeplug data from all stores
  */
 export function getCodeplugDataFromStores(): CodeplugData {
-  // This will be called from a component that has access to all stores
-  // For now, return a structure that components can populate
   return {
     channels: [],
     zones: [],
@@ -667,4 +671,3 @@ export function getCodeplugDataFromStores(): CodeplugData {
     version: CODEPLUG_VERSION,
   };
 }
-

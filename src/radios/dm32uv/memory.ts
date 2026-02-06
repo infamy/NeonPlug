@@ -205,9 +205,7 @@ export async function readAndConcatenateBlocks(
   onProgress?: (progress: number, message: string) => void,
   onBlockRead?: (block: MemoryBlock, blockData: Uint8Array) => void
 ): Promise<Uint8Array> {
-  let allData = new Uint8Array(0);
-
-  for (let i = 0; i < blocks.length; i++) {
+  let allData = new Uint8Array(0);  for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
     const progress = Math.floor((i / blocks.length) * 50);
     onProgress?.(progress, `Reading block ${i + 1} of ${blocks.length}...`);

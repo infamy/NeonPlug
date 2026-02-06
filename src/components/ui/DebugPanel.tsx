@@ -233,7 +233,7 @@ export const DebugPanel: React.FC = () => {
       };
 
       // Export codeplug returns a blob, we need to get it and add to zip
-      const xlsxBlob = exportCodeplug(codeplugData, true); // Pass true to return blob
+      const xlsxBlob = await exportCodeplug(codeplugData, true); // Pass true to return blob
       if (xlsxBlob instanceof Blob) {
         zip.file('codeplug.xlsx', xlsxBlob);
       }

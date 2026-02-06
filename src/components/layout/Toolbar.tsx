@@ -101,9 +101,9 @@ export const Toolbar: React.FC = () => {
       exportDate: new Date().toISOString(),
       version: '1.0.0',
     };
-    // Lazy load XLSX library only when needed
+    // Lazy load Excel library only when needed
     const { exportCodeplug } = await import('../../services/codeplugExport');
-    exportCodeplug(codeplugData);
+    await exportCodeplug(codeplugData);
   };
 
   const handleRead = async () => {
@@ -220,7 +220,7 @@ export const Toolbar: React.FC = () => {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".xlsx,.xls"
+        accept=".xlsx"
         onChange={handleFileSelect}
         className="hidden"
       />
