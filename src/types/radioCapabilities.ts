@@ -48,6 +48,12 @@ export const DEFAULT_BAND_LIMITS: RadioBandLimits = {
   uhfMax: 470,
 };
 
+/** Radio-specific rules to run before writing a codeplug. Only applied when model is known. */
+export interface WriteValidations {
+  /** If true, warn when channels exist that are not in any zone (they will still be written but may be hard to access). */
+  channelsMustBeInZones?: boolean;
+}
+
 export interface RadioCapabilities {
   diagnostics?: RadioCapabilitiesDiagnostics;
   digital?: RadioCapabilitiesDigital;
@@ -55,4 +61,6 @@ export interface RadioCapabilities {
   bandLimits?: RadioBandLimits;
   /** Returns true if firmware is 049 or newer (or radio-specific threshold). */
   isFirmware049OrNewer?: (firmware: string) => boolean;
+  /** Validations to run before writing codeplug to this radio. Only run when model is known. */
+  writeValidations?: WriteValidations;
 }

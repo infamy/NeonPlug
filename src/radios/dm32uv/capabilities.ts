@@ -29,4 +29,7 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   },
   bandLimits: DEFAULT_BAND_LIMITS,
   isFirmware049OrNewer,
+  writeValidations: {
+    channelsMustBeInZones: true,
+  },
 };

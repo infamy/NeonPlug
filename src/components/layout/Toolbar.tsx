@@ -8,6 +8,8 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import { useRadioStore } from '../../store/radioStore';
+import { getCapabilitiesForModel } from '../../radios/capabilities';
+import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 // XLSX functions will be lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
@@ -34,6 +36,8 @@ export const Toolbar: React.FC = () => {
   const [isWriting, setIsWriting] = useState(false);
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
+  const [writeValidationOpen, setWriteValidationOpen] = useState(false);
+  const [writeValidationMessage, setWriteValidationMessage] = useState('');
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
   const webSerialSupported = isWebSerialSupported();
@@ -207,6 +211,31 @@ export const Toolbar: React.FC = () => {
       setAlertOpen(true);
       return;
     }
+    // Run radio-specific validations only when model is known
+    const caps = getCapabilitiesForModel(radioInfo?.model);
+    const { warnings } = validateCodeplugForWrite(channels, zones, caps?.writeValidations);
+    if (warnings.length > 0) {
+      const lines = warnings.map((w) => {
+        if (w.id === 'channels_not_in_zones' && w.channels.length > 0) {
+          const list = w.channels
+            .slice(0, 10)
+            .map((c) => `Ch ${c.number} – ${c.name || '(no name)'}`)
+            .join('\n');
+          const more = w.channels.length > 10 ? `\n... and ${w.channels.length - 10} more` : '';
+          return `${w.message}\n\n${list}${more}`;
+        }
+        return w.message;
+      });
+      setWriteValidationMessage(lines.join('\n\n'));
+      setWriteValidationOpen(true);
+      return;
+    }
+    setWriteWarningOpen(true);
+  };
+
+  const handleWriteValidationWriteAnyway = () => {
+    setWriteValidationOpen(false);
+    setWriteValidationMessage('');
     setWriteWarningOpen(true);
   };
 
@@ -288,6 +317,19 @@ export const Toolbar: React.FC = () => {
         onRetry={handleRetry}
         onClose={handleCloseModal}
         mode={isWriting ? 'write' : 'read'}
+      />
+      <ConfirmModal
+        isOpen={writeValidationOpen}
+        onClose={() => {
+          setWriteValidationOpen(false);
+          setWriteValidationMessage('');
+        }}
+        onConfirm={handleWriteValidationWriteAnyway}
+        title="Codeplug check"
+        message={writeValidationMessage}
+        confirmLabel="Write anyway"
+        cancelLabel="Cancel"
+        variant="default"
       />
       <ConfirmModal
         isOpen={writeWarningOpen}
