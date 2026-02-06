@@ -152,7 +152,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const selectableChannelNumbers = channels.filter(ch => !isVFOChannel(ch.number)).map(ch => ch.number);
   const someSelectableSelected = selectableChannelNumbers.some(n => selectedChannelNumbers.has(n));
 
-  /** Row click: toggle this channel, or shift+click for range. Skip when clicking inputs/buttons. */
+  /** Row click: plain = single select; Shift = range (e.g. 4,5,6,7,8); Alt = add/remove (random multi-select). Skip when clicking inputs/buttons. */
   const handleRowClick = (channelNumber: number, e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest('input, button, select, [role="button"]')) return;
@@ -172,11 +172,14 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
       const range = new Set(selectableChannelNumbers.slice(lo, hi + 1));
       range.add(channelNumber);
       setSelectedChannelNumbers(range);
-    } else {
+    } else if (e.altKey) {
       const next = new Set(selectedChannelNumbers);
       if (next.has(channelNumber)) next.delete(channelNumber);
       else next.add(channelNumber);
       setSelectedChannelNumbers(next);
+      setAnchorChannelNumber(channelNumber);
+    } else {
+      setSelectedChannelNumbers(new Set([channelNumber]));
       setAnchorChannelNumber(channelNumber);
     }
   };
@@ -333,7 +336,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     : 'hover:bg-deep-gray hover:bg-opacity-50'
                 }`}
               >
-                <td className={`px-2 py-2 sticky left-0 z-10 min-w-[28px] w-[28px] ${selectedChannelNumbers.has(channel.number) ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`} title={isVFOChannel(channel.number) ? 'VFO' : 'Click to select, Shift+click for range'} />
+                <td className={`px-2 py-2 sticky left-0 z-10 min-w-[28px] w-[28px] ${selectedChannelNumbers.has(channel.number) ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`} title={isVFOChannel(channel.number) ? 'VFO' : 'Click = one; Shift+click = range; Alt+click = add/remove'} />
                 <td className={`px-2 py-2 text-white sticky left-[28px] z-10 text-sm font-medium ${selectedChannelNumbers.has(channel.number) ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`}>
                   {isVFOChannel(channel.number) ? getVFOIdentifier(channel.number) : channel.number}
                 </td>
