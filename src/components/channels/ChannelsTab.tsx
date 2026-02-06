@@ -154,7 +154,7 @@ export const ChannelsTab: React.FC = () => {
             </button>
           )}
         </div>
-        {selectedCount > 0 && (
+        {selectedCount > 0 ? (
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-cool-gray text-sm whitespace-nowrap">{selectedCount} selected</span>
             <button
@@ -172,6 +172,10 @@ export const ChannelsTab: React.FC = () => {
               Clear
             </button>
           </div>
+        ) : (
+          <p className="text-cool-gray text-xs shrink-0 whitespace-nowrap" title="Channel selection shortcuts">
+            Click row = one · Shift+click = range · Alt+click = add/remove
+          </p>
         )}
       </div>
       <ChannelsTable
