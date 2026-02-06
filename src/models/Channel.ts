@@ -59,7 +59,7 @@ export interface Channel {
   pttIdDisplay: boolean;      // Bit 6: 0=Off, 1=On
   pttId: number;              // Bits 5-0: 0-63
   
-  // Color Code (0x20)
+  // Color Code (0x1D bits 3-0 for digital; analog has no CC)
   colorCode: number;          // 0-15 (DMR only)
   
   // CTCSS/DCS (0x21-0x24)

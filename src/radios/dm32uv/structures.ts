@@ -325,6 +325,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
 
   // Power was already read from 0x18 bits 2-1 above
 
+  let colorCode = 0; // Digital only: 0x1D bits 3-0. Analog has no CC.
   if (isDigital) {
     // Digital mode: Parse digital-specific fields from bytes 0x1D, 0x1F
     const digitalFeatures = data[0x1D];
@@ -332,6 +333,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     shortDataConfirm = (digitalFeatures & 0x40) !== 0; // Bit 6
     tdmaDirectMode = (digitalFeatures & 0x20) !== 0; // Bit 5
     slotOperation = (digitalFeatures & 0x10) !== 0 ? 1 : 0; // Bit 4: Timeslot (0=TS1, 1=TS2)
+    colorCode = digitalFeatures & 0x0F; // Bits 3-0: Color Code (0-15)
     
     // Byte 0x1F: RX Group List ID (bits 5-0) and Private Confirm (bit 6)
     const digitalSettings = data[0x1F];
@@ -354,9 +356,6 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     pttIdDisplay = (pttIdSettings & 0x40) !== 0;
     pttId = pttIdSettings & 0x3F;
   }
-
-  // Color Code (0x20)
-  const colorCode = data[0x20] & 0x0F;
 
   // RX CTCSS/DCS (0x21-0x22)
   const rxCtcssDcsData = decodeCTCSSDCS(data.slice(0x21, 0x23));
@@ -633,12 +632,13 @@ export function encodeChannel(channel: Channel): Uint8Array {
   const isDigital = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
   
   if (isDigital) {
-    // Digital mode: Encode digital-specific fields
+    // Digital mode: Encode digital-specific fields (0x1D: bits 7-4 = flags, bits 3-0 = Color Code)
     let digitalFeatures = 0;
     if (channel.encryption) digitalFeatures |= 0x80; // Bit 7: Encryption
     if (channel.shortDataConfirm) digitalFeatures |= 0x40; // Bit 6: Short Data Confirm
     if (channel.tdmaDirectMode) digitalFeatures |= 0x20; // Bit 5: TDMA Direct Mode
     if ((channel.slotOperation ?? 0) === 1) digitalFeatures |= 0x10; // Bit 4: Timeslot (0=TS1, 1=TS2)
+    digitalFeatures |= (channel.colorCode & 0x0F); // Bits 3-0: Color Code (0-15)
     data[0x1D] = digitalFeatures;
     
     // RX Group List ID and Private Confirm (0x1F) - Digital mode
@@ -664,8 +664,7 @@ export function encodeChannel(channel: Channel): Uint8Array {
     data[0x1F] = pttIdSettings;
   }
 
-  // Color Code (0x20)
-  data[0x20] = channel.colorCode & 0x0F;
+  // Color Code: digital = 0x1D bits 3-0 (already written above); analog has no CC
 
   // RX CTCSS/DCS (0x21-0x22)
   const rxCtcssDcsBytes = encodeCTCSSDCS(channel.rxCtcssDcs);

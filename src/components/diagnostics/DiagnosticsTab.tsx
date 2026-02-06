@@ -2697,12 +2697,12 @@ export const DiagnosticsTab: React.FC = () => {
                   const aprsReportValue = (powerAprs >> 2) & 0x03;
                   const aprsReportMode = aprsReportValue === 0 ? 'Off' : aprsReportValue === 1 ? 'Digital' : aprsReportValue === 2 ? 'Analog' : 'Off';
 
-                  // const isDigital = mode === 'Digital' || mode === 'Fixed Digital'; // Unused for now
+                  const isDigital = mode === 'Digital' || mode === 'Fixed Digital';
                   const analogFeatures = channelBytes[0x1D];
                   const squelchLevel = channelBytes[0x1E];
                   const pttIdSettings = channelBytes[0x1F];
 
-                  const colorCode = channelBytes[0x20] & 0x0F;
+                  const colorCode = isDigital ? (analogFeatures & 0x0F) : 0; // CC in 0x1D bits 3-0 (digital only)
 
                   let rxCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
                   try {
@@ -2745,7 +2745,6 @@ export const DiagnosticsTab: React.FC = () => {
                   const reserved2D = channelBytes[0x2D];
 
                   // Digital-only fields (only valid when mode is Digital or Fixed Digital)
-                  const isDigital = mode === 'Digital' || mode === 'Fixed Digital';
                   let rxGroupListId: number | undefined;
                   let slotOperation: number | undefined;
                   let encryption: boolean | undefined;
@@ -2934,7 +2933,7 @@ export const DiagnosticsTab: React.FC = () => {
                     if (f.isDigital) return 'N/A (Digital mode - see Digital Settings below)';
                     return `0x${f.pttIdSettings.toString(16).toUpperCase().padStart(2, '0')}`;
                   }},
-                  { offset: 0x20, label: 'Color Code (0x20)', getValue: (f: typeof fields1) => f.colorCode.toString() },
+                  { offset: 0x1D, label: 'Color Code (0x1D bits 3-0, digital only)', getValue: (f: typeof fields1) => f.isDigital ? f.colorCode.toString() : 'N/A' },
                   { offset: 0x21, label: 'RX CTCSS/DCS (0x21-0x22)', getValue: (f: typeof fields1) => f.rxCtcssDcs.type === 'None' ? 'None' : f.rxCtcssDcs.type === 'CTCSS' ? `CTCSS ${f.rxCtcssDcs.value} Hz` : `DCS ${f.rxCtcssDcs.value}${f.rxCtcssDcs.polarity || ''}` },
                   { offset: 0x23, label: 'TX CTCSS/DCS (0x23-0x24)', getValue: (f: typeof fields1) => f.txCtcssDcs.type === 'None' ? 'None' : f.txCtcssDcs.type === 'CTCSS' ? `CTCSS ${f.txCtcssDcs.value} Hz` : `DCS ${f.txCtcssDcs.value}${f.txCtcssDcs.polarity || ''}` },
                   { offset: 0x25, label: 'Additional Flags (0x25)', getValue: (f: typeof fields1) => {
@@ -3094,7 +3093,7 @@ export const DiagnosticsTab: React.FC = () => {
                                 offsetNum === 0x1D ? 'Digital Features / Analog Features' :
                                 offsetNum === 0x1E ? 'Squelch Level' :
                                 offsetNum === 0x1F ? 'RX Group / PTT ID Settings' :
-                                offsetNum === 0x20 ? 'Color Code' :
+                                offsetNum === 0x20 ? 'Reserved (0x20)' :
                                 offsetNum === 0x21 || offsetNum === 0x22 ? 'RX CTCSS/DCS' :
                                 offsetNum === 0x23 || offsetNum === 0x24 ? 'TX CTCSS/DCS' :
                                 offsetNum === 0x25 ? 'Additional Flags' :
@@ -3389,7 +3388,8 @@ export const DiagnosticsTab: React.FC = () => {
                     const aprsReportValue = (aprsSquelch >> 2) & 0x03;
                     const aprsReportMode = aprsReportValue === 0 ? 'Off' : aprsReportValue === 1 ? 'Digital' : aprsReportValue === 2 ? 'Analog' : 'Off';
 
-                    const colorCode = channelBytes[0x20] & 0x0F;
+                    const isDigitalMode = mode === 'Digital' || mode === 'Fixed Digital';
+                    const colorCode = isDigitalMode ? (channelBytes[0x1D] & 0x0F) : 0; // CC in 0x1D bits 3-0 (digital only)
 
                     let rxCtcssDcs: { type: 'None' | 'CTCSS' | 'DCS'; value?: number; polarity?: 'N' | 'P' } = { type: 'None' };
                     try {
@@ -3474,7 +3474,7 @@ export const DiagnosticsTab: React.FC = () => {
                       const rawSquelch = (aprsSquelch >> 4) & 0x0F;
                       return rawSquelch.toString();
                     }, getCpsValue: () => cpsChannel['Squelch Level'] },
-                    { cpsField: 'Color Code', ourField: 'colorCode', offset: '0x20 bits 0-3', getOurValue: () => ourFields.colorCode.toString(), getCpsValue: () => cpsChannel['Color Code'] },
+                    { cpsField: 'Color Code', ourField: 'colorCode', offset: '0x1D bits 3-0 (digital only)', getOurValue: () => ourFields.colorCode.toString(), getCpsValue: () => cpsChannel['Color Code'] },
                     { cpsField: 'CTC/DCS Decode', ourField: 'rxCtcssDcs', offset: '0x21-0x22', getOurValue: () => {
                       if (ourFields.rxCtcssDcs.type === 'None') return 'None';
                       if (ourFields.rxCtcssDcs.type === 'CTCSS') return ourFields.rxCtcssDcs.value?.toFixed(1) || 'None';
