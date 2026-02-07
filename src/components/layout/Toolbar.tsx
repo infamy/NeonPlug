@@ -36,8 +36,7 @@ export const Toolbar: React.FC = () => {
   const [isWriting, setIsWriting] = useState(false);
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
-  const [writeValidationOpen, setWriteValidationOpen] = useState(false);
-  const [writeValidationMessage, setWriteValidationMessage] = useState('');
+  const [writeWarningMessage, setWriteWarningMessage] = useState('');
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
   const webSerialSupported = isWebSerialSupported();
@@ -159,7 +158,7 @@ export const Toolbar: React.FC = () => {
     setCurrentStep('');
   };
 
-  const WRITE_WARNING_MESSAGE =
+  const EXPERIMENTAL_WRITE_WARNING =
     '⚠️ EXPERIMENTAL FEATURE WARNING ⚠️\n\n' +
     'Writing to the radio is an EXPERIMENTAL feature and is used at your own risk.\n\n' +
     'IMPORTANT: Before proceeding, ensure that:\n' +
@@ -211,11 +210,12 @@ export const Toolbar: React.FC = () => {
       setAlertOpen(true);
       return;
     }
-    // Run radio-specific validations only when model is known
+    // Run radio-specific validations only when model is known; combine with experimental warning in one modal
     const caps = getCapabilitiesForModel(radioInfo?.model);
     const { warnings } = validateCodeplugForWrite(channels, zones, caps?.writeValidations);
+    let message = EXPERIMENTAL_WRITE_WARNING;
     if (warnings.length > 0) {
-      const lines = warnings.map((w) => {
+      const validationLines = warnings.map((w) => {
         if (w.id === 'channels_not_in_zones' && w.channels.length > 0) {
           const list = w.channels
             .slice(0, 10)
@@ -226,16 +226,9 @@ export const Toolbar: React.FC = () => {
         }
         return w.message;
       });
-      setWriteValidationMessage(lines.join('\n\n'));
-      setWriteValidationOpen(true);
-      return;
+      message = '⚠️ Codeplug check\n\n' + validationLines.join('\n\n') + '\n\n' + message;
     }
-    setWriteWarningOpen(true);
-  };
-
-  const handleWriteValidationWriteAnyway = () => {
-    setWriteValidationOpen(false);
-    setWriteValidationMessage('');
+    setWriteWarningMessage(message);
     setWriteWarningOpen(true);
   };
 
@@ -319,24 +312,11 @@ export const Toolbar: React.FC = () => {
         mode={isWriting ? 'write' : 'read'}
       />
       <ConfirmModal
-        isOpen={writeValidationOpen}
-        onClose={() => {
-          setWriteValidationOpen(false);
-          setWriteValidationMessage('');
-        }}
-        onConfirm={handleWriteValidationWriteAnyway}
-        title="Codeplug check"
-        message={writeValidationMessage}
-        confirmLabel="Write anyway"
-        cancelLabel="Cancel"
-        variant="default"
-      />
-      <ConfirmModal
         isOpen={writeWarningOpen}
         onClose={() => setWriteWarningOpen(false)}
         onConfirm={handleWriteWarningConfirm}
         title="Write to radio"
-        message={WRITE_WARNING_MESSAGE}
+        message={writeWarningMessage}
         confirmLabel="Continue"
         cancelLabel="Cancel"
         variant="default"

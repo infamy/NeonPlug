@@ -48,7 +48,7 @@ export function validateCodeplugForWrite(
     if (notInZones.length > 0) {
       warnings.push({
         id: 'channels_not_in_zones',
-        message: `${notInZones.length} channel(s) are not in any zone. They will still be written but may be hard to access on the radio.`,
+        message: `${notInZones.length} channel(s) are not in any zone. They will not be accessible on the radio.`,
         channels: notInZones,
       });
     }
