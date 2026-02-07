@@ -227,9 +227,7 @@ export async function readAndConcatenateBlocks(
   }
 
   return allData;
-}
-
-/**
+}/**
  * Store raw data for debug export (zones/scan lists).
  */
 export function storeRawData<T extends { data: Uint8Array; [key: string]: unknown; offset: number }>(

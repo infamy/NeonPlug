@@ -270,6 +270,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[28px] bg-dark-charcoal z-30 min-w-[40px]">#</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[68px] bg-dark-charcoal z-30 min-w-[120px]">Name</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">RX Freq</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold w-0 min-w-0" title="Copy RX↔TX"><span className="sr-only">Copy</span></th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">TX Freq</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[50px]">Mode</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[40px]">PWR</th>
@@ -361,6 +362,17 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     onChange={(val) => handleCellChange(channel.number, 'rxFrequency', val)}
                     className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
                   />
+                </td>
+                <td className="px-1 py-2 align-middle">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleCellChange(channel.number, 'txFrequency', channel.rxFrequency); }}
+                    className="p-1 rounded border border-neon-cyan border-opacity-30 text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 text-xs font-bold"
+                    title="Copy RX to TX"
+                    aria-label="Copy RX to TX"
+                  >
+                    →
+                  </button>
                 </td>
                 <td className="px-2 py-2">
                   <FrequencyInput

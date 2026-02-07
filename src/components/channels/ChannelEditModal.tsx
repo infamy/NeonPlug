@@ -140,8 +140,8 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
+              <div className="flex gap-2 items-end">
+                <div className="flex-1 min-w-0">
                   <label className="block text-xs font-medium text-cool-gray mb-1">
                     Receive Frequency (MHz)
                   </label>
@@ -152,7 +152,18 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   />
                   <p className="text-xs text-cool-gray mt-0.5">Frequency the radio receives on</p>
                 </div>
-                <div>
+                <div className="flex flex-col gap-0.5 pb-5">
+                  <button
+                    type="button"
+                    onClick={() => handleChange('txFrequency', editedChannel.rxFrequency)}
+                    className="p-1.5 rounded border border-neon-cyan border-opacity-30 text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan"
+                    title="Copy RX to TX"
+                    aria-label="Copy RX to TX"
+                  >
+                    <span className="text-sm font-bold">→</span>
+                  </button>
+                </div>
+                <div className="flex-1 min-w-0">
                   <label className="block text-xs font-medium text-cool-gray mb-1">
                     Transmit Frequency (MHz)
                   </label>
