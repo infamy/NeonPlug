@@ -8,6 +8,8 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import { useRadioStore } from '../../store/radioStore';
+import { getCapabilitiesForModel } from '../../radios/capabilities';
+import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 // XLSX functions will be lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
@@ -34,6 +36,7 @@ export const Toolbar: React.FC = () => {
   const [isWriting, setIsWriting] = useState(false);
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
+  const [writeWarningMessage, setWriteWarningMessage] = useState('');
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
   const webSerialSupported = isWebSerialSupported();
@@ -155,7 +158,7 @@ export const Toolbar: React.FC = () => {
     setCurrentStep('');
   };
 
-  const WRITE_WARNING_MESSAGE =
+  const EXPERIMENTAL_WRITE_WARNING =
     '⚠️ EXPERIMENTAL FEATURE WARNING ⚠️\n\n' +
     'Writing to the radio is an EXPERIMENTAL feature and is used at your own risk.\n\n' +
     'IMPORTANT: Before proceeding, ensure that:\n' +
@@ -207,6 +210,25 @@ export const Toolbar: React.FC = () => {
       setAlertOpen(true);
       return;
     }
+    // Run radio-specific validations only when model is known; combine with experimental warning in one modal
+    const caps = getCapabilitiesForModel(radioInfo?.model);
+    const { warnings } = validateCodeplugForWrite(channels, zones, caps?.writeValidations);
+    let message = EXPERIMENTAL_WRITE_WARNING;
+    if (warnings.length > 0) {
+      const validationLines = warnings.map((w) => {
+        if (w.id === 'channels_not_in_zones' && w.channels.length > 0) {
+          const list = w.channels
+            .slice(0, 10)
+            .map((c) => `Ch ${c.number} – ${c.name || '(no name)'}`)
+            .join('\n');
+          const more = w.channels.length > 10 ? `\n... and ${w.channels.length - 10} more` : '';
+          return `${w.message}\n\n${list}${more}`;
+        }
+        return w.message;
+      });
+      message = '⚠️ Codeplug check\n\n' + validationLines.join('\n\n') + '\n\n' + message;
+    }
+    setWriteWarningMessage(message);
     setWriteWarningOpen(true);
   };
 
@@ -294,7 +316,7 @@ export const Toolbar: React.FC = () => {
         onClose={() => setWriteWarningOpen(false)}
         onConfirm={handleWriteWarningConfirm}
         title="Write to radio"
-        message={WRITE_WARNING_MESSAGE}
+        message={writeWarningMessage}
         confirmLabel="Continue"
         cancelLabel="Cancel"
         variant="default"
