@@ -6,6 +6,37 @@ import type { Channel } from '../../models/Channel';
 import type { Zone } from '../../models/Zone';
 import type { WriteValidations } from '../../types/radioCapabilities';
 
+/** Set of channel numbers that exist in the channel list. */
+export function getExistingChannelNumbers(channels: Channel[]): Set<number> {
+  return new Set(channels.map((ch) => ch.number));
+}
+
+/** Zones that reference channel numbers not in the channel list. */
+export interface ZoneInvalidChannelRef {
+  zoneName: string;
+  zoneId: string;
+  invalidChannelNumbers: number[];
+}
+
+export function getZonesWithInvalidChannelRefs(
+  zones: Zone[],
+  channels: Channel[]
+): ZoneInvalidChannelRef[] {
+  const existingNumbers = getExistingChannelNumbers(channels);
+  const result: ZoneInvalidChannelRef[] = [];
+  for (const zone of zones) {
+    const invalid = zone.channels.filter((chNum) => !existingNumbers.has(chNum));
+    if (invalid.length > 0) {
+      result.push({
+        zoneName: zone.name,
+        zoneId: zone.id,
+        invalidChannelNumbers: invalid,
+      });
+    }
+  }
+  return result;
+}
+
 /** Channels that are not referenced by any zone. */
 export function getChannelsNotInZones(channels: Channel[], zones: Zone[]): Channel[] {
   const channelNumbersInZones = new Set<number>();
@@ -18,10 +49,12 @@ export function getChannelsNotInZones(channels: Channel[], zones: Zone[]): Chann
 }
 
 export interface CodeplugWriteWarning {
-  id: 'channels_not_in_zones';
+  id: 'channels_not_in_zones' | 'zones_reference_nonexistent_channels';
   message: string;
   /** Channels not in any zone (for display in UI). */
-  channels: Channel[];
+  channels?: Channel[];
+  /** Zones that reference non-existent channels (for display in UI). */
+  zoneRefs?: ZoneInvalidChannelRef[];
 }
 
 export interface CodeplugWriteValidationResult {
@@ -38,6 +71,24 @@ export function validateCodeplugForWrite(
   writeValidations: WriteValidations | null | undefined
 ): CodeplugWriteValidationResult {
   const warnings: CodeplugWriteWarning[] = [];
+
+  // Always check: zones must not reference non-existent channels (prevents radio issues)
+  if (zones.length > 0 && channels.length >= 0) {
+    const zoneRefs = getZonesWithInvalidChannelRefs(zones, channels);
+    if (zoneRefs.length > 0) {
+      const totalInvalid = zoneRefs.reduce((sum, z) => sum + z.invalidChannelNumbers.length, 0);
+      warnings.push({
+        id: 'zones_reference_nonexistent_channels',
+        message: `Zone(s) reference ${totalInvalid} non-existent channel(s). They will be removed before write to prevent radio errors.`,
+        zoneRefs,
+      });
+      for (const z of zoneRefs) {
+        console.warn(
+          `[Codeplug] Zone "${z.zoneName}" (${z.zoneId}) references non-existent channel(s): ${z.invalidChannelNumbers.join(', ')}. Will be stripped before write.`
+        );
+      }
+    }
+  }
 
   if (!writeValidations) {
     return { warnings };

@@ -54,15 +54,15 @@ export function useRadioConnection() {
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
-  const { setContacts } = useContactsStore();
+  const { setContacts, setContactsLoaded } = useContactsStore();
   const { setSettings: setRadioSettings } = useRadioSettingsStore();
   const { setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
-  const { setMessages, setRawMessageData } = useQuickMessagesStore();
-  const { setContacts: setQuickContacts } = useQuickContactsStore();
-  const { setRadioIds, setRawRadioIdData } = useDMRRadioIDsStore();
-  const { setCalibration } = useCalibrationStore();
-  const { setGroups: setRXGroups, setRawGroupData } = useRXGroupsStore();
+  const { setMessages, setRawMessageData, setMessagesLoaded } = useQuickMessagesStore();
+  const { setContacts: setQuickContacts, setContactsLoaded: setQuickContactsLoaded } = useQuickContactsStore();
+  const { setRadioIds, setRawRadioIdData, setRadioIdsLoaded } = useDMRRadioIDsStore();
+  const { setCalibration, setCalibrationLoaded } = useCalibrationStore();
+  const { setGroups: setRXGroups, setRawGroupData, setGroupsLoaded } = useRXGroupsStore();
 
   const readFromRadio = useCallback(async (
     onProgress?: (progress: number, message: string, step?: string) => void
@@ -70,7 +70,37 @@ export function useRadioConnection() {
     setIsConnecting(true);
     setError(null);
     setConnectionError(null);
-    
+
+    // Clear all codeplug data so each read starts from a clean slate
+    setChannels([]);
+    setRawChannelData(new Map());
+    setZones([]);
+    setRawZoneData(new Map());
+    setScanLists([]);
+    setRawScanListData(new Map());
+    setContacts([]);
+    setContactsLoaded(false);
+    setMessages([]);
+    setRawMessageData(new Map());
+    setMessagesLoaded(false);
+    setQuickContacts([]);
+    setQuickContactsLoaded(false);
+    setRadioIds([]);
+    setRawRadioIdData(new Map());
+    setRadioIdsLoaded(false);
+    setCalibration(null);
+    setCalibrationLoaded(false);
+    setRXGroups([]);
+    setRawGroupData(new Map());
+    setGroupsLoaded(false);
+    setRadioSettings(null);
+    setDigitalEmergencies([]);
+    setDigitalEmergencyConfig(null);
+    setAnalogEmergencies([]);
+    setBlockMetadata(new Map());
+    setBlockData(new Map());
+    setRawRadioSettingsData(null);
+
     let protocol: RadioProtocol | null = null;
     let tabWentHiddenDuringOperation = false;
     const onVisibilityChange = () => {
@@ -492,7 +522,7 @@ export function useRadioConnection() {
         setIsConnecting(false);
       }
     }
-  }, [setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setRawChannelData, setRawZoneData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setQuickContacts, setRadioIds, setRawRadioIdData, setCalibration, setRXGroups, setRawGroupData, setConnectionError]);
+  }, [setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setConnectionError]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
@@ -723,12 +753,20 @@ export function useRadioConnection() {
         console.warn(`Filtered out ${filteredCount} channel(s) with frequencies outside supported ranges`);
       }
       
-      // Update zones to only include valid channel numbers
+      // Update zones to only include channel numbers that exist (never write zone refs to non-existent channels)
       const validChannelNumbers = new Set(validChannels.map(ch => ch.number));
-      const filteredZones = zones.map(zone => ({
-        ...zone,
-        channels: zone.channels.filter(chNum => validChannelNumbers.has(chNum))
-      })).filter(zone => zone.channels.length > 0); // Remove empty zones
+      const filteredZones = zones.map(zone => {
+        const invalidRefs = zone.channels.filter(chNum => !validChannelNumbers.has(chNum));
+        if (invalidRefs.length > 0) {
+          console.warn(
+            `[Zones] Zone "${zone.name}" referenced non-existent channel(s): ${invalidRefs.join(', ')}. Removed before write to prevent radio errors.`
+          );
+        }
+        return {
+          ...zone,
+          channels: zone.channels.filter(chNum => validChannelNumbers.has(chNum))
+        };
+      }).filter(zone => zone.channels.length > 0); // Remove empty zones
       
       // Update scan lists to only include valid channel numbers
       const filteredScanLists = scanLists.map(scanList => ({

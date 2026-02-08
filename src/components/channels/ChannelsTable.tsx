@@ -12,6 +12,7 @@ import { ConfirmModal } from '../ui/ConfirmModal';
 import { Card } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
+import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
 
 // Frequency input component that only updates parent on blur (prevents cursor jumping)
 interface FrequencyInputProps {
@@ -366,20 +367,39 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                 <td className="px-1 py-2 align-middle">
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); handleCellChange(channel.number, 'txFrequency', channel.rxFrequency); }}
-                    className="p-1 rounded border border-neon-cyan border-opacity-30 text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 text-xs font-bold"
-                    title="Copy RX to TX"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!(isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency))) {
+                        handleCellChange(channel.number, 'txFrequency', channel.rxFrequency);
+                      }
+                    }}
+                    disabled={isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency)}
+                    className="p-1 rounded border border-neon-cyan border-opacity-30 text-xs font-bold disabled:opacity-40 disabled:text-cool-gray disabled:border-opacity-20 disabled:cursor-not-allowed text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 disabled:hover:bg-transparent"
+                    title={isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency) ? 'Receive-only (no TX)' : 'Copy RX to TX'}
                     aria-label="Copy RX to TX"
                   >
                     →
                   </button>
                 </td>
                 <td className="px-2 py-2">
-                  <FrequencyInput
-                    value={channel.txFrequency}
-                    onChange={(val) => handleCellChange(channel.number, 'txFrequency', val)}
-                    className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
-                  />
+                  {isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency) ? (
+                    <input
+                      type="text"
+                      readOnly
+                      disabled
+                      value=""
+                      placeholder=""
+                      title="Receive-only (no TX)"
+                      aria-label="No transmit"
+                      className="w-full text-xs rounded px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-20 text-cool-gray opacity-60 cursor-not-allowed"
+                    />
+                  ) : (
+                    <FrequencyInput
+                      value={channel.txFrequency}
+                      onChange={(val) => handleCellChange(channel.number, 'txFrequency', val)}
+                      className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+                    />
+                  )}
                 </td>
                 <td className="px-2 py-2 text-center">
                   <button

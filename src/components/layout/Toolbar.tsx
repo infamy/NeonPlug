@@ -216,13 +216,21 @@ export const Toolbar: React.FC = () => {
     let message = EXPERIMENTAL_WRITE_WARNING;
     if (warnings.length > 0) {
       const validationLines = warnings.map((w) => {
-        if (w.id === 'channels_not_in_zones' && w.channels.length > 0) {
+        if (w.id === 'channels_not_in_zones' && w.channels && w.channels.length > 0) {
           const list = w.channels
             .slice(0, 10)
             .map((c) => `Ch ${c.number} – ${c.name || '(no name)'}`)
             .join('\n');
           const more = w.channels.length > 10 ? `\n... and ${w.channels.length - 10} more` : '';
           return `${w.message}\n\n${list}${more}`;
+        }
+        if (w.id === 'zones_reference_nonexistent_channels' && w.zoneRefs && w.zoneRefs.length > 0) {
+          const lines = w.zoneRefs
+            .slice(0, 10)
+            .map((z) => `Zone "${z.zoneName}": non-existent Ch ${z.invalidChannelNumbers.join(', ')}`)
+            .join('\n');
+          const more = w.zoneRefs.length > 10 ? `\n... and ${w.zoneRefs.length - 10} more zone(s)` : '';
+          return `${w.message}\n\n${lines}${more}`;
         }
         return w.message;
       });

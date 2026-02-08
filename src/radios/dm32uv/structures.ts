@@ -8,6 +8,7 @@ import { generateZoneId } from '../../utils/zoneHelpers';
 import { OFFSET, BLOCK_SIZE, LIMITS, METADATA } from './constants';
 import { createDefaultChannel } from '../../utils/channelHelpers';
 import { log } from '../../utils/protocolLogger';
+import { NO_TX_FREQUENCY, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
 
 // --- BCD frequency and CTCSS/DCS encoding (inlined from encoding.ts) ---
 
@@ -200,13 +201,18 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     rxFreq = 0;
   }
 
-  // TX Frequency (0x14-0x17, 4 bytes BCD)
+  // TX Frequency (0x14-0x17, 4 bytes BCD). All 0xFF = no TX (aviation 87–136 MHz band).
   let txFreq: number;
-  try {
-    txFreq = decodeBCDFrequency(data.slice(0x14, 0x18));
-  } catch (error) {
-    log.warn(`Failed to decode TX frequency for channel ${channelNumber}`, 'Structures', error);
-    txFreq = 0;
+  const txBytes = data.slice(0x14, 0x18);
+  if (txBytes.every(b => b === 0xFF)) {
+    txFreq = NO_TX_FREQUENCY;
+  } else {
+    try {
+      txFreq = decodeBCDFrequency(txBytes);
+    } catch (error) {
+      log.warn(`Failed to decode TX frequency for channel ${channelNumber}`, 'Structures', error);
+      txFreq = 0;
+    }
   }
 
   // Mode flags (0x18)
@@ -560,9 +566,13 @@ export function encodeChannel(channel: Channel): Uint8Array {
   const rxFreqBytes = encodeBCDFrequency(channel.rxFrequency);
   data.set(rxFreqBytes, 0x10);
 
-  // TX Frequency (0x14-0x17, 4 bytes BCD)
-  const txFreqBytes = encodeBCDFrequency(channel.txFrequency);
-  data.set(txFreqBytes, 0x14);
+  // TX Frequency (0x14-0x17). Use 0xFF only for RX in 87–136 MHz with Forbid TX; else encode actual TX.
+  if (isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx) {
+    data[0x14] = data[0x15] = data[0x16] = data[0x17] = 0xFF;
+  } else {
+    const txFreqBytes = encodeBCDFrequency(channel.txFrequency);
+    data.set(txFreqBytes, 0x14);
+  }
 
   // Mode flags (0x18)
   const modeMap: Record<Channel['mode'], number> = {
@@ -2896,8 +2906,8 @@ export function parseDMRRadioIDs(
 export function encodeDMRRadioID(radioId: DMRRadioID): Uint8Array {
   const data = new Uint8Array(BLOCK_SIZE.DMR_RADIO_ID);
   
-  // Initialize to 0xFF (empty/padding)
-  data.fill(0xFF);
+  // Initialize to 0x00 (empty/padding per radio spec; blank slots are zeros)
+  data.fill(0x00);
 
   // DMR Radio ID (3 bytes at offset +0x00, stored as little-endian)
   let dmrIdValue: number;
