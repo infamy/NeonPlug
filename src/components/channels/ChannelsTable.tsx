@@ -456,7 +456,11 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                   <input
                     type="checkbox"
                     checked={channel.forbidTx}
-                    onChange={(e) => handleCellChange(channel.number, 'forbidTx', e.target.checked)}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      if (!next && isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency)) return;
+                      handleCellChange(channel.number, 'forbidTx', next);
+                    }}
                     className="checkbox-theme"
                   />
                 </td>

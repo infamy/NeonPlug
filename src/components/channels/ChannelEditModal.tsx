@@ -591,7 +591,11 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 <input
                   type="checkbox"
                   checked={editedChannel.forbidTx}
-                  onChange={(e) => handleChange('forbidTx', e.target.checked)}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    if (!next && isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency)) return;
+                    handleChange('forbidTx', next);
+                  }}
                   className="w-4 h-4 accent-neon-cyan flex-shrink-0"
                 />
                 <div>
