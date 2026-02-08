@@ -131,7 +131,7 @@ export const Toolbar: React.FC = () => {
       radioSettings,
       radioInfo,
       messages,
-      radioIds,
+      radioIds: dmrRadioIds,
       quickContacts,
       rxGroups,
       encryptionKeys,

@@ -49,13 +49,14 @@ export function getChannelsNotInZones(channels: Channel[], zones: Zone[]): Chann
   return channels.filter((ch) => !channelNumbersInZones.has(ch.number));
 }
 
-/** Channels that reference a DMR Radio ID index that is not in the current radio IDs list (e.g. after a delete). */
+/** Channels that reference a DMR Radio ID index that is not in the current radio IDs list (e.g. after a delete). Analog channels are skipped. */
 export function getChannelsReferencingDeletedDmrRadioId(
   channels: Channel[],
   radioIds: DMRRadioID[]
 ): Channel[] {
   const validIndices = new Set(radioIds.map((r) => r.index));
   return channels.filter((ch) => {
+    if (ch.mode === 'Analog' || ch.mode === 'Fixed Analog') return false;
     const idx = ch.dmrRadioIdIndex;
     if (idx === undefined || idx === 255) return false;
     return !validIndices.has(idx);
