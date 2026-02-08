@@ -34,7 +34,8 @@ Program your DMR radio directly from your browser—no software installation req
 ### 📡 Channel Configuration
 - **Smart Import** - Location-based channel wizard using repeater databases
 - **Bulk Editing** - Powerful table interface for editing multiple channels at once
-- **CSV Support** - Import/export channels from CHIRP and custom CSV formats
+- **Codeplug backup** - Save and load a full codeplug as a `.neonplug` file (zipped JSON)
+- **Chirp CSV** - Import and export channels in CHIRP CSV format; custom CSV import also supported
 - **Auto-Configuration** - Automatic offset, CTCSS, and color code detection
 
 ### 👥 Contact & Group Management
