@@ -12,6 +12,10 @@ import type { DigitalEmergency, DigitalEmergencyConfig } from '../models/Digital
 import type { AnalogEmergency } from '../models/AnalogEmergency';
 import type { RadioSettings } from '../models/RadioSettings';
 import type { RadioInfo } from '../types/radio';
+import type { QuickTextMessage } from '../models/QuickTextMessage';
+import type { DMRRadioID } from '../models/DMRRadioID';
+import type { QuickContact } from '../models/QuickContact';
+import type { RXGroup } from '../models/RXGroup';
 import { generateZoneId } from '../utils/zoneHelpers';
 
 export interface CodeplugData {
@@ -24,6 +28,10 @@ export interface CodeplugData {
   analogEmergencies: AnalogEmergency[];
   radioSettings: RadioSettings | null;
   radioInfo: RadioInfo | null;
+  messages: QuickTextMessage[];
+  radioIds: DMRRadioID[];
+  quickContacts: QuickContact[];
+  rxGroups: RXGroup[];
   exportDate: string;
   version: string;
 }
@@ -57,6 +65,16 @@ function codeplugToJsonSafe(data: CodeplugData): Record<string, unknown> {
     analogEmergencies: data.analogEmergencies,
     radioSettings: data.radioSettings,
     radioInfo: data.radioInfo,
+    messages: data.messages ?? [],
+    radioIds: (data.radioIds ?? []).map((r) => ({
+      ...r,
+      dmrIdBytes: Array.from(r.dmrIdBytes ?? new Uint8Array(0)),
+    })),
+    quickContacts: (data.quickContacts ?? []).map((q) => ({
+      ...q,
+      rawData: Array.from(q.rawData ?? new Uint8Array(0)),
+    })),
+    rxGroups: data.rxGroups ?? [],
     exportDate: data.exportDate,
     version: data.version,
   };
@@ -66,6 +84,8 @@ function codeplugToJsonSafe(data: CodeplugData): Record<string, unknown> {
 function jsonSafeToCodeplug(raw: Record<string, unknown>): CodeplugData {
   const dig = (raw.digitalEmergencies as Record<string, unknown>[] | undefined) ?? [];
   const config = raw.digitalEmergencyConfig as Record<string, unknown> | null | undefined;
+  const radioIdsRaw = (raw.radioIds as Record<string, unknown>[] | undefined) ?? [];
+  const quickContactsRaw = (raw.quickContacts as Record<string, unknown>[] | undefined) ?? [];
   return {
     channels: (raw.channels as Channel[]) ?? [],
     zones: ((raw.zones as Zone[]) ?? []).map((z) => ({
@@ -90,6 +110,16 @@ function jsonSafeToCodeplug(raw: Record<string, unknown>): CodeplugData {
     analogEmergencies: (raw.analogEmergencies as AnalogEmergency[]) ?? [],
     radioSettings: (raw.radioSettings as RadioSettings | null) ?? null,
     radioInfo: (raw.radioInfo as RadioInfo | null) ?? null,
+    messages: (raw.messages as QuickTextMessage[]) ?? [],
+    radioIds: radioIdsRaw.map((r) => ({
+      ...r,
+      dmrIdBytes: new Uint8Array((r.dmrIdBytes as number[]) ?? []),
+    })) as DMRRadioID[],
+    quickContacts: quickContactsRaw.map((q) => ({
+      ...q,
+      rawData: new Uint8Array((q.rawData as number[]) ?? []),
+    })) as QuickContact[],
+    rxGroups: (raw.rxGroups as RXGroup[]) ?? [],
     exportDate: String(raw.exportDate ?? new Date().toISOString()),
     version: String(raw.version ?? CODEPLUG_VERSION),
   };
@@ -161,6 +191,10 @@ export function getCodeplugDataFromStores(): CodeplugData {
     analogEmergencies: [],
     radioSettings: null,
     radioInfo: null,
+    messages: [],
+    radioIds: [],
+    quickContacts: [],
+    rxGroups: [],
     exportDate: new Date().toISOString(),
     version: CODEPLUG_VERSION,
   };

@@ -210,6 +210,10 @@ export const DebugPanel: React.FC = () => {
       const { useAnalogEmergencyStore } = await import('../../store/analogEmergencyStore');
       const { useScanListsStore } = await import('../../store/scanListsStore');
       const { useContactsStore } = await import('../../store/contactsStore');
+      const { useQuickMessagesStore } = await import('../../store/quickMessagesStore');
+      const { useDMRRadioIDsStore } = await import('../../store/dmrRadioIdsStore');
+      const { useQuickContactsStore } = await import('../../store/quickContactsStore');
+      const { useRXGroupsStore } = await import('../../store/rxGroupsStore');
       
       const radioStore = useRadioStore.getState();
       const radioSettingsStore = useRadioSettingsStore.getState();
@@ -217,6 +221,10 @@ export const DebugPanel: React.FC = () => {
       const analogEmergencyStore = useAnalogEmergencyStore.getState();
       const scanListsStore = useScanListsStore.getState();
       const contactsStore = useContactsStore.getState();
+      const quickMessagesStore = useQuickMessagesStore.getState();
+      const dmrRadioIDsStore = useDMRRadioIDsStore.getState();
+      const quickContactsStore = useQuickContactsStore.getState();
+      const rxGroupsStore = useRXGroupsStore.getState();
 
       const codeplugData = {
         channels,
@@ -228,6 +236,10 @@ export const DebugPanel: React.FC = () => {
         analogEmergencies: analogEmergencyStore.systems,
         radioSettings: radioSettingsStore.settings,
         radioInfo: radioStore.radioInfo,
+        messages: quickMessagesStore.messages,
+        radioIds: dmrRadioIDsStore.radioIds,
+        quickContacts: quickContactsStore.contacts,
+        rxGroups: rxGroupsStore.groups,
         exportDate: new Date().toISOString(),
         version: '1.0.0',
       };

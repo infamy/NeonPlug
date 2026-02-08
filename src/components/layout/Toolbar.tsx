@@ -8,7 +8,10 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import { useRadioStore } from '../../store/radioStore';
+import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
+import { useQuickContactsStore } from '../../store/quickContactsStore';
+import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 // Codeplug export/import are lazy loaded when needed
@@ -26,7 +29,10 @@ export const Toolbar: React.FC = () => {
   const { systems: digitalEmergencies, config: digitalEmergencyConfig, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
   const { radioInfo } = useRadioStore();
-  const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
+  const { messages, setMessages } = useQuickMessagesStore();
+  const { radioIds: dmrRadioIds, setRadioIds } = useDMRRadioIDsStore();
+  const { contacts: quickContacts, setContacts: setQuickContacts } = useQuickContactsStore();
+  const { groups: rxGroups, setGroups: setRXGroups } = useRXGroupsStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { readFromRadio, writeChannelsToRadio, isConnecting, error, readSteps, writeChannelsSteps } = useRadioConnection();
   const [progress, setProgress] = useState(0);
@@ -72,6 +78,10 @@ export const Toolbar: React.FC = () => {
       if (codeplugData.radioSettings) {
         setRadioSettings(codeplugData.radioSettings);
       }
+      setMessages(codeplugData.messages ?? []);
+      setRadioIds(codeplugData.radioIds ?? []);
+      setQuickContacts(codeplugData.quickContacts ?? []);
+      setRXGroups(codeplugData.rxGroups ?? []);
       
       setImportSuccess(
         `Successfully imported: ${codeplugData.channels.length} channels, ` +
@@ -103,6 +113,10 @@ export const Toolbar: React.FC = () => {
       analogEmergencies,
       radioSettings,
       radioInfo,
+      messages,
+      radioIds,
+      quickContacts,
+      rxGroups,
       exportDate: new Date().toISOString(),
       version: '1.0.0',
     };

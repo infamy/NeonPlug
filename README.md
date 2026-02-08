@@ -38,6 +38,8 @@ Program your DMR radio directly from your browser—no software installation req
 - **Chirp CSV** - Import and export channels in CHIRP CSV format; custom CSV import also supported
 - **Auto-Configuration** - Automatic offset, CTCSS, and color code detection
 
+The `.neonplug` file is a zipped JSON archive. You can unzip it to inspect the contents in a semi-human-readable way (e.g. `codeplug.json` inside the zip). Editing the JSON directly is not recommended—use NeonPlug’s import/export and in-app editing instead to avoid invalid data or corruption.
+
 ### 👥 Contact & Group Management
 - **Digital Contacts** - Manage DMR contacts with full talk group support
 - **RX Groups** - Create and organize receive groups

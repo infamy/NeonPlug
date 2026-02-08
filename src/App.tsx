@@ -20,6 +20,10 @@ import { useScanListsStore } from './store/scanListsStore';
 import { useRadioSettingsStore } from './store/radioSettingsStore';
 import { useDigitalEmergencyStore } from './store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from './store/analogEmergencyStore';
+import { useQuickMessagesStore } from './store/quickMessagesStore';
+import { useDMRRadioIDsStore } from './store/dmrRadioIdsStore';
+import { useQuickContactsStore } from './store/quickContactsStore';
+import { useRXGroupsStore } from './store/rxGroupsStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
@@ -38,6 +42,10 @@ function App() {
   const { setSettings: setRadioSettings } = useRadioSettingsStore();
   const { setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
+  const { setMessages } = useQuickMessagesStore();
+  const { setRadioIds } = useDMRRadioIDsStore();
+  const { setContacts: setQuickContacts } = useQuickContactsStore();
+  const { setGroups: setRXGroups } = useRXGroupsStore();
   const { isConnecting, error: radioError } = useRadioConnection();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -138,6 +146,10 @@ function App() {
         if (codeplugData.radioSettings) {
           setRadioSettings(codeplugData.radioSettings);
         }
+        setMessages(codeplugData.messages ?? []);
+        setRadioIds(codeplugData.radioIds ?? []);
+        setQuickContacts(codeplugData.quickContacts ?? []);
+        setRXGroups(codeplugData.rxGroups ?? []);
         
         setShowStartupModal(false);
         setAlertMessage(

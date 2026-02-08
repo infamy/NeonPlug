@@ -112,6 +112,14 @@ npm run build:single</code>
           </div>
         </Card>
 
+        {/* Codeplug format */}
+        <Card>
+          <SectionTitle>Codeplug format (.neonplug)</SectionTitle>
+          <p className="text-cool-gray text-sm">
+            The codeplug file is a zipped JSON archive. You can unzip it to inspect the contents in a semi-human-readable way (e.g. <code className="text-neon-cyan">codeplug.json</code> inside the zip). Editing the JSON directly is not recommended—use NeonPlug’s import/export and in-app editing instead, to avoid invalid data or corruption.
+          </p>
+        </Card>
+
         {/* Links */}
         <Card>
           <SectionTitle>Links</SectionTitle>

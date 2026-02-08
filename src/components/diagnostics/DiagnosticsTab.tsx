@@ -541,6 +541,10 @@ export const DiagnosticsTab: React.FC = () => {
         analogEmergencies,
         radioSettings,
         radioInfo,
+        messages: quickMessages,
+        radioIds: dmrRadioIds,
+        quickContacts,
+        rxGroups,
         exportDate: new Date().toISOString(),
         version: '1.0.0',
       };
