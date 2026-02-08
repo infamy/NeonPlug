@@ -1,5 +1,6 @@
 import type { Channel } from '../../models/Channel';
 import type { RadioSettings } from '../../models/RadioSettings';
+import { isNoTxFrequency, isRxInNoTxBand } from './frequencyValidator';
 
 interface SettingsWithBandLimits {
   bandLimits: {
@@ -33,7 +34,8 @@ export function validateChannel(
   if (channel.rxFrequency <= 0) {
     errors.push({ field: 'rxFrequency', message: 'RX frequency must be greater than 0' });
   }
-  if (channel.txFrequency <= 0) {
+  const isNoTxChannel = isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx && isNoTxFrequency(channel.txFrequency);
+  if (!isNoTxChannel && channel.txFrequency <= 0) {
     errors.push({ field: 'txFrequency', message: 'TX frequency must be greater than 0' });
   }
 

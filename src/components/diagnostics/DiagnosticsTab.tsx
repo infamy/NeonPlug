@@ -1103,7 +1103,7 @@ export const DiagnosticsTab: React.FC = () => {
                       <div key={offset} className="flex border-b border-yellow-600/10 hover:bg-yellow-900/10 py-1">
                         <div className="w-20 text-yellow-400 px-2">{offsetHex}</div>
                         <div className="w-[52ch] text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
-                        <div className="w-16 text-green-400 px-2 ml-4">{ascii}</div>
+                        <div className="min-w-[16ch] w-[16ch] text-green-400 px-2 ml-4 whitespace-nowrap">{ascii}</div>
                       </div>
                     );
                   }
@@ -1620,7 +1620,7 @@ export const DiagnosticsTab: React.FC = () => {
                           <div key={offset} id={`offset41-${offset}`} className="flex border-b border-yellow-600/10 hover:bg-yellow-900/10 py-1">
                             <div className="w-20 text-yellow-400 px-2">{offsetHex}</div>
                             <div className="w-[52ch] text-yellow-300 px-2">{hexBytes}{hexPadding}</div>
-                            <div className="w-16 text-green-400 px-2 ml-4">{ascii}</div>
+                            <div className="min-w-[16ch] w-[16ch] text-green-400 px-2 ml-4 whitespace-nowrap">{ascii}</div>
                           </div>
                         );
                       }
@@ -2326,7 +2326,7 @@ export const DiagnosticsTab: React.FC = () => {
                           >
                             <span className="text-yellow-400 w-16 font-mono text-xs">{offsetHex}</span>
                             <span className="text-white w-[52ch] font-mono text-xs">{hexBytes}{hexPadding}</span>
-                            <span className="text-cool-gray w-16 font-mono text-xs ml-4">{ascii}</span>
+                            <span className="text-cool-gray min-w-[16ch] w-[16ch] font-mono text-xs ml-4 whitespace-nowrap">{ascii}</span>
                           </div>
                         );
                       });
@@ -2503,7 +2503,7 @@ export const DiagnosticsTab: React.FC = () => {
                                 >
                                   <span className="text-yellow-400 w-16 font-mono text-xs">{offsetHex}</span>
                                   <span className="text-white w-[52ch] font-mono text-xs">{hexBytes}{hexPadding}</span>
-                                  <span className="text-cool-gray w-16 font-mono text-xs ml-4">{ascii}</span>
+                                  <span className="text-cool-gray min-w-[16ch] w-[16ch] font-mono text-xs ml-4 whitespace-nowrap">{ascii}</span>
                                 </div>
                               );
                             })}
@@ -3142,7 +3142,7 @@ export const DiagnosticsTab: React.FC = () => {
                                 </span>
                               ))}
                             </div>
-                            <div className="w-36 text-yellow-400 font-bold text-center">ASCII</div>
+                            <div className="w-[16ch] text-yellow-400 font-bold text-center">ASCII</div>
                           </div>
                           {/* Data rows */}
                           {(() => {
@@ -3171,7 +3171,7 @@ export const DiagnosticsTab: React.FC = () => {
                                 <div key={row} className="flex hover:bg-yellow-900/10 py-1">
                                   <div className="w-16 text-yellow-400">0x{startOffset.toString(16).toUpperCase().padStart(2, '0')}</div>
                                   <div className="w-[52ch]">{hexBytes}</div>
-                                  <div className="w-36 text-green-400 text-center ml-4">{ascii}</div>
+                                  <div className="min-w-[16ch] w-[16ch] text-green-400 text-center ml-4 whitespace-nowrap">{ascii}</div>
                                 </div>
                               );
                             }
@@ -3208,7 +3208,7 @@ export const DiagnosticsTab: React.FC = () => {
                                     <div key={row} className="flex hover:bg-yellow-900/10 py-1">
                                       <div className="w-16 text-yellow-400">0x{startOffset.toString(16).toUpperCase().padStart(2, '0')}</div>
                                       <div className="w-[52ch]">{hexBytes}</div>
-                                      <div className="w-36 text-green-400 text-center ml-4">{ascii}</div>
+                                      <div className="min-w-[16ch] w-[16ch] text-green-400 text-center ml-4 whitespace-nowrap">{ascii}</div>
                                     </div>
                                   );
                                 }

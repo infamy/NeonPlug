@@ -2201,8 +2201,8 @@ export class DM32UVProtocol implements RadioProtocol {
     // Read the current block to preserve unknown data
     const blockData = await this.connection!.readMemory(block.address, BLOCK_SIZE.STANDARD);
     
-    // Fill with 0xFF (empty)
-    blockData.fill(0xFF);
+    // Fill with 0x00 (empty slots per radio spec; blank DMR Radio ID slots are zeros)
+    blockData.fill(0x00);
 
     // Write count at offset 0x00 (1 byte, max 250)
     const count = Math.min(radioIds.length, LIMITS.DMR_RADIO_IDS_MAX);

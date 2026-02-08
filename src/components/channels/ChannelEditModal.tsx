@@ -5,6 +5,7 @@ import type { RXGroup } from '../../models/RXGroup';
 import type { EncryptionKey } from '../../models/EncryptionKey';
 import type { QuickContact } from '../../models/QuickContact';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
+import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
 
 // Frequency input component that only updates parent on blur
 interface FrequencyInputProps {
@@ -140,8 +141,8 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
+              <div className="flex gap-2 items-end">
+                <div className="flex-1 min-w-0">
                   <label className="block text-xs font-medium text-cool-gray mb-1">
                     Receive Frequency (MHz)
                   </label>
@@ -152,16 +153,49 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   />
                   <p className="text-xs text-cool-gray mt-0.5">Frequency the radio receives on</p>
                 </div>
-                <div>
+                <div className="flex flex-col gap-0.5 pb-5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!(isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency))) {
+                        handleChange('txFrequency', editedChannel.rxFrequency);
+                      }
+                    }}
+                    disabled={isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency)}
+                    className="p-1.5 rounded border border-neon-cyan border-opacity-30 text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan disabled:opacity-40 disabled:text-cool-gray disabled:border-opacity-20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                    title={isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency) ? 'Receive-only (no TX)' : 'Copy RX to TX'}
+                    aria-label="Copy RX to TX"
+                  >
+                    <span className="text-sm font-bold">→</span>
+                  </button>
+                </div>
+                <div className="flex-1 min-w-0">
                   <label className="block text-xs font-medium text-cool-gray mb-1">
                     Transmit Frequency (MHz)
                   </label>
-                  <FrequencyInput
-                    value={editedChannel.txFrequency}
-                    onChange={(val) => handleChange('txFrequency', val)}
-                    className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                  />
-                  <p className="text-xs text-cool-gray mt-0.5">Frequency the radio transmits on</p>
+                  {isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency) ? (
+                    <>
+                      <input
+                        type="text"
+                        readOnly
+                        disabled
+                        value=""
+                        title="Receive-only (no TX)"
+                        aria-label="No transmit"
+                        className="w-full bg-deep-gray border border-neon-cyan border-opacity-20 rounded px-2 py-1 text-sm text-cool-gray opacity-60 cursor-not-allowed"
+                      />
+                      <p className="text-xs text-cool-gray mt-0.5">Receive-only (87–136 MHz); TX disabled</p>
+                    </>
+                  ) : (
+                    <>
+                      <FrequencyInput
+                        value={editedChannel.txFrequency}
+                        onChange={(val) => handleChange('txFrequency', val)}
+                        className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      />
+                      <p className="text-xs text-cool-gray mt-0.5">Frequency the radio transmits on</p>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -557,7 +591,11 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 <input
                   type="checkbox"
                   checked={editedChannel.forbidTx}
-                  onChange={(e) => handleChange('forbidTx', e.target.checked)}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    if (!next && isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency)) return;
+                    handleChange('forbidTx', next);
+                  }}
                   className="w-4 h-4 accent-neon-cyan flex-shrink-0"
                 />
                 <div>

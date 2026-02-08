@@ -7,6 +7,7 @@ import type { Channel, Zone } from '../models';
 import { createDefaultChannel } from '../utils/channelHelpers';
 import { generateZoneId } from '../utils/zoneHelpers';
 import { getAirportFrequenciesWithTypes, type AirportData } from '../data/airportsData';
+import { NO_TX_FREQUENCY } from './validation/frequencyValidator';
 
 // Helper to remove distance property for compatibility
 function removeDistance(airport: AirportData & { distance?: number }): AirportData {
@@ -126,7 +127,8 @@ export function generateAirportChannels(
         number: channelNumber++,
         name: channelName,
         rxFrequency: freqInfo.frequency / 1000, // Convert kHz to MHz
-        txFrequency: freqInfo.frequency / 1000,
+        txFrequency: NO_TX_FREQUENCY, // Receive-only (87–136 MHz): TX stored as 0xFF on radio
+        forbidTx: true,
         mode: 'Analog',
         bandwidth: '25kHz', // Aviation uses 25kHz spacing
         power: 'High',
