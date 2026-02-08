@@ -1,16 +1,6 @@
-import type { RadioSettings } from '../../models/RadioSettings';
 import type { Channel } from '../../models/Channel';
 import type { RadioBandLimits } from '../../types/radioCapabilities';
 import { DEFAULT_BAND_LIMITS } from '../../types/radioCapabilities';
-
-interface SettingsWithBandLimits {
-  bandLimits: {
-    vhfMin: number;
-    vhfMax: number;
-    uhfMin: number;
-    uhfMax: number;
-  };
-}
 
 /** RX range where TX is not used (aviation/FM receive-only). TX bytes stored as 0xFF on radio. */
 export const NO_TX_BAND_RX_MIN_MHZ = 87;
@@ -59,41 +49,18 @@ export function isValidChannelFrequency(channel: Channel, limits?: RadioBandLimi
          isValidFrequencyRange(channel.txFrequency, limits);
 }
 
-export function isValidFrequency(
-  frequency: number,
-  settings?: RadioSettings | SettingsWithBandLimits
-): boolean {
+/** Band limits from radio capabilities (e.g. getCapabilitiesForModel(radioInfo?.model)?.bandLimits). */
+export function isValidFrequency(frequency: number, bandLimits?: RadioBandLimits | null): boolean {
   if (frequency <= 0) return false;
-  
-  if (!settings || !('bandLimits' in settings) || !settings.bandLimits) {
-    return true; // Skip validation if bandLimits not available
-  }
-  const isVHF = frequency >= settings.bandLimits.vhfMin && 
-                frequency <= settings.bandLimits.vhfMax;
-  const isUHF = frequency >= settings.bandLimits.uhfMin && 
-                frequency <= settings.bandLimits.uhfMax;
-  
-  return isVHF || isUHF;
+  if (!bandLimits) return true;
+  return isValidFrequencyRange(frequency, bandLimits);
 }
 
-export function getFrequencyBand(
-  frequency: number,
-  settings?: RadioSettings | SettingsWithBandLimits
-): 'VHF' | 'UHF' | 'Unknown' {
-  if (!settings || !('bandLimits' in settings) || !settings.bandLimits) {
-    return 'Unknown';
-  }
-  
-  if (frequency >= settings.bandLimits.vhfMin && 
-      frequency <= settings.bandLimits.vhfMax) {
-    return 'VHF';
-  }
-  
-  if (frequency >= settings.bandLimits.uhfMin && 
-      frequency <= settings.bandLimits.uhfMax) {
-    return 'UHF';
-  }
-  
+/** Band limits from radio capabilities. */
+export function getFrequencyBand(frequency: number, bandLimits?: RadioBandLimits | null): 'VHF' | 'UHF' | 'Unknown' {
+  if (!bandLimits) return 'Unknown';
+  if (frequency >= bandLimits.vhfMin && frequency <= bandLimits.vhfMax) return 'VHF';
+  if (frequency >= bandLimits.uhfMin && frequency <= bandLimits.uhfMax) return 'UHF';
   return 'Unknown';
 }
 

@@ -6,6 +6,8 @@ import type { EncryptionKey } from '../../models/EncryptionKey';
 import type { QuickContact } from '../../models/QuickContact';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
 import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
+import { validateChannel, type ValidationError } from '../../services/validation/channelValidator';
+import type { RadioBandLimits } from '../../types/radioCapabilities';
 
 // Frequency input component that only updates parent on blur
 interface FrequencyInputProps {
@@ -50,6 +52,8 @@ interface ChannelEditModalProps {
   onClose: () => void;
   channel: Channel;
   onSave: (channel: Channel) => void;
+  /** Band limits from radio capabilities (getCapabilitiesForModel(radioInfo?.model)?.bandLimits). */
+  bandLimits?: RadioBandLimits | null;
   rxGroups?: RXGroup[];
   encryptionKeys?: EncryptionKey[];
   talkGroups?: QuickContact[];
@@ -60,11 +64,13 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   onClose,
   channel,
   onSave,
+  bandLimits = null,
   rxGroups = [],
   encryptionKeys = [],
   talkGroups = [],
 }) => {
   const [editedChannel, setEditedChannel] = React.useState<Channel>(channel);
+  const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
 
   React.useEffect(() => {
     const updatedChannel = { ...channel };
@@ -75,13 +81,21 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
       updatedChannel.name = 'VFO B';
     }
     setEditedChannel(updatedChannel);
+    setValidationErrors([]);
   }, [channel]);
 
   const handleChange = (field: keyof Channel, value: any) => {
     setEditedChannel(prev => ({ ...prev, [field]: value }));
+    if (validationErrors.length > 0) setValidationErrors([]);
   };
 
   const handleSave = () => {
+    const errors = validateChannel(editedChannel, bandLimits);
+    if (errors.length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
+    setValidationErrors([]);
     onSave(editedChannel);
     onClose();
   };
@@ -110,6 +124,16 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
     >
       <div className="flex flex-col h-full">
         <div className="flex-1 overflow-y-auto pr-2">
+          {validationErrors.length > 0 && (
+            <div className="mb-4 p-3 bg-red-900/30 border border-red-500/50 rounded text-red-300 text-sm">
+              <p className="font-semibold mb-1">Please fix the following:</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                {validationErrors.map((e, i) => (
+                  <li key={i}>{e.field}: {e.message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="space-y-4">
           {/* Basic Information */}
           <section>

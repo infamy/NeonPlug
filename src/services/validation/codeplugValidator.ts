@@ -90,7 +90,7 @@ export function validateCodeplugForWrite(
   const warnings: CodeplugWriteWarning[] = [];
 
   // Always check: zones must not reference non-existent channels (prevents radio issues)
-  if (zones.length > 0 && channels.length >= 0) {
+  if (zones.length > 0) {
     const zoneRefs = getZonesWithInvalidChannelRefs(zones, channels);
     if (zoneRefs.length > 0) {
       const totalInvalid = zoneRefs.reduce((sum, z) => sum + z.invalidChannelNumbers.length, 0);

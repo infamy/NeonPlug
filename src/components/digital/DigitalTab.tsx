@@ -7,6 +7,7 @@ import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
+import { isValidDMRId } from '../../services/validation/dmrValidator';
 import { RXGroupsList } from '../rxgroups/RXGroupsList';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
@@ -266,22 +267,26 @@ export const DigitalTab: React.FC = () => {
                             value={radioId.dmrId}
                             onChange={(e) => {
                               const dmrIdValue = parseInt(e.target.value, 10);
-                              if (!isNaN(dmrIdValue) && dmrIdValue >= 0 && dmrIdValue <= 0xFFFFFF) {
-                                updateRadioId(radioId.index, {
-                                  dmrId: e.target.value,
-                                  dmrIdValue: dmrIdValue,
-                                  dmrIdBytes: new Uint8Array([
-                                    dmrIdValue & 0xFF,
-                                    (dmrIdValue >> 8) & 0xFF,
-                                    (dmrIdValue >> 16) & 0xFF,
-                                  ]),
-                                });
+                              if (isNaN(dmrIdValue) || dmrIdValue < 0 || dmrIdValue > 0xFFFFFF) return;
+                              if (dmrIdValue > 0 && !isValidDMRId(dmrIdValue)) {
+                                setAlertMessage('DMR ID must be between 1 and 9,999,999 (0 = none).');
+                                setAlertOpen(true);
+                                return;
                               }
+                              updateRadioId(radioId.index, {
+                                dmrId: e.target.value,
+                                dmrIdValue: dmrIdValue,
+                                dmrIdBytes: new Uint8Array([
+                                  dmrIdValue & 0xFF,
+                                  (dmrIdValue >> 8) & 0xFF,
+                                  (dmrIdValue >> 16) & 0xFF,
+                                ]),
+                              });
                             }}
                             min="0"
                             max="16777215"
                             className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono"
-                            placeholder="DMR ID (0-16777215)"
+                            placeholder="DMR ID (1-9999999, 0=none)"
                           />
                         </td>
                         <td className="px-2 py-2">
