@@ -11,6 +11,7 @@ import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
+import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useLogStore } from '../../store/logStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 import {
@@ -46,6 +47,7 @@ export const DiagnosticsTab: React.FC = () => {
   const { messages: quickMessages } = useQuickMessagesStore();
   const { contacts: quickContacts } = useQuickContactsStore();
   const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
+  const { keys: encryptionKeys } = useEncryptionKeysStore();
   const caps = useMemo(() => getCapabilitiesForModel(radioInfo?.model), [radioInfo?.model]);
   const [showMetadataBlock, setShowMetadataBlock] = useState(false);
   const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
@@ -530,7 +532,7 @@ export const DiagnosticsTab: React.FC = () => {
         writeFolder.file('expected-write-data.json', JSON.stringify(expectedWrite, null, 2));
       }
 
-      // Add codeplug XLSX
+      // Add codeplug (.neonplug = zipped JSON)
       const codeplugData = {
         channels,
         zones,
@@ -541,13 +543,18 @@ export const DiagnosticsTab: React.FC = () => {
         analogEmergencies,
         radioSettings,
         radioInfo,
+        messages: quickMessages,
+        radioIds: dmrRadioIds,
+        quickContacts,
+        rxGroups,
+        encryptionKeys,
         exportDate: new Date().toISOString(),
         version: '1.0.0',
       };
 
-      const xlsxBlob = await exportCodeplug(codeplugData, true);
-      if (xlsxBlob instanceof Blob) {
-        zip.file('codeplug.xlsx', xlsxBlob);
+      const codeplugBlob = await exportCodeplug(codeplugData, true);
+      if (codeplugBlob instanceof Blob) {
+        zip.file('codeplug.neonplug', codeplugBlob);
       }
 
       // Generate and download zip

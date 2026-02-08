@@ -8,10 +8,14 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import { useRadioStore } from '../../store/radioStore';
+import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
+import { useQuickContactsStore } from '../../store/quickContactsStore';
+import { useRXGroupsStore } from '../../store/rxGroupsStore';
+import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
-// XLSX functions will be lazy loaded when needed
+// Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
@@ -25,15 +29,17 @@ export const Toolbar: React.FC = () => {
   const { settings: radioSettings, setSettings: setRadioSettings } = useRadioSettingsStore();
   const { systems: digitalEmergencies, config: digitalEmergencyConfig, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
-  const { radioInfo } = useRadioStore();
-  const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
+  const { radioInfo, setRadioInfo } = useRadioStore();
+  const { messages, setMessages } = useQuickMessagesStore();
+  const { radioIds: dmrRadioIds, setRadioIds } = useDMRRadioIDsStore();
+  const { contacts: quickContacts, setContacts: setQuickContacts } = useQuickContactsStore();
+  const { groups: rxGroups, setGroups: setRXGroups } = useRXGroupsStore();
+  const { keys: encryptionKeys, setKeys: setEncryptionKeys } = useEncryptionKeysStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { readFromRadio, writeChannelsToRadio, isConnecting, error, readSteps, writeChannelsSteps } = useRadioConnection();
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
   const [currentStep, setCurrentStep] = useState('');
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isWriting, setIsWriting] = useState(false);
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
@@ -41,6 +47,7 @@ export const Toolbar: React.FC = () => {
   const [writeWarningMessage, setWriteWarningMessage] = useState('');
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
+  const [alertTitle, setAlertTitle] = useState('Notice');
   const webSerialSupported = isWebSerialSupported();
 
   const handleImport = () => {
@@ -51,11 +58,8 @@ export const Toolbar: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
     
-    setImportError(null);
-    setImportSuccess(null);
-    
     try {
-      // Lazy load XLSX library only when needed
+      // Lazy load codeplug import when needed
       const { importCodeplug } = await import('../../services/codeplugExport');
       const codeplugData = await importCodeplug(file);
       
@@ -72,18 +76,41 @@ export const Toolbar: React.FC = () => {
       if (codeplugData.radioSettings) {
         setRadioSettings(codeplugData.radioSettings);
       }
+      setRadioInfo(codeplugData.radioInfo ?? null);
+      setMessages(codeplugData.messages ?? []);
+      setRadioIds(codeplugData.radioIds ?? []);
+      setQuickContacts(codeplugData.quickContacts ?? []);
+      setRXGroups(codeplugData.rxGroups ?? []);
+      setEncryptionKeys(codeplugData.encryptionKeys ?? []);
       
-      setImportSuccess(
-        `Successfully imported: ${codeplugData.channels.length} channels, ` +
-        `${codeplugData.zones.length} zones, ${codeplugData.scanLists.length} scan lists, ` +
-        `${codeplugData.contacts.length} contacts`
-      );
-      
-      // Show success message briefly
-      setTimeout(() => setImportSuccess(null), 5000);
+      const digCount = codeplugData.digitalEmergencies?.length ?? 0;
+      const analogCount = codeplugData.analogEmergencies?.length ?? 0;
+      const msgCount = codeplugData.messages?.length ?? 0;
+      const idCount = codeplugData.radioIds?.length ?? 0;
+      const tgCount = codeplugData.quickContacts?.length ?? 0;
+      const rxCount = codeplugData.rxGroups?.length ?? 0;
+      const encCount = codeplugData.encryptionKeys?.length ?? 0;
+      const lines = [
+        `• ${codeplugData.channels.length} channels`,
+        `• ${codeplugData.zones.length} zones`,
+        `• ${codeplugData.scanLists.length} scan lists`,
+        `• ${codeplugData.contacts.length} contacts`,
+        `• ${digCount} digital emergency system(s)`,
+        `• ${analogCount} analog emergency system(s)`,
+        codeplugData.radioSettings ? '• Radio settings' : null,
+        `• ${msgCount} quick message(s)`,
+        `• ${idCount} DMR radio ID(s)`,
+        `• ${tgCount} talk group(s)`,
+        `• ${rxCount} RX group(s)`,
+        `• ${encCount} encryption key(s)`,
+      ].filter(Boolean);
+      setAlertTitle('Import');
+      setAlertMessage(`Successfully imported codeplug!\n\n${lines.join('\n')}`);
+      setAlertOpen(true);
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Failed to import codeplug');
-      setTimeout(() => setImportError(null), 5000);
+      setAlertTitle('Import');
+      setAlertMessage(error instanceof Error ? error.message : 'Failed to import codeplug');
+      setAlertOpen(true);
     }
     
     // Reset file input
@@ -103,10 +130,15 @@ export const Toolbar: React.FC = () => {
       analogEmergencies,
       radioSettings,
       radioInfo,
+      messages,
+      radioIds: dmrRadioIds,
+      quickContacts,
+      rxGroups,
+      encryptionKeys,
       exportDate: new Date().toISOString(),
       version: '1.0.0',
     };
-    // Lazy load Excel library only when needed
+    // Lazy load codeplug export when needed
     const { exportCodeplug } = await import('../../services/codeplugExport');
     await exportCodeplug(codeplugData);
   };
@@ -260,7 +292,7 @@ export const Toolbar: React.FC = () => {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".xlsx"
+        accept=".neonplug"
         onChange={handleFileSelect}
         className="hidden"
       />
@@ -274,14 +306,14 @@ export const Toolbar: React.FC = () => {
             <button
               onClick={handleImport}
               className="px-4 py-2 bg-neon-purple text-white font-semibold rounded hover:bg-neon-purple hover:bg-opacity-80 transition-all hover:shadow-lg border border-neon-purple border-opacity-50 active:scale-95"
-              title="Import codeplug from XLSX file"
+              title="Import codeplug from file (.neonplug)"
             >
               Import
             </button>
             <button
               onClick={handleExport}
               className="px-4 py-2 bg-neon-cyan text-deep-gray font-semibold rounded hover:bg-neon-cyan hover:bg-opacity-80 transition-all hover:shadow-glow-cyan border border-neon-cyan border-opacity-50 active:scale-95"
-              title="Export codeplug to XLSX file"
+              title="Export codeplug to file (.neonplug)"
             >
               Export
             </button>
@@ -310,12 +342,6 @@ export const Toolbar: React.FC = () => {
           {error && !error.includes('Please click the button directly') && (
             <span className="text-red-400 text-xs ml-2">{error}</span>
           )}
-          {importError && (
-            <span className="text-red-400 text-xs ml-2">{importError}</span>
-          )}
-          {importSuccess && (
-            <span className="text-green-400 text-xs ml-2">{importSuccess}</span>
-          )}
         </div>
       </div>
       <ReadProgressModal
@@ -341,8 +367,8 @@ export const Toolbar: React.FC = () => {
       />
       <ConfirmModal
         isOpen={alertOpen}
-        onClose={() => setAlertOpen(false)}
-        title="Notice"
+        onClose={() => { setAlertOpen(false); setAlertTitle('Notice'); }}
+        title={alertTitle}
         message={alertMessage}
         confirmLabel="OK"
         variant="alert"

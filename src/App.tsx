@@ -20,6 +20,12 @@ import { useScanListsStore } from './store/scanListsStore';
 import { useRadioSettingsStore } from './store/radioSettingsStore';
 import { useDigitalEmergencyStore } from './store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from './store/analogEmergencyStore';
+import { useQuickMessagesStore } from './store/quickMessagesStore';
+import { useDMRRadioIDsStore } from './store/dmrRadioIdsStore';
+import { useQuickContactsStore } from './store/quickContactsStore';
+import { useRXGroupsStore } from './store/rxGroupsStore';
+import { useEncryptionKeysStore } from './store/encryptionKeysStore';
+import { useRadioStore } from './store/radioStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
@@ -38,6 +44,12 @@ function App() {
   const { setSettings: setRadioSettings } = useRadioSettingsStore();
   const { setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
+  const { setMessages } = useQuickMessagesStore();
+  const { setRadioIds } = useDMRRadioIDsStore();
+  const { setContacts: setQuickContacts } = useQuickContactsStore();
+  const { setGroups: setRXGroups } = useRXGroupsStore();
+  const { setKeys: setEncryptionKeys } = useEncryptionKeysStore();
+  const { setRadioInfo } = useRadioStore();
   const { isConnecting, error: radioError } = useRadioConnection();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -119,10 +131,9 @@ function App() {
     const fileName = file.name.toLowerCase();
     const fileExtension = fileName.split('.').pop()?.toLowerCase();
 
-    // Check if it's a codeplug XLSX file (ExcelJS supports .xlsx only; .xls is not supported)
-    if (fileExtension === 'xlsx') {
+    // Check if it's a codeplug file (.neonplug = zipped JSON)
+    if (fileExtension === 'neonplug') {
       try {
-        // Lazy load Excel library only when needed
         const { importCodeplug } = await import('./services/codeplugExport');
         const codeplugData = await importCodeplug(file);
         
@@ -139,15 +150,29 @@ function App() {
         if (codeplugData.radioSettings) {
           setRadioSettings(codeplugData.radioSettings);
         }
+        setRadioInfo(codeplugData.radioInfo ?? null);
+        setMessages(codeplugData.messages ?? []);
+        setRadioIds(codeplugData.radioIds ?? []);
+        setQuickContacts(codeplugData.quickContacts ?? []);
+        setRXGroups(codeplugData.rxGroups ?? []);
+        setEncryptionKeys(codeplugData.encryptionKeys ?? []);
         
         setShowStartupModal(false);
-        setAlertMessage(
-          `Successfully imported codeplug!\n\n` +
-          `• ${codeplugData.channels.length} channels\n` +
-          `• ${codeplugData.zones.length} zones\n` +
-          `• ${codeplugData.scanLists.length} scan lists\n` +
-          `• ${codeplugData.contacts.length} contacts`
-        );
+        const lines = [
+          `• ${codeplugData.channels.length} channels`,
+          `• ${codeplugData.zones.length} zones`,
+          `• ${codeplugData.scanLists.length} scan lists`,
+          `• ${codeplugData.contacts.length} contacts`,
+          `• ${codeplugData.digitalEmergencies?.length ?? 0} digital emergency system(s)`,
+          `• ${codeplugData.analogEmergencies?.length ?? 0} analog emergency system(s)`,
+          codeplugData.radioSettings ? '• Radio settings' : null,
+          `• ${codeplugData.messages?.length ?? 0} quick message(s)`,
+          `• ${codeplugData.radioIds?.length ?? 0} DMR radio ID(s)`,
+          `• ${codeplugData.quickContacts?.length ?? 0} talk group(s)`,
+          `• ${codeplugData.rxGroups?.length ?? 0} RX group(s)`,
+          `• ${codeplugData.encryptionKeys?.length ?? 0} encryption key(s)`,
+        ].filter(Boolean);
+        setAlertMessage(`Successfully imported codeplug!\n\n${lines.join('\n')}`);
         setAlertOpen(true);
       } catch (error) {
         setAlertMessage(`Failed to import codeplug: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -180,7 +205,7 @@ function App() {
           setAlertOpen(true);
         }
       } else {
-        setAlertMessage('File must be a codeplug (.xlsx) or CSV file containing "channel" or "contact" in the filename');
+        setAlertMessage('File must be a codeplug (.neonplug) or CSV file containing "channel" or "contact" in the filename');
         setAlertOpen(true);
       }
     }
@@ -247,7 +272,7 @@ function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".csv,.xlsx"
+        accept=".csv,.neonplug"
         onChange={handleFileSelect}
         className="hidden"
       />
