@@ -8,6 +8,7 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import { useRadioStore } from '../../store/radioStore';
+import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 // XLSX functions will be lazy loaded when needed
@@ -25,6 +26,7 @@ export const Toolbar: React.FC = () => {
   const { systems: digitalEmergencies, config: digitalEmergencyConfig, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
   const { radioInfo } = useRadioStore();
+  const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { readFromRadio, writeChannelsToRadio, isConnecting, error, readSteps, writeChannelsSteps } = useRadioConnection();
   const [progress, setProgress] = useState(0);
@@ -212,7 +214,7 @@ export const Toolbar: React.FC = () => {
     }
     // Run radio-specific validations only when model is known; combine with experimental warning in one modal
     const caps = getCapabilitiesForModel(radioInfo?.model);
-    const { warnings } = validateCodeplugForWrite(channels, zones, caps?.writeValidations);
+    const { warnings } = validateCodeplugForWrite(channels, zones, caps?.writeValidations, dmrRadioIds);
     let message = EXPERIMENTAL_WRITE_WARNING;
     if (warnings.length > 0) {
       const validationLines = warnings.map((w) => {
@@ -231,6 +233,14 @@ export const Toolbar: React.FC = () => {
             .join('\n');
           const more = w.zoneRefs.length > 10 ? `\n... and ${w.zoneRefs.length - 10} more zone(s)` : '';
           return `${w.message}\n\n${lines}${more}`;
+        }
+        if (w.id === 'channels_reference_deleted_dmr_radio_id' && w.channels && w.channels.length > 0) {
+          const list = w.channels
+            .slice(0, 10)
+            .map((c) => `Ch ${c.number} – ${c.name || '(no name)'} (Radio ID index ${c.dmrRadioIdIndex ?? '?'})`)
+            .join('\n');
+          const more = w.channels.length > 10 ? `\n... and ${w.channels.length - 10} more` : '';
+          return `${w.message}\n\n${list}${more}`;
         }
         return w.message;
       });
