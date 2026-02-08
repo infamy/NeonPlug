@@ -530,7 +530,7 @@ export const DiagnosticsTab: React.FC = () => {
         writeFolder.file('expected-write-data.json', JSON.stringify(expectedWrite, null, 2));
       }
 
-      // Add codeplug XLSX
+      // Add codeplug (.neonplug = zipped JSON)
       const codeplugData = {
         channels,
         zones,
@@ -545,9 +545,9 @@ export const DiagnosticsTab: React.FC = () => {
         version: '1.0.0',
       };
 
-      const xlsxBlob = await exportCodeplug(codeplugData, true);
-      if (xlsxBlob instanceof Blob) {
-        zip.file('codeplug.xlsx', xlsxBlob);
+      const codeplugBlob = await exportCodeplug(codeplugData, true);
+      if (codeplugBlob instanceof Blob) {
+        zip.file('codeplug.neonplug', codeplugBlob);
       }
 
       // Generate and download zip

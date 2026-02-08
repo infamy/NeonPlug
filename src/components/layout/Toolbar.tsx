@@ -11,7 +11,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
-// XLSX functions will be lazy loaded when needed
+// Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
@@ -55,7 +55,7 @@ export const Toolbar: React.FC = () => {
     setImportSuccess(null);
     
     try {
-      // Lazy load XLSX library only when needed
+      // Lazy load codeplug import when needed
       const { importCodeplug } = await import('../../services/codeplugExport');
       const codeplugData = await importCodeplug(file);
       
@@ -106,7 +106,7 @@ export const Toolbar: React.FC = () => {
       exportDate: new Date().toISOString(),
       version: '1.0.0',
     };
-    // Lazy load Excel library only when needed
+    // Lazy load codeplug export when needed
     const { exportCodeplug } = await import('../../services/codeplugExport');
     await exportCodeplug(codeplugData);
   };
@@ -260,7 +260,7 @@ export const Toolbar: React.FC = () => {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".xlsx"
+        accept=".neonplug"
         onChange={handleFileSelect}
         className="hidden"
       />
@@ -274,14 +274,14 @@ export const Toolbar: React.FC = () => {
             <button
               onClick={handleImport}
               className="px-4 py-2 bg-neon-purple text-white font-semibold rounded hover:bg-neon-purple hover:bg-opacity-80 transition-all hover:shadow-lg border border-neon-purple border-opacity-50 active:scale-95"
-              title="Import codeplug from XLSX file"
+              title="Import codeplug from file (.neonplug)"
             >
               Import
             </button>
             <button
               onClick={handleExport}
               className="px-4 py-2 bg-neon-cyan text-deep-gray font-semibold rounded hover:bg-neon-cyan hover:bg-opacity-80 transition-all hover:shadow-glow-cyan border border-neon-cyan border-opacity-50 active:scale-95"
-              title="Export codeplug to XLSX file"
+              title="Export codeplug to file (.neonplug)"
             >
               Export
             </button>

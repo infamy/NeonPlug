@@ -85,7 +85,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
             Import Codeplug
           </Button>
           <p className="text-xs text-cool-gray text-center mt-2">
-            Import from XLSX codeplug file
+            Import from codeplug file (.neonplug)
           </p>
 
           <p className="text-center text-sm">
