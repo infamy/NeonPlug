@@ -214,6 +214,7 @@ export const DebugPanel: React.FC = () => {
       const { useDMRRadioIDsStore } = await import('../../store/dmrRadioIdsStore');
       const { useQuickContactsStore } = await import('../../store/quickContactsStore');
       const { useRXGroupsStore } = await import('../../store/rxGroupsStore');
+      const { useEncryptionKeysStore } = await import('../../store/encryptionKeysStore');
       
       const radioStore = useRadioStore.getState();
       const radioSettingsStore = useRadioSettingsStore.getState();
@@ -225,6 +226,7 @@ export const DebugPanel: React.FC = () => {
       const dmrRadioIDsStore = useDMRRadioIDsStore.getState();
       const quickContactsStore = useQuickContactsStore.getState();
       const rxGroupsStore = useRXGroupsStore.getState();
+      const encryptionKeysStore = useEncryptionKeysStore.getState();
 
       const codeplugData = {
         channels,
@@ -240,6 +242,7 @@ export const DebugPanel: React.FC = () => {
         radioIds: dmrRadioIDsStore.radioIds,
         quickContacts: quickContactsStore.contacts,
         rxGroups: rxGroupsStore.groups,
+        encryptionKeys: encryptionKeysStore.keys,
         exportDate: new Date().toISOString(),
         version: '1.0.0',
       };

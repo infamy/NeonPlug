@@ -83,6 +83,7 @@ export async function smartImportCodeplug(
         radioIds: [],
         quickContacts: [],
         rxGroups: [],
+        encryptionKeys: [],
         exportDate: new Date().toISOString(),
         version: '1.0.0',
       },

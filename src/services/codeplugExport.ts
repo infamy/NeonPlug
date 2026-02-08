@@ -16,6 +16,7 @@ import type { QuickTextMessage } from '../models/QuickTextMessage';
 import type { DMRRadioID } from '../models/DMRRadioID';
 import type { QuickContact } from '../models/QuickContact';
 import type { RXGroup } from '../models/RXGroup';
+import type { EncryptionKey } from '../models/EncryptionKey';
 import { generateZoneId } from '../utils/zoneHelpers';
 
 export interface CodeplugData {
@@ -32,6 +33,7 @@ export interface CodeplugData {
   radioIds: DMRRadioID[];
   quickContacts: QuickContact[];
   rxGroups: RXGroup[];
+  encryptionKeys: EncryptionKey[];
   exportDate: string;
   version: string;
 }
@@ -75,6 +77,7 @@ function codeplugToJsonSafe(data: CodeplugData): Record<string, unknown> {
       rawData: Array.from(q.rawData ?? new Uint8Array(0)),
     })),
     rxGroups: data.rxGroups ?? [],
+    encryptionKeys: data.encryptionKeys ?? [],
     exportDate: data.exportDate,
     version: data.version,
   };
@@ -120,6 +123,7 @@ function jsonSafeToCodeplug(raw: Record<string, unknown>): CodeplugData {
       rawData: new Uint8Array((q.rawData as number[]) ?? []),
     })) as QuickContact[],
     rxGroups: (raw.rxGroups as RXGroup[]) ?? [],
+    encryptionKeys: (raw.encryptionKeys as EncryptionKey[]) ?? [],
     exportDate: String(raw.exportDate ?? new Date().toISOString()),
     version: String(raw.version ?? CODEPLUG_VERSION),
   };
@@ -195,6 +199,7 @@ export function getCodeplugDataFromStores(): CodeplugData {
     radioIds: [],
     quickContacts: [],
     rxGroups: [],
+    encryptionKeys: [],
     exportDate: new Date().toISOString(),
     version: CODEPLUG_VERSION,
   };

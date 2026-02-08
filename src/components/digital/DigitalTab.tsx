@@ -447,9 +447,9 @@ export const DigitalTab: React.FC = () => {
           )}
         </div>
 
-        {!block10Data ? (
+        {!block10Data && digitalEmergencies.length === 0 ? (
           <Card variant="subdued">
-            <EmptyState message="Block 0x10 not found. Read from radio to view digital emergency systems." />
+            <EmptyState message="Block 0x10 not found. Read from radio or load a codeplug to view digital emergency systems." />
           </Card>
         ) : digitalEmergencies.length === 0 ? (
           <Card variant="subdued">
@@ -526,9 +526,9 @@ export const DigitalTab: React.FC = () => {
           )}
         </div>
 
-        {!block10Data ? (
+        {!block10Data && keys.length === 0 ? (
           <Card variant="subdued">
-            <EmptyState message="Block 0x10 not found. Read from radio to view encryption keys." />
+            <EmptyState message="Block 0x10 not found. Read from radio or load a codeplug to view encryption keys." />
           </Card>
         ) : (
           <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">

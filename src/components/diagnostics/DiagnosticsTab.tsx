@@ -11,6 +11,7 @@ import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
+import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useLogStore } from '../../store/logStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 import {
@@ -46,6 +47,7 @@ export const DiagnosticsTab: React.FC = () => {
   const { messages: quickMessages } = useQuickMessagesStore();
   const { contacts: quickContacts } = useQuickContactsStore();
   const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
+  const { keys: encryptionKeys } = useEncryptionKeysStore();
   const caps = useMemo(() => getCapabilitiesForModel(radioInfo?.model), [radioInfo?.model]);
   const [showMetadataBlock, setShowMetadataBlock] = useState(false);
   const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
@@ -545,6 +547,7 @@ export const DiagnosticsTab: React.FC = () => {
         radioIds: dmrRadioIds,
         quickContacts,
         rxGroups,
+        encryptionKeys,
         exportDate: new Date().toISOString(),
         version: '1.0.0',
       };

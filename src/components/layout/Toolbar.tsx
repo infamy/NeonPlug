@@ -12,6 +12,7 @@ import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
+import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 // Codeplug export/import are lazy loaded when needed
@@ -28,18 +29,17 @@ export const Toolbar: React.FC = () => {
   const { settings: radioSettings, setSettings: setRadioSettings } = useRadioSettingsStore();
   const { systems: digitalEmergencies, config: digitalEmergencyConfig, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
-  const { radioInfo } = useRadioStore();
+  const { radioInfo, setRadioInfo } = useRadioStore();
   const { messages, setMessages } = useQuickMessagesStore();
   const { radioIds: dmrRadioIds, setRadioIds } = useDMRRadioIDsStore();
   const { contacts: quickContacts, setContacts: setQuickContacts } = useQuickContactsStore();
   const { groups: rxGroups, setGroups: setRXGroups } = useRXGroupsStore();
+  const { keys: encryptionKeys, setKeys: setEncryptionKeys } = useEncryptionKeysStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { readFromRadio, writeChannelsToRadio, isConnecting, error, readSteps, writeChannelsSteps } = useRadioConnection();
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
   const [currentStep, setCurrentStep] = useState('');
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isWriting, setIsWriting] = useState(false);
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
@@ -47,6 +47,7 @@ export const Toolbar: React.FC = () => {
   const [writeWarningMessage, setWriteWarningMessage] = useState('');
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
+  const [alertTitle, setAlertTitle] = useState('Notice');
   const webSerialSupported = isWebSerialSupported();
 
   const handleImport = () => {
@@ -56,9 +57,6 @@ export const Toolbar: React.FC = () => {
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    
-    setImportError(null);
-    setImportSuccess(null);
     
     try {
       // Lazy load codeplug import when needed
@@ -78,22 +76,41 @@ export const Toolbar: React.FC = () => {
       if (codeplugData.radioSettings) {
         setRadioSettings(codeplugData.radioSettings);
       }
+      setRadioInfo(codeplugData.radioInfo ?? null);
       setMessages(codeplugData.messages ?? []);
       setRadioIds(codeplugData.radioIds ?? []);
       setQuickContacts(codeplugData.quickContacts ?? []);
       setRXGroups(codeplugData.rxGroups ?? []);
+      setEncryptionKeys(codeplugData.encryptionKeys ?? []);
       
-      setImportSuccess(
-        `Successfully imported: ${codeplugData.channels.length} channels, ` +
-        `${codeplugData.zones.length} zones, ${codeplugData.scanLists.length} scan lists, ` +
-        `${codeplugData.contacts.length} contacts`
-      );
-      
-      // Show success message briefly
-      setTimeout(() => setImportSuccess(null), 5000);
+      const digCount = codeplugData.digitalEmergencies?.length ?? 0;
+      const analogCount = codeplugData.analogEmergencies?.length ?? 0;
+      const msgCount = codeplugData.messages?.length ?? 0;
+      const idCount = codeplugData.radioIds?.length ?? 0;
+      const tgCount = codeplugData.quickContacts?.length ?? 0;
+      const rxCount = codeplugData.rxGroups?.length ?? 0;
+      const encCount = codeplugData.encryptionKeys?.length ?? 0;
+      const lines = [
+        `• ${codeplugData.channels.length} channels`,
+        `• ${codeplugData.zones.length} zones`,
+        `• ${codeplugData.scanLists.length} scan lists`,
+        `• ${codeplugData.contacts.length} contacts`,
+        `• ${digCount} digital emergency system(s)`,
+        `• ${analogCount} analog emergency system(s)`,
+        codeplugData.radioSettings ? '• Radio settings' : null,
+        `• ${msgCount} quick message(s)`,
+        `• ${idCount} DMR radio ID(s)`,
+        `• ${tgCount} talk group(s)`,
+        `• ${rxCount} RX group(s)`,
+        `• ${encCount} encryption key(s)`,
+      ].filter(Boolean);
+      setAlertTitle('Import');
+      setAlertMessage(`Successfully imported codeplug!\n\n${lines.join('\n')}`);
+      setAlertOpen(true);
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Failed to import codeplug');
-      setTimeout(() => setImportError(null), 5000);
+      setAlertTitle('Import');
+      setAlertMessage(error instanceof Error ? error.message : 'Failed to import codeplug');
+      setAlertOpen(true);
     }
     
     // Reset file input
@@ -117,6 +134,7 @@ export const Toolbar: React.FC = () => {
       radioIds,
       quickContacts,
       rxGroups,
+      encryptionKeys,
       exportDate: new Date().toISOString(),
       version: '1.0.0',
     };
@@ -324,12 +342,6 @@ export const Toolbar: React.FC = () => {
           {error && !error.includes('Please click the button directly') && (
             <span className="text-red-400 text-xs ml-2">{error}</span>
           )}
-          {importError && (
-            <span className="text-red-400 text-xs ml-2">{importError}</span>
-          )}
-          {importSuccess && (
-            <span className="text-green-400 text-xs ml-2">{importSuccess}</span>
-          )}
         </div>
       </div>
       <ReadProgressModal
@@ -355,8 +367,8 @@ export const Toolbar: React.FC = () => {
       />
       <ConfirmModal
         isOpen={alertOpen}
-        onClose={() => setAlertOpen(false)}
-        title="Notice"
+        onClose={() => { setAlertOpen(false); setAlertTitle('Notice'); }}
+        title={alertTitle}
         message={alertMessage}
         confirmLabel="OK"
         variant="alert"
