@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
 import { getCurrentLocation, geocodeLocation } from '../../services/repeaterFinder';
@@ -98,9 +98,18 @@ export const SmartImportTab: React.FC = () => {
   const [mmdvmEntries, setMmdvmEntries] = useState<MMDVMChannelEntry[]>([
     { channelName: '', talkGroupName: 'Local', talkGroupId: 9 },
   ]);
-  const [mmdvmZoneName, setMmdvmZoneName] = useState('');
+  const [mmdvmZoneName, setMmdvmZoneName] = useState('MMDVM');
   const [mmdvmDmrRadioIdIndex, setMmdvmDmrRadioIdIndex] = useState<string>(''); // '' = None, or String(index)
   const [isAddingMmdvm, setIsAddingMmdvm] = useState(false);
+  const mmdvmDmrIdDefaultSetRef = useRef(false);
+
+  // Preset MMDVM DMR Radio ID to first ID (slot 1) when list becomes available, once
+  useEffect(() => {
+    if (radioIds.length > 0 && !mmdvmDmrIdDefaultSetRef.current) {
+      setMmdvmDmrRadioIdIndex(String(radioIds[0].index));
+      mmdvmDmrIdDefaultSetRef.current = true;
+    }
+  }, [radioIds]);
 
 
   // Unified search handler that searches all selected types
@@ -1594,40 +1603,52 @@ export const SmartImportTab: React.FC = () => {
         </p>
 
         <div className="grid grid-cols-1 gap-4 mb-4">
-          <div>
-            <label className="block text-sm text-cool-gray mb-2">Frequency (MHz)</label>
-            <input
-              type="number"
-              value={mmdvmFrequency}
-              onChange={(e) => setMmdvmFrequency(e.target.value)}
-              min={MMDVM_FREQ_MIN_MHZ}
-              max={MMDVM_FREQ_MAX_MHZ}
-              step="0.001"
-              placeholder="431.150"
-              className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
-            />
-            <p className="text-xs text-cool-gray mt-1">
-              {MMDVM_FREQ_MIN_MHZ}–{MMDVM_FREQ_MAX_MHZ} MHz (simplex: same RX/TX)
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm text-cool-gray mb-2">DMR Radio ID</label>
-            <select
-              value={mmdvmDmrRadioIdIndex}
-              onChange={(e) => setMmdvmDmrRadioIdIndex(e.target.value)}
-              className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
-            >
-              <option value="">None</option>
-              {radioIds.map((radioId) => (
-                <option key={radioId.index} value={String(radioId.index)}>
-                  {radioId.name} (ID: {radioId.dmrId})
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-cool-gray mt-1">
-              Used for TX on all MMDVM channels. Set in the Digital tab if the list is empty.
-            </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm text-cool-gray mb-2">Zone name</label>
+              <input
+                type="text"
+                value={mmdvmZoneName}
+                onChange={(e) => setMmdvmZoneName(e.target.value)}
+                placeholder="Default: MMDVM"
+                maxLength={16}
+                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-cool-gray mb-2">Frequency (MHz)</label>
+              <input
+                type="number"
+                value={mmdvmFrequency}
+                onChange={(e) => setMmdvmFrequency(e.target.value)}
+                min={MMDVM_FREQ_MIN_MHZ}
+                max={MMDVM_FREQ_MAX_MHZ}
+                step="0.001"
+                placeholder="431.150"
+                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              />
+              <p className="text-xs text-cool-gray mt-1">
+                {MMDVM_FREQ_MIN_MHZ}–{MMDVM_FREQ_MAX_MHZ} MHz
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm text-cool-gray mb-2">DMR Radio ID</label>
+              <select
+                value={mmdvmDmrRadioIdIndex}
+                onChange={(e) => setMmdvmDmrRadioIdIndex(e.target.value)}
+                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              >
+                <option value="">None</option>
+                {radioIds.map((radioId) => (
+                  <option key={radioId.index} value={String(radioId.index)}>
+                    {radioId.name} (ID: {radioId.dmrId})
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-cool-gray mt-1">
+                For TX on all channels
+              </p>
+            </div>
           </div>
 
           <div>
@@ -1716,18 +1737,6 @@ export const SmartImportTab: React.FC = () => {
                 </div>
               ))}
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm text-cool-gray mb-2">Zone name (optional)</label>
-            <input
-              type="text"
-              value={mmdvmZoneName}
-              onChange={(e) => setMmdvmZoneName(e.target.value)}
-              placeholder="Default: MMDVM"
-              maxLength={16}
-              className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
-            />
           </div>
 
           {radioIds.length === 0 && (
