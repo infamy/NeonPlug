@@ -62,8 +62,8 @@ export class DM32Connection {
     this.writer = port.writable.getWriter();
 
     // Wait for radio to be ready after port is opened
-    // Radio needs time to initialize after port open
-    await this.delay(200);
+    // Radio needs time to initialize after port open (CONNECTION.INIT_DELAY for DM32.01.01.049 and similar)
+    await this.delay(CONNECTION.INIT_DELAY);
 
     // Clear any initialization data from the radio
     // Read and discard any data sent immediately after port open
@@ -71,7 +71,7 @@ export class DM32Connection {
     await this.clearBuffer();
     
     // Additional delay after clearing buffer to ensure radio is ready
-    await this.delay(100);
+    await this.delay(CONNECTION.CLEAR_BUFFER_DELAY);
     
     log.info('Ready to communicate.', 'Connection');
     
@@ -79,7 +79,7 @@ export class DM32Connection {
     // According to serial capture: response is exactly 8 bytes: 06 44 50 35 37 30 55 56
     await this.sendCommand('PSEARCH');
     // CRITICAL: Send→read delay. Radio needs this before we read; removing it can cause radio reboot / connection failure.
-    await this.delay(100);
+    await this.delay(CONNECTION.PSEARCH_READ_DELAY);
     
     let psearchResponse: Uint8Array;
     try {

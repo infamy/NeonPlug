@@ -150,6 +150,11 @@ export class DM32UVProtocol implements RadioProtocol {
         log.warn('Connection failed with previously granted port', 'Protocol', connectError);
         this.port = null;
         try {
+          // Release reader/writer locks so port.close() can succeed (avoids "Cannot cancel a locked stream")
+          if (this.connection) {
+            await this.connection.disconnect();
+            this.connection = null;
+          }
           if (port && (port.readable || port.writable)) {
             await port.close();
           }
@@ -201,9 +206,25 @@ export class DM32UVProtocol implements RadioProtocol {
           const streamsLocked = port.readable?.locked || port.writable?.locked;
           
           if (isAlreadyOpen && !streamsLocked) {
-            // Port is ready to use
-            log.debug('Previously granted port is ready to use', 'Protocol');
-            return port;
+            // Close and reopen so the radio sees a fresh connection and responds to PSEARCH (avoids "No reply" on write)
+            log.debug('Previously granted port was open; closing and reopening for fresh handshake', 'Protocol');
+            try {
+              await port.close();
+              await new Promise((resolve) => setTimeout(resolve, CONNECTION.REOPEN_DELAY));
+              await withTimeout(
+                port.open({ baudRate: CONNECTION.BAUD_RATE }),
+                CONNECTION.TIMEOUT.PORT_OPEN,
+                'Port reopen'
+              );
+              log.debug('Previously granted port reopened successfully', 'Protocol');
+              return port;
+            } catch (e: unknown) {
+              const err = e as Error;
+              log.warn('Failed to close/reopen previously granted port, will prompt for new port', 'Protocol', err);
+              port = null;
+              this.port = null;
+              // Fall through to prompt
+            }
           } else if (!isAlreadyOpen) {
             // Try to open the port
             try {
@@ -248,8 +269,24 @@ export class DM32UVProtocol implements RadioProtocol {
       const streamsLocked = port.readable?.locked || port.writable?.locked;
       
       if (isAlreadyOpen && !streamsLocked) {
-        log.debug('Stored port is ready to use', 'Protocol');
-        return port;
+        log.debug('Stored port was open; closing and reopening for fresh handshake', 'Protocol');
+        try {
+          await port.close();
+          await new Promise((resolve) => setTimeout(resolve, CONNECTION.REOPEN_DELAY));
+          await withTimeout(
+            port.open({ baudRate: CONNECTION.BAUD_RATE }),
+            CONNECTION.TIMEOUT.PORT_OPEN,
+            'Port reopen'
+          );
+          log.debug('Stored port reopened successfully', 'Protocol');
+          return port;
+        } catch (e: unknown) {
+          const error = e as Error;
+          log.warn('Failed to close/reopen stored port, will prompt for new port', 'Protocol', error);
+          port = null;
+          this.port = null;
+          // Fall through to prompt
+        }
       } else if (!isAlreadyOpen) {
         try {
           await withTimeout(
