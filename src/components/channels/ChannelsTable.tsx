@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
+import { useRadioStore } from '../../store/radioStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useScanListsStore } from '../../store/scanListsStore';
+import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
@@ -68,7 +70,9 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   onSelectionChange,
 }) => {
   const { channels: channelsFromStore, updateChannel, deleteChannel, addChannel } = useChannelsStore();
+  const { radioInfo } = useRadioStore();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
+  const bandLimits = getCapabilitiesForModel(radioInfo?.model)?.bandLimits ?? null;
   const { scanLists } = useScanListsStore();
   const { groups: rxGroups } = useRXGroupsStore();
   const { keys: encryptionKeys } = useEncryptionKeysStore();
@@ -1080,6 +1084,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             updateChannel(updatedChannel.number, updatedChannel);
             setEditingChannel(null);
           }}
+          bandLimits={bandLimits}
           rxGroups={rxGroups}
           encryptionKeys={encryptionKeys}
           talkGroups={talkGroups}
