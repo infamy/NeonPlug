@@ -4,12 +4,20 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  pull-requests: write
 
 concurrency:
   group: "pages"
@@ -21,6 +29,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -31,10 +41,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build single-file version
-        run: npm run build:single
+      - name: Build main (production)
         env:
           VITE_COMMIT_HASH: ${{ github.sha }}
+        run: |
+          git checkout main
+          npm run build:single
 
       - name: Copy data files to dist root
         run: |
@@ -43,6 +55,51 @@ jobs:
           cp src/data/airports_min.json dist/airports_min.json
           cp src/data/radioid-users.csv dist/radioid-users.csv
 
+      - name: Stage main build to dist_root
+        run: |
+          rm -rf dist_root dist_test
+          mkdir -p dist_root
+          mv dist/* dist_root/
+
+      - name: List open PRs and build previews
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sanitize() {
+            echo "$1" | sed 's/\//-/g' | sed 's/[^a-zA-Z0-9_-]//g' | cut -c1-50
+          }
+          prs=$(gh pr list --base main --state open --json number,headRefName -q '.[] | "\(.number)|\(.headRefName)"')
+          for entry in $prs; do
+            num="${entry%%|*}"
+            branch="${entry#*|}"
+            [ -z "$num" ] && continue
+            name=$(sanitize "$branch")
+            [ -z "$name" ] && name="pr-$num"
+            echo "Building PR #$num branch=$branch -> test/$name"
+            git fetch origin "pull/$num/head:pr-$num" 2>/dev/null || git fetch origin "$branch" 2>/dev/null || true
+            git checkout "pr-$num" 2>/dev/null || git checkout "$branch"
+            npm run build:single
+            cp src/data/rptrs.json dist/rptrs.json
+            cp src/data/tafl_min.json dist/tafl_min.json
+            cp src/data/airports_min.json dist/airports_min.json
+            cp src/data/radioid-users.csv dist/radioid-users.csv
+            mkdir -p "dist_test/$name"
+            mv dist/* "dist_test/$name/"
+          done
+
+      - name: Combine artifact
+        run: |
+          mkdir -p dist
+          cp -r dist_root/. dist/
+          if [ -d dist_test ]; then
+            for d in dist_test/*/; do
+              [ -d "$d" ] || continue
+              name=$(basename "$d")
+              mkdir -p "dist/test/$name"
+              cp -r "$d"* "dist/test/$name/"
+            done
+          fi
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
@@ -50,6 +107,17 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: './dist'
+
+      - name: Comment PR with preview link
+        if: github.event_name == 'pull_request'
+        run: |
+          branch="${{ github.head_ref }}"
+          name=$(echo "$branch" | sed 's/\//-/g' | sed 's/[^a-zA-Z0-9_-]//g' | cut -c1-50)
+          [ -z "$name" ] && name="pr-${{ github.event.pull_request.number }}"
+          url="https://neonplug.app/test/${name}/"
+          gh pr comment "${{ github.event.pull_request.number }}" --body "Preview: $url"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   deploy:
     environment:
@@ -61,4 +129,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
