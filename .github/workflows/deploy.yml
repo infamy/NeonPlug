@@ -62,6 +62,8 @@ jobs:
           mv dist/* dist_root/
 
       - name: List open PRs and build previews
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           sanitize() {
             echo "$1" | sed 's/\//-/g' | sed 's/[^a-zA-Z0-9_-]//g' | cut -c1-50
