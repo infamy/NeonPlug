@@ -80,52 +80,61 @@ export class DM32Connection {
     await this.sendCommand('PSEARCH');
     // CRITICAL: Send→read delay. Radio needs this before we read; removing it can cause radio reboot / connection failure.
     await this.delay(CONNECTION.PSEARCH_READ_DELAY);
-    
+
     let psearchResponse: Uint8Array;
     try {
-      psearchResponse = await this.readBytes(8);
+      psearchResponse = await this.readBytes(8, undefined, 'PSEARCH');
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      // If we got a timeout, it means the port opened but radio never replied
       if (errorMsg.includes('timed out') || errorMsg.includes('timeout')) {
+        // Partial response (e.g. 6 bytes): surface the full error so user sees "Received (hex): ..."
+        if (errorMsg.includes('Received (hex):') && !errorMsg.includes('(got 0 bytes)')) {
+          throw new Error(`PSEARCH handshake failed: ${errorMsg}`);
+        }
         throw new Error('No reply from the radio. Is the radio connected and turned on?');
       }
-      // Re-throw other errors
       throw error;
     }
-    
+
+    const psearchHex = this.formatBytesHex(psearchResponse);
+    log.info(`PSEARCH response (${psearchResponse.length} bytes): ${psearchHex}`, 'Connection');
+    const psearchAscii = new TextDecoder('ascii', { fatal: false }).decode(psearchResponse.slice(1)).replace(/\0/g, '').trim();
+    if (psearchAscii) {
+      log.debug(`PSEARCH model string: "${psearchAscii}"`, 'Connection');
+    }
+
     // Validate: first byte should be 0x06 (ACK)
     if (psearchResponse[0] !== 0x06) {
-      const hex = Array.from(psearchResponse).map(b => b.toString(16).padStart(2, '0')).join(' ');
-      throw new Error(`Radio not found: Expected ACK (0x06), got 0x${psearchResponse[0].toString(16).padStart(2, '0')}. Response: ${hex}`);
+      throw new Error(`Radio not found: Expected ACK (0x06), got 0x${psearchResponse[0].toString(16).padStart(2, '0')}. Response: ${psearchHex}`);
     }
-    
+
     // Decode model string
-    const modelString = new TextDecoder('ascii', { fatal: false }).decode(psearchResponse.slice(1)).replace(/\0/g, '').trim();
-    
+    const modelString = psearchAscii;
+
     if (!modelString.includes('DP570') && !modelString.includes('DM32') && !modelString.includes('DM-32')) {
-      const hex = Array.from(psearchResponse).map(b => b.toString(16).padStart(2, '0')).join(' ');
-      throw new Error(`Unsupported radio model: "${modelString}". Expected DP570UV or DM-32UV. Response: ${hex}`);
+      throw new Error(`Unsupported radio model: "${modelString}". Expected DP570UV or DM-32UV. Response: ${psearchHex}`);
     }
-    
+
     await this.delay(50);
 
     // Step 2: PASSSTA
     await this.sendCommand('PASSSTA');
     await this.delay(50);
-    
-    const passstaResponse = await this.readBytes(3);
+
+    const passstaResponse = await this.readBytes(3, undefined, 'PASSSTA');
+    log.debug(`PASSSTA response (3 bytes): ${this.formatBytesHex(passstaResponse)}`, 'Connection');
     if (passstaResponse[0] !== 0x50) {
       throw new Error(`PASSSTA failed: Expected 0x50, got 0x${passstaResponse[0].toString(16).padStart(2, '0')}`);
     }
-    
+
     await this.delay(50);
 
     // Step 3: SYSINFO
     await this.sendCommand('SYSINFO');
     await this.delay(50);
-    
-    const sysinfoResponse = await this.readBytes(1);
+
+    const sysinfoResponse = await this.readBytes(1, undefined, 'SYSINFO');
+    log.debug(`SYSINFO response (1 byte): ${this.formatBytesHex(sysinfoResponse)}`, 'Connection');
     if (sysinfoResponse[0] !== 0x06) {
       throw new Error(`SYSINFO failed: Expected 0x06, got 0x${sysinfoResponse[0].toString(16).padStart(2, '0')}`);
     }
@@ -543,18 +552,20 @@ export class DM32Connection {
   /**
    * Read exactly 'count' bytes from the buffer.
    * If the buffer doesn't have enough data, we fill it by reading from the stream.
-   * This matches how Go/Python serial libraries work - they maintain an internal buffer.
+   * On timeout, logs and includes any received bytes (hex) in the error for debugging.
    *
    * @param count Number of bytes to read
    * @param timeoutMs Optional timeout in ms (default: REQUEST_RESPONSE). Use READ_MEMORY for large block reads.
+   * @param context Optional label for logs/errors (e.g. 'PSEARCH', 'PASSSTA').
    */
-  private async readBytes(count: number, timeoutMs?: number): Promise<Uint8Array> {
+  private async readBytes(count: number, timeoutMs?: number, context?: string): Promise<Uint8Array> {
     if (!this.reader) {
       throw new Error('Not connected');
     }
 
     const timeout = timeoutMs ?? CONNECTION.TIMEOUT.REQUEST_RESPONSE;
     const startTime = Date.now();
+    const ctx = context ? `${context}: ` : '';
 
     return withTimeout(
       (async () => {
@@ -568,7 +579,11 @@ export class DM32Connection {
           if (this.readBuffer.length === bufferLengthBefore && this.readBuffer.length < count) {
             const elapsed = Date.now() - startTime;
             if (elapsed >= timeout) {
-              throw new Error(`Read ${count} bytes timed out after ${timeout}ms (got ${this.readBuffer.length} bytes)`);
+              const received = this.readBuffer.length;
+              const hex = this.formatBytesHex(this.readBuffer);
+              const msg = `Read ${count} bytes timed out after ${timeout}ms (got ${received} bytes). Received (hex): ${hex}`;
+              log.warn(`${ctx}${msg}`, 'Connection');
+              throw new Error(msg);
             }
           }
         }
@@ -584,6 +599,15 @@ export class DM32Connection {
       timeout,
       `Read ${count} bytes`
     );
+  }
+
+  /** Format buffer (or slice) as hex string for logging. */
+  private formatBytesHex(buffer: Uint8Array, maxBytes?: number): string {
+    const len = maxBytes != null ? Math.min(buffer.length, maxBytes) : buffer.length;
+    const hex = Array.from(buffer.slice(0, len))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join(' ');
+    return buffer.length > len ? `${hex} ... (${buffer.length} bytes total)` : hex;
   }
 
   private delay(ms: number): Promise<void> {

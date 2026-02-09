@@ -210,9 +210,7 @@ export async function readAndConcatenateBlocks(
     const progress = Math.floor((i / blocks.length) * 50);
     onProgress?.(progress, `Reading block ${i + 1} of ${blocks.length}...`);
 
-    const blockData = await connection.readMemory(block.address, BLOCK_SIZE.STANDARD);
-
-    if (onBlockRead) {
+    const blockData = await connection.readMemory(block.address, BLOCK_SIZE.STANDARD);    if (onBlockRead) {
       onBlockRead(block, blockData);
     }
 
