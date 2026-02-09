@@ -2,7 +2,7 @@
 
 # NEONPLUG
 
-[![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/9ckzrcKU)
+[![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/j59TBHVD22)
 
 **A modern, web-based Customer Programming Software (CPS) for the Baofeng DM-32UV radio.**
 
@@ -10,7 +10,7 @@ Program your DMR radio directly from your browser—no software installation req
 
 **🚀 Try it live:** [https://neonplug.app](https://neonplug.app) · **📥 [Download offline version](https://neonplug.app)** (single-file, no install)
 
-**💬 Join us:** [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/9ckzrcKU)
+**💬 Join us:** [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/j59TBHVD22)
 
 > ⚠️ **Note:** Currently in active development. Some features are still being implemented.
 
@@ -98,4 +98,4 @@ MIT License - feel free to use this project for your own radio programming needs
 
 Have questions or want to share your experience? Join our Discord community!
 
-[![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/9ckzrcKU)
+[![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/j59TBHVD22)
