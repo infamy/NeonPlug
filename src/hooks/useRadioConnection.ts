@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { RadioProtocol } from '../types/radio';
-import { createDefaultProtocol } from '../radios';
+import { createDefaultProtocol, createProtocolForModel, UV5RMINI_MODEL_ID } from '../radios';
 import { getCapabilitiesForModel } from '../radios/capabilities';
 import type { Contact } from '../models/Contact';
 import { useRadioStore } from '../store/radioStore';
@@ -50,7 +50,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setConnectionError } = useRadioStore();
+  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setConnectionError } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -113,17 +113,26 @@ export function useRadioConnection() {
     const steps = READ_STEPS;
 
     try {
-      // Create protocol instance
-      protocol = createDefaultProtocol();
+      // Create protocol for the radio selected in the pick-a-radio modal
+      protocol = createProtocolForModel(selectedRadioModel ?? '') ?? createDefaultProtocol();
       
       // Set up progress callback that forwards to our callback
       protocol.onProgress = (progress, message) => {
         onProgress?.(progress, message);
       };
 
-      // Step 1: Request serial port in same user gesture (so browser allows requestPort)
-      onProgress?.(5, 'Select serial port...', steps[0]);
-      await protocol.connect({ forcePortSelection: true });
+      // Step 1: Request port (serial or BLE) in same user gesture
+      const transport =
+        selectedRadioModel === UV5RMINI_MODEL_ID ? (preferredTransport ?? 'serial') : undefined;
+      onProgress?.(
+        5,
+        transport === 'ble' ? 'Select BLE device...' : 'Select serial port...',
+        steps[0]
+      );
+      await protocol.connect({
+        forcePortSelection: true,
+        ...(transport != null && { transport }),
+      });
 
       // Step 2: Get radio info
       onProgress?.(10, 'Reading radio information...', steps[2]);
@@ -132,15 +141,14 @@ export function useRadioConnection() {
       setRadioInfo(radioInfo);
       setConnected(true);
       
-      // Step 4: Bulk read all required blocks upfront
-      // This will read all blocks and then disconnect from the radio
-      onProgress?.(15, 'Reading all memory blocks...', steps[3]);
-      await (protocol as any).bulkReadRequiredBlocks();
+      // Step 4: For DM32, bulk read all blocks; for UV5R-Mini, readChannels does the read
+      if (typeof (protocol as any).bulkReadRequiredBlocks === 'function') {
+        onProgress?.(15, 'Reading all memory blocks...', steps[3]);
+        await (protocol as any).bulkReadRequiredBlocks();
+      }
       
-      // Connection is now closed - all data is in cache
-      // All parsing happens from cached blocks, no connection needed
-      // Step 5: Process cached blocks to extract data (no connection needed)
-      onProgress?.(20, 'Parsing channels from cache...', steps[4]);
+      // Step 5: Parse channels (from cache for DM32, or over connection for UV5R-Mini)
+      onProgress?.(20, 'Parsing channels...', steps[4]);
       const channels = await protocol.readChannels();
       setChannels(channels);
       // Store raw channel data for debug export
@@ -330,8 +338,8 @@ export function useRadioConnection() {
         // Retry the entire read operation with forced port selection
         try {
           onProgress?.(5, 'Retrying with port selection...', steps[0]);
-          // Create a new protocol instance to ensure clean state
-          protocol = createDefaultProtocol();
+          // Create a new protocol instance to ensure clean state (same radio as initial read)
+          protocol = createProtocolForModel(selectedRadioModel ?? '') ?? createDefaultProtocol();
           protocol.onProgress = (progress, message) => {
             onProgress?.(progress, message);
           };
@@ -522,7 +530,7 @@ export function useRadioConnection() {
         setIsConnecting(false);
       }
     }
-  }, [setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setConnectionError]);
+  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setConnectionError]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
@@ -533,8 +541,8 @@ export function useRadioConnection() {
     let protocol: RadioProtocol | null = null;
 
     try {
-      // Create protocol instance
-      protocol = createDefaultProtocol();
+      // Use protocol for connected radio (write/reconnect path)
+      protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       
       // Set up progress callback
       protocol.onProgress = (progress, message) => {
@@ -592,7 +600,7 @@ export function useRadioConnection() {
     setError(null);
     let protocol: RadioProtocol | null = null;
     try {
-      protocol = createDefaultProtocol();
+      protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       protocol.onProgress = (progress, message) => {
         onProgress?.(progress, message);
       };
@@ -635,7 +643,7 @@ export function useRadioConnection() {
     setError(null);
     let protocol: RadioProtocol | null = null;
     try {
-      protocol = createDefaultProtocol();
+      protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       protocol.onProgress = (progress, message) => {
         onProgress?.(progress, message);
       };
@@ -680,8 +688,8 @@ export function useRadioConnection() {
     let protocol: RadioProtocol | null = null;
 
     try {
-      // Create protocol instance
-      protocol = createDefaultProtocol();
+      // Use protocol for connected radio (write path)
+      protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       
       // Set up progress callback
       protocol.onProgress = (progress, message) => {
@@ -774,8 +782,8 @@ export function useRadioConnection() {
         channels: scanList.channels.filter(chNum => validChannelNumbers.has(chNum))
       })).filter(scanList => scanList.channels.length > 0); // Remove empty scan lists
       
-      // Create protocol instance
-      protocol = createDefaultProtocol();
+      // Use protocol for connected radio (write path)
+      protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       
       // Restore cache from store if available (from previous read operation)
       // Read directly from store state to avoid hook reactivity issues

@@ -63,4 +63,14 @@ export interface RadioCapabilities {
   isFirmware049OrNewer?: (firmware: string) => boolean;
   /** Validations to run before writing codeplug to this radio. Only run when model is known. */
   writeValidations?: WriteValidations;
+  /** Max channel count (e.g. 999 for UV5R-Mini, 4000 for DM32). */
+  maxChannels?: number;
+  /** If false, radio has no zones (e.g. UV5R-Mini). */
+  supportsZones?: boolean;
+  /** If false, radio has no scan lists. */
+  supportsScanLists?: boolean;
+  /** If false, radio has no CSV contacts / contact list (e.g. UV5R-Mini). */
+  supportsContacts?: boolean;
+  /** If true, analog-only radio — no DMR/digital features. */
+  analogOnly?: boolean;
 }

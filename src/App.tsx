@@ -49,7 +49,7 @@ function App() {
   const { setContacts: setQuickContacts } = useQuickContactsStore();
   const { setGroups: setRXGroups } = useRXGroupsStore();
   const { setKeys: setEncryptionKeys } = useEncryptionKeysStore();
-  const { setRadioInfo } = useRadioStore();
+  const { setRadioInfo, setPreferredTransport, showPickRadioModal, setShowPickRadioModal } = useRadioStore();
   const { isConnecting, error: radioError } = useRadioConnection();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -104,10 +104,12 @@ function App() {
     return () => observer.disconnect();
   }, []);
 
-  const handleReadFromRadio = () => {
-    // Close startup modal - the Toolbar's handleRead will show the progress modal
+  const handleReadFromRadio = (transport?: 'serial' | 'ble') => {
+    if (transport != null) {
+      setPreferredTransport(transport);
+    }
     setShowStartupModal(false);
-    // Small delay to ensure modal closes, then trigger the read button
+    setShowPickRadioModal(false);
     setTimeout(() => {
       const readButton = document.querySelector('[data-action="read-from-radio"]') as HTMLButtonElement;
       if (readButton && !readButton.disabled) {
@@ -118,6 +120,7 @@ function App() {
 
   const handleLoadFile = () => {
     setShowStartupModal(false);
+    setShowPickRadioModal(false);
     // Small delay to ensure modal closes before file dialog opens
     setTimeout(() => {
       fileInputRef.current?.click();
@@ -218,6 +221,7 @@ function App() {
 
   const handleDismissStartup = () => {
     setShowStartupModal(false);
+    setShowPickRadioModal(false);
     // Load sample data if user dismisses
     setChannels(sampleChannels);
     setContacts(sampleContacts);
@@ -264,10 +268,11 @@ function App() {
         {renderTabContent()}
       </MainLayout>
       <StartupModal
-        isOpen={showStartupModal && !isConnecting}
+        isOpen={(showStartupModal || showPickRadioModal) && !isConnecting}
         onReadFromRadio={handleReadFromRadio}
         onLoadFile={handleLoadFile}
         onDismiss={handleDismissStartup}
+        onCancel={showPickRadioModal ? () => setShowPickRadioModal(false) : undefined}
       />
       <input
         ref={fileInputRef}

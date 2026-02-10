@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
-import { DM32_MODEL_IDS } from '../../radios';
+import { getRadioPickerOptions } from '../../radios';
+import { useRadioStore } from '../../store/radioStore';
 import { isWebSerialSupported, getSupportedBrowsers } from '../../utils/browserSupport';
 import { downloadOfflineAsZip } from '../../utils/offlineDownload';
 
@@ -9,9 +10,11 @@ const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
 
 interface StartupModalProps {
   isOpen: boolean;
-  onReadFromRadio: () => void;
+  onReadFromRadio: (transport?: 'serial' | 'ble') => void;
   onLoadFile: () => void;
   onDismiss?: () => void;
+  /** When set (e.g. opened from Toolbar "Change radio"), show a Cancel button to close without action. */
+  onCancel?: () => void;
 }
 
 const OFFLINE_FALLBACK_MESSAGE =
@@ -24,13 +27,35 @@ export const StartupModal: React.FC<StartupModalProps> = ({
   onReadFromRadio,
   onLoadFile,
   onDismiss,
+  onCancel,
 }) => {
   const [offlineFallbackOpen, setOfflineFallbackOpen] = useState(false);
+  const [transportChoiceOpen, setTransportChoiceOpen] = useState(false);
+  const { selectedRadioModel, setSelectedRadioModel } = useRadioStore();
+  const options = useMemo(() => getRadioPickerOptions(), []);
+
+  // Default to first radio if none selected
+  const effectiveSelected = selectedRadioModel ?? options[0]?.modelId ?? null;
+  const selectedOption = options.find(o => o.modelId === effectiveSelected);
 
   if (!isOpen) return null;
 
   const webSerialSupported = isWebSerialSupported();
   const supportedBrowsers = getSupportedBrowsers();
+  const showTransportChoice = selectedOption?.supportsBle === true;
+
+  const handleReadClick = () => {
+    if (showTransportChoice) {
+      setTransportChoiceOpen(true);
+    } else {
+      onReadFromRadio();
+    }
+  };
+
+  const handleTransportChoice = (transport: 'serial' | 'ble') => {
+    setTransportChoiceOpen(false);
+    onReadFromRadio(transport);
+  };
 
   return (
     <div
@@ -42,14 +67,28 @@ export const StartupModal: React.FC<StartupModalProps> = ({
         <div className="text-center mb-6">
           <h1 className="text-4xl font-bold text-neon-cyan mb-2">NEONPLUG</h1>
           <p className="text-cool-gray text-sm">Channel programming software</p>
-          <p className="text-cool-gray text-xs mt-1">Supports: {DM32_MODEL_IDS.join(', ')}</p>
+        </div>
+
+        <p className="text-white text-center mb-4">Pick a radio</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+          {options.map((opt) => (
+            <button
+              key={opt.modelId}
+              type="button"
+              onClick={() => setSelectedRadioModel(opt.modelId)}
+              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
+                effectiveSelected === opt.modelId
+                  ? 'border-neon-cyan bg-neon-cyan bg-opacity-10 shadow-glow-cyan'
+                  : 'border-cool-gray hover:border-neon-cyan hover:bg-opacity-5'
+              }`}
+            >
+              <span className="text-3xl mb-2" role="img" aria-hidden>{opt.icon}</span>
+              <span className="text-white font-medium">{opt.label}</span>
+            </button>
+          ))}
         </div>
 
         <div className="space-y-4 mb-6">
-          <p className="text-white text-center mb-6">
-            How would you like to get started?
-          </p>
-
           {!webSerialSupported && (
             <div className="bg-yellow-900 bg-opacity-30 border border-yellow-600 rounded-lg p-4 mb-4">
               <div className="flex items-start">
@@ -68,13 +107,13 @@ export const StartupModal: React.FC<StartupModalProps> = ({
 
           <Button
             variant="primary"
-            onClick={onReadFromRadio}
+            onClick={handleReadClick}
             className="w-full py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-deep-gray disabled:text-cool-gray disabled:shadow-none"
             glow={webSerialSupported}
-            disabled={!webSerialSupported}
-            title={!webSerialSupported ? 'Web Serial API not supported in this browser' : 'Read codeplug from connected radio'}
+            disabled={!webSerialSupported || !effectiveSelected}
+            title={!webSerialSupported ? 'Web Serial API not supported in this browser' : `Read codeplug from ${selectedOption?.label ?? 'radio'}`}
           >
-            Read from Radio
+            Read from {selectedOption?.label ?? 'Radio'}
           </Button>
 
           <Button
@@ -112,8 +151,48 @@ export const StartupModal: React.FC<StartupModalProps> = ({
               Continue with sample data
             </button>
           )}
+          {onCancel && (
+            <button
+              onClick={onCancel}
+              className="w-full text-cool-gray hover:text-white text-sm py-2"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       </div>
+
+      {transportChoiceOpen && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80 z-10 rounded-lg">
+          <div className="bg-deep-gray rounded-lg p-6 border border-neon-cyan mx-4 max-w-sm w-full">
+            <p className="text-white text-center mb-4">Connect via</p>
+            <div className="flex gap-4">
+              <Button
+                variant="primary"
+                className="flex-1"
+                onClick={() => handleTransportChoice('ble')}
+              >
+                BLE
+              </Button>
+              <Button
+                variant="primary"
+                className="flex-1"
+                onClick={() => handleTransportChoice('serial')}
+              >
+                Serial
+              </Button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTransportChoiceOpen(false)}
+              className="w-full text-cool-gray hover:text-white text-sm mt-4"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <ConfirmModal
         isOpen={offlineFallbackOpen}
         onClose={() => setOfflineFallbackOpen(false)}
@@ -126,4 +205,3 @@ export const StartupModal: React.FC<StartupModalProps> = ({
     </div>
   );
 };
-

@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { useDebugStore } from '../../store/debugStore';
+import { useRadioStore } from '../../store/radioStore';
+import { getCapabilitiesForModel } from '../../radios/capabilities';
 
 interface TabNavigationProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
 }
 
-const tabs = [
+const ALL_TABS = [
   { id: 'channels', label: 'Channels' },
   { id: 'zones', label: 'Zones' },
   { id: 'scanlists', label: 'Scan Lists' },
@@ -23,14 +25,33 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
   onTabChange,
 }) => {
   const { debugMode } = useDebugStore();
+  const { radioInfo, selectedRadioModel } = useRadioStore();
+  /** Use device model when known, otherwise the model selected in the pick-a-radio modal. */
+  const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
+  const caps = useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
+
+  const tabs = useMemo(() => {
+    return ALL_TABS.filter((tab) => {
+      if (tab.id === 'diagnostics' && !debugMode) return false;
+      if (tab.id === 'zones' && caps?.supportsZones === false) return false;
+      if (tab.id === 'scanlists' && caps?.supportsScanLists === false) return false;
+      if (tab.id === 'contacts' && caps?.supportsContacts === false) return false;
+      if (tab.id === 'digital' && caps?.analogOnly === true) return false;
+      return true;
+    });
+  }, [debugMode, caps?.supportsZones, caps?.supportsScanLists, caps?.supportsContacts, caps?.analogOnly]);
+
+  useEffect(() => {
+    const visibleIds = tabs.map((t) => t.id);
+    if (!visibleIds.includes(activeTab)) {
+      onTabChange('channels');
+    }
+  }, [tabs, activeTab, onTabChange]);
 
   return (
     <div className="border-b border-deep-gray bg-deep-gray">
       <div className="flex space-x-1 px-4">
-        {tabs.map((tab) => {
-          const isHidden = tab.id === 'diagnostics' && !debugMode;
-          if (isHidden) return null;
-          return (
+        {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
@@ -46,8 +67,7 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
             >
               {tab.label}
             </button>
-          );
-        })}
+        ))}
       </div>
     </div>
   );

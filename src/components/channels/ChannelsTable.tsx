@@ -72,7 +72,9 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const { channels: channelsFromStore, updateChannel, deleteChannel, addChannel } = useChannelsStore();
   const { radioInfo } = useRadioStore();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
-  const bandLimits = getCapabilitiesForModel(radioInfo?.model)?.bandLimits ?? null;
+  const caps = getCapabilitiesForModel(radioInfo?.model);
+  const bandLimits = caps?.bandLimits ?? null;
+  const maxChannels = caps?.maxChannels ?? 4000;
   const { scanLists } = useScanListsStore();
   const { groups: rxGroups } = useRXGroupsStore();
   const { keys: encryptionKeys } = useEncryptionKeysStore();
@@ -1085,6 +1087,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             setEditingChannel(null);
           }}
           bandLimits={bandLimits}
+          maxChannels={maxChannels}
           rxGroups={rxGroups}
           encryptionKeys={encryptionKeys}
           talkGroups={talkGroups}

@@ -54,6 +54,8 @@ interface ChannelEditModalProps {
   onSave: (channel: Channel) => void;
   /** Band limits from radio capabilities (getCapabilitiesForModel(radioInfo?.model)?.bandLimits). */
   bandLimits?: RadioBandLimits | null;
+  /** Max channel number from capabilities (e.g. 999 for UV5R-Mini, 4000 for DM-32UV). */
+  maxChannels?: number;
   rxGroups?: RXGroup[];
   encryptionKeys?: EncryptionKey[];
   talkGroups?: QuickContact[];
@@ -65,6 +67,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   channel,
   onSave,
   bandLimits = null,
+  maxChannels = 4000,
   rxGroups = [],
   encryptionKeys = [],
   talkGroups = [],
@@ -90,7 +93,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   };
 
   const handleSave = () => {
-    const errors = validateChannel(editedChannel, bandLimits);
+    const errors = validateChannel(editedChannel, bandLimits, maxChannels);
     if (errors.length > 0) {
       setValidationErrors(errors);
       return;

@@ -8,12 +8,17 @@ export interface ValidationError {
   message: string;
 }
 
+/** Default max channel number when capabilities don't specify (e.g. DM-32UV). */
+const DEFAULT_MAX_CHANNELS = 4000;
+
 /**
- * Validate a channel. Band limits come from radio capabilities (getCapabilitiesForModel(radioInfo?.model)?.bandLimits).
+ * Validate a channel. Band limits and maxChannels come from radio capabilities
+ * (getCapabilitiesForModel(radioInfo?.model)).
  */
 export function validateChannel(
   channel: Channel,
-  bandLimits?: RadioBandLimits | null
+  bandLimits?: RadioBandLimits | null,
+  maxChannels: number = DEFAULT_MAX_CHANNELS
 ): ValidationError[] {
   const errors: ValidationError[] = [];
 
@@ -46,9 +51,9 @@ export function validateChannel(
     }
   }
 
-  // Channel number validation
-  if (channel.number < 1 || channel.number > 4000) {
-    errors.push({ field: 'number', message: 'Channel number must be between 1 and 4000' });
+  // Channel number validation (uses maxChannels from capabilities, e.g. 999 for UV5R-Mini)
+  if (channel.number < 1 || channel.number > maxChannels) {
+    errors.push({ field: 'number', message: `Channel number must be between 1 and ${maxChannels}` });
   }
 
   // DMR-specific validation (digital only)
@@ -73,11 +78,12 @@ export function validateChannel(
 
 export function validateChannels(
   channels: Channel[],
-  bandLimits?: RadioBandLimits | null
+  bandLimits?: RadioBandLimits | null,
+  maxChannels: number = DEFAULT_MAX_CHANNELS
 ): Map<number, ValidationError[]> {
   const errors = new Map<number, ValidationError[]>();
   channels.forEach((channel) => {
-    const channelErrors = validateChannel(channel, bandLimits);
+    const channelErrors = validateChannel(channel, bandLimits, maxChannels);
     if (channelErrors.length > 0) {
       errors.set(channel.number, channelErrors);
     }
