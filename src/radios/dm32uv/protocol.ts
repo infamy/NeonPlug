@@ -15,9 +15,9 @@ import {
   storeRawData,
   type MemoryBlock,
 } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, encodeEncryptionKey, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
 import type { RadioProtocol, RadioInfo } from '../../types/radio';
-import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact } from '../../models';
+import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact, EncryptionKey } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
 import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION, LIMITS } from './constants';
 import { BOOT_IMAGE } from '../../utils/bootImage';
@@ -3110,8 +3110,9 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(0, 'Writing Digital Emergency Systems...');
 
-    // Encode systems to 4KB block
-    const blockData = encodeDigitalEmergencies(systems, config);
+    // Encode systems to 4KB block, preserving existing data (e.g. encryption keys at 0x300)
+    const existingBlockData = this.getCachedBlockByAddress(emergencyBlock.address)?.data;
+    const blockData = encodeDigitalEmergencies(systems, config, existingBlockData);
 
     // Write the entire block
     await this.connection!.writeMemory(emergencyBlock.address, blockData, METADATA.DIGITAL_EMERGENCY);
@@ -3119,6 +3120,64 @@ export class DM32UVProtocol implements RadioProtocol {
     this.blockData.set(emergencyBlock.address, blockData);
 
     this.onProgress?.(100, 'Digital Emergency Systems written');
+  }
+
+  /**
+   * Write Encryption Keys to metadata 0x10 block (same block as digital emergencies, offset 0x300)
+   */
+  async writeEncryptionKeys(keys: EncryptionKey[]): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+
+    // Discover blocks if not already discovered
+    if (this.discoveredBlocks.length === 0) {
+      if (!this.radioInfo) {
+        throw new Error('Radio info not available. Connect and read radio info first.');
+      }
+      const blocks = await discoverMemoryBlocks(
+        this.connection!,
+        this.radioInfo!.memoryLayout!.configStart,
+        this.radioInfo!.memoryLayout!.configEnd,
+        (current, total) => {
+          const progress = Math.floor((current / total) * 100);
+          this.onProgress?.(progress, `Discovering blocks ${current}/${total}...`);
+        }
+      );
+      this.discoveredBlocks = blocks;
+    }
+
+    requireDiscoveredBlocks(this.discoveredBlocks);
+
+    // Find block 0x10 (same block as digital emergencies)
+    const keyBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.DIGITAL_EMERGENCY);
+
+    if (!keyBlock) {
+      throw new Error('Encryption Keys block (metadata 0x10) not found');
+    }
+
+    this.onProgress?.(0, 'Writing Encryption Keys...');
+
+    // Start from cached block data to preserve other regions (digital emergencies, etc.)
+    const existingBlockData = this.getCachedBlockByAddress(keyBlock.address)?.data;
+    const blockData = new Uint8Array(0x1000);
+    if (existingBlockData && existingBlockData.length >= 0x1000) {
+      blockData.set(existingBlockData.slice(0, 0x1000));
+    } else {
+      blockData.fill(0xFF);
+    }
+
+    // Encode each encryption key into the block
+    for (const key of keys) {
+      encodeEncryptionKey(key, blockData);
+    }
+
+    // Preserve metadata byte
+    blockData[0xFFF] = METADATA.DIGITAL_EMERGENCY;
+
+    // Write the entire block
+    await this.connection!.writeMemory(keyBlock.address, blockData, METADATA.DIGITAL_EMERGENCY);
+    this.blockData.set(keyBlock.address, blockData);
+
+    this.onProgress?.(100, 'Encryption Keys written');
   }
 
   /**

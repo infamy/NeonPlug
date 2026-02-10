@@ -16,6 +16,7 @@ import { useQuickContactsStore } from '../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
 import { useCalibrationStore } from '../store/calibrationStore';
 import { useRXGroupsStore } from '../store/rxGroupsStore';
+import { useEncryptionKeysStore } from '../store/encryptionKeysStore';
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
@@ -847,6 +848,14 @@ export function useRadioConnection() {
         await protocol.writeDMRRadioIDs(dmrRadioIds);
       }
 
+      // Step 5.8: Write Encryption Keys if they have been loaded
+      const encryptionKeysStore = useEncryptionKeysStore.getState();
+      const encryptionKeys = encryptionKeysStore.keys;
+      if (encryptionKeys && encryptionKeys.length > 0 && encryptionKeysStore.keysLoaded) {
+        onProgress?.(94, `Writing ${encryptionKeys.length} encryption key(s) to radio...`, steps[4]);
+        await (protocol as any).writeEncryptionKeys(encryptionKeys);
+      }
+
       // Step 6: Write radio settings only if they have been modified
       const radioSettingsStore = useRadioSettingsStore.getState();
       const radioSettings = radioSettingsStore.settings;
@@ -873,6 +882,7 @@ export function useRadioConnection() {
         quickContacts && quickContacts.length > 0 ? `${quickContacts.length} talk group(s)` : null,
         quickMessages && quickMessages.length > 0 ? `${quickMessages.length} quick message(s)` : null,
         rxGroups && rxGroups.length > 0 && rxGroupsStore.groupsLoaded ? `${rxGroups.length} RX group(s)` : null,
+        encryptionKeys && encryptionKeys.length > 0 && encryptionKeysStore.keysLoaded ? `${encryptionKeys.length} encryption key(s)` : null,
         radioSettings && changedFields.length > 0 ? `${changedFields.length} setting(s)` : null,
       ].filter(Boolean).join(', ');
       

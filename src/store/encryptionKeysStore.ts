@@ -3,7 +3,9 @@ import type { EncryptionKey } from '../models/EncryptionKey';
 
 interface EncryptionKeysState {
   keys: EncryptionKey[];
+  keysLoaded: boolean;
   setKeys: (keys: EncryptionKey[]) => void;
+  setKeysLoaded: (loaded: boolean) => void;
   updateKey: (entryNumber: number, updates: Partial<EncryptionKey>) => void;
   addKey: (key: EncryptionKey) => void;
   deleteKey: (entryNumber: number) => void;
@@ -11,7 +13,9 @@ interface EncryptionKeysState {
 
 export const useEncryptionKeysStore = create<EncryptionKeysState>((set) => ({
   keys: [],
-  setKeys: (keys) => set({ keys }),
+  keysLoaded: false,
+  setKeys: (keys) => set({ keys, keysLoaded: true }),
+  setKeysLoaded: (loaded) => set({ keysLoaded: loaded }),
   updateKey: (entryNumber, updates) =>
     set((state) => ({
       keys: state.keys.map((k) =>
