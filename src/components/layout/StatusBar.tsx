@@ -11,9 +11,11 @@ export const StatusBar: React.FC = () => {
   const showUserGestureInBar = connectionError?.includes('Please click the button directly') ?? false;
 
   const caps = useMemo(() => getCapabilitiesForModel(radioInfo?.model), [radioInfo?.model]);
+  const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
   const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
-  const isNewerFirmware = !!(radioInfo?.firmware && caps?.isFirmware049OrNewer?.(radioInfo.firmware));
-  const needsFirmwareUpdate = radioInfo?.firmware && radioInfo.firmware !== EXPECTED_FIRMWARE && !isNewerFirmware;
+  const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));
+  const needsFirmwareUpdate = hasRealFirmware && radioInfo!.firmware !== EXPECTED_FIRMWARE && !isNewerFirmware;
+  const deviceValue = (v: string | undefined) => (v && v.trim() && v !== '-' ? v : '-');
 
   return (
     <>
@@ -28,7 +30,7 @@ export const StatusBar: React.FC = () => {
               <span className="text-cool-gray">|</span>
               <div className="flex items-center space-x-2">
                 <span className="text-sm text-cool-gray">Firmware:</span>
-                <span className="text-sm text-white">{radioInfo.firmware}</span>
+                <span className="text-sm text-white">{deviceValue(radioInfo.firmware)}</span>
                 {(needsFirmwareUpdate || isNewerFirmware) && (
                   <button
                     onClick={() => setShowFirmwareWarning(true)}
@@ -39,15 +41,13 @@ export const StatusBar: React.FC = () => {
                   </button>
                 )}
               </div>
-            {radioInfo.buildDate && (
-              <>
-                <span className="text-cool-gray">|</span>
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-cool-gray">Build:</span>
-                  <span className="text-sm text-white">{radioInfo.buildDate}</span>
-                </div>
-              </>
-            )}
+            <>
+              <span className="text-cool-gray">|</span>
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-cool-gray">Build:</span>
+                <span className="text-sm text-white">{deviceValue(radioInfo.buildDate)}</span>
+              </div>
+            </>
             {radioInfo.dspVersion && (
               <>
                 <span className="text-cool-gray">|</span>

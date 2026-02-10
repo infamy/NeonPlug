@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Button } from '../ui/Button';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
@@ -16,7 +16,7 @@ import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { getRadioPickerOptions, getMigrationTargetModels } from '../../radios';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
-import { migrateCodeplug } from '../../services/codeplugMigration';
+import { migrateCodeplug, type MigrationLoss } from '../../services/codeplugMigration';
 // Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
@@ -31,7 +31,7 @@ export const Toolbar: React.FC = () => {
   const { settings: radioSettings, setSettings: setRadioSettings } = useRadioSettingsStore();
   const { systems: digitalEmergencies, config: digitalEmergencyConfig, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
-  const { radioInfo, setRadioInfo, setShowPickRadioModal } = useRadioStore();
+  const { radioInfo, setRadioInfo, setShowPickRadioModal, setSelectedRadioModel } = useRadioStore();
   const { messages, setMessages } = useQuickMessagesStore();
   const { radioIds: dmrRadioIds, setRadioIds } = useDMRRadioIDsStore();
   const { contacts: quickContacts, setContacts: setQuickContacts } = useQuickContactsStore();
@@ -52,7 +52,19 @@ export const Toolbar: React.FC = () => {
   const [alertTitle, setAlertTitle] = useState('Notice');
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [convertTargetModel, setConvertTargetModel] = useState<string>(() => getMigrationTargetModels()[0] ?? 'DM-32UV');
+  const [readDropdownOpen, setReadDropdownOpen] = useState(false);
+  const readDropdownRef = useRef<HTMLDivElement>(null);
   const webSerialSupported = isWebSerialSupported();
+
+  useEffect(() => {
+    if (!readDropdownOpen) return;
+    const close = (e: MouseEvent) => {
+      if (readDropdownRef.current?.contains(e.target as Node)) return;
+      setReadDropdownOpen(false);
+    };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [readDropdownOpen]);
 
   const buildCodeplugData = () => ({
     channels,
@@ -73,33 +85,51 @@ export const Toolbar: React.FC = () => {
     version: '1.0.0',
   });
 
+  const formatMigrationLoss = (loss: MigrationLoss): string => {
+    const parts: string[] = [];
+    if (loss.channelsDropped > 0) parts.push(`${loss.channelsDropped} channel(s) removed`);
+    if (loss.zonesLost > 0) parts.push(`${loss.zonesLost} zone(s) removed`);
+    if (loss.scanListsLost > 0) parts.push(`${loss.scanListsLost} scan list(s) removed`);
+    if (loss.contactsLost > 0) parts.push(`${loss.contactsLost} contact(s) removed`);
+    if (loss.radioIdsLost > 0) parts.push(`${loss.radioIdsLost} DMR ID(s) removed`);
+    if (loss.digitalEmergenciesLost > 0) parts.push(`${loss.digitalEmergenciesLost} digital emergency(s) removed`);
+    if (loss.messagesLost > 0) parts.push(`${loss.messagesLost} quick message(s) removed`);
+    if (loss.quickContactsLost > 0) parts.push(`${loss.quickContactsLost} quick contact(s) removed`);
+    if (loss.rxGroupsLost > 0) parts.push(`${loss.rxGroupsLost} RX group(s) removed`);
+    if (loss.encryptionKeysLost > 0) parts.push(`${loss.encryptionKeysLost} encryption key(s) removed`);
+    if (loss.settingsCleared) parts.push('Radio settings cleared (do not map between radios)');
+    return parts.length > 0 ? parts.join('. ') : 'No data removed.';
+  };
+
   const handleConvertReplace = async () => {
     const data = buildCodeplugData();
-    const migrated = migrateCodeplug(data, convertTargetModel);
+    const { migrated, loss } = migrateCodeplug(data, convertTargetModel);
     setChannels(migrated.channels);
     setZones(migrated.zones);
     setScanLists(migrated.scanLists);
     setContacts(migrated.contacts);
     setDigitalEmergencies(migrated.digitalEmergencies);
-    if (migrated.digitalEmergencyConfig) setDigitalEmergencyConfig(migrated.digitalEmergencyConfig);
+    setDigitalEmergencyConfig(migrated.digitalEmergencyConfig ?? null);
     setAnalogEmergencies(migrated.analogEmergencies);
-    if (migrated.radioSettings) setRadioSettings(migrated.radioSettings);
+    setRadioSettings(migrated.radioSettings ?? null);
     setRadioInfo(migrated.radioInfo ?? null);
     setMessages(migrated.messages);
     setRadioIds(migrated.radioIds);
     setQuickContacts(migrated.quickContacts);
     setRXGroups(migrated.rxGroups);
     setEncryptionKeys(migrated.encryptionKeys);
+    setSelectedRadioModel(convertTargetModel);
     setConvertModalOpen(false);
     const targetLabel = getRadioPickerOptions().find((o) => o.modelId === convertTargetModel)?.label ?? convertTargetModel;
     setAlertTitle('Convert');
-    setAlertMessage(`Codeplug converted for ${targetLabel}. Stores updated.`);
+    const lossText = formatMigrationLoss(loss);
+    setAlertMessage(`Codeplug converted for ${targetLabel}. ${lossText}`);
     setAlertOpen(true);
   };
 
   const handleConvertDownload = async () => {
     const data = buildCodeplugData();
-    const migrated = migrateCodeplug(data, convertTargetModel);
+    const { migrated } = migrateCodeplug(data, convertTargetModel);
     const { exportCodeplug } = await import('../../services/codeplugExport');
     await exportCodeplug(migrated);
     setConvertModalOpen(false);
@@ -362,16 +392,44 @@ export const Toolbar: React.FC = () => {
             </button>
           </div>
           <div className="w-px h-6 bg-neon-cyan bg-opacity-30" />
-          <Button
-            variant="primary"
-            data-action="read-from-radio"
-            onClick={handleRead}
-            disabled={isConnecting || !webSerialSupported}
-            className={!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}
-            title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Read codeplug from connected radio'}
-          >
-            {isConnecting ? 'Reading...' : 'Read from Radio'}
-          </Button>
+          <div className="relative inline-flex" ref={readDropdownRef}>
+            <div className="inline-flex rounded overflow-hidden">
+              <Button
+                variant="primary"
+                data-action="read-from-radio"
+                onClick={handleRead}
+                disabled={isConnecting || !webSerialSupported}
+                className={`rounded-r-none border-r border-white border-opacity-20 ${!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Read codeplug from current radio type'}
+              >
+                {isConnecting ? 'Reading...' : 'Read from Radio'}
+              </Button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setReadDropdownOpen((v) => !v); }}
+                disabled={isConnecting || isWriting}
+                title="Read from a different radio type (DM-32UV or UV5R-Mini)"
+                className="px-2 py-2 bg-neon-cyan text-dark-charcoal hover:bg-opacity-90 border-l border-white border-opacity-20 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none transition-all"
+                aria-expanded={readDropdownOpen}
+                aria-haspopup="true"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+            {readDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1 py-1 min-w-[10rem] bg-deep-gray border border-neon-cyan border-opacity-30 rounded shadow-lg z-50">
+                <button
+                  type="button"
+                  onClick={() => { setShowPickRadioModal(true); setReadDropdownOpen(false); }}
+                  className="w-full text-left px-4 py-2 text-sm text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 transition-colors"
+                >
+                  Change radio type…
+                </button>
+              </div>
+            )}
+          </div>
           <Button
             variant="primary"
             onClick={handleWrite}
@@ -381,14 +439,6 @@ export const Toolbar: React.FC = () => {
             glow={webSerialSupported}
           >
             {isWriting ? 'Writing...' : 'Write to Radio'}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => setShowPickRadioModal(true)}
-            disabled={isConnecting || isWriting}
-            title="Switch to a different radio model (DM-32UV or UV5R-Mini)"
-          >
-            Change radio
           </Button>
           {error && !error.includes('Please click the button directly') && (
             <span className="text-red-400 text-xs ml-2">{error}</span>
@@ -424,15 +474,19 @@ export const Toolbar: React.FC = () => {
         confirmLabel="OK"
         variant="alert"
       />
-      {convertModalOpen && (
+      {convertModalOpen && (() => {
+        const data = buildCodeplugData();
+        const { loss } = migrateCodeplug(data, convertTargetModel);
+        const lossPreview = formatMigrationLoss(loss);
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80">
-          <div className="bg-deep-gray rounded-lg p-6 border border-neon-cyan shadow-glow-cyan max-w-sm w-full mx-4">
+          <div className="bg-deep-gray rounded-lg p-6 border border-neon-cyan shadow-glow-cyan max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-neon-cyan mb-4">Convert for another radio</h3>
             <label className="block text-sm text-cool-gray mb-2">Target radio</label>
             <select
               value={convertTargetModel}
               onChange={(e) => setConvertTargetModel(e.target.value)}
-              className="w-full px-3 py-2 bg-deep-gray border border-neon-cyan rounded text-white mb-4"
+              className="w-full px-3 py-2 bg-deep-gray border border-neon-cyan rounded text-white mb-3"
             >
               {getRadioPickerOptions().map((opt) => (
                 <option key={opt.modelId} value={opt.modelId}>
@@ -440,6 +494,8 @@ export const Toolbar: React.FC = () => {
                 </option>
               ))}
             </select>
+            <p className="text-sm text-amber-400 mb-3">What will be removed or cleared:</p>
+            <p className="text-xs text-cool-gray mb-4 whitespace-pre-wrap">{lossPreview}</p>
             <div className="flex gap-2">
               <button
                 onClick={handleConvertReplace}
@@ -462,7 +518,8 @@ export const Toolbar: React.FC = () => {
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
     </>
   );
 };

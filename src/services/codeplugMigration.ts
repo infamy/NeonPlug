@@ -1,16 +1,41 @@
 /**
  * Codeplug migration: convert codeplug data for a target radio (e.g. UV5R-Mini).
  * Drops or truncates data that the target doesn't support.
+ * Settings are always cleared (they do not map between radios).
  */
 
 import type { CodeplugData } from './codeplugExport';
 import { getCapabilitiesForModel } from '../radios/capabilities';
 
+/** Placeholder when device version info is unknown (e.g. after convert from another radio). */
+const UNKNOWN_VERSION = '-';
+
+/** Counts of what was removed or cleared during migration (for user warning). */
+export interface MigrationLoss {
+  channelsDropped: number;
+  zonesLost: number;
+  scanListsLost: number;
+  contactsLost: number;
+  radioIdsLost: number;
+  digitalEmergenciesLost: number;
+  messagesLost: number;
+  quickContactsLost: number;
+  rxGroupsLost: number;
+  encryptionKeysLost: number;
+  settingsCleared: boolean;
+}
+
+export interface MigrationResult {
+  migrated: CodeplugData;
+  loss: MigrationLoss;
+}
+
 /**
  * Migrate codeplug to be valid for the given target radio model.
- * Returns a new CodeplugData; does not mutate source.
+ * Returns migrated data and a loss summary; does not mutate source.
+ * Radio settings are always cleared (they do not map between radios).
  */
-export function migrateCodeplug(source: CodeplugData, targetModel: string): CodeplugData {
+export function migrateCodeplug(source: CodeplugData, targetModel: string): MigrationResult {
   const caps = getCapabilitiesForModel(targetModel);
   const maxChannels = caps?.maxChannels ?? 4000;
   const supportsZones = caps?.supportsZones ?? true;
@@ -68,7 +93,22 @@ export function migrateCodeplug(source: CodeplugData, targetModel: string): Code
   const encryptionKeys = analogOnly ? [] : source.encryptionKeys;
   const analogEmergencies = source.analogEmergencies;
 
-  return {
+  // Loss summary (counts removed/cleared)
+  const loss: MigrationLoss = {
+    channelsDropped: source.channels.length - channels.length,
+    zonesLost: source.zones.length - zones.length,
+    scanListsLost: source.scanLists.length - scanLists.length,
+    contactsLost: analogOnly ? source.contacts.length : Math.max(0, source.contacts.length - contacts.length),
+    radioIdsLost: analogOnly ? (source.radioIds?.length ?? 0) : 0,
+    digitalEmergenciesLost: analogOnly ? (source.digitalEmergencies?.length ?? 0) : 0,
+    messagesLost: analogOnly ? (source.messages?.length ?? 0) : 0,
+    quickContactsLost: analogOnly ? (source.quickContacts?.length ?? 0) : 0,
+    rxGroupsLost: analogOnly ? (source.rxGroups?.length ?? 0) : 0,
+    encryptionKeysLost: analogOnly ? (source.encryptionKeys?.length ?? 0) : 0,
+    settingsCleared: !!source.radioSettings,
+  };
+
+  const migrated: CodeplugData = {
     ...source,
     channels,
     zones,
@@ -82,10 +122,19 @@ export function migrateCodeplug(source: CodeplugData, targetModel: string): Code
     rxGroups,
     encryptionKeys,
     analogEmergencies,
-    radioInfo: source.radioInfo
-      ? { ...source.radioInfo, model: targetModel }
-      : { model: targetModel, firmware: '', buildDate: '' },
+    radioSettings: null, // Settings do not map between radios; always cleared on convert
+    radioInfo: {
+      model: targetModel,
+      firmware: UNKNOWN_VERSION,
+      buildDate: UNKNOWN_VERSION,
+      dspVersion: UNKNOWN_VERSION,
+      radioVersion: UNKNOWN_VERSION,
+      codeplugVersion: UNKNOWN_VERSION,
+      // Do not carry over memoryLayout/vframes/maxContacts from source; they are device-specific.
+    },
     exportDate: new Date().toISOString(),
     version: source.version,
   };
+
+  return { migrated, loss };
 }
