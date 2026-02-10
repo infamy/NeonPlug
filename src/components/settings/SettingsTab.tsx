@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Cropper, { Area } from 'react-easy-crop';
 import { useRadioStore } from '../../store/radioStore';
+import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { parseBootImageHeader, rgb565ToImageData, imageDataToRgb565, buildBootImagePayload, BOOT_IMAGE } from '../../utils/bootImage';
 import { useChannelsStore } from '../../store/channelsStore';
@@ -88,7 +89,8 @@ export const SettingsTab: React.FC = () => {
   const [showCalibration, setShowCalibration] = useState(false);
   const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
 
-  const caps = useMemo(() => getCapabilitiesForModel(radioInfo?.model), [radioInfo?.model]);
+  const effectiveModel = useEffectiveRadioModel();
+  const caps = useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
   const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
   const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
   const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));
@@ -99,7 +101,7 @@ export const SettingsTab: React.FC = () => {
 
   // Usage statistics: totals from current radio capabilities (converted codeplug shows target radio limits)
   const maxChannels = caps?.maxChannels ?? 4000;
-  const maxZones = caps?.supportsZones ? 250 : 0;
+  const maxZones = caps?.maxZones ?? (caps?.supportsZones ? 250 : 0);
   const maxContacts = caps?.supportsContacts ? (radioInfo?.maxContacts ?? 50000) : 0;
   const vfoCount = (radioSettings?.vfoA ? 1 : 0) + (radioSettings?.vfoB ? 1 : 0);
   const channelUsage = {
@@ -504,7 +506,7 @@ export const SettingsTab: React.FC = () => {
 
           {/* Boot / Startup Image Section - only when profile declares bootImage feature */}
           {(() => {
-            const profile = getSettingsProfileForModel(radioInfo?.model);
+            const profile = getSettingsProfileForModel(effectiveModel);
             return profile?.features?.includes('bootImage');
           })() && (
           <Card>
@@ -631,7 +633,7 @@ export const SettingsTab: React.FC = () => {
 
           {/* Radio Configuration - profile-driven */}
           {(() => {
-            const profile = getSettingsProfileForModel(radioInfo?.model);
+            const profile = getSettingsProfileForModel(effectiveModel);
             if (!profile) {
               return radioSettings ? (
                 <Card>

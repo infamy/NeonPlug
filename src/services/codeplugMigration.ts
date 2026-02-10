@@ -56,6 +56,9 @@ export function migrateCodeplug(source: CodeplugData, targetModel: string): Migr
   );
   channels = channels.filter((ch) => validChannelNumbers.has(ch.number));
 
+  const maxZones = caps?.maxZones;
+  const maxScanLists = caps?.maxScanLists;
+
   // 2) Zones
   let zones = source.zones;
   if (!supportsZones) {
@@ -67,6 +70,9 @@ export function migrateCodeplug(source: CodeplugData, targetModel: string): Migr
         channels: z.channels.filter((n) => validChannelNumbers.has(n)),
       }))
       .filter((z) => z.channels.length > 0);
+    if (maxZones != null && maxZones >= 0) {
+      zones = zones.slice(0, maxZones);
+    }
   }
 
   // 3) Scan lists
@@ -80,6 +86,9 @@ export function migrateCodeplug(source: CodeplugData, targetModel: string): Migr
         channels: s.channels.filter((n) => validChannelNumbers.has(n)),
       }))
       .filter((s) => s.channels.length > 0);
+    if (maxScanLists != null && maxScanLists >= 0) {
+      scanLists = scanLists.slice(0, maxScanLists);
+    }
   }
 
   // 4) Contacts, DMR IDs, digital, quick messages, RX groups, encryption: empty if analogOnly

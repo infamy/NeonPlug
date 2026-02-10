@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
-import { useRadioStore } from '../../store/radioStore';
+import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useScanListsStore } from '../../store/scanListsStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
@@ -70,9 +70,9 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   onSelectionChange,
 }) => {
   const { channels: channelsFromStore, updateChannel, deleteChannel, addChannel } = useChannelsStore();
-  const { radioInfo } = useRadioStore();
+  const effectiveModel = useEffectiveRadioModel();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
-  const caps = getCapabilitiesForModel(radioInfo?.model);
+  const caps = getCapabilitiesForModel(effectiveModel);
   const bandLimits = caps?.bandLimits ?? null;
   const maxChannels = caps?.maxChannels ?? 4000;
   const { scanLists } = useScanListsStore();

@@ -1,16 +1,16 @@
 /**
- * Registry of radio capabilities (parsers, limits) by model.
- * UI resolves via getCapabilitiesForModel(radioInfo?.model) instead of importing from a specific radio.
+ * Capabilities registry built from radio descriptors.
+ * UI resolves via getCapabilitiesForModel(model); no per-radio imports here.
  */
 import type { RadioCapabilities } from '../types/radioCapabilities';
-import { DM32_MODEL_IDS, UV5RMINI_MODEL_ID } from './index';
-import { DM32UV_CAPABILITIES } from './dm32uv/capabilities';
-import { UV5RMINI_CAPABILITIES } from './uv5rmini/capabilities';
+import { RADIO_DESCRIPTORS } from './index';
 
-const CAPABILITIES_REGISTRY: Record<string, RadioCapabilities> = {
-  ...Object.fromEntries(DM32_MODEL_IDS.map(id => [id, DM32UV_CAPABILITIES])),
-  [UV5RMINI_MODEL_ID]: UV5RMINI_CAPABILITIES,
-};
+const CAPABILITIES_REGISTRY: Record<string, RadioCapabilities> = {};
+for (const d of RADIO_DESCRIPTORS) {
+  for (const id of d.modelIds) {
+    CAPABILITIES_REGISTRY[id] = d.capabilities;
+  }
+}
 
 export function getCapabilitiesForModel(model: string | null | undefined): RadioCapabilities | null {
   if (!model || typeof model !== 'string') return null;

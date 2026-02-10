@@ -26,7 +26,7 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { useContactsStore } from '../../store/contactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
-import { useRadioStore } from '../../store/radioStore';
+import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 
 export const SmartImportTab: React.FC = () => {
@@ -34,8 +34,7 @@ export const SmartImportTab: React.FC = () => {
   const { zones, setZones } = useZonesStore();
   const { contacts, setContacts } = useContactsStore();
   const { radioIds } = useDMRRadioIDsStore();
-  const { radioInfo, selectedRadioModel } = useRadioStore();
-  const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
+  const effectiveModel = useEffectiveRadioModel();
   const caps = React.useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
   const supportsDigital = caps?.analogOnly !== true;
   

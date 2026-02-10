@@ -73,4 +73,18 @@ export interface RadioCapabilities {
   supportsContacts?: boolean;
   /** If true, analog-only radio — no DMR/digital features. */
   analogOnly?: boolean;
+  /** If true, radio supports BLE in addition to serial (transport option in connect). */
+  supportsBle?: boolean;
+  /** When radio supports both serial and BLE, default transport to offer (store can override). */
+  preferredTransport?: 'serial' | 'ble';
+  /** If true, hook calls bulkReadRequiredBlocks() before parsing channels (e.g. DM-32UV). */
+  supportsBulkRead?: boolean;
+  /** Max zone count when supportsZones is true (e.g. 250 for DM32). */
+  maxZones?: number;
+  /** Max scan list count when supportsScanLists is true (e.g. 32 for DM32). */
+  maxScanLists?: number;
+  /** If true, protocol supports readBootImage / writeBootImage. */
+  supportsBootImage?: boolean;
+  /** If true, protocol supports readQuickMessages. */
+  supportsQuickMessages?: boolean;
 }

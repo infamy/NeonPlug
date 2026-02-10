@@ -36,4 +36,9 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   supportsZones: true,
   supportsScanLists: true,
   analogOnly: false,
+  supportsBulkRead: true,
+  maxZones: LIMITS.ZONES_MAX,
+  maxScanLists: LIMITS.SCAN_LISTS_MAX,
+  supportsBootImage: true,
+  supportsQuickMessages: true,
 };

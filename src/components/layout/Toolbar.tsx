@@ -8,6 +8,7 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import { useRadioStore } from '../../store/radioStore';
+import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
@@ -32,6 +33,7 @@ export const Toolbar: React.FC = () => {
   const { systems: digitalEmergencies, config: digitalEmergencyConfig, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
   const { radioInfo, setRadioInfo, setShowPickRadioModal, setSelectedRadioModel } = useRadioStore();
+  const effectiveModel = useEffectiveRadioModel();
   const { messages, setMessages } = useQuickMessagesStore();
   const { radioIds: dmrRadioIds, setRadioIds } = useDMRRadioIDsStore();
   const { contacts: quickContacts, setContacts: setQuickContacts } = useQuickContactsStore();
@@ -311,7 +313,7 @@ export const Toolbar: React.FC = () => {
       return;
     }
     // Run radio-specific validations only when model is known; combine with experimental warning in one modal
-    const caps = getCapabilitiesForModel(radioInfo?.model);
+    const caps = getCapabilitiesForModel(effectiveModel);
     const { warnings } = validateCodeplugForWrite(channels, zones, caps?.writeValidations, dmrRadioIds);
     let message = EXPERIMENTAL_WRITE_WARNING;
     if (warnings.length > 0) {
@@ -408,7 +410,7 @@ export const Toolbar: React.FC = () => {
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setReadDropdownOpen((v) => !v); }}
                 disabled={isConnecting || isWriting}
-                title="Read from a different radio type (DM-32UV or UV5R-Mini)"
+                title="Switch to a different radio type"
                 className="px-2 py-2 bg-neon-cyan text-dark-charcoal hover:bg-opacity-90 border-l border-white border-opacity-20 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none transition-all"
                 aria-expanded={readDropdownOpen}
                 aria-haspopup="true"

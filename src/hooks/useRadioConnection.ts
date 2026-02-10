@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { RadioProtocol } from '../types/radio';
-import { createDefaultProtocol, createProtocolForModel, UV5RMINI_MODEL_ID } from '../radios';
+import { createDefaultProtocol, createProtocolForModel } from '../radios';
 import { getCapabilitiesForModel } from '../radios/capabilities';
 import type { Contact } from '../models/Contact';
 import { useRadioStore } from '../store/radioStore';
@@ -122,8 +122,10 @@ export function useRadioConnection() {
       };
 
       // Step 1: Request port (serial or BLE) in same user gesture
-      const transport =
-        selectedRadioModel === UV5RMINI_MODEL_ID ? (preferredTransport ?? 'serial') : undefined;
+      const caps = getCapabilitiesForModel(selectedRadioModel ?? null);
+      const transport = caps?.supportsBle
+        ? (preferredTransport ?? caps?.preferredTransport ?? 'serial')
+        : undefined;
       onProgress?.(
         5,
         transport === 'ble' ? 'Select BLE device...' : 'Select serial port...',
@@ -141,13 +143,13 @@ export function useRadioConnection() {
       setRadioInfo(radioInfo);
       setConnected(true);
       
-      // Step 4: For DM32, bulk read all blocks; for UV5R-Mini, readChannels does the read
-      if (typeof (protocol as any).bulkReadRequiredBlocks === 'function') {
+      // Step 4: Bulk read when capability says so (e.g. DM-32UV); otherwise protocol reads on demand
+      if (caps?.supportsBulkRead && typeof (protocol as any).bulkReadRequiredBlocks === 'function') {
         onProgress?.(15, 'Reading all memory blocks...', steps[3]);
         await (protocol as any).bulkReadRequiredBlocks();
       }
       
-      // Step 5: Parse channels (from cache for DM32, or over connection for UV5R-Mini)
+      // Step 5: Parse channels (from cache after bulk read, or over connection)
       onProgress?.(20, 'Parsing channels...', steps[4]);
       const channels = await protocol.readChannels();
       setChannels(channels);
@@ -354,8 +356,11 @@ export function useRadioConnection() {
           setRadioInfo(radioInfo);
           setConnected(true);
           
-          onProgress?.(15, 'Reading all memory blocks...', steps[3]);
-          await (protocol as any).bulkReadRequiredBlocks();
+          const retryCaps = getCapabilitiesForModel(selectedRadioModel ?? null);
+          if (retryCaps?.supportsBulkRead && typeof (protocol as any).bulkReadRequiredBlocks === 'function') {
+            onProgress?.(15, 'Reading all memory blocks...', steps[3]);
+            await (protocol as any).bulkReadRequiredBlocks();
+          }
           
           onProgress?.(20, 'Parsing channels from cache...', steps[4]);
           const channels = await protocol.readChannels();
@@ -752,8 +757,9 @@ export function useRadioConnection() {
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     try {
-      // Filter channels to only include those with valid frequencies
-      const bandLimits = getCapabilitiesForModel(radioInfo?.model)?.bandLimits;
+      // Filter channels to only include those with valid frequencies (use effective model for capabilities)
+      const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
+      const bandLimits = getCapabilitiesForModel(effectiveModel)?.bandLimits;
       const validChannels = channels.filter(ch => isValidChannelFrequency(ch, bandLimits));
       const filteredCount = channels.length - validChannels.length;
       

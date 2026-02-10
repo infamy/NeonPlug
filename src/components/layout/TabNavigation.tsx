@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect } from 'react';
 import { useDebugStore } from '../../store/debugStore';
-import { useRadioStore } from '../../store/radioStore';
+import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 
 interface TabNavigationProps {
@@ -25,9 +25,7 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
   onTabChange,
 }) => {
   const { debugMode } = useDebugStore();
-  const { radioInfo, selectedRadioModel } = useRadioStore();
-  /** Use device model when known, otherwise the model selected in the pick-a-radio modal. */
-  const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
+  const effectiveModel = useEffectiveRadioModel();
   const caps = useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
 
   const tabs = useMemo(() => {

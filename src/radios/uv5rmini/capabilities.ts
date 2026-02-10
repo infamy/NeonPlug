@@ -15,4 +15,7 @@ export const UV5RMINI_CAPABILITIES: RadioCapabilities = {
   supportsScanLists: false,
   supportsContacts: false,
   analogOnly: true,
+  supportsBle: true,
+  preferredTransport: 'serial',
+  supportsBulkRead: false,
 };
