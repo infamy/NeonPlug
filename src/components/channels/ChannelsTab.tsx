@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
+import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
+import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { ChannelsTable } from './ChannelsTable';
 import { createDefaultChannel } from '../../utils/channelHelpers';
 import { ConfirmModal } from '../ui/ConfirmModal';
@@ -11,6 +13,9 @@ const isVFOChannel = (n: number) => n === 4001 || n === 4002;
 export const ChannelsTab: React.FC = () => {
   const { channels, addChannel, deleteChannels } = useChannelsStore();
   const { settings: radioSettings } = useRadioSettingsStore();
+  const effectiveModel = useEffectiveRadioModel();
+  const caps = getCapabilitiesForModel(effectiveModel);
+  const supportsVfoChannels = caps?.supportsVfoChannels === true;
   const [searchQuery, setSearchQuery] = useState('');
   const [scrollToChannel, setScrollToChannel] = useState<number | null>(null);
   const [selectedChannelNumbers, setSelectedChannelNumbers] = useState<Set<number>>(new Set());
@@ -64,8 +69,9 @@ export const ChannelsTab: React.FC = () => {
 
   const handleClearSelection = useCallback(() => setSelectedChannelNumbers(new Set()), []);
 
-  // Create VFO channels with channel numbers 4001 and 4002
+  // VFO A/B as channels 4001/4002 — DM-32 only; UV5R-Mini and other radios do not have these in the channel list
   const vfoChannels = useMemo(() => {
+    if (!supportsVfoChannels) return [];
     const vfos: Channel[] = [];
     if (radioSettings?.vfoA) {
       vfos.push({ ...radioSettings.vfoA, number: 4001 }); // VFO A is channel 4001
@@ -74,11 +80,13 @@ export const ChannelsTab: React.FC = () => {
       vfos.push({ ...radioSettings.vfoB, number: 4002 }); // VFO B is channel 4002
     }
     return vfos;
-  }, [radioSettings?.vfoA, radioSettings?.vfoB]);
+  }, [supportsVfoChannels, radioSettings?.vfoA, radioSettings?.vfoB]);
 
   const filteredChannels = useMemo(() => {
-    const allChannels = [...vfoChannels, ...channels];
-    
+    // Exclude empty channels (rxFrequency 0 = unprogrammed slot)
+    const nonEmptyChannels = channels.filter(ch => ch.rxFrequency > 0);
+    const allChannels = [...vfoChannels, ...nonEmptyChannels];
+
     if (!searchQuery.trim()) {
       return allChannels;
     }

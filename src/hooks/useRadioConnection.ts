@@ -16,6 +16,7 @@ import { useQuickContactsStore } from '../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
 import { useCalibrationStore } from '../store/calibrationStore';
 import { useRXGroupsStore } from '../store/rxGroupsStore';
+import { useEncryptionKeysStore } from '../store/encryptionKeysStore';
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
@@ -63,6 +64,7 @@ export function useRadioConnection() {
   const { setRadioIds, setRawRadioIdData, setRadioIdsLoaded } = useDMRRadioIDsStore();
   const { setCalibration, setCalibrationLoaded } = useCalibrationStore();
   const { setGroups: setRXGroups, setRawGroupData, setGroupsLoaded } = useRXGroupsStore();
+  const { clearKeys: clearEncryptionKeys } = useEncryptionKeysStore();
 
   const readFromRadio = useCallback(async (
     onProgress?: (progress: number, message: string, step?: string) => void
@@ -93,6 +95,7 @@ export function useRadioConnection() {
     setRXGroups([]);
     setRawGroupData(new Map());
     setGroupsLoaded(false);
+    clearEncryptionKeys();
     setRadioSettings(null);
     setDigitalEmergencies([]);
     setDigitalEmergencyConfig(null);
@@ -153,6 +156,15 @@ export function useRadioConnection() {
       onProgress?.(20, 'Parsing channels...', steps[4]);
       const channels = await protocol.readChannels();
       setChannels(channels);
+      // Enrich radioInfo with firmware from cached image (UV5R-Mini; getRadioInfo may have missed it)
+      if (typeof (protocol as any).getFirmwareFromCache === 'function') {
+        const fw = (protocol as any).getFirmwareFromCache();
+        if (fw) {
+          const store = useRadioStore.getState();
+          const current = store.radioInfo;
+          if (current) setRadioInfo({ ...current, firmware: fw });
+        }
+      }
       // Store raw channel data for debug export
       if ((protocol as any).rawChannelData) {
         setRawChannelData((protocol as any).rawChannelData);
@@ -791,19 +803,18 @@ export function useRadioConnection() {
       // Use protocol for connected radio (write path)
       protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       
-      // Restore cache from store if available (from previous read operation)
-      // Read directly from store state to avoid hook reactivity issues
+      // Restore cache from store if available (DM-32 bulk read path)
       const storeState = useRadioStore.getState();
       const storeBlockData = storeState.blockData;
       const storeBlockMetadata = storeState.blockMetadata;
-      
-      if (storeBlockData && storeBlockData.size > 0 && storeBlockMetadata && storeBlockMetadata.size > 0) {
-        // Create new Maps to ensure we have proper copies
-        const dataCopy = new Map<number, Uint8Array>(storeBlockData);
-        const metadataCopy = new Map<number, { metadata: number; type: string }>(storeBlockMetadata);
-        (protocol as any).restoreCacheFromStore(dataCopy, metadataCopy);
-      } else {
-        console.warn('[Connection] Store cache is empty - will need to read all blocks from radio');
+      if (typeof (protocol as any).restoreCacheFromStore === 'function') {
+        if (storeBlockData && storeBlockData.size > 0 && storeBlockMetadata && storeBlockMetadata.size > 0) {
+          const dataCopy = new Map<number, Uint8Array>(storeBlockData);
+          const metadataCopy = new Map<number, { metadata: number; type: string }>(storeBlockMetadata);
+          (protocol as any).restoreCacheFromStore(dataCopy, metadataCopy);
+        } else {
+          console.warn('[Connection] Store cache is empty - will need to read all blocks from radio');
+        }
       }
       
       // Set up progress callback that forwards to our callback
@@ -825,35 +836,48 @@ export function useRadioConnection() {
       setRadioInfo(connectedRadioInfo);
       setConnected(true);
       
-      // Step 4: Write channels, zones, and scan lists (using filtered data)
-      onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
-      await (protocol as any).writeAllData(validChannels, filteredZones, filteredScanLists);
-      
-      // Step 5: Write Talk Groups if they have been loaded
-      const quickContactsStore = useQuickContactsStore.getState();
-      const quickContacts = quickContactsStore.contacts;
-      if (quickContacts && quickContacts.length > 0) {
-        onProgress?.(90, `Writing ${quickContacts.length} talk group(s) to radio...`, steps[4]);
-        await (protocol as any).writeQuickContacts(quickContacts);
+      // Step 4: Write channels (and zones/scan lists for DM-32; UV5R-Mini uses writeChannels only)
+      if (typeof (protocol as any).writeAllData === 'function') {
+        onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
+        await (protocol as any).writeAllData(validChannels, filteredZones, filteredScanLists);
+      } else if (typeof protocol.writeChannels === 'function') {
+        onProgress?.(20, 'Writing channels to radio...', steps[4]);
+        await protocol.writeChannels(validChannels);
+      } else {
+        throw new Error('Protocol does not support writing channels');
       }
 
-      // Step 5.5: Write Quick Messages if they have been loaded
-      const quickMessagesStore = useQuickMessagesStore.getState();
-      const quickMessages = quickMessagesStore.messages;
-      if (quickMessages && quickMessages.length > 0) {
-        onProgress?.(92, `Writing ${quickMessages.length} quick message(s) to radio...`, steps[4]);
-        await (protocol as any).writeQuickMessages(quickMessages);
+      // Step 5: Write Talk Groups if they have been loaded (DM-32 only)
+      if (typeof (protocol as any).writeQuickContacts === 'function') {
+        const quickContactsStore = useQuickContactsStore.getState();
+        const quickContacts = quickContactsStore.contacts;
+        if (quickContacts && quickContacts.length > 0) {
+          onProgress?.(90, `Writing ${quickContacts.length} talk group(s) to radio...`, steps[4]);
+          await (protocol as any).writeQuickContacts(quickContacts);
+        }
       }
 
-      // Step 5.6: Write RX Groups if they have been loaded
-      const rxGroupsStore = useRXGroupsStore.getState();
-      const rxGroups = rxGroupsStore.groups;
-      if (rxGroups && rxGroups.length > 0 && rxGroupsStore.groupsLoaded) {
-        onProgress?.(93, `Writing ${rxGroups.length} RX group(s) to radio...`, steps[4]);
-        await (protocol as any).writeRXGroups(rxGroups);
+      // Step 5.5: Write Quick Messages if they have been loaded (DM-32 only)
+      if (typeof (protocol as any).writeQuickMessages === 'function') {
+        const quickMessagesStore = useQuickMessagesStore.getState();
+        const quickMessages = quickMessagesStore.messages;
+        if (quickMessages && quickMessages.length > 0) {
+          onProgress?.(92, `Writing ${quickMessages.length} quick message(s) to radio...`, steps[4]);
+          await (protocol as any).writeQuickMessages(quickMessages);
+        }
       }
 
-      // Step 5.7: Write DMR Radio IDs if they have been loaded
+      // Step 5.6: Write RX Groups if they have been loaded (DM-32 only)
+      if (typeof (protocol as any).writeRXGroups === 'function') {
+        const rxGroupsStore = useRXGroupsStore.getState();
+        const rxGroups = rxGroupsStore.groups;
+        if (rxGroups && rxGroups.length > 0 && rxGroupsStore.groupsLoaded) {
+          onProgress?.(93, `Writing ${rxGroups.length} RX group(s) to radio...`, steps[4]);
+          await (protocol as any).writeRXGroups(rxGroups);
+        }
+      }
+
+      // Step 5.7: Write DMR Radio IDs if they have been loaded (DM-32 only)
       const dmrRadioIDsStore = useDMRRadioIDsStore.getState();
       const dmrRadioIds = dmrRadioIDsStore.radioIds;
       if (dmrRadioIds && dmrRadioIds.length > 0) {
@@ -861,33 +885,49 @@ export function useRadioConnection() {
         await protocol.writeDMRRadioIDs(dmrRadioIds);
       }
 
-      // Step 6: Write radio settings only if they have been modified
+      // Step 5.8: Write Encryption Keys if they have been loaded (DM-32 only)
+      if (typeof (protocol as any).writeEncryptionKeys === 'function') {
+        const encryptionKeysStore = useEncryptionKeysStore.getState();
+        const encryptionKeys = encryptionKeysStore.keys;
+        if (encryptionKeys && encryptionKeys.length > 0 && encryptionKeysStore.keysLoaded) {
+          onProgress?.(94, `Writing ${encryptionKeys.length} encryption key(s) to radio...`, steps[4]);
+          await (protocol as any).writeEncryptionKeys(encryptionKeys);
+        }
+      }
+
+      // Step 6: Write radio settings only if they have been modified (UV5R-Mini and DM-32)
       const radioSettingsStore = useRadioSettingsStore.getState();
       const radioSettings = radioSettingsStore.settings;
       const changedFields = radioSettingsStore.getChangedFields();
+      const hasSettingsToWrite = radioSettings && changedFields.length > 0;
 
-      if (radioSettings && changedFields.length > 0) {
+      if (hasSettingsToWrite) {
         onProgress?.(95, `Writing ${changedFields.length} changed setting(s) to radio...`, steps[4]);
         await protocol.writeRadioSettings(radioSettings, { changedFields });
         // Clear changes after successful write
         radioSettingsStore.clearChanges();
       }
       
-      // Store write block data and zone comparison data for debug export
-      setWriteBlockData((protocol as any).writeBlockData);
-      setZoneComparisonData((protocol as any).zoneComparisonData);
+      // Store write block data and zone comparison data for debug export (DM-32 only)
+      if ((protocol as any).writeBlockData != null) setWriteBlockData((protocol as any).writeBlockData);
+      if ((protocol as any).zoneComparisonData != null) setZoneComparisonData((protocol as any).zoneComparisonData);
       
       // Step 6: Disconnect
       await protocol.disconnect();
       
+      const summaryQuickContacts = useQuickContactsStore.getState().contacts;
+      const summaryQuickMessages = useQuickMessagesStore.getState().messages;
+      const summaryRxGroupsStore = useRXGroupsStore.getState();
+      const summaryEncryptionKeysStore = useEncryptionKeysStore.getState();
       const summary = [
         validChannels.length > 0 ? `${validChannels.length} channels` : null,
         filteredZones.length > 0 ? `${filteredZones.length} zones` : null,
         filteredScanLists.length > 0 ? `${filteredScanLists.length} scan lists` : null,
-        quickContacts && quickContacts.length > 0 ? `${quickContacts.length} talk group(s)` : null,
-        quickMessages && quickMessages.length > 0 ? `${quickMessages.length} quick message(s)` : null,
-        rxGroups && rxGroups.length > 0 && rxGroupsStore.groupsLoaded ? `${rxGroups.length} RX group(s)` : null,
-        radioSettings && changedFields.length > 0 ? `${changedFields.length} setting(s)` : null,
+        summaryQuickContacts?.length ? `${summaryQuickContacts.length} talk group(s)` : null,
+        summaryQuickMessages?.length ? `${summaryQuickMessages.length} quick message(s)` : null,
+        summaryRxGroupsStore.groups?.length && summaryRxGroupsStore.groupsLoaded ? `${summaryRxGroupsStore.groups.length} RX group(s)` : null,
+        summaryEncryptionKeysStore.keys?.length && summaryEncryptionKeysStore.keysLoaded ? `${summaryEncryptionKeysStore.keys.length} encryption key(s)` : null,
+        hasSettingsToWrite ? `${changedFields.length} setting(s)` : null,
       ].filter(Boolean).join(', ');
       
       // Add warning if channels were filtered

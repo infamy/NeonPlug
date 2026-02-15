@@ -666,8 +666,8 @@ export const SettingsTab: React.FC = () => {
             );
           })()}
 
-          {/* One Key Operation */}
-          {radioSettings && (
+          {/* One Key Operation (DM-32 only; UV5R-Mini uses uv5rMiniSettings) */}
+          {radioSettings && (!radioSettings.uv5rMiniSettings || radioSettings.analogCall) && (
             <Card className="mt-6">
               <SectionTitle underline>One Key Operation</SectionTitle>
 

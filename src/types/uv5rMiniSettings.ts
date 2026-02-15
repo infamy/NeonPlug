@@ -1,0 +1,40 @@
+/** UV5R-Mini settings (stored in RadioSettings.uv5rMiniSettings). Select fields use 0-based index. */
+export interface Uv5rMiniSettings {
+  squelch: number;
+  savemode: number;
+  vox: number;
+  backlight: number;
+  dualstandby: number;
+  tot: number;
+  beep: number;
+  voicesw: boolean;
+  voice: number;
+  sidetone: number;
+  scanmode: number;
+  pttid: number;
+  pttdly: number;
+  chadistype: number;
+  chbdistype: number;
+  bcl: boolean;
+  autolock: boolean;
+  alarmmode: number;
+  alarmtone: boolean;
+  tailclear: boolean;
+  rpttailclear: number;
+  rpttaildet: number;
+  roger: boolean;
+  aOrB: 0 | 1;
+  fmenable: boolean;
+  chaworkmode: number;
+  chbworkmode: number;
+  keylock: boolean;
+  powerondistype: number;
+  voxdlytime: number;
+  menuquittime: number;
+  dispani: boolean;
+  totalarm: number;
+  ctsdcsscantype: number;
+  hangup: number;
+  voxsw: boolean;
+  inputdtmf: boolean;
+}

@@ -56,6 +56,8 @@ interface ChannelEditModalProps {
   bandLimits?: RadioBandLimits | null;
   /** Max channel number from capabilities (e.g. 999 for UV5R-Mini, 4000 for DM-32UV). */
   maxChannels?: number;
+  /** When true, hide Digital/Fixed Digital mode options (e.g. UV5R-Mini). */
+  analogOnly?: boolean;
   rxGroups?: RXGroup[];
   encryptionKeys?: EncryptionKey[];
   talkGroups?: QuickContact[];
@@ -68,6 +70,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   onSave,
   bandLimits = null,
   maxChannels = 4000,
+  analogOnly = false,
   rxGroups = [],
   encryptionKeys = [],
   talkGroups = [],
@@ -83,9 +86,13 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
     } else if (channel.number === 4002) {
       updatedChannel.name = 'VFO B';
     }
+    // For analog-only radios, ensure mode is analog (never Digital/Fixed Digital)
+    if (analogOnly && (channel.mode === 'Digital' || channel.mode === 'Fixed Digital')) {
+      updatedChannel.mode = 'Analog';
+    }
     setEditedChannel(updatedChannel);
     setValidationErrors([]);
-  }, [channel]);
+  }, [channel, analogOnly]);
 
   const handleChange = (field: keyof Channel, value: any) => {
     setEditedChannel(prev => ({ ...prev, [field]: value }));
@@ -237,9 +244,9 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                     className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
                   >
                     <option value="Analog">Analog</option>
-                    <option value="Digital">Digital</option>
+                    {!analogOnly && <option value="Digital">Digital</option>}
                     <option value="Fixed Analog">Fixed Analog</option>
-                    <option value="Fixed Digital">Fixed Digital</option>
+                    {!analogOnly && <option value="Fixed Digital">Fixed Digital</option>}
                   </select>
                   <p className="text-xs text-cool-gray mt-0.5">Communication mode for this channel</p>
                 </div>

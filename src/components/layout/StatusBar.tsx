@@ -43,13 +43,11 @@ export const StatusBar: React.FC = () => {
                   </button>
                 )}
               </div>
-            <>
               <span className="text-cool-gray">|</span>
               <div className="flex items-center space-x-2">
                 <span className="text-sm text-cool-gray">Build:</span>
                 <span className="text-sm text-white">{deviceValue(radioInfo.buildDate)}</span>
               </div>
-            </>
             {radioInfo.dspVersion && (
               <>
                 <span className="text-cool-gray">|</span>

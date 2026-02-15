@@ -79,6 +79,8 @@ export interface RadioCapabilities {
   preferredTransport?: 'serial' | 'ble';
   /** If true, hook calls bulkReadRequiredBlocks() before parsing channels (e.g. DM-32UV). */
   supportsBulkRead?: boolean;
+  /** If true, channel list includes VFO A/B as channels 4001/4002 (e.g. DM-32UV). Analog-only radios typically do not. */
+  supportsVfoChannels?: boolean;
   /** Max zone count when supportsZones is true (e.g. 250 for DM32). */
   maxZones?: number;
   /** Max scan list count when supportsScanLists is true (e.g. 32 for DM32). */

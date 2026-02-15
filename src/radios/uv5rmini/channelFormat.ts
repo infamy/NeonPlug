@@ -117,7 +117,8 @@ export function parseChannelsFromImage(image: Uint8Array): Uv5rMiniChannelRaw[] 
       name += String.fromCharCode(c < 32 ? 32 : c);
     }
     name = name.replace(/\s+$/, '');
-    const wide = (raw[15] >> 6) & 1;
+    // UV5R-Mini uses inverted bit: 1 = Narrow (NFM), 0 = Wide (FM)
+    const wideBit = (raw[15] >> 6) & 1;
     const lowpower = raw[14] & 0x03;
     channels.push({
       num: i + 1,
@@ -128,7 +129,7 @@ export function parseChannelsFromImage(image: Uint8Array): Uv5rMiniChannelRaw[] 
       rxtone: rxtone.str,
       txtone: txtone.str,
       power: lowpower === 0 ? 'High' : 'Low',
-      mode: wide ? 'FM' : 'NFM',
+      mode: wideBit ? 'NFM' : 'FM',
       name: name || '—',
       rawBytes: raw.slice(0, BAOFENG_CHANNEL_SIZE),
     });
@@ -167,6 +168,7 @@ export function writeChannelToImage(
   }
   const lowpower = raw.power === 'Low' ? 1 : 0;
   out[14] = (out[14] & 0xcc) | (lowpower & 3);
-  const wide = raw.mode === 'FM' ? 1 : 0;
-  out[15] = (out[15] & 0x82) | (wide << 6);
+  // UV5R-Mini uses inverted bit: 1 = Narrow (NFM), 0 = Wide (FM)
+  const wideBit = raw.mode === 'FM' ? 0 : 1;
+  out[15] = (out[15] & 0x82) | (wideBit << 6);
 }

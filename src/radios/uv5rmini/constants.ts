@@ -30,3 +30,6 @@ export const BAOFENG_CHANNEL_SIZE = 32;
 
 /** Serial baud rate for UV5R-Mini (CHIRP default for Baofeng). */
 export const UV5RMINI_BAUD_RATE = 38400;
+
+/** Firmware version string offset in clone image (CHIRP baofeng_uv17Pro _fw_ver_start). */
+export const BAOFENG_FW_VER_OFFSET = 0x1ef0;

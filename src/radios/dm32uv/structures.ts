@@ -2448,10 +2448,15 @@ export function parseDigitalEmergencies(data: Uint8Array): { systems: DigitalEme
  * Encode Digital Emergency Systems to metadata 0x10 block format
  * Entry structure: 20 bytes (0x14) starting at offset 0x000
  * Entry Calculation: entry_base = 0x000 + entry_num * 0x14
+ * Preserves existingBlockData (e.g. encryption keys at 0x300) when provided.
  */
-export function encodeDigitalEmergencies(systems: DigitalEmergency[], _config: DigitalEmergencyConfig): Uint8Array {
+export function encodeDigitalEmergencies(systems: DigitalEmergency[], _config: DigitalEmergencyConfig, existingBlockData?: Uint8Array): Uint8Array {
   const data = new Uint8Array(0x1000); // 4KB block
-  data.fill(0xFF);
+  if (existingBlockData && existingBlockData.length >= 0x1000) {
+    data.set(existingBlockData.slice(0, 0x1000));
+  } else {
+    data.fill(0xFF);
+  }
 
   const initialOffset = 0x000;
   const entrySize = 0x14; // 20 bytes per entry

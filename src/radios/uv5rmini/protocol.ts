@@ -13,9 +13,11 @@ import {
   BAOFENG_CLONE_BLOCK_COUNT,
   BAOFENG_CHANNEL_COUNT,
   BAOFENG_CHANNEL_SIZE,
+  BAOFENG_FW_VER_OFFSET,
 } from './constants';
 import { parseChannelsFromImage, writeChannelToImage, type Uv5rMiniChannelRaw } from './channelFormat';
 import { uv5rMiniRawToChannel, channelToUv5rMiniRaw } from './channelMapping';
+import { parseUv5rMiniSettings, writeUv5rMiniSettings, UV5RMINI_SETTINGS_OFFSET } from './settingsFormat';
 
 const UV5RMINI_MODEL = 'UV5R-Mini';
 
@@ -29,6 +31,23 @@ type ConnectionLike = {
 export class UV5RMiniProtocol implements RadioProtocol {
   private connection: ConnectionLike | null = null;
   private port: import('./serialConnection').UV5RMiniSerialPort | null = null;
+  /** Cached image from last readChannels (used by readRadioSettings and getFirmwareFromCache). */
+  private cachedImage: Uint8Array | null = null;
+
+  /** Parse firmware string from cached clone image (call after readChannels). Used to enrich radioInfo. */
+  getFirmwareFromCache(): string {
+    const img = this.cachedImage;
+    if (!img || img.length <= BAOFENG_FW_VER_OFFSET) return '';
+    const slice = img.subarray(BAOFENG_FW_VER_OFFSET);
+    let end = 0;
+    const maxLen = Math.min(24, slice.length);
+    while (end < maxLen) {
+      const b = slice[end];
+      if (b === 0x00 || b === 0xff || b < 0x20 || b > 0x7e) break;
+      end++;
+    }
+    return String.fromCharCode(...slice.subarray(0, end)).trim();
+  }
   public onProgress?: (progress: number, message: string) => void;
 
   async connect(portOrOptions?: string | { forcePortSelection?: boolean; transport?: 'serial' | 'ble' }): Promise<void> {
@@ -52,6 +71,7 @@ export class UV5RMiniProtocol implements RadioProtocol {
   }
 
   async disconnect(): Promise<void> {
+    this.cachedImage = null;
     if (this.connection) {
       await this.connection.disconnect();
       this.connection = null;
@@ -71,9 +91,28 @@ export class UV5RMiniProtocol implements RadioProtocol {
   }
 
   async getRadioInfo(): Promise<RadioInfo> {
+    let firmware = '';
+    if (this.connection) {
+      try {
+        const blockAddr = Math.floor(BAOFENG_FW_VER_OFFSET / BAOFENG_BLOCK_SIZE) * BAOFENG_BLOCK_SIZE;
+        const block = await this.connection.readBlock(blockAddr);
+        const offsetInBlock = BAOFENG_FW_VER_OFFSET - blockAddr;
+        const slice = block.subarray(offsetInBlock);
+        let end = 0;
+        const maxLen = Math.min(24, slice.length);
+        while (end < maxLen) {
+          const b = slice[end];
+          if (b === 0x00 || b === 0xff || b < 0x20 || b > 0x7e) break;
+          end++;
+        }
+        firmware = String.fromCharCode(...slice.subarray(0, end)).trim();
+      } catch {
+        /* ignore; firmware remains empty */
+      }
+    }
     return {
       model: UV5RMINI_MODEL,
-      firmware: '',
+      firmware,
       buildDate: '',
       maxContacts: 0,
       memoryLayout: { configStart: 0x0000, configEnd: 0x8240 - 1 },
@@ -103,9 +142,13 @@ export class UV5RMiniProtocol implements RadioProtocol {
         }
       }
     }
+    this.cachedImage = image;
     const channelRegion = image.subarray(0, BAOFENG_CHANNEL_COUNT * BAOFENG_CHANNEL_SIZE);
     const rawChannels = parseChannelsFromImage(channelRegion);
-    return rawChannels.map((raw) => uv5rMiniRawToChannel(raw));
+    // Exclude empty channels (raw[0] === 0xff) - UV5R-Mini has no channel counter in memory
+    return rawChannels
+      .filter((raw) => !raw.empty)
+      .map((raw) => uv5rMiniRawToChannel(raw));
   }
 
   /** Write channels: build image from channels, then write blocks (upload handshake first). */
@@ -168,10 +211,25 @@ export class UV5RMiniProtocol implements RadioProtocol {
   }
 
   async readRadioSettings(): Promise<RadioSettings | null> {
-    return null;
+    const image = this.cachedImage;
+    if (!image || image.length < 0x8080) return null;
+
+    const uv5rMiniSettings = parseUv5rMiniSettings(image);
+    if (!uv5rMiniSettings) return null;
+
+    return { uv5rMiniSettings } as RadioSettings;
   }
 
-  async writeRadioSettings(_settings: RadioSettings): Promise<void> {
-    // no-op
+  async writeRadioSettings(settings: RadioSettings, _options?: { changedFields?: string[] }): Promise<void> {
+    const uv5rMiniSettings = settings.uv5rMiniSettings;
+    if (!uv5rMiniSettings || !this.connection) return;
+
+    // Read current settings block from radio, merge our changes, write back
+    const block = await this.connection.readBlock(UV5RMINI_SETTINGS_OFFSET);
+    const image = new Uint8Array(UV5RMINI_SETTINGS_OFFSET + 64);
+    image.fill(0xff);
+    image.set(block, UV5RMINI_SETTINGS_OFFSET);
+    writeUv5rMiniSettings(image, uv5rMiniSettings);
+    await this.connection.writeBlock(UV5RMINI_SETTINGS_OFFSET, image.subarray(UV5RMINI_SETTINGS_OFFSET));
   }
 }

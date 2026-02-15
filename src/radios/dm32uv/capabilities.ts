@@ -33,6 +33,7 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
     channelsMustBeInZones: true,
   },
   maxChannels: 4000,
+  supportsVfoChannels: true,
   supportsZones: true,
   supportsScanLists: true,
   analogOnly: false,

@@ -366,6 +366,18 @@ export const Toolbar: React.FC = () => {
       />
       <div className="bg-deep-gray border-b border-deep-gray">
         <div className="px-6 py-3 flex items-center space-x-3">
+          {radioInfo && (
+            <div className="flex items-center gap-3 text-sm min-w-0 flex-shrink-0">
+              <span className="text-cool-gray">Model:</span>
+              <span className="text-white font-medium truncate">{radioInfo.model}</span>
+              {radioInfo.firmware && (
+                <>
+                  <span className="text-cool-gray">Firmware:</span>
+                  <span className="text-white font-mono truncate">{radioInfo.firmware}</span>
+                </>
+              )}
+            </div>
+          )}
           <div className="flex-1" />
           <div className="flex items-center gap-2">
             <span className="text-xs text-neon-cyan font-semibold px-2 py-1 bg-neon-cyan bg-opacity-10 rounded border border-neon-cyan border-opacity-30">
