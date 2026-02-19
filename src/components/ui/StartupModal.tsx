@@ -82,8 +82,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                   : 'border-cool-gray hover:border-neon-cyan hover:bg-opacity-5'
               }`}
             >
-              <span className="text-3xl mb-2" role="img" aria-hidden>{opt.icon}</span>
-              <span className="text-white font-medium">{opt.label}</span>
+              <span className="text-white font-medium text-lg">{opt.label}</span>
             </button>
           ))}
         </div>
