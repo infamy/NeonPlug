@@ -84,6 +84,31 @@
     ]
   },
   {
+    "name": "PMR446",
+    "description": "PMR446 - 16 channels, license-free in EU & elsewhere, 446 MHz, 0.5W max (see PMR446 on Wikipedia)",
+    "defaultPower": "Low",
+    "defaultBandwidth": "12.5kHz",
+    "defaultMode": "Analog",
+    "frequencies": [
+      { "number": 1, "rx": 446.00625, "tx": 446.00625, "name": "PMR446 1" },
+      { "number": 2, "rx": 446.01875, "tx": 446.01875, "name": "PMR446 2" },
+      { "number": 3, "rx": 446.03125, "tx": 446.03125, "name": "PMR446 3" },
+      { "number": 4, "rx": 446.04375, "tx": 446.04375, "name": "PMR446 4" },
+      { "number": 5, "rx": 446.05625, "tx": 446.05625, "name": "PMR446 5" },
+      { "number": 6, "rx": 446.06875, "tx": 446.06875, "name": "PMR446 6" },
+      { "number": 7, "rx": 446.08125, "tx": 446.08125, "name": "PMR446 7" },
+      { "number": 8, "rx": 446.09375, "tx": 446.09375, "name": "PMR446 8" },
+      { "number": 9, "rx": 446.10625, "tx": 446.10625, "name": "PMR446 9" },
+      { "number": 10, "rx": 446.11875, "tx": 446.11875, "name": "PMR446 10" },
+      { "number": 11, "rx": 446.13125, "tx": 446.13125, "name": "PMR446 11" },
+      { "number": 12, "rx": 446.14375, "tx": 446.14375, "name": "PMR446 12" },
+      { "number": 13, "rx": 446.15625, "tx": 446.15625, "name": "PMR446 13" },
+      { "number": 14, "rx": 446.16875, "tx": 446.16875, "name": "PMR446 14" },
+      { "number": 15, "rx": 446.18125, "tx": 446.18125, "name": "PMR446 15" },
+      { "number": 16, "rx": 446.19375, "tx": 446.19375, "name": "PMR446 16" }
+    ]
+  },
+  {
     "name": "HAMCALL",
     "description": "Common ham radio calling frequencies and simplex channels (2m and 70cm)",
     "defaultPower": "High",
