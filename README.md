@@ -4,9 +4,9 @@
 
 [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/j59TBHVD22)
 
-**A modern, web-based Customer Programming Software (CPS) for the Baofeng DM-32UV radio.**
+**A next-generation, web-based Channel Programming Software (CPS) for supported radios.**
 
-Program your DMR radio directly from your browser—no software installation required. NeonPlug brings a sleek, cyberpunk-themed interface with powerful features for managing channels, contacts, zones, and more.
+NeonPlug supports the Baofeng DM-32UV / DP570UV and UV5R-Mini, with more radios on the way. Program your radio directly from your browser—no software installation required. Connect via Web Serial (USB) or, where supported, Bluetooth Low Energy (BLE). A sleek, cyberpunk neon-themed UI puts channels, zones, scan lists, contacts, and settings at your fingertips.
 
 **🚀 Try it live:** [https://neonplug.app](https://neonplug.app) · **📥 [Download offline version](https://neonplug.app)** (single-file, no install)
 
@@ -27,8 +27,8 @@ Program your DMR radio directly from your browser—no software installation req
 ## 🎯 Key Features
 
 ### 📻 Radio Management
-- **Direct USB Connection** - Connect your DM-32UV via Web Serial API (no drivers needed)
-- **Read & Write** - Full codeplug read/write support
+- **Web Serial & BLE** - Connect via USB (Web Serial API, no drivers) or Bluetooth Low Energy where supported (e.g. UV5R-Mini)
+- **Read & Write** - Full codeplug read/write support for each radio
 - **Live Validation** - Real-time frequency and configuration validation
 
 ### 📡 Channel Configuration
@@ -58,7 +58,7 @@ Just visit **[neonplug.app](https://neonplug.app)** in a Chrome-based browser (C
 
 **Requirements:**
 - Chrome, Edge, Opera, or Brave browser (for Web Serial API support)
-- Baofeng DM-32UV radio with USB cable
+- A supported radio (e.g. DM-32UV / DP570UV or UV5R-Mini) with USB cable—or BLE for radios that support it
 
 ### 📥 Offline mode
 

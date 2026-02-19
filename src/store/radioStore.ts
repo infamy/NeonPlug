@@ -24,6 +24,12 @@ type ZoneComparisonData = Array<{
 }>;
 
 interface RadioState {
+  /** Model ID selected in the pick-a-radio modal for the next "Read from Radio" (e.g. DM-32UV). */
+  selectedRadioModel: string | null;
+  /** When connecting to a radio that supports both (e.g. UV5R-Mini), use this transport. */
+  preferredTransport: 'serial' | 'ble' | null;
+  /** When true, show the pick-a-radio modal (e.g. from Toolbar "Change radio"). */
+  showPickRadioModal: boolean;
   isConnected: boolean;
   radioInfo: RadioInfo | null;
   settings: RadioSettings | null;
@@ -51,9 +57,15 @@ interface RadioState {
   setBootImageRaw: (data: Uint8Array | null) => void;
   setBootImageDescription: (description: string | null) => void;
   setConnectionError: (error: string | null) => void;
+  setSelectedRadioModel: (model: string | null) => void;
+  setPreferredTransport: (transport: 'serial' | 'ble' | null) => void;
+  setShowPickRadioModal: (show: boolean) => void;
 }
 
 export const useRadioStore = create<RadioState>((set) => ({
+  selectedRadioModel: null,
+  preferredTransport: null,
+  showPickRadioModal: false,
   isConnected: false,
   radioInfo: null,
   settings: null,
@@ -81,5 +93,8 @@ export const useRadioStore = create<RadioState>((set) => ({
   setBootImageRaw: (data) => set({ bootImageRaw: data }),
   setBootImageDescription: (description) => set({ bootImageDescription: description }),
   setConnectionError: (error) => set({ connectionError: error }),
+  setSelectedRadioModel: (model) => set({ selectedRadioModel: model }),
+  setPreferredTransport: (transport) => set({ preferredTransport: transport }),
+  setShowPickRadioModal: (show) => set({ showPickRadioModal: show }),
 }));
 

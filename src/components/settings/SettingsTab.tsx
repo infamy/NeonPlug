@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Cropper, { Area } from 'react-easy-crop';
 import { useRadioStore } from '../../store/radioStore';
+import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { parseBootImageHeader, rgb565ToImageData, imageDataToRgb565, buildBootImagePayload, BOOT_IMAGE } from '../../utils/bootImage';
 import { useChannelsStore } from '../../store/channelsStore';
@@ -88,31 +89,37 @@ export const SettingsTab: React.FC = () => {
   const [showCalibration, setShowCalibration] = useState(false);
   const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
 
-  const caps = useMemo(() => getCapabilitiesForModel(radioInfo?.model), [radioInfo?.model]);
+  const effectiveModel = useEffectiveRadioModel();
+  const caps = useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
   const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
-  const isNewerFirmware = !!(radioInfo?.firmware && caps?.isFirmware049OrNewer?.(radioInfo.firmware));
-  const needsFirmwareUpdate = radioInfo?.firmware && radioInfo.firmware !== EXPECTED_FIRMWARE && !isNewerFirmware;
+  const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
+  const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));
+  const needsFirmwareUpdate = hasRealFirmware && radioInfo!.firmware !== EXPECTED_FIRMWARE && !isNewerFirmware;
 
+  /** Display value for device info fields; show "-" when unknown (e.g. after convert). */
+  const deviceValue = (v: string | undefined) => (v && v.trim() && v !== '-' ? v : '-');
 
-  // Calculate usage statistics (exclude VFO channels)
+  // Usage statistics: totals from current radio capabilities (converted codeplug shows target radio limits)
+  const maxChannels = caps?.maxChannels ?? 4000;
+  const maxZones = caps?.maxZones ?? (caps?.supportsZones ? 250 : 0);
+  const maxContacts = caps?.supportsContacts ? (radioInfo?.maxContacts ?? 50000) : 0;
   const vfoCount = (radioSettings?.vfoA ? 1 : 0) + (radioSettings?.vfoB ? 1 : 0);
   const channelUsage = {
     used: channels.length - vfoCount,
-    total: 4000,
-    percent: Math.round(((channels.length - vfoCount) / 4000) * 100),
+    total: maxChannels,
+    percent: maxChannels > 0 ? Math.round(((channels.length - vfoCount) / maxChannels) * 100) : 0,
   };
 
   const zoneUsage = {
     used: zones.length,
-    total: 250, // Max zones per spec
-    percent: Math.round((zones.length / 250) * 100),
+    total: maxZones,
+    percent: maxZones > 0 ? Math.round((zones.length / maxZones) * 100) : 0,
   };
 
-  const contactCapacity = radioInfo?.maxContacts ?? 50000;
   const contactUsage = {
     used: contacts.length,
-    total: contactCapacity,
-    percent: contactsLoaded ? Math.round((contacts.length / contactCapacity) * 100) : 0,
+    total: maxContacts,
+    percent: maxContacts > 0 && contactsLoaded ? Math.round((contacts.length / maxContacts) * 100) : 0,
     loaded: contactsLoaded,
   };
 
@@ -387,7 +394,7 @@ export const SettingsTab: React.FC = () => {
               <div>
                 <span className="text-cool-gray text-sm block mb-1">Firmware</span>
                 <div className="text-white font-mono flex items-center space-x-2">
-                  <span>{radioInfo.firmware}</span>
+                  <span>{deviceValue(radioInfo.firmware)}</span>
                   {(needsFirmwareUpdate || isNewerFirmware) && (
                     <button
                       onClick={() => setShowFirmwareWarning(true)}
@@ -399,30 +406,22 @@ export const SettingsTab: React.FC = () => {
                   )}
                 </div>
               </div>
-              {radioInfo.buildDate && (
-                <div>
-                  <span className="text-cool-gray text-sm block mb-1">Build Date</span>
-                  <div className="text-white font-mono">{radioInfo.buildDate}</div>
-                </div>
-              )}
-              {radioInfo.dspVersion && (
-                <div>
-                  <span className="text-cool-gray text-sm block mb-1">DSP Version</span>
-                  <div className="text-white font-mono text-sm">{radioInfo.dspVersion}</div>
-                </div>
-              )}
-              {radioInfo.radioVersion && (
-                <div>
-                  <span className="text-cool-gray text-sm block mb-1">Radio Version</span>
-                  <div className="text-white font-mono text-sm">{radioInfo.radioVersion}</div>
-                </div>
-              )}
-              {radioInfo.codeplugVersion && (
-                <div>
-                  <span className="text-cool-gray text-sm block mb-1">Codeplug Version</span>
-                  <div className="text-white font-mono text-sm">{radioInfo.codeplugVersion}</div>
-                </div>
-              )}
+              <div>
+                <span className="text-cool-gray text-sm block mb-1">Build Date</span>
+                <div className="text-white font-mono">{deviceValue(radioInfo.buildDate)}</div>
+              </div>
+              <div>
+                <span className="text-cool-gray text-sm block mb-1">DSP Version</span>
+                <div className="text-white font-mono text-sm">{deviceValue(radioInfo.dspVersion)}</div>
+              </div>
+              <div>
+                <span className="text-cool-gray text-sm block mb-1">Radio Version</span>
+                <div className="text-white font-mono text-sm">{deviceValue(radioInfo.radioVersion)}</div>
+              </div>
+              <div>
+                <span className="text-cool-gray text-sm block mb-1">Codeplug Version</span>
+                <div className="text-white font-mono text-sm">{deviceValue(radioInfo.codeplugVersion)}</div>
+              </div>
             </div>
           </Card>
 
@@ -461,7 +460,8 @@ export const SettingsTab: React.FC = () => {
                       />
                     </div>
                   </div>
-                  
+
+                  {caps?.supportsZones !== false && (
                   <div>
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-cool-gray">Zones</span>
@@ -476,12 +476,14 @@ export const SettingsTab: React.FC = () => {
                       />
                     </div>
                   </div>
-                  
+                  )}
+
+                  {caps?.supportsContacts !== false && (
                   <div>
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-cool-gray">CSV Contacts</span>
                       <span className="text-white font-mono text-sm">
-                        {contactUsage.loaded 
+                        {contactUsage.loaded
                           ? `${contactUsage.used} / ${contactUsage.total.toLocaleString()} (${contactUsage.percent}%)`
                           : `unknown / ${contactUsage.total.toLocaleString()}`
                         }
@@ -496,6 +498,7 @@ export const SettingsTab: React.FC = () => {
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -503,7 +506,7 @@ export const SettingsTab: React.FC = () => {
 
           {/* Boot / Startup Image Section - only when profile declares bootImage feature */}
           {(() => {
-            const profile = getSettingsProfileForModel(radioInfo?.model);
+            const profile = getSettingsProfileForModel(effectiveModel);
             return profile?.features?.includes('bootImage');
           })() && (
           <Card>
@@ -630,7 +633,7 @@ export const SettingsTab: React.FC = () => {
 
           {/* Radio Configuration - profile-driven */}
           {(() => {
-            const profile = getSettingsProfileForModel(radioInfo?.model);
+            const profile = getSettingsProfileForModel(effectiveModel);
             if (!profile) {
               return radioSettings ? (
                 <Card>
@@ -663,8 +666,8 @@ export const SettingsTab: React.FC = () => {
             );
           })()}
 
-          {/* One Key Operation */}
-          {radioSettings && (
+          {/* One Key Operation (DM-32 only; UV5R-Mini uses uv5rMiniSettings) */}
+          {radioSettings && (!radioSettings.uv5rMiniSettings || radioSettings.analogCall) && (
             <Card className="mt-6">
               <SectionTitle underline>One Key Operation</SectionTitle>
 

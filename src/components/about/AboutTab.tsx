@@ -101,13 +101,10 @@ npm run build:single</code>
           <SectionTitle>Project Information</SectionTitle>
           <div className="space-y-3 text-cool-gray">
             <p>
-              <span className="text-neon-cyan font-semibold">NeonPlug</span> is a web-based Channel Programming Software (CPS)
-              for supported radios (DM-32UV / DP570UV). Built with a modern cyberpunk neon-themed UI, it provides
-              an intuitive interface for managing channels, zones, scan lists, contacts, and radio settings.
+              <span className="text-neon-cyan font-semibold">NeonPlug</span> is a next-generation, web-based Channel Programming Software (CPS) for supported radios, including DM-32UV / DP570UV and UV5R-Mini. Built with a modern cyberpunk neon-themed UI, it provides an intuitive interface for managing channels, zones, scan lists, contacts, and radio settings.
             </p>
             <p>
-              This software implements the DM-32UV serial protocol specification, enabling full read and write
-              operations directly from your web browser using the Web Serial API.
+              This software implements protocol support for each radio, enabling full read and write operations directly from your web browser via the Web Serial API and—where supported—Bluetooth Low Energy (BLE).
             </p>
           </div>
         </Card>

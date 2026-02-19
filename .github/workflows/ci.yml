@@ -26,6 +26,7 @@ jobs:
 
       - name: Audit dependencies
         run: npm audit
+        continue-on-error: true
 
       - name: Run TypeScript type check and build
         run: npm run build

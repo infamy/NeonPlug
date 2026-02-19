@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
+import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
@@ -18,12 +19,13 @@ const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
 
 export const DigitalTab: React.FC = () => {
-  const { blockMetadata, blockData, radioInfo } = useRadioStore();
-  const caps = useMemo(() => getCapabilitiesForModel(radioInfo?.model), [radioInfo?.model]);
+  const { blockMetadata, blockData } = useRadioStore();
+  const effectiveModel = useEffectiveRadioModel();
+  const caps = useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
   const limits = caps?.digital?.limits;
   const talkGroupsMax = limits?.TALK_GROUPS_MAX ?? DEFAULT_TALK_GROUPS_MAX;
   const dmrRadioIdsMax = limits?.DMR_RADIO_IDS_MAX ?? DEFAULT_DMR_RADIO_IDS_MAX;
-  const { keys, setKeys, updateKey } = useEncryptionKeysStore();
+  const { keys, keysLoaded, setKeys, updateKey } = useEncryptionKeysStore();
   const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem } = useDigitalEmergencyStore();
   const { radioIds, radioIdsLoaded, updateRadioId, addRadioId, deleteRadioId } = useDMRRadioIDsStore();
   const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact, setMaxTalkGroups } = useQuickContactsStore();
@@ -50,15 +52,16 @@ export const DigitalTab: React.FC = () => {
   }, [talkGroupsMax, setMaxTalkGroups]);
 
   // Parse encryption keys when block data and digital capabilities are available
+  // Only parse once - skip if keys have already been loaded (user may have edited them)
   useEffect(() => {
-    if (!block10Data || !caps?.digital) return;
+    if (!block10Data || !caps?.digital || keysLoaded) return;
     try {
       const parsedKeys = caps.digital.parseEncryptionKeys(block10Data);
       setKeys(parsedKeys);
     } catch (error) {
       console.error('Error parsing encryption keys:', error);
     }
-  }, [block10Data, caps?.digital, setKeys]);
+  }, [block10Data, caps?.digital, keysLoaded, setKeys]);
 
   // Parse digital emergency systems when block data and digital capabilities are available
   useEffect(() => {

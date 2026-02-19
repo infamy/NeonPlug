@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
-import { useRadioStore } from '../../store/radioStore';
+import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useScanListsStore } from '../../store/scanListsStore';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
@@ -70,9 +70,12 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   onSelectionChange,
 }) => {
   const { channels: channelsFromStore, updateChannel, deleteChannel, addChannel } = useChannelsStore();
-  const { radioInfo } = useRadioStore();
+  const effectiveModel = useEffectiveRadioModel();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
-  const bandLimits = getCapabilitiesForModel(radioInfo?.model)?.bandLimits ?? null;
+  const caps = getCapabilitiesForModel(effectiveModel);
+  const bandLimits = caps?.bandLimits ?? null;
+  const maxChannels = caps?.maxChannels ?? 4000;
+  const analogOnly = caps?.analogOnly === true;
   const { scanLists } = useScanListsStore();
   const { groups: rxGroups } = useRXGroupsStore();
   const { keys: encryptionKeys } = useEncryptionKeysStore();
@@ -277,7 +280,9 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]" title="Receive frequency (MHz)">RX Freq</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold w-0 min-w-0" title="Copy RX to TX"><span className="sr-only">Copy</span></th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]" title="Transmit frequency (MHz)">TX Freq</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[50px]" title="Channel mode (Analog/Digital)">Mode</th>
+            {!analogOnly && (
+              <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[50px]" title="Channel mode (Analog/Digital)">Mode</th>
+            )}
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[40px]" title="Power level">PWR</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[40px]" title="Bandwidth (12.5 kHz / 25 kHz)">BW</th>
             {/* Common fields - work for both analog and digital */}
@@ -305,16 +310,20 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]" title="Step frequency">Step Freq</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[65px]" title="Signal type">Sig Type</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[65px]" title="PTT ID type">PTT ID Type</th>
-            {/* Digital-only fields */}
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]" title="DMR color code">Color Code</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]" title="RX Group List">RX Group</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]" title="Slot Operation">Slot</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Encryption">Enc</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]" title="Encryption ID">Enc ID</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="TDMA Direct Mode">TDMA</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Short Data Confirm">SDC</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Private Confirm">Priv</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="DMR Radio ID Index for TX (0=None, 1-255=Index into DMR Radio IDs list)">TX DMR ID</th>
+            {/* Digital-only fields - hidden for analog-only radios */}
+            {!analogOnly && (
+              <>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]" title="DMR color code">Color Code</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]" title="RX Group List">RX Group</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]" title="Slot Operation">Slot</th>
+                <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Encryption">Enc</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]" title="Encryption ID">Enc ID</th>
+                <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="TDMA Direct Mode">TDMA</th>
+                <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Short Data Confirm">SDC</th>
+                <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Private Confirm">Priv</th>
+                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="DMR Radio ID Index for TX (0=None, 1-255=Index into DMR Radio IDs list)">TX DMR ID</th>
+              </>
+            )}
             {/* Common fields - work for both */}
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="TX Contact (Group/Private/All Call - index into Contacts list)">TG</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px] sticky right-0 bg-dark-charcoal z-30">Actions</th>
@@ -405,25 +414,27 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     />
                   )}
                 </td>
-                <td className="px-2 py-2 text-center">
-                  <button
-                    onClick={() => {
-                      const modeOrder = ['Analog', 'Digital', 'Fixed Analog', 'Fixed Digital'];
-                      const currentIndex = modeOrder.indexOf(channel.mode);
-                      const nextIndex = (currentIndex + 1) % modeOrder.length;
-                      const newMode = modeOrder[nextIndex] as Channel['mode'];
-                      // Auto-set bandwidth to Narrow when switching to Digital
-                      if ((newMode === 'Digital' || newMode === 'Fixed Digital') && channel.bandwidth === '25kHz') {
-                        handleCellChange(channel.number, 'bandwidth', '12.5kHz');
-                      }
-                      handleCellChange(channel.number, 'mode', newMode);
-                    }}
-                    className="w-10 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
-                    title={channel.mode}
-                  >
-                    {channel.mode === 'Analog' || channel.mode === 'Fixed Analog' ? 'Ana' : 'Dig'}
-                  </button>
-                </td>
+                {!analogOnly && (
+                  <td className="px-2 py-2 text-center">
+                    <button
+                      onClick={() => {
+                        const modeOrder = ['Analog', 'Digital', 'Fixed Analog', 'Fixed Digital'];
+                        const currentIndex = modeOrder.indexOf(channel.mode);
+                        const nextIndex = (currentIndex + 1) % modeOrder.length;
+                        const newMode = modeOrder[nextIndex] as Channel['mode'];
+                        // Auto-set bandwidth to Narrow when switching to Digital
+                        if ((newMode === 'Digital' || newMode === 'Fixed Digital') && channel.bandwidth === '25kHz') {
+                          handleCellChange(channel.number, 'bandwidth', '12.5kHz');
+                        }
+                        handleCellChange(channel.number, 'mode', newMode);
+                      }}
+                      className="w-10 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+                      title={channel.mode}
+                    >
+                      {channel.mode === 'Analog' || channel.mode === 'Fixed Analog' ? 'Ana' : 'Dig'}
+                    </button>
+                  </td>
+                )}
                 <td className="px-2 py-2 text-center">
                   <button
                     onClick={() => {
@@ -858,7 +869,9 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     <option value="Both">Both</option>
                   </select>
                 </td>
-                {/* Digital-only fields */}
+                {/* Digital-only fields - hidden for analog-only radios */}
+                {!analogOnly && (
+                <>
                 <td className="px-2 py-2">
                   {showColorCode ? (
                     <input
@@ -1017,6 +1030,8 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                     <span className="text-cool-gray text-xs text-center block">-</span>
                   )}
                 </td>
+                </>
+                )}
                 {/* Common fields - work for both */}
                 <td className="px-2 py-2">
                   {showColorCode ? (
@@ -1085,6 +1100,8 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             setEditingChannel(null);
           }}
           bandLimits={bandLimits}
+          maxChannels={maxChannels}
+          analogOnly={analogOnly}
           rxGroups={rxGroups}
           encryptionKeys={encryptionKeys}
           talkGroups={talkGroups}

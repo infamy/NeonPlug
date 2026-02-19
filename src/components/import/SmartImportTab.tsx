@@ -26,12 +26,17 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { useContactsStore } from '../../store/contactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
+import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
+import { getCapabilitiesForModel } from '../../radios/capabilities';
 
 export const SmartImportTab: React.FC = () => {
   const { channels, setChannels } = useChannelsStore();
   const { zones, setZones } = useZonesStore();
   const { contacts, setContacts } = useContactsStore();
   const { radioIds } = useDMRRadioIDsStore();
+  const effectiveModel = useEffectiveRadioModel();
+  const caps = React.useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
+  const supportsDigital = caps?.analogOnly !== true;
   
   const [locationType, setLocationType] = useState<'coordinates' | 'city' | 'current'>('current');
   const [latitude, setLatitude] = useState('');
@@ -114,15 +119,20 @@ export const SmartImportTab: React.FC = () => {
 
   // Unified search handler that searches all selected types
   const handleSearchAll = async () => {
-    if (!searchAirports && !searchTafl && !searchDmrRepeaters) {
-      setError('Please select at least one search type (Airports, TAFL, or DMR Repeaters)');
+    const hasSearchType = supportsDigital
+      ? (searchAirports || searchTafl || searchDmrRepeaters)
+      : (searchAirports || searchTafl);
+    if (!hasSearchType) {
+      setError(supportsDigital
+        ? 'Please select at least one search type (Airports, TAFL, or DMR Repeaters)'
+        : 'Please select at least one search type (Airports or TAFL)');
       return;
     }
 
     setIsSearchingAll(true);
     setIsSearchingAirports(searchAirports);
     setIsSearchingTafl(searchTafl);
-    setIsSearchingRptrs(searchDmrRepeaters);
+    setIsSearchingRptrs(supportsDigital && searchDmrRepeaters);
     setError(null);
     
     // Clear previous results
@@ -903,7 +913,9 @@ export const SmartImportTab: React.FC = () => {
       <Card padding="tight" className="mb-4">
         <SectionTitle as="h3" size="lg" className="mb-4">Location-Based Search</SectionTitle>
         <p className="text-sm text-cool-gray mb-4">
-          Search for nearby airports, TAFL entries, and DMR repeaters based on your location
+          {supportsDigital
+            ? 'Search for nearby airports, TAFL entries, and DMR repeaters based on your location'
+            : 'Search for nearby airports and TAFL entries based on your location'}
         </p>
         
         <div className="mb-4">
@@ -1039,6 +1051,7 @@ export const SmartImportTab: React.FC = () => {
               />
               <span className="text-cool-gray">TAFL (Transport Canada)</span>
             </label>
+            {supportsDigital && (
             <label className="flex items-center">
               <input
                 type="checkbox"
@@ -1048,12 +1061,13 @@ export const SmartImportTab: React.FC = () => {
               />
               <span className="text-cool-gray">DMR Repeaters</span>
             </label>
+            )}
           </div>
         </div>
 
         <Button
           onClick={handleSearchAll}
-          disabled={isSearchingAll || (!searchAirports && !searchTafl && !searchDmrRepeaters)}
+          disabled={isSearchingAll || (supportsDigital ? (!searchAirports && !searchTafl && !searchDmrRepeaters) : (!searchAirports && !searchTafl))}
           className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright w-full"
         >
           {isSearchingAll 
@@ -1447,8 +1461,8 @@ export const SmartImportTab: React.FC = () => {
       )}
 
 
-      {/* DMR Repeater Results */}
-      {rptrs.length > 0 && (
+      {/* DMR Repeater Results (digital radios only) */}
+      {supportsDigital && rptrs.length > 0 && (
       <Card padding="tight" className="mb-4">
         <SectionTitle as="h3" size="lg" className="mb-4">DMR Repeaters</SectionTitle>
           <>
@@ -1595,7 +1609,8 @@ export const SmartImportTab: React.FC = () => {
       </Card>
       )}
 
-      {/* MMDVM Simplex Section */}
+      {/* MMDVM Simplex Section (digital radios only) */}
+      {supportsDigital && (
       <Card padding="tight" className="mb-4">
         <SectionTitle as="h3" size="lg" className="mb-2">MMDVM</SectionTitle>
         <p className="text-sm text-cool-gray mb-4">
@@ -1758,6 +1773,7 @@ export const SmartImportTab: React.FC = () => {
           {isAddingMmdvm ? 'Adding MMDVM channels...' : 'Add MMDVM channels'}
         </Button>
       </Card>
+      )}
 
       {/* Fixed Channels Section */}
       <Card padding="tight" className="mb-4">

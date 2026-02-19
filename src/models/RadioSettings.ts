@@ -182,4 +182,7 @@ export interface RadioSettings {
   // VFO Channel Information
   vfoA: Channel;                     // Offset 0x276-0x2A5 (48 bytes) - VFO A Channel
   vfoB: Channel;                     // Offset 0x2A6-0x2D5 (48 bytes) - VFO B Channel
+
+  /** UV5R-Mini specific settings (when radio is UV5R-Mini). Select fields use 0-based index. */
+  uv5rMiniSettings?: import('../types/uv5rMiniSettings').Uv5rMiniSettings;
 }
