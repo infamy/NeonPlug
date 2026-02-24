@@ -18,6 +18,7 @@ import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { getRadioPickerOptions, getMigrationTargetModels } from '../../radios';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 import { migrateCodeplug, type MigrationLoss } from '../../services/codeplugMigration';
+import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
 // Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
@@ -55,8 +56,30 @@ export const Toolbar: React.FC = () => {
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [convertTargetModel, setConvertTargetModel] = useState<string>(() => getMigrationTargetModels()[0] ?? 'DM-32UV');
   const [readDropdownOpen, setReadDropdownOpen] = useState(false);
+  const [snapshotsModalOpen, setSnapshotsModalOpen] = useState(false);
+  const [snapshotsList, setSnapshotsList] = useState<ReturnType<typeof getSnapshots>>([]);
+  const [snapshotsClearConfirmOpen, setSnapshotsClearConfirmOpen] = useState(false);
   const readDropdownRef = useRef<HTMLDivElement>(null);
   const webSerialSupported = isWebSerialSupported();
+
+  const formatEventType = (eventType?: SnapshotEventType): string => {
+    if (!eventType) return '';
+    return eventType.charAt(0).toUpperCase() + eventType.slice(1);
+  };
+
+  const formatRelativeTime = (iso: string): string => {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hr ago`;
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return d.toLocaleDateString();
+  };
 
   useEffect(() => {
     if (!readDropdownOpen) return;
@@ -86,6 +109,40 @@ export const Toolbar: React.FC = () => {
     exportDate: new Date().toISOString(),
     version: '1.0.0',
   });
+
+  const buildCodeplugDataFromStores = () => {
+    const cs = useChannelsStore.getState();
+    const zs = useZonesStore.getState();
+    const sls = useScanListsStore.getState();
+    const cts = useContactsStore.getState();
+    const des = useDigitalEmergencyStore.getState();
+    const aes = useAnalogEmergencyStore.getState();
+    const rss = useRadioSettingsStore.getState();
+    const rs = useRadioStore.getState();
+    const qms = useQuickMessagesStore.getState();
+    const drs = useDMRRadioIDsStore.getState();
+    const qcs = useQuickContactsStore.getState();
+    const rgs = useRXGroupsStore.getState();
+    const eks = useEncryptionKeysStore.getState();
+    return {
+      channels: cs.channels,
+      zones: zs.zones,
+      scanLists: sls.scanLists,
+      contacts: cts.contacts,
+      digitalEmergencies: des.systems,
+      digitalEmergencyConfig: des.config,
+      analogEmergencies: aes.systems,
+      radioSettings: rss.settings,
+      radioInfo: rs.radioInfo,
+      messages: qms.messages,
+      radioIds: drs.radioIds,
+      quickContacts: qcs.contacts,
+      rxGroups: rgs.groups,
+      encryptionKeys: eks.keys,
+      exportDate: new Date().toISOString(),
+      version: '1.0.0',
+    };
+  };
 
   const formatMigrationLoss = (loss: MigrationLoss): string => {
     const parts: string[] = [];
@@ -194,6 +251,7 @@ export const Toolbar: React.FC = () => {
       setAlertTitle('Import');
       setAlertMessage(`Successfully imported codeplug!\n\n${lines.join('\n')}`);
       setAlertOpen(true);
+      saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
     } catch (error) {
       setAlertTitle('Import');
       setAlertMessage(error instanceof Error ? error.message : 'Failed to import codeplug');
@@ -230,6 +288,8 @@ export const Toolbar: React.FC = () => {
       
       setConnectionError(null);
       setLastOperationMode(null);
+      const modelLabel = useRadioStore.getState().radioInfo?.model ?? effectiveModel ?? undefined;
+      saveSnapshot(buildCodeplugDataFromStores(), { eventType: 'read', radioModel: modelLabel });
       setTimeout(() => {
         setProgress(0);
         setProgressMessage('');
@@ -290,6 +350,8 @@ export const Toolbar: React.FC = () => {
       
       setConnectionError(null);
       setLastOperationMode(null);
+      const modelLabel = useRadioStore.getState().radioInfo?.model ?? effectiveModel ?? undefined;
+      saveSnapshot(buildCodeplugDataFromStores(), { eventType: 'write', radioModel: modelLabel });
       setTimeout(() => {
         setIsWriting(false);
         setProgress(0);
@@ -355,6 +417,44 @@ export const Toolbar: React.FC = () => {
     startWriteOperation();
   };
 
+  const handleOpenSnapshots = () => {
+    setSnapshotsList(getSnapshots());
+    setSnapshotsModalOpen(true);
+  };
+
+  const handleRestoreSnapshot = (id: string) => {
+    const data = getSnapshotData(id);
+    if (!data) return;
+    setChannels(data.channels);
+    setZones(data.zones);
+    setScanLists(data.scanLists);
+    setContacts(data.contacts);
+    setDigitalEmergencies(data.digitalEmergencies);
+    if (data.digitalEmergencyConfig) {
+      setDigitalEmergencyConfig(data.digitalEmergencyConfig);
+    }
+    setAnalogEmergencies(data.analogEmergencies);
+    if (data.radioSettings) {
+      setRadioSettings(data.radioSettings);
+    }
+    setRadioInfo(data.radioInfo ?? null);
+    setMessages(data.messages ?? []);
+    setRadioIds(data.radioIds ?? []);
+    setQuickContacts(data.quickContacts ?? []);
+    setRXGroups(data.rxGroups ?? []);
+    setEncryptionKeys(data.encryptionKeys ?? []);
+    setSnapshotsModalOpen(false);
+    setAlertTitle('Restore');
+    setAlertMessage(`Restored codeplug: ${data.channels.length} channels, ${data.zones.length} zones`);
+    setAlertOpen(true);
+  };
+
+  const handleClearSnapshots = () => {
+    clearSnapshots();
+    setSnapshotsList([]);
+    setSnapshotsClearConfirmOpen(false);
+  };
+
   return (
     <>
       <input
@@ -389,6 +489,13 @@ export const Toolbar: React.FC = () => {
               title="Import codeplug from file (.neonplug)"
             >
               Import
+            </button>
+            <button
+              onClick={handleOpenSnapshots}
+              className="px-4 py-2 bg-deep-gray text-neon-cyan font-semibold rounded border border-neon-cyan border-opacity-50 hover:bg-neon-cyan hover:bg-opacity-10 transition-all active:scale-95"
+              title="View and restore recent codeplug snapshots"
+            >
+              Snapshots{(() => { const n = getSnapshots().length; return n > 0 ? ` (${n})` : ''; })()}
             </button>
             <button
               onClick={handleExport}
@@ -534,6 +641,80 @@ export const Toolbar: React.FC = () => {
         </div>
         );
       })()}
+      {snapshotsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80">
+          <div className="bg-deep-gray rounded-lg p-6 border border-neon-cyan shadow-glow-cyan max-w-md w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            <h3 className="text-lg font-semibold text-neon-cyan mb-4">Recent codeplugs</h3>
+            <div className="flex-1 overflow-y-auto min-h-0 mb-4">
+              {snapshotsList.length === 0 ? (
+                <p className="text-cool-gray text-sm">
+                  No snapshots yet. Import a codeplug, read from radio, or write to radio to create snapshots.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {snapshotsList.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center justify-between gap-3 p-3 rounded border border-cool-gray border-opacity-50 hover:border-neon-cyan hover:border-opacity-30 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {s.eventType && (
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                              s.eventType === 'read' ? 'bg-neon-cyan bg-opacity-20 text-neon-cyan' :
+                              s.eventType === 'write' ? 'bg-neon-purple bg-opacity-20 text-neon-purple' :
+                              'bg-amber-500 bg-opacity-20 text-amber-400'
+                            }`}>
+                              {formatEventType(s.eventType)}
+                            </span>
+                          )}
+                          {s.radioModel && (
+                            <span className="text-xs text-cool-gray">{s.radioModel}</span>
+                          )}
+                        </div>
+                        <p className="text-white text-sm font-medium truncate mt-1">{s.label}</p>
+                        <p className="text-cool-gray text-xs">{formatRelativeTime(s.timestamp)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreSnapshot(s.id)}
+                        className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold text-neon-cyan border border-neon-cyan rounded hover:bg-neon-cyan hover:bg-opacity-20 transition-colors"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 border-t border-cool-gray pt-3">
+              {snapshotsList.length > 0 && (
+                <button
+                  onClick={() => setSnapshotsClearConfirmOpen(true)}
+                  className="text-xs text-cool-gray hover:text-red-400 transition-colors"
+                >
+                  Clear all
+                </button>
+              )}
+              <button
+                onClick={() => setSnapshotsModalOpen(false)}
+                className="ml-auto px-4 py-2 border border-neon-cyan text-neon-cyan rounded hover:bg-neon-cyan hover:bg-opacity-10 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <ConfirmModal
+        isOpen={snapshotsClearConfirmOpen}
+        onClose={() => setSnapshotsClearConfirmOpen(false)}
+        onConfirm={handleClearSnapshots}
+        title="Clear all snapshots"
+        message="Remove all recent codeplug snapshots from local storage? This cannot be undone."
+        confirmLabel="Clear all"
+        variant="alert"
+      />
     </>
   );
 };

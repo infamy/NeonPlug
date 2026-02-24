@@ -42,7 +42,7 @@ const CODEPLUG_VERSION = '1.0.0';
 const CODEPLUG_JSON_FILENAME = 'codeplug.json';
 
 /** Convert CodeplugData to a JSON-serializable object (Uint8Array → number[]) */
-function codeplugToJsonSafe(data: CodeplugData): Record<string, unknown> {
+export function codeplugToJsonSafe(data: CodeplugData): Record<string, unknown> {
   return {
     ...data,
     channels: data.channels,
@@ -84,7 +84,7 @@ function codeplugToJsonSafe(data: CodeplugData): Record<string, unknown> {
 }
 
 /** Parse JSON object back to CodeplugData (number[] → Uint8Array, ensure zone ids) */
-function jsonSafeToCodeplug(raw: Record<string, unknown>): CodeplugData {
+export function jsonSafeToCodeplug(raw: Record<string, unknown>): CodeplugData {
   const dig = (raw.digitalEmergencies as Record<string, unknown>[] | undefined) ?? [];
   const config = raw.digitalEmergencyConfig as Record<string, unknown> | null | undefined;
   const radioIdsRaw = (raw.radioIds as Record<string, unknown>[] | undefined) ?? [];

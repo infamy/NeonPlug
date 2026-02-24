@@ -161,6 +161,8 @@ function App() {
         setEncryptionKeys(codeplugData.encryptionKeys ?? []);
         
         setShowStartupModal(false);
+        const { saveSnapshot } = await import('./services/codeplugSnapshots');
+        saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
         const lines = [
           `• ${codeplugData.channels.length} channels`,
           `• ${codeplugData.zones.length} zones`,
@@ -228,6 +230,29 @@ function App() {
     setZones(sampleZones);
   };
 
+  const handleRestoreSnapshot = (codeplugData: import('./services/codeplugExport').CodeplugData) => {
+    setChannels(codeplugData.channels);
+    setZones(codeplugData.zones);
+    setScanLists(codeplugData.scanLists);
+    setContacts(codeplugData.contacts);
+    setDigitalEmergencies(codeplugData.digitalEmergencies);
+    if (codeplugData.digitalEmergencyConfig) {
+      setDigitalEmergencyConfig(codeplugData.digitalEmergencyConfig);
+    }
+    setAnalogEmergencies(codeplugData.analogEmergencies);
+    if (codeplugData.radioSettings) {
+      setRadioSettings(codeplugData.radioSettings);
+    }
+    setRadioInfo(codeplugData.radioInfo ?? null);
+    setMessages(codeplugData.messages ?? []);
+    setRadioIds(codeplugData.radioIds ?? []);
+    setQuickContacts(codeplugData.quickContacts ?? []);
+    setRXGroups(codeplugData.rxGroups ?? []);
+    setEncryptionKeys(codeplugData.encryptionKeys ?? []);
+    setShowStartupModal(false);
+    setShowPickRadioModal(false);
+  };
+
   // Don't show startup modal if we're already reading; show it again if reading stops with error or no data
   useEffect(() => {
     if (isConnecting) {
@@ -273,6 +298,7 @@ function App() {
         onLoadFile={handleLoadFile}
         onDismiss={handleDismissStartup}
         onCancel={showPickRadioModal ? () => setShowPickRadioModal(false) : undefined}
+        onRestoreSnapshot={handleRestoreSnapshot}
       />
       <input
         ref={fileInputRef}

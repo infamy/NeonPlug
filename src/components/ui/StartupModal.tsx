@@ -1,12 +1,33 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { getRadioPickerOptions } from '../../radios';
 import { useRadioStore } from '../../store/radioStore';
 import { isWebSerialSupported, getSupportedBrowsers } from '../../utils/browserSupport';
 import { downloadOfflineAsZip } from '../../utils/offlineDownload';
+import { getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
+import type { CodeplugData } from '../../services/codeplugExport';
 
 const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
+
+function formatEventType(eventType?: SnapshotEventType): string {
+  if (!eventType) return '';
+  return eventType.charAt(0).toUpperCase() + eventType.slice(1);
+}
+
+function formatRelativeTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins} min ago`;
+  if (diffHours < 24) return `${diffHours} hr ago`;
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return d.toLocaleDateString();
+}
 
 interface StartupModalProps {
   isOpen: boolean;
@@ -15,6 +36,8 @@ interface StartupModalProps {
   onDismiss?: () => void;
   /** When set (e.g. opened from Toolbar "Change radio"), show a Cancel button to close without action. */
   onCancel?: () => void;
+  /** Called when user restores a snapshot. Populate stores and close modal. */
+  onRestoreSnapshot?: (data: CodeplugData) => void;
 }
 
 const OFFLINE_FALLBACK_MESSAGE =
@@ -28,10 +51,20 @@ export const StartupModal: React.FC<StartupModalProps> = ({
   onLoadFile,
   onDismiss,
   onCancel,
+  onRestoreSnapshot,
 }) => {
   const [offlineFallbackOpen, setOfflineFallbackOpen] = useState(false);
   const [transportChoiceOpen, setTransportChoiceOpen] = useState(false);
+  const [recentExpanded, setRecentExpanded] = useState(false);
+  const [snapshots, setSnapshots] = useState<ReturnType<typeof getSnapshots>>([]);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const { selectedRadioModel, setSelectedRadioModel } = useRadioStore();
+
+  useEffect(() => {
+    if (isOpen) {
+      setSnapshots(getSnapshots());
+    }
+  }, [isOpen]);
   const options = useMemo(() => getRadioPickerOptions(), []);
 
   // Default to first radio if none selected
@@ -126,6 +159,70 @@ export const StartupModal: React.FC<StartupModalProps> = ({
             Import from codeplug file (.neonplug)
           </p>
 
+          {snapshots.length > 0 && onRestoreSnapshot && (
+            <div className="border border-cool-gray rounded-lg overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setRecentExpanded(!recentExpanded)}
+                className="w-full px-4 py-2 flex items-center justify-between text-left text-cool-gray hover:text-white hover:bg-cool-gray hover:bg-opacity-20 transition-colors"
+              >
+                <span className="text-sm font-medium">Recent codeplugs ({snapshots.length})</span>
+                <span className="text-xs">{recentExpanded ? '▼' : '▶'}</span>
+              </button>
+              {recentExpanded && (
+                <div className="max-h-48 overflow-y-auto border-t border-cool-gray">
+                  {snapshots.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center justify-between gap-2 px-4 py-2 border-b border-cool-gray border-opacity-50 last:border-b-0 hover:bg-cool-gray hover:bg-opacity-10"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {s.eventType && (
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                              s.eventType === 'read' ? 'bg-neon-cyan bg-opacity-20 text-neon-cyan' :
+                              s.eventType === 'write' ? 'bg-neon-purple bg-opacity-20 text-neon-purple' :
+                              'bg-amber-500 bg-opacity-20 text-amber-400'
+                            }`}>
+                              {formatEventType(s.eventType)}
+                            </span>
+                          )}
+                          {s.radioModel && (
+                            <span className="text-xs text-cool-gray">{s.radioModel}</span>
+                          )}
+                        </div>
+                        <p className="text-white text-sm truncate mt-1">{s.label}</p>
+                        <p className="text-cool-gray text-xs">{formatRelativeTime(s.timestamp)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const data = getSnapshotData(s.id);
+                          if (data) {
+                            onRestoreSnapshot(data);
+                            setRecentExpanded(false);
+                          }
+                        }}
+                        className="flex-shrink-0 px-3 py-1 text-xs font-semibold text-neon-cyan border border-neon-cyan rounded hover:bg-neon-cyan hover:bg-opacity-20 transition-colors"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  ))}
+                  <div className="px-4 py-2 border-t border-cool-gray">
+                    <button
+                      type="button"
+                      onClick={() => setClearConfirmOpen(true)}
+                      className="text-xs text-cool-gray hover:text-red-400 transition-colors"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <p className="text-center text-sm">
             <button
               type="button"
@@ -199,6 +296,19 @@ export const StartupModal: React.FC<StartupModalProps> = ({
         title="Download offline version"
         message={OFFLINE_FALLBACK_MESSAGE}
         confirmLabel="OK"
+        variant="alert"
+      />
+      <ConfirmModal
+        isOpen={clearConfirmOpen}
+        onClose={() => setClearConfirmOpen(false)}
+        onConfirm={() => {
+          clearSnapshots();
+          setSnapshots([]);
+          setClearConfirmOpen(false);
+        }}
+        title="Clear all snapshots"
+        message="Remove all recent codeplug snapshots from local storage? This cannot be undone."
+        confirmLabel="Clear all"
         variant="alert"
       />
     </div>
