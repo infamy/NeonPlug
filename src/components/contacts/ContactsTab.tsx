@@ -5,6 +5,7 @@ import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ContactsTable } from './ContactsTable';
 import { ProgressBar } from '../ui/ProgressBar';
 import { COUNTRIES_BY_REGION, type CountryRegion } from '../../constants/countries';
+import { US_STATES } from '../../constants/usStates';
 import type { Contact } from '../../models/Contact';
 
 // RadioID User interface
@@ -209,6 +210,7 @@ export const ContactsTab: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
   const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
+  const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [customCountry, setCustomCountry] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -363,9 +365,22 @@ export const ContactsTab: React.FC = () => {
       setProgressMessage('Filtering by selected countries...');
       setProgress(95);
       const countrySet = new Set(countriesToFetch.map(c => c.toLowerCase()));
-      const radioIDUsers = allUsers.filter(user => 
-        user.country && countrySet.has(user.country.toLowerCase())
-      );
+      const isUSSelected = countrySet.has('united states');
+      const stateFilterSet = isUSSelected && selectedStates.length > 0
+        ? new Set(selectedStates.flatMap(code => {
+            const s = US_STATES.find(st => st.code === code);
+            return s ? [s.code.toLowerCase(), s.name.toLowerCase()] : [code.toLowerCase()];
+          }))
+        : null;
+
+      const radioIDUsers = allUsers.filter(user => {
+        if (!user.country || !countrySet.has(user.country.toLowerCase())) return false;
+        if (user.country.toLowerCase() === 'united states' && stateFilterSet) {
+          if (!user.state?.trim()) return true; // Include US users without state (Unmapped)
+          return stateFilterSet.has(user.state.trim().toLowerCase());
+        }
+        return true;
+      });
 
       setProgressMessage(`Found ${radioIDUsers.length.toLocaleString()} contacts from selected countries`);
       setProgress(95);
@@ -387,13 +402,16 @@ export const ContactsTab: React.FC = () => {
         // Filter and convert in one pass to avoid intermediate arrays
         for (const user of batch) {
           if (user.id && user.id > 0) {
+            const province = user.state?.trim()
+              ? user.state
+              : (user.country?.toLowerCase() === 'united states' ? 'Unmapped' : undefined);
             allContacts.push({
               id: contactId++,
               name: (user.name || user.callsign || `DMR ${user.id}`).substring(0, 16), // Max 16 chars
               dmrId: user.id,
               callSign: user.callsign || undefined,
               city: user.city || undefined,
-              province: user.state || undefined, // RadioID uses "state" but we call it "province"
+              province,
               country: user.country || undefined,
               // remark is not available from RadioID API, so it remains undefined
             });
@@ -450,7 +468,7 @@ export const ContactsTab: React.FC = () => {
         );
       }
 
-      setProgressMessage(`Successfully downloaded ${contacts.length.toLocaleString()} contact${contacts.length === 1 ? '' : 's'} from ${countriesToFetch.length} countr${countriesToFetch.length === 1 ? 'y' : 'ies'}`);
+      setProgressMessage(`Successfully downloaded ${contactsToSave.length.toLocaleString()} contact${contactsToSave.length === 1 ? '' : 's'} from ${countriesToFetch.length} countr${countriesToFetch.length === 1 ? 'y' : 'ies'}${selectedStates.length > 0 ? ` (${selectedStates.length} US state${selectedStates.length !== 1 ? 's' : ''})` : ''}`);
       setProgress(100);
 
       // Keep selection checked so user can download again if needed
@@ -475,6 +493,18 @@ export const ContactsTab: React.FC = () => {
       prev.includes(country)
         ? prev.filter(c => c !== country)
         : [...prev, country]
+    );
+  }, []);
+
+  const toggleState = useCallback((code: string) => {
+    setSelectedStates(prev =>
+      prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]
+    );
+  }, []);
+
+  const toggleAllStates = useCallback(() => {
+    setSelectedStates(prev =>
+      prev.length === US_STATES.length ? [] : US_STATES.map(s => s.code)
     );
   }, []);
 
@@ -581,6 +611,42 @@ export const ContactsTab: React.FC = () => {
             })}
           </div>
         </div>
+
+        {selectedCountries.includes('United States') && (
+          <div className="mb-4 p-3 border border-neon-cyan border-opacity-20 rounded bg-dark-charcoal">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-neon-cyan">Filter by US state (optional)</label>
+              <button
+                type="button"
+                onClick={toggleAllStates}
+                className="text-xs text-cool-gray hover:text-neon-cyan transition-colors"
+              >
+                {selectedStates.length === US_STATES.length ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+            <p className="text-xs text-cool-gray mb-2">
+              Select states to reduce the number of contacts. Leave empty to include all US.
+            </p>
+            <div className="max-h-48 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {US_STATES.map(state => (
+                <label key={state.code} className="flex items-center cursor-pointer hover:text-neon-cyan">
+                  <input
+                    type="checkbox"
+                    checked={selectedStates.includes(state.code)}
+                    onChange={() => toggleState(state.code)}
+                    className="mr-2 w-4 h-4 text-neon-cyan bg-deep-gray border-neon-cyan border-opacity-30 rounded focus:ring-neon-cyan focus:ring-1"
+                  />
+                  <span className="text-sm text-cool-gray">{state.name}</span>
+                </label>
+              ))}
+            </div>
+            {selectedStates.length > 0 && (
+              <p className="text-xs text-neon-cyan mt-2">
+                {selectedStates.length} state{selectedStates.length !== 1 ? 's' : ''} selected
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="mb-4">
           <label className="block text-sm text-cool-gray mb-2">Or enter custom country name:</label>
