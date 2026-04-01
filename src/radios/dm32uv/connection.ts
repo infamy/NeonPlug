@@ -458,9 +458,9 @@ export class DM32Connection {
     }
     if (this.writer) {
       try {
-        await this.writer.close();
+        this.writer.releaseLock();
       } catch (e) {
-        // Writer might already be closed/released
+        // Writer might already be released
       }
       this.writer = null;
     }

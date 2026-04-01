@@ -118,7 +118,7 @@ export function useRadioConnection() {
     try {
       // Create protocol for the radio selected in the pick-a-radio modal
       protocol = createProtocolForModel(selectedRadioModel ?? '') ?? createDefaultProtocol();
-      
+
       // Set up progress callback that forwards to our callback
       protocol.onProgress = (progress, message) => {
         onProgress?.(progress, message);
@@ -145,7 +145,7 @@ export function useRadioConnection() {
       
       setRadioInfo(radioInfo);
       setConnected(true);
-      
+
       // Step 4: Bulk read when capability says so (e.g. DM-32UV); otherwise protocol reads on demand
       if (caps?.supportsBulkRead && typeof (protocol as any).bulkReadRequiredBlocks === 'function') {
         onProgress?.(15, 'Reading all memory blocks...', steps[3]);
@@ -338,17 +338,14 @@ export function useRadioConnection() {
       // If it's not a port selection cancellation, try retrying with forced port selection
       if (!isPortSelectionCancelled && protocol) {
         console.warn('Read failed, will retry with port selection:', errorMessage);
-        
-        // Clear the stored port so we force port selection on retry
-        (protocol as any).port = null;
-        
+
         // Try to disconnect the failed connection
         try {
           await protocol.disconnect();
         } catch (disconnectErr) {
           console.warn('Error during disconnect cleanup:', disconnectErr);
         }
-        
+
         // Retry the entire read operation with forced port selection
         try {
           onProgress?.(5, 'Retrying with port selection...', steps[0]);
