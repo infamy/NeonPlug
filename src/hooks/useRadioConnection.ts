@@ -115,12 +115,14 @@ export function useRadioConnection() {
     // Use the exported READ_STEPS array (single source of truth)
     const steps = READ_STEPS;
 
-    try {
-      // Resolve effective model — selectedRadioModel is explicitly chosen in the picker;
-      // fall back to radioInfo.model for users who re-read without re-selecting (model looks
-      // pre-selected in the UI via useEffectiveRadioModel but selectedRadioModel is still null).
-      const effectiveModel = selectedRadioModel ?? radioInfo?.model ?? null;
+    // Read model directly from the live store to avoid stale closure issues.
+    // selectedRadioModel may still be null if the user never explicitly clicked the picker
+    // button (the UI shows it pre-selected via useEffectiveRadioModel but the store value is
+    // null). Fall back to radioInfo.model from the last successful read.
+    const { selectedRadioModel: liveModel, radioInfo: liveRadioInfo } = useRadioStore.getState();
+    const effectiveModel: string | null = liveModel ?? liveRadioInfo?.model ?? null;
 
+    try {
       // Create protocol for the radio selected in the pick-a-radio modal
       protocol = createProtocolForModel(effectiveModel ?? '') ?? createDefaultProtocol();
 
