@@ -116,8 +116,13 @@ export function useRadioConnection() {
     const steps = READ_STEPS;
 
     try {
+      // Resolve effective model — selectedRadioModel is explicitly chosen in the picker;
+      // fall back to radioInfo.model for users who re-read without re-selecting (model looks
+      // pre-selected in the UI via useEffectiveRadioModel but selectedRadioModel is still null).
+      const effectiveModel = selectedRadioModel ?? radioInfo?.model ?? null;
+
       // Create protocol for the radio selected in the pick-a-radio modal
-      protocol = createProtocolForModel(selectedRadioModel ?? '') ?? createDefaultProtocol();
+      protocol = createProtocolForModel(effectiveModel ?? '') ?? createDefaultProtocol();
 
       // Set up progress callback that forwards to our callback
       protocol.onProgress = (progress, message) => {
@@ -125,7 +130,7 @@ export function useRadioConnection() {
       };
 
       // Step 1: Request port (serial or BLE) in same user gesture
-      const caps = getCapabilitiesForModel(selectedRadioModel ?? null);
+      const caps = getCapabilitiesForModel(effectiveModel);
       const transport = caps?.supportsBle
         ? (preferredTransport ?? caps?.preferredTransport ?? 'serial')
         : undefined;
@@ -147,11 +152,15 @@ export function useRadioConnection() {
       setConnected(true);
 
       // Step 4: Bulk read when capability says so (e.g. DM-32UV); otherwise protocol reads on demand
+      console.log('[read] caps.supportsBulkRead=', caps?.supportsBulkRead, 'hasBulkFn=', typeof (protocol as any).bulkReadRequiredBlocks === 'function', 'model=', effectiveModel);
       if (caps?.supportsBulkRead && typeof (protocol as any).bulkReadRequiredBlocks === 'function') {
         onProgress?.(15, 'Reading all memory blocks...', steps[3]);
         await (protocol as any).bulkReadRequiredBlocks();
+        console.log('[read] bulkReadRequiredBlocks done — cachedBlockData.length=', (protocol as any).cachedBlockData?.length, 'discoveredBlocks.length=', (protocol as any).discoveredBlocks?.length);
+      } else {
+        console.log('[read] skipping bulkRead');
       }
-      
+
       // Step 5: Parse channels (from cache after bulk read, or over connection)
       onProgress?.(20, 'Parsing channels...', steps[4]);
       const channels = await protocol.readChannels();
@@ -350,22 +359,22 @@ export function useRadioConnection() {
         try {
           onProgress?.(5, 'Retrying with port selection...', steps[0]);
           // Create a new protocol instance to ensure clean state (same radio as initial read)
-          protocol = createProtocolForModel(selectedRadioModel ?? '') ?? createDefaultProtocol();
+          protocol = createProtocolForModel(effectiveModel ?? '') ?? createDefaultProtocol();
           protocol.onProgress = (progress, message) => {
             onProgress?.(progress, message);
           };
-          
+
           // Force port selection for retry
           (protocol as any).port = null;
           await protocol.connect();
-          
+
           // Continue with the read operation from the beginning
           onProgress?.(10, 'Reading radio information...', steps[2]);
           const radioInfo = await protocol.getRadioInfo();
           setRadioInfo(radioInfo);
           setConnected(true);
-          
-          const retryCaps = getCapabilitiesForModel(selectedRadioModel ?? null);
+
+          const retryCaps = getCapabilitiesForModel(effectiveModel);
           if (retryCaps?.supportsBulkRead && typeof (protocol as any).bulkReadRequiredBlocks === 'function') {
             onProgress?.(15, 'Reading all memory blocks...', steps[3]);
             await (protocol as any).bulkReadRequiredBlocks();

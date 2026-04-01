@@ -1133,7 +1133,7 @@ export class DM32UVProtocol implements RadioProtocol {
 
     // Ensure blocks have been read
     if (this.cachedBlockData.length === 0 || this.discoveredBlocks.length === 0) {
-      throw new Error('Blocks must be read first. Call bulkReadRequiredBlocks() before processing.');
+      throw new Error(`Blocks must be read first. Call bulkReadRequiredBlocks() before processing. (cachedBlockData=${this.cachedBlockData.length}, discoveredBlocks=${this.discoveredBlocks.length})`);
     }
 
     this.onProgress?.(0, 'Parsing channels from cached blocks...');
