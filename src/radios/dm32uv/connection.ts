@@ -447,21 +447,20 @@ export class DM32Connection {
     this.readBuffer = new Uint8Array(0);
     this.isReading = false;
     
-    // Release reader lock (but keep the port open for reuse)
+    // Cancel reader (aborts any in-flight read) and close writer
     if (this.reader) {
       try {
-        this.reader.releaseLock();
+        await this.reader.cancel();
       } catch (e) {
-        // Reader might already be released
+        // Reader might already be cancelled/released
       }
       this.reader = null;
     }
-    // Release writer lock (but keep the port open for reuse)
     if (this.writer) {
       try {
-        this.writer.releaseLock();
+        await this.writer.close();
       } catch (e) {
-        // Writer might already be released
+        // Writer might already be closed/released
       }
       this.writer = null;
     }
@@ -633,9 +632,11 @@ export class DM32Connection {
       await Promise.race([fillPromise, timeoutPromise]);
       
       // Read one more time in case there's a second packet
+      // Create a new timeout promise - the original is already resolved and would race immediately
       await this.delay(20);
       try {
-        await Promise.race([this.fillBuffer(), timeoutPromise]);
+        const timeoutPromise2 = new Promise<void>((resolve) => { setTimeout(() => resolve(), 50); });
+        await Promise.race([this.fillBuffer(), timeoutPromise2]);
       } catch (e) {
         // Ignore errors
       }

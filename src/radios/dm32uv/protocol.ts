@@ -233,6 +233,8 @@ export class DM32UVProtocol implements RadioProtocol {
                 CONNECTION.TIMEOUT.PORT_OPEN,
                 'Port open'
               );
+              // Wait for radio to boot after port open (opening port toggles DTR, which resets some radios)
+              await new Promise((resolve) => setTimeout(resolve, CONNECTION.REOPEN_DELAY));
               log.debug('Successfully opened previously granted port', 'Protocol');
               return port;
             } catch (e: unknown) {
@@ -294,6 +296,8 @@ export class DM32UVProtocol implements RadioProtocol {
             CONNECTION.TIMEOUT.PORT_OPEN,
             'Port reopen'
           );
+          // Wait for radio to boot after port open (opening port toggles DTR, which resets some radios)
+          await new Promise((resolve) => setTimeout(resolve, CONNECTION.REOPEN_DELAY));
           log.debug('Successfully reopened stored port', 'Protocol');
           return port;
         } catch (e: unknown) {
@@ -335,13 +339,25 @@ export class DM32UVProtocol implements RadioProtocol {
       
       // Check if port is already open
       const isAlreadyOpen = port.readable !== null && port.writable !== null;
-      
+
       if (isAlreadyOpen && port.readable && port.writable) {
         // Check if streams are locked (from a previous connection)
         if (port.readable.locked || port.writable.locked) {
           throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
         }
-        log.debug('Port is already open, will use existing connection', 'Protocol');
+        // Port is open but unlocked (e.g. reselected after a failed attempt that didn't close it).
+        // Close and reopen so the radio gets a clean DTR reset and is ready for PSEARCH.
+        log.debug('Selected port was already open; closing and reopening for fresh handshake', 'Protocol');
+        try {
+          await port.close();
+        } catch { /* ignore - port might be in a weird state */ }
+        await new Promise((resolve) => setTimeout(resolve, CONNECTION.REOPEN_DELAY));
+        await withTimeout(
+          port.open({ baudRate: CONNECTION.BAUD_RATE }),
+          CONNECTION.TIMEOUT.PORT_OPEN,
+          'Port reopen'
+        );
+        await new Promise((resolve) => setTimeout(resolve, CONNECTION.REOPEN_DELAY));
       } else {
         // Port is not open, so open it - wrap in timeout
         try {
@@ -350,6 +366,8 @@ export class DM32UVProtocol implements RadioProtocol {
             CONNECTION.TIMEOUT.PORT_OPEN,
             'Port open'
           );
+          // Wait for radio to boot after port open (opening port toggles DTR, which resets some radios)
+          await new Promise((resolve) => setTimeout(resolve, CONNECTION.REOPEN_DELAY));
         } catch (e: unknown) {
           const error = e as Error;
           // If it says already open (race condition), check for locked streams
@@ -375,9 +393,7 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   private async connectWithPort(port: WebSerialPort): Promise<void> {
-    // Brief delay after opening port (as per spec)
-    await new Promise(resolve => setTimeout(resolve, CONNECTION.INIT_DELAY));
-
+    // Note: DM32Connection.connect() handles the post-open INIT_DELAY internally
     this.port = port;
     this.connection = new DM32Connection();
     // Each request/response in connect() has its own 2s timeout (per-request basis)
