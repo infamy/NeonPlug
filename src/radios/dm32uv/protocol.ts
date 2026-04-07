@@ -335,12 +335,13 @@ export class DM32UVProtocol implements RadioProtocol {
       
       // Check if port is already open
       const isAlreadyOpen = port.readable !== null && port.writable !== null;
-      
+
       if (isAlreadyOpen && port.readable && port.writable) {
         // Check if streams are locked (from a previous connection)
         if (port.readable.locked || port.writable.locked) {
           throw new Error('Port is in use by another connection. Please wait for the previous operation to complete.');
         }
+        // Port is already open and unlocked - use existing connection
         log.debug('Port is already open, will use existing connection', 'Protocol');
       } else {
         // Port is not open, so open it - wrap in timeout
@@ -375,9 +376,7 @@ export class DM32UVProtocol implements RadioProtocol {
   }
 
   private async connectWithPort(port: WebSerialPort): Promise<void> {
-    // Brief delay after opening port (as per spec)
-    await new Promise(resolve => setTimeout(resolve, CONNECTION.INIT_DELAY));
-
+    // Note: DM32Connection.connect() handles the post-open INIT_DELAY internally
     this.port = port;
     this.connection = new DM32Connection();
     // Each request/response in connect() has its own 2s timeout (per-request basis)
@@ -439,13 +438,18 @@ export class DM32UVProtocol implements RadioProtocol {
       await this.connection.disconnect();
       this.connection = null;
     }
-    // Keep the port reference so we can reuse it for subsequent operations
-    // Don't close the port - just release the reader/writer locks
-    // The port will stay open and can be reused
-    // Only clear the port if it's explicitly closed or if we want to force a new selection
-    // this.port = null; // Commented out to allow port reuse
+    // Close the port so the radio gets a DTR reset and starts exiting programming mode
+    // immediately. This is important: if we leave the port open, the radio stays in
+    // programming mode and won't respond to PSEARCH on the next connect attempt.
+    // We keep this.port reference so navigator.serial.getPorts() can still find it.
+    if (this.port) {
+      try {
+        await this.port.close();
+      } catch {
+        // Port might already be closed or in an error state
+      }
+    }
     // Keep radioInfo and cachedBlockData - they're needed for parsing
-    // Only clear connection-related state
   }
 
   /**
@@ -1129,7 +1133,7 @@ export class DM32UVProtocol implements RadioProtocol {
 
     // Ensure blocks have been read
     if (this.cachedBlockData.length === 0 || this.discoveredBlocks.length === 0) {
-      throw new Error('Blocks must be read first. Call bulkReadRequiredBlocks() before processing.');
+      throw new Error(`Blocks must be read first. Call bulkReadRequiredBlocks() before processing. (cachedBlockData=${this.cachedBlockData.length}, discoveredBlocks=${this.discoveredBlocks.length})`);
     }
 
     this.onProgress?.(0, 'Parsing channels from cached blocks...');

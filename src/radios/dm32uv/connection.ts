@@ -76,9 +76,9 @@ export class DM32Connection {
     log.info('Ready to communicate.', 'Connection');
     
     // Step 1: PSEARCH
-    // According to serial capture: response is exactly 8 bytes: 06 44 50 35 37 30 55 56
+    // Send once and wait — the radio has a timing window and may be slow to reply.
+    // Use a longer timeout than other commands to avoid cutting off a late response.
     await this.sendCommand('PSEARCH');
-    // CRITICAL: Send→read delay. Radio needs this before we read; removing it can cause radio reboot / connection failure.
     await this.delay(CONNECTION.PSEARCH_READ_DELAY);
 
     let psearchResponse: Uint8Array;
@@ -447,16 +447,15 @@ export class DM32Connection {
     this.readBuffer = new Uint8Array(0);
     this.isReading = false;
     
-    // Release reader lock (but keep the port open for reuse)
+    // Cancel reader (aborts any in-flight read) and close writer
     if (this.reader) {
       try {
-        this.reader.releaseLock();
+        await this.reader.cancel();
       } catch (e) {
-        // Reader might already be released
+        // Reader might already be cancelled/released
       }
       this.reader = null;
     }
-    // Release writer lock (but keep the port open for reuse)
     if (this.writer) {
       try {
         this.writer.releaseLock();
@@ -633,9 +632,11 @@ export class DM32Connection {
       await Promise.race([fillPromise, timeoutPromise]);
       
       // Read one more time in case there's a second packet
+      // Create a new timeout promise - the original is already resolved and would race immediately
       await this.delay(20);
       try {
-        await Promise.race([this.fillBuffer(), timeoutPromise]);
+        const timeoutPromise2 = new Promise<void>((resolve) => { setTimeout(() => resolve(), 50); });
+        await Promise.race([this.fillBuffer(), timeoutPromise2]);
       } catch (e) {
         // Ignore errors
       }
