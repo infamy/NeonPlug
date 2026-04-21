@@ -15,6 +15,7 @@ import { Card } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
 import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
+import { useOutOfBandStore } from '../../store/outOfBandStore';
 
 // Frequency input component that only updates parent on blur (prevents cursor jumping)
 interface FrequencyInputProps {
@@ -73,7 +74,8 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const effectiveModel = useEffectiveRadioModel();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
   const caps = getCapabilitiesForModel(effectiveModel);
-  const bandLimits = caps?.bandLimits ?? null;
+  const { allowOutOfBandFrequencies } = useOutOfBandStore();
+  const bandLimits = allowOutOfBandFrequencies ? null : (caps?.bandLimits ?? null);
   const maxChannels = caps?.maxChannels ?? 4000;
   const analogOnly = caps?.analogOnly === true;
   const { scanLists } = useScanListsStore();
