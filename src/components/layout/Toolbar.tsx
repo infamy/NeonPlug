@@ -21,6 +21,7 @@ import { migrateCodeplug, type MigrationLoss } from '../../services/codeplugMigr
 import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
 // Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
+import { useOutOfBandStore } from '../../store/outOfBandStore';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { isWebSerialSupported } from '../../utils/browserSupport';
@@ -108,6 +109,7 @@ export const Toolbar: React.FC = () => {
     encryptionKeys,
     exportDate: new Date().toISOString(),
     version: '1.0.0',
+    allowOutOfBandFrequencies: useOutOfBandStore.getState().allowOutOfBandFrequencies || undefined,
   });
 
   const buildCodeplugDataFromStores = () => {
@@ -141,6 +143,7 @@ export const Toolbar: React.FC = () => {
       encryptionKeys: eks.keys,
       exportDate: new Date().toISOString(),
       version: '1.0.0',
+      allowOutOfBandFrequencies: useOutOfBandStore.getState().allowOutOfBandFrequencies || undefined,
     };
   };
 
@@ -226,6 +229,9 @@ export const Toolbar: React.FC = () => {
       setQuickContacts(codeplugData.quickContacts ?? []);
       setRXGroups(codeplugData.rxGroups ?? []);
       setEncryptionKeys(codeplugData.encryptionKeys ?? []);
+      if (codeplugData.allowOutOfBandFrequencies) {
+        useOutOfBandStore.getState().setAllowOutOfBandFrequencies(true);
+      }
       
       const digCount = codeplugData.digitalEmergencies?.length ?? 0;
       const analogCount = codeplugData.analogEmergencies?.length ?? 0;

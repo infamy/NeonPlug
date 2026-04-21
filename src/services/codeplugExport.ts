@@ -36,6 +36,7 @@ export interface CodeplugData {
   encryptionKeys: EncryptionKey[];
   exportDate: string;
   version: string;
+  allowOutOfBandFrequencies?: boolean;
 }
 
 const CODEPLUG_VERSION = '1.0.0';

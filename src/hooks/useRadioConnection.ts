@@ -21,6 +21,7 @@ import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
 import { isValidChannelFrequency } from '../services/validation/frequencyValidator';
+import { useOutOfBandStore } from '../store/outOfBandStore';
 import { parseBootImageHeader } from '../utils/bootImage';
 
 /** Augment error message when tab was hidden during a serial operation (better reporting). */
@@ -167,6 +168,18 @@ export function useRadioConnection() {
       onProgress?.(20, 'Parsing channels...', steps[4]);
       const channels = await protocol.readChannels();
       setChannels(channels);
+
+      // Auto-enable OOB flag if the radio has channels outside standard band limits
+      {
+        const { allowOutOfBandFrequencies, setAllowOutOfBandFrequencies } = useOutOfBandStore.getState();
+        if (!allowOutOfBandFrequencies) {
+          const readBandLimits = getCapabilitiesForModel(effectiveModel)?.bandLimits;
+          if (readBandLimits && channels.some(ch => !isValidChannelFrequency(ch, readBandLimits))) {
+            setAllowOutOfBandFrequencies(true);
+          }
+        }
+      }
+
       // Enrich radioInfo with firmware from cached image (UV5R-Mini; getRadioInfo may have missed it)
       if (typeof (protocol as any).getFirmwareFromCache === 'function') {
         const fw = (protocol as any).getFirmwareFromCache();
@@ -779,10 +792,13 @@ export function useRadioConnection() {
     try {
       // Filter channels to only include those with valid frequencies (use effective model for capabilities)
       const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
-      const bandLimits = getCapabilitiesForModel(effectiveModel)?.bandLimits;
-      const validChannels = channels.filter(ch => isValidChannelFrequency(ch, bandLimits));
+      const { allowOutOfBandFrequencies: writeAllowOob } = useOutOfBandStore.getState();
+      const bandLimits = writeAllowOob ? null : getCapabilitiesForModel(effectiveModel)?.bandLimits;
+      const validChannels = bandLimits
+        ? channels.filter(ch => isValidChannelFrequency(ch, bandLimits))
+        : channels;
       const filteredCount = channels.length - validChannels.length;
-      
+
       if (filteredCount > 0) {
         console.warn(`Filtered out ${filteredCount} channel(s) with frequencies outside supported ranges`);
       }

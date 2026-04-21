@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useDebugStore } from '../../store/debugStore';
+import { useOutOfBandStore } from '../../store/outOfBandStore';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { Button } from '../ui/Button';
@@ -15,6 +16,7 @@ const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
 
 export const AboutTab: React.FC = () => {
   const { debugMode, setDebugMode } = useDebugStore();
+  const { allowOutOfBandFrequencies, setAllowOutOfBandFrequencies } = useOutOfBandStore();
   const [offlineFallbackOpen, setOfflineFallbackOpen] = useState(false);
 
   return (
@@ -295,6 +297,35 @@ npm run build:single</code>
             {debugMode && (
               <p className="text-xs text-yellow-400">
                 Debug mode is enabled. The Diagnostics tab (🐛) is now visible in the navigation bar.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Out of Band Frequencies */}
+        <div className="bg-deep-gray rounded-lg border border-orange-600/30 p-6">
+          <h3 className="text-lg font-semibold text-orange-400 mb-4">Out of Band Frequencies</h3>
+          <div className="space-y-3">
+            <p className="text-cool-gray text-sm">
+              Enable this if your radio has modified firmware that supports frequencies outside the
+              standard VHF (87–174 MHz) and UHF (400–470 MHz) ranges. When enabled, out-of-band
+              channels will be read, displayed, and written without filtering. This setting is saved
+              with your codeplug.
+            </p>
+            <button
+              type="button"
+              onClick={() => setAllowOutOfBandFrequencies(!allowOutOfBandFrequencies)}
+              className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
+                allowOutOfBandFrequencies
+                  ? 'bg-orange-900/30 text-orange-400 border border-orange-600/30 hover:bg-orange-900/50'
+                  : 'bg-orange-900/20 text-orange-500 border border-orange-600/20 hover:bg-orange-900/30'
+              }`}
+            >
+              {allowOutOfBandFrequencies ? '✓ Out of Band Frequencies Enabled' : 'Enable Out of Band Frequencies'}
+            </button>
+            {allowOutOfBandFrequencies && (
+              <p className="text-xs text-orange-400">
+                Out of band frequencies are enabled. No frequency filtering will be applied on read or write.
               </p>
             )}
           </div>
