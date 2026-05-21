@@ -39,6 +39,7 @@ export function getErrorMessage(error: unknown, defaultMessage: string = 'Unknow
 export class DM32Connection {
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
+  private port: WebSerialPort | null = null;
   private readBuffer: Uint8Array = new Uint8Array(0); // Persistent read buffer
   private isReading: boolean = false; // Prevent concurrent reads
 
@@ -46,17 +47,18 @@ export class DM32Connection {
     // Clear any leftover state from previous connections
     this.readBuffer = new Uint8Array(0);
     this.isReading = false;
-    
+    this.port = port;
+
     // Check if port already has active readers/writers (locked streams)
     // If so, we can't get new ones - the port is in use
     if (!port.readable || !port.writable) {
       throw new Error('Port streams are not available. Port may not be open.');
     }
-    
+
     if (port.readable.locked || port.writable.locked) {
       throw new Error('Port has locked streams from a previous connection. Please close other connections first.');
     }
-    
+
     // Get reader and writer - these lock the streams
     this.reader = port.readable.getReader();
     this.writer = port.writable.getWriter();
@@ -65,14 +67,12 @@ export class DM32Connection {
     // Radio needs time to initialize after port open (CONNECTION.INIT_DELAY for DM32.01.01.049 and similar)
     await this.delay(CONNECTION.INIT_DELAY);
 
-    // Clear any initialization data from the radio
-    // Read and discard any data sent immediately after port open
+    // Clear any initialization data from the radio.
+    // clearBuffer() cancels and reacquires the reader, which flushes any in-flight
+    // reads and discards buffered init bytes. The CLEAR_BUFFER_DELAY is applied inside.
     log.debug('Clearing initialization data...', 'Connection');
     await this.clearBuffer();
-    
-    // Additional delay after clearing buffer to ensure radio is ready
-    await this.delay(CONNECTION.CLEAR_BUFFER_DELAY);
-    
+
     log.info('Ready to communicate.', 'Connection');
     
     // Step 1: PSEARCH
@@ -446,7 +446,7 @@ export class DM32Connection {
     // Clear read buffer to prevent stale data from affecting next connection
     this.readBuffer = new Uint8Array(0);
     this.isReading = false;
-    
+
     // Cancel reader (aborts any in-flight read) and close writer
     if (this.reader) {
       try {
@@ -464,9 +464,7 @@ export class DM32Connection {
       }
       this.writer = null;
     }
-    // Don't close the port or clear the reference - let the protocol manage it
-    // The port can be reused for subsequent connections
-    // this.port = null; // Commented out to allow port reuse
+    this.port = null;
   }
 
   private async sendCommand(command: string): Promise<void> {
@@ -615,45 +613,41 @@ export class DM32Connection {
 
   /**
    * Clear all pending data from the input buffer.
-   * This reads any available data into the buffer, then clears it.
-   * Simplified version that just reads once with a short timeout.
+   *
+   * Uses cancel + reacquire on the reader rather than a Promise.race timeout.
+   * The race approach leaves a "ghost" reader.read() in flight when the timeout
+   * fires before init bytes arrive; that ghost read later consumes the PSEARCH
+   * response, causing a first-connection failure that looks fine on retry.
+   *
+   * By cancelling the reader we abort any in-flight read, release the stream
+   * lock, and let incoming init bytes be received by the OS and discarded while
+   * we wait (CLEAR_BUFFER_DELAY). A fresh reader is then acquired with a clean
+   * slate before the handshake begins.
    */
   private async clearBuffer(): Promise<void> {
-    if (!this.reader) return;
+    if (!this.reader || !this.port) return;
 
     try {
-      // Try to read any immediate data (radio may send initialization bytes)
-      // Use a short timeout to avoid blocking
-      const timeoutPromise = new Promise<void>((resolve) => {
-        setTimeout(() => resolve(), 50);
-      });
-      
-      const fillPromise = this.fillBuffer();
-      await Promise.race([fillPromise, timeoutPromise]);
-      
-      // Read one more time in case there's a second packet
-      // Create a new timeout promise - the original is already resolved and would race immediately
-      await this.delay(20);
-      try {
-        const timeoutPromise2 = new Promise<void>((resolve) => { setTimeout(() => resolve(), 50); });
-        await Promise.race([this.fillBuffer(), timeoutPromise2]);
-      } catch (e) {
-        // Ignore errors
-      }
-
-      if (this.readBuffer.length > 0) {
-        const clearedHex = Array.from(this.readBuffer)
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join(' ');
-        log.debug(`Cleared ${this.readBuffer.length} bytes from buffer: ${clearedHex}`, 'Connection');
-        this.readBuffer = new Uint8Array(0); // Clear the buffer
-      } else {
-        log.debug('Buffer was already clear', 'Connection');
-      }
+      // Cancel aborts any pending reader.read() and releases the readable lock.
+      await this.reader.cancel();
     } catch (e) {
-      log.warn('Error clearing buffer', 'Connection', e);
-      this.readBuffer = new Uint8Array(0); // Clear on error too
+      // Ignore — reader may already be in an error/cancelled state.
     }
+    this.reader = null;
+    this.isReading = false;
+    this.readBuffer = new Uint8Array(0);
+
+    // Wait for the radio to finish sending initialization bytes.
+    // While the reader is cancelled the OS still receives bytes but they are
+    // discarded, so after this delay the receive path should be silent.
+    await this.delay(CONNECTION.CLEAR_BUFFER_DELAY);
+
+    // Reacquire a fresh reader — no buffered stale data, no ghost reads.
+    if (!this.port.readable || this.port.readable.locked) {
+      throw new Error('Cannot acquire fresh reader after buffer clear');
+    }
+    this.reader = this.port.readable.getReader();
+    log.debug('Reader refreshed — starting handshake with clean slate', 'Connection');
   }
 }
 
