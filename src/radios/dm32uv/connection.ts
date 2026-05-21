@@ -49,8 +49,6 @@ export class DM32Connection {
     this.isReading = false;
     this.port = port;
 
-    // Check if port already has active readers/writers (locked streams)
-    // If so, we can't get new ones - the port is in use
     if (!port.readable || !port.writable) {
       throw new Error('Port streams are not available. Port may not be open.');
     }
@@ -59,25 +57,16 @@ export class DM32Connection {
       throw new Error('Port has locked streams from a previous connection. Please close other connections first.');
     }
 
-    // Get reader and writer - these lock the streams
     this.reader = port.readable.getReader();
     this.writer = port.writable.getWriter();
 
-    // Wait for radio to be ready after port is opened
-    // Radio needs time to initialize after port open (CONNECTION.INIT_DELAY for DM32.01.01.049 and similar)
+    // Wait for radio to initialize after port open, then flush any init bytes.
     await this.delay(CONNECTION.INIT_DELAY);
-
-    // Clear any initialization data from the radio.
-    // clearBuffer() cancels and reacquires the reader, which flushes any in-flight
-    // reads and discards buffered init bytes. The CLEAR_BUFFER_DELAY is applied inside.
-    log.debug('Clearing initialization data...', 'Connection');
     await this.clearBuffer();
+    // Additional settling time — radio needs this before it will respond to PSEARCH.
+    await this.delay(CONNECTION.CLEAR_BUFFER_DELAY);
 
-    log.info('Ready to communicate.', 'Connection');
-    
     // Step 1: PSEARCH
-    // Send once and wait — the radio has a timing window and may be slow to reply.
-    // Use a longer timeout than other commands to avoid cutting off a late response.
     await this.sendCommand('PSEARCH');
     await this.delay(CONNECTION.PSEARCH_READ_DELAY);
 
@@ -87,7 +76,6 @@ export class DM32Connection {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       if (errorMsg.includes('timed out') || errorMsg.includes('timeout')) {
-        // Partial response (e.g. 6 bytes): surface the full error so user sees "Received (hex): ..."
         if (errorMsg.includes('Received (hex):') && !errorMsg.includes('(got 0 bytes)')) {
           throw new Error(`PSEARCH handshake failed: ${errorMsg}`);
         }
@@ -97,20 +85,13 @@ export class DM32Connection {
     }
 
     const psearchHex = this.formatBytesHex(psearchResponse);
-    log.info(`PSEARCH response (${psearchResponse.length} bytes): ${psearchHex}`, 'Connection');
-    const psearchAscii = new TextDecoder('ascii', { fatal: false }).decode(psearchResponse.slice(1)).replace(/\0/g, '').trim();
-    if (psearchAscii) {
-      log.debug(`PSEARCH model string: "${psearchAscii}"`, 'Connection');
-    }
+    log.info(`PSEARCH: ${psearchHex}`, 'Connection');
 
-    // Validate: first byte should be 0x06 (ACK)
     if (psearchResponse[0] !== 0x06) {
       throw new Error(`Radio not found: Expected ACK (0x06), got 0x${psearchResponse[0].toString(16).padStart(2, '0')}. Response: ${psearchHex}`);
     }
 
-    // Decode model string
-    const modelString = psearchAscii;
-
+    const modelString = new TextDecoder('ascii', { fatal: false }).decode(psearchResponse.slice(1)).replace(/\0/g, '').trim();
     if (!modelString.includes('DP570') && !modelString.includes('DM32') && !modelString.includes('DM-32')) {
       throw new Error(`Unsupported radio model: "${modelString}". Expected DP570UV or DM-32UV. Response: ${psearchHex}`);
     }
@@ -122,7 +103,6 @@ export class DM32Connection {
     await this.delay(50);
 
     const passstaResponse = await this.readBytes(3, undefined, 'PASSSTA');
-    log.debug(`PASSSTA response (3 bytes): ${this.formatBytesHex(passstaResponse)}`, 'Connection');
     if (passstaResponse[0] !== 0x50) {
       throw new Error(`PASSSTA failed: Expected 0x50, got 0x${passstaResponse[0].toString(16).padStart(2, '0')}`);
     }
@@ -134,11 +114,10 @@ export class DM32Connection {
     await this.delay(50);
 
     const sysinfoResponse = await this.readBytes(1, undefined, 'SYSINFO');
-    log.debug(`SYSINFO response (1 byte): ${this.formatBytesHex(sysinfoResponse)}`, 'Connection');
     if (sysinfoResponse[0] !== 0x06) {
       throw new Error(`SYSINFO failed: Expected 0x06, got 0x${sysinfoResponse[0].toString(16).padStart(2, '0')}`);
     }
-    
+
     await this.delay(10);
   }
 
@@ -163,34 +142,22 @@ export class DM32Connection {
 
   async queryVFrame(frameId: number): Promise<Uint8Array> {
     const command = new Uint8Array([0x56, 0x00, 0x00, 0x00, frameId]);
-    const frameIdHex = `0x${frameId.toString(16).padStart(2, '0')}`;
-    log.debug(`Sending V-frame query: ${frameIdHex}`, 'Connection');
     await this.write(command);
-    await this.delay(50); // Give radio time to respond before read
+    await this.delay(50);
 
-    log.debug(`Reading V-frame ${frameIdHex} header (3 bytes)...`, 'Connection');
     const header = await this.readBytes(3);
-    const headerHex = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join(' ');
-    log.debug(`V-frame header: ${headerHex}`, 'Connection');
-    
     if (header[0] !== 0x56 || header[1] !== frameId) {
+      const headerHex = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join(' ');
       throw new Error(`Invalid V-frame response for frame 0x${frameId.toString(16)}: header=${headerHex}`);
     }
 
     const length = header[2];
-    log.debug(`V-frame ${frameIdHex} data length: ${length}`, 'Connection');
-    
     if (length === 0) {
       return new Uint8Array(0);
     }
 
     const data = await this.readBytes(length);
-    const dataHex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
-    log.verbose(`V-frame ${frameIdHex} data: ${dataHex}`, 'Connection');
-    
-    // Delay after reading V-frame before next command
     await this.delay(50);
-    
     return data;
   }
 
@@ -241,10 +208,6 @@ export class DM32Connection {
       ]);
 
       const command = new Uint8Array([0x52, ...addrBytes, ...lenBytes]);
-      const commandHex = Array.from(command)
-        .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-        .join(' ');
-      log.debug(`Sending read command (0x52 "R"): ${commandHex} (address: ${addressHex}, length: ${length})`, 'Connection');
       await this.write(command);
       await this.delay(25); // Give radio time to respond before read (block reads)
 
@@ -312,46 +275,24 @@ export class DM32Connection {
     command[5] = 0x10; // Size indicator (4KB)
     command.set(data, 6); // Data (bytes 6-4101) - includes metadata byte at data[0xFFF] which becomes command[4101]
 
-    // Debug logging: Log write command details
     const addressHex = `0x${address.toString(16).padStart(6, '0').toUpperCase()}`;
     const metadataHex = `0x${metadata.toString(16).padStart(2, '0').toUpperCase()}`;
-    const commandHeader = Array.from(command.slice(0, 6))
-      .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-      .join(' ');
-    
-    log.debug(`Sending write command (0x57 "W"): address=${addressHex}, metadata=${metadataHex}, size=${data.length} bytes`, 'Connection');
-    log.verbose(`Write command header: ${commandHeader}`, 'Connection');
-    
-    // Log first 64 bytes of data for debugging
-    const dataPreview = Array.from(data.slice(0, 64))
-      .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-      .join(' ');
-    log.verbose(`Data preview (first 64 bytes): ${dataPreview}`, 'Connection');
-    
-    // Log metadata byte location in data (this is the ONLY place the metadata byte appears)
-    const dataMetadataByte = data[0xFFF];
-    log.verbose(`Data metadata byte at 0xFFF: 0x${dataMetadataByte.toString(16).padStart(2, '0').toUpperCase()}`, 'Connection');
-    log.verbose(`Metadata byte in command[4101]: 0x${command[4101].toString(16).padStart(2, '0').toUpperCase()}`, 'Connection');
-    
+
     // Verify metadata byte in data matches what we expect
+    const dataMetadataByte = data[0xFFF];
     if (dataMetadataByte !== metadata) {
       log.warn(`Metadata byte mismatch: data[0xFFF] = 0x${dataMetadataByte.toString(16).padStart(2, '0').toUpperCase()}, expected ${metadataHex}`, 'Connection');
     }
 
     try {
       await this.write(command);
-      log.debug('Command sent successfully, waiting for ACK...', 'Connection');
-      
-      // Response: 0x06 (ACK) or error code
-      // readBytes will wait for the response - no artificial delay needed
       const response = await this.readBytes(1);
-      const responseHex = `0x${response[0].toString(16).padStart(2, '0').toUpperCase()}`;
-      log.debug(`Response received: ${responseHex}`, 'Connection');
-      
+
       if (response[0] !== 0x06) {
         // Common error codes:
         // 0xC0 might indicate write error, invalid address, or radio not in programming mode
         // 0xC8 might indicate invalid block data, checksum error, or block format issue
+        const responseHex = `0x${response[0].toString(16).padStart(2, '0').toUpperCase()}`;
         let errorMsg = `Write not acknowledged. Expected 0x06 (ACK), got ${responseHex}`;
         if (response[0] === 0xC0) {
           errorMsg += '. Error code 0xC0 may indicate: write rejected, invalid address, or radio not in programming mode.';
@@ -364,9 +305,9 @@ export class DM32Connection {
         throw new Error(errorMsg);
       }
       
-      log.info(`Write successful for block at ${addressHex} with metadata ${metadataHex}`, 'Connection');
+      log.info(`writeMemory: ${addressHex} ok (metadata ${metadataHex})`, 'Connection');
     } catch (error) {
-      log.error(`Failed to write block at ${addressHex} with metadata ${metadataHex}`, 'Connection', error);
+      log.error(`writeMemory: failed at ${addressHex}`, 'Connection', error);
       throw error;
     }
   }
@@ -433,12 +374,10 @@ export class DM32Connection {
     command[4] = sizeLo;
     command[5] = sizeHi;
     command.set(data, 6);
-    const addressHex = `0x${address.toString(16).padStart(6, '0').toUpperCase()}`;
-    log.debug(`Sending boot image write: address=${addressHex}, size=${data.length}`, 'Connection');
     await this.write(command);
     const response = await this.readBytes(1);
     if (response[0] !== 0x06) {
-      throw new Error(`Boot image write not ACK at ${addressHex}: got 0x${response[0].toString(16).padStart(2, '0')}`);
+      throw new Error(`Boot image write not ACK at 0x${address.toString(16).padStart(6, '0').toUpperCase()}: got 0x${response[0].toString(16).padStart(2, '0')}`);
     }
   }
 
@@ -468,50 +407,17 @@ export class DM32Connection {
   }
 
   private async sendCommand(command: string): Promise<void> {
-    const bytes = new TextEncoder().encode(command);
-    const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
-    log.debug(`Sending command: ${command} (${hex})`, 'Connection');
-    
     if (!this.writer) {
       throw new Error('Not connected');
     }
-    
-    // Write the command
-    await this.writer.write(bytes);
-    await this.delay(10); // Brief delay after send before caller reads
+    await this.writer.write(new TextEncoder().encode(command));
+    await this.delay(10);
   }
 
   private async write(data: Uint8Array): Promise<void> {
     if (!this.writer) {
       throw new Error('Not connected');
     }
-    
-    // Determine command type from first byte
-    const commandByte = data[0];
-    let commandType = 'UNKNOWN';
-    if (commandByte === 0x52) {
-      commandType = 'READ (0x52 "R")';
-    } else if (commandByte === 0x57) {
-      commandType = 'WRITE (0x57 "W")';
-    } else if (commandByte === 0x56) {
-      commandType = 'V-FRAME (0x56 "V")';
-    } else {
-      commandType = `0x${commandByte.toString(16).padStart(2, '0').toUpperCase()}`;
-    }
-    
-    // Log command with type and bytes
-    if (data.length > 100) {
-      const commandPreview = Array.from(data.slice(0, 16))
-        .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-        .join(' ');
-      log.debug(`${commandType} command: ${commandPreview}... (${data.length} bytes total)`, 'Connection');
-    } else {
-      const commandHex = Array.from(data)
-        .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-        .join(' ');
-      log.debug(`${commandType} command: ${commandHex}`, 'Connection');
-    }
-    
     await this.writer.write(data);
   }
 
@@ -522,20 +428,18 @@ export class DM32Connection {
    * No timeout here - timeout is handled at readBytes level.
    */
   private async fillBuffer(): Promise<void> {
-    if (!this.reader || this.isReading) {
-      return;
-    }
+    if (!this.reader || this.isReading) return;
 
     this.isReading = true;
     try {
       const { value, done } = await this.reader.read();
-      
+
       if (done) {
+        log.warn('Serial stream ended unexpectedly — port may have closed', 'Connection');
         throw new Error('Stream ended unexpectedly');
       }
-      
+
       if (value.length > 0) {
-        // Append new data to buffer
         const newBuffer = new Uint8Array(this.readBuffer.length + value.length);
         newBuffer.set(this.readBuffer);
         newBuffer.set(value, this.readBuffer.length);
@@ -566,31 +470,22 @@ export class DM32Connection {
 
     return withTimeout(
       (async () => {
-        // Keep reading from stream until we have enough data in buffer
         while (this.readBuffer.length < count) {
-          const bufferLengthBefore = this.readBuffer.length;
+          const before = this.readBuffer.length;
           await this.fillBuffer();
 
-          // If fillBuffer didn't add any data and we still don't have enough,
-          // check if we've been waiting too long
-          if (this.readBuffer.length === bufferLengthBefore && this.readBuffer.length < count) {
-            const elapsed = Date.now() - startTime;
-            if (elapsed >= timeout) {
-              const received = this.readBuffer.length;
+          if (this.readBuffer.length === before && this.readBuffer.length < count) {
+            if (Date.now() - startTime >= timeout) {
               const hex = this.formatBytesHex(this.readBuffer);
-              const msg = `Read ${count} bytes timed out after ${timeout}ms (got ${received} bytes). Received (hex): ${hex}`;
+              const msg = `Read ${count} bytes timed out after ${timeout}ms (got ${this.readBuffer.length} bytes). Received (hex): ${hex}`;
               log.warn(`${ctx}${msg}`, 'Connection');
               throw new Error(msg);
             }
           }
         }
 
-        // Extract exactly 'count' bytes from buffer
         const result = this.readBuffer.slice(0, count);
-
-        // Remove consumed bytes from buffer
         this.readBuffer = this.readBuffer.slice(count);
-
         return result;
       })(),
       timeout,
@@ -630,24 +525,21 @@ export class DM32Connection {
     try {
       // Cancel aborts any pending reader.read() and releases the readable lock.
       await this.reader.cancel();
-    } catch (e) {
+    } catch {
       // Ignore — reader may already be in an error/cancelled state.
     }
     this.reader = null;
     this.isReading = false;
     this.readBuffer = new Uint8Array(0);
 
-    // Wait for the radio to finish sending initialization bytes.
-    // While the reader is cancelled the OS still receives bytes but they are
-    // discarded, so after this delay the receive path should be silent.
+    // While the reader is cancelled the OS still receives bytes but discards them,
+    // so after this delay the receive path should be silent.
     await this.delay(CONNECTION.CLEAR_BUFFER_DELAY);
 
-    // Reacquire a fresh reader — no buffered stale data, no ghost reads.
     if (!this.port.readable || this.port.readable.locked) {
       throw new Error('Cannot acquire fresh reader after buffer clear');
     }
     this.reader = this.port.readable.getReader();
-    log.debug('Reader refreshed — starting handshake with clean slate', 'Connection');
   }
 }
 

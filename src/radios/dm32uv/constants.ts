@@ -86,7 +86,7 @@ export const CONNECTION = {
   BAUD_RATE: 115200,
   INIT_DELAY: 400,          // ms after port open (increased for DM32.01.01.049 and similar)
   CLEAR_BUFFER_DELAY: 200,  // ms after clearing buffer
-  PSEARCH_READ_DELAY: 100,  // ms after PSEARCH before reading response (radio needs time to reply)
+  PSEARCH_READ_DELAY: 150,  // ms after PSEARCH before reading response (radio needs time to reply)
   REOPEN_DELAY: 400,         // ms to wait after closing port before reopening (fresh handshake)
   BLOCK_READ_DELAY: 150,    // ms between block reads (radio needs time after sending 4KB before next request)
   // Timeout values (in milliseconds)

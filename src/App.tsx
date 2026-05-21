@@ -29,7 +29,7 @@ import { useRadioStore } from './store/radioStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
-import { setLogStore } from './utils/protocolLogger';
+import { setLogStore, logger, LogLevel } from './utils/protocolLogger';
 import { useLogStore } from './store/logStore';
 
 function App() {
@@ -59,6 +59,17 @@ function App() {
     setLogStore({
       addLog: (entry) => logStore.addLog(entry),
     });
+    // Allow debug logging to be toggled without a code change:
+    //   enable:  localStorage.setItem('neonplug_log_level', 'debug')  then reload
+    //   disable: localStorage.removeItem('neonplug_log_level')         then reload
+    const stored = localStorage.getItem('neonplug_log_level');
+    if (stored === 'verbose') {
+      logger.configure({ level: LogLevel.VERBOSE });
+      console.log('[NeonPlug] Log level: VERBOSE');
+    } else if (stored === 'debug') {
+      logger.configure({ level: LogLevel.DEBUG });
+      console.log('[NeonPlug] Log level: DEBUG');
+    }
   }, [logStore]);
 
   // Tell password managers (LastPass, 1Password, Bitwarden) to ignore all input fields in this app
