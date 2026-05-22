@@ -58,63 +58,44 @@ export function mergeOverlappingChannels(
   const frequencyMap = new Map<string, Channel>(); // "rx-tx" -> channel
   
   let nextChannelNumber = startChannelNumber;
-  let debugChannel722 = false;
-  
+
   // Process all channels from all sets
   for (const channelSet of channelSets) {
     for (const channel of channelSet) {
       const freqKey = `${channel.rxFrequency.toFixed(4)}-${channel.txFrequency.toFixed(4)}`;
-      
-      // Debug logging for channel 722
-      if (channel.number === 722 || channel.name.includes('151.625')) {
-        console.log(`[ChannelMerger] Processing channel ${channel.number} "${channel.name}" (${channel.rxFrequency} MHz) - freqKey: ${freqKey}`);
-        debugChannel722 = true;
-      }
-      
+
       if (frequencyMap.has(freqKey)) {
         // Channel with same frequencies exists - merge them
         const existingChannel = frequencyMap.get(freqKey)!;
         const mergedChannel = mergeChannels(existingChannel, channel);
-        
+
         // Update the merged channel in the map
         frequencyMap.set(freqKey, mergedChannel);
-        
+
         // Update the merged channel in the array
-        const existingIndex = mergedChannels.findIndex(ch => 
+        const existingIndex = mergedChannels.findIndex(ch =>
           ch.number === existingChannel.number
         );
         if (existingIndex >= 0) {
           mergedChannels[existingIndex] = { ...mergedChannel, number: existingChannel.number };
         }
-        
+
         // Map original channel number to merged channel number
         channelMapping.set(channel.number, existingChannel.number);
-        
-        if (debugChannel722 && channel.number === 722) {
-          console.log(`[ChannelMerger] Channel 722 DUPLICATE: mapped to existing channel ${existingChannel.number} "${existingChannel.name}"`);
-        }
       } else {
         // New unique frequency - add as new channel
         const newChannel = {
           ...channel,
           number: nextChannelNumber++,
         };
-        
+
         frequencyMap.set(freqKey, newChannel);
         mergedChannels.push(newChannel);
-        
+
         // Map original channel number to new channel number
         channelMapping.set(channel.number, newChannel.number);
-        
-        if (debugChannel722 && channel.number === 722) {
-          console.log(`[ChannelMerger] Channel 722 NEW: assigned new number ${newChannel.number}`);
-        }
       }
     }
-  }
-  
-  if (debugChannel722) {
-    console.log(`[ChannelMerger] Final mapping for 722:`, channelMapping.get(722));
   }
   
   return { mergedChannels, channelMapping };

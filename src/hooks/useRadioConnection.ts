@@ -51,7 +51,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setConnectionError } = useRadioStore();
+  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setConnectionError } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -111,457 +111,178 @@ export function useRadioConnection() {
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    // Define steps once - this is the single source of truth
-    // Use the exported READ_STEPS array (single source of truth)
     const steps = READ_STEPS;
 
-    // Read model directly from the live store to avoid stale closure issues.
-    // selectedRadioModel may still be null if the user never explicitly clicked the picker
-    // button (the UI shows it pre-selected via useEffectiveRadioModel but the store value is
-    // null). Fall back to radioInfo.model from the last successful read.
+    // Read model from live store — selectedRadioModel may be null if the user never explicitly
+    // used the picker (UI pre-selects it via useEffectiveRadioModel but doesn't write the store).
+    // Fall back to the model from the last successful read.
     const { selectedRadioModel: liveModel, radioInfo: liveRadioInfo } = useRadioStore.getState();
     const effectiveModel: string | null = liveModel ?? liveRadioInfo?.model ?? null;
 
-    try {
-      // Create protocol for the radio selected in the pick-a-radio modal
-      protocol = createProtocolForModel(effectiveModel ?? '') ?? createDefaultProtocol();
-
-      // Set up progress callback that forwards to our callback
-      protocol.onProgress = (progress, message) => {
-        onProgress?.(progress, message);
-      };
-
-      // Step 1: Request port (serial or BLE) in same user gesture
-      // Use effectiveModel for transport selection (may be null on first connect; that's OK — we
-      // re-resolve caps below after getRadioInfo() returns the actual model from the radio).
-      let caps = getCapabilitiesForModel(effectiveModel);
-      const transport = caps?.supportsBle
-        ? (preferredTransport ?? caps?.preferredTransport ?? 'serial')
-        : undefined;
-      onProgress?.(
-        5,
-        transport === 'ble' ? 'Select BLE device...' : 'Select serial port...',
-        steps[0]
-      );
-      await protocol.connect({
-        forcePortSelection: true,
-        ...(transport != null && { transport }),
-      });
-
-      // Step 2: Get radio info
+    // All data-reading steps after connect() are extracted here so both the first attempt
+    // and the retry go through exactly the same code path.
+    const performRead = async (proto: RadioProtocol) => {
       onProgress?.(10, 'Reading radio information...', steps[2]);
-      const radioInfo = await protocol.getRadioInfo();
-
-      setRadioInfo(radioInfo);
+      const info = await proto.getRadioInfo();
+      setRadioInfo(info);
       setConnected(true);
 
-      // Re-resolve caps using the actual model string returned by the radio.
-      // effectiveModel is null when the user hasn't previously connected (no stored radioInfo),
-      // so caps would be null and bulk read would be skipped. Use radioInfo.model if available.
-      if (radioInfo.model) {
-        caps = getCapabilitiesForModel(radioInfo.model) ?? caps;
-      }
+      // Resolve caps from the actual model the radio reported — effectiveModel may be null
+      // on first connect, which would cause bulk read to be skipped if we used it here.
+      const caps = getCapabilitiesForModel(info.model ?? effectiveModel);
 
-      // Step 4: Bulk read when capability says so (e.g. DM-32UV); otherwise protocol reads on demand
-      if (caps?.supportsBulkRead && typeof (protocol as any).bulkReadRequiredBlocks === 'function') {
+      if (caps?.supportsBulkRead && typeof (proto as any).bulkReadRequiredBlocks === 'function') {
         onProgress?.(15, 'Reading all memory blocks...', steps[3]);
-        await (protocol as any).bulkReadRequiredBlocks();
+        await (proto as any).bulkReadRequiredBlocks();
       }
 
-      // Step 5: Parse channels (from cache after bulk read, or over connection)
       onProgress?.(20, 'Parsing channels...', steps[4]);
-      const channels = await protocol.readChannels();
+      const channels = await proto.readChannels();
       setChannels(channels);
-      // Enrich radioInfo with firmware from cached image (UV5R-Mini; getRadioInfo may have missed it)
-      if (typeof (protocol as any).getFirmwareFromCache === 'function') {
-        const fw = (protocol as any).getFirmwareFromCache();
+      // Enrich radioInfo with firmware from cached image (UV5R-Mini path)
+      if (typeof (proto as any).getFirmwareFromCache === 'function') {
+        const fw = (proto as any).getFirmwareFromCache();
         if (fw) {
-          const store = useRadioStore.getState();
-          const current = store.radioInfo;
+          const current = useRadioStore.getState().radioInfo;
           if (current) setRadioInfo({ ...current, firmware: fw });
         }
       }
-      // Store raw channel data for debug export
-      if ((protocol as any).rawChannelData) {
-        setRawChannelData((protocol as any).rawChannelData);
-      }
-      // Store all block metadata and data for debug export
-      if ((protocol as any).allBlockMetadata) {
-        const metadata = (protocol as any).allBlockMetadata;
-        // Create a new Map to ensure Zustand stores it properly
-        const metadataCopy = new Map<number, { metadata: number; type: string }>(metadata);
-        setBlockMetadata(metadataCopy);
-      }
-      if ((protocol as any).allBlockData) {
-        const data = (protocol as any).allBlockData;
-        // Create a new Map to ensure Zustand stores it properly
-        const dataCopy = new Map<number, Uint8Array>(data);
-        setBlockData(dataCopy);
-      }
+      if ((proto as any).rawChannelData) setRawChannelData((proto as any).rawChannelData);
+      if ((proto as any).allBlockMetadata) setBlockMetadata(new Map<number, { metadata: number; type: string }>((proto as any).allBlockMetadata));
+      if ((proto as any).allBlockData) setBlockData(new Map<number, Uint8Array>((proto as any).allBlockData));
 
-      // Step 6: Parse configuration (zones, scan lists, quick messages, etc.)
-      // Suppress detailed messages and only show high-level progress
-      const originalConfigProgress = protocol.onProgress;
-      protocol.onProgress = (progress, _message) => {
-        // Only update progress percentage, don't forward detailed messages
-        const overallProgress = 70 + (progress * 0.25); // 70% to 95%
-        // Only forward progress percentage, keep the high-level message
-        onProgress?.(overallProgress, 'Parsing configuration...', steps[5]);
+      // Suppress per-item progress messages during config parsing; only surface the percentage.
+      const savedProgress = proto.onProgress;
+      proto.onProgress = (progress, _msg) => {
+        onProgress?.(70 + (progress * 0.25), 'Parsing configuration...', steps[5]);
       };
 
       onProgress?.(70, 'Parsing configuration from cache...', steps[5]);
-      
-      // Read zones
-      const zones = await protocol.readZones();
+
+      const zones = await proto.readZones();
       setZones(zones);
-      // Store raw zone data for debug export
-      if ((protocol as any).rawZoneData) {
-        setRawZoneData((protocol as any).rawZoneData);
-      }
+      if ((proto as any).rawZoneData) setRawZoneData((proto as any).rawZoneData);
 
-      // Read scan lists
-      const scanLists = await protocol.readScanLists();
+      const scanLists = await proto.readScanLists();
       setScanLists(scanLists);
-      // Store raw scan list data for debug export
-      if ((protocol as any).rawScanListData) {
-        setRawScanListData((protocol as any).rawScanListData);
-      }
-      // Update blockData with scan list blocks
-      if ((protocol as any).blockData) {
-        setBlockData((protocol as any).blockData);
-      }
+      if ((proto as any).rawScanListData) setRawScanListData((proto as any).rawScanListData);
+      if ((proto as any).blockData) setBlockData((proto as any).blockData);
 
-      // Read quick messages (optional - don't fail if missing)
       try {
-        const messages = await (protocol as any).readQuickMessages();
+        const messages = await (proto as any).readQuickMessages();
         setMessages(messages);
-        // Store raw message data for debug export
-        const rawDataMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
-        for (const [index, rawData] of (protocol as any).rawMessageData.entries()) {
-          rawDataMap.set(index, rawData);
-        }
-        setRawMessageData(rawDataMap);
-      } catch (err) {
-        // Quick messages are optional - log error but don't fail the entire read
-        console.warn('Failed to read quick messages:', err);
-      }
+        const rawMsgMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
+        for (const [i, raw] of (proto as any).rawMessageData.entries()) rawMsgMap.set(i, raw);
+        setRawMessageData(rawMsgMap);
+      } catch { console.warn('Could not read Quick Messages'); }
 
-      // Read DMR Radio IDs (optional - don't fail if missing)
       try {
-        const radioIds = await protocol.readDMRRadioIDs();
+        const radioIds = await proto.readDMRRadioIDs();
         setRadioIds(radioIds);
-        // Store raw radio ID data for debug export
-        const rawIdDataMap = new Map<number, { data: Uint8Array; idIndex: number; offset: number }>();
-        for (const [index, rawData] of (protocol as any).rawDMRRadioIDData.entries()) {
-          rawIdDataMap.set(index, rawData);
-        }
-        setRawRadioIdData(rawIdDataMap);
-      } catch (err) {
-        // DMR Radio IDs are optional - log error but don't fail the entire read
-        console.warn('Failed to read DMR Radio IDs:', err);
-      }
+        const rawIdMap = new Map<number, { data: Uint8Array; idIndex: number; offset: number }>();
+        for (const [i, raw] of (proto as any).rawDMRRadioIDData.entries()) rawIdMap.set(i, raw);
+        setRawRadioIdData(rawIdMap);
+      } catch { console.warn('Could not read DMR Radio IDs'); }
 
-      // Read calibration data (optional - don't fail if missing)
       try {
-        const calibration = await (protocol as any).readCalibration();
-        setCalibration(calibration);
-      } catch (err) {
-        // Calibration is optional - log error but don't fail the entire read
-        console.warn('Failed to read calibration data:', err);
-      }
+        setCalibration(await (proto as any).readCalibration());
+      } catch { console.warn('Could not read calibration data'); }
 
-      // Read DMR RX Groups (optional - don't fail if missing)
       try {
-        const rxGroups = await (protocol as any).readRXGroups();
+        const rxGroups = await (proto as any).readRXGroups();
         setRXGroups(rxGroups);
-        // Store raw DMR RX group data for debug export
-        const rawGroupDataMap = new Map<number, { data: Uint8Array; groupIndex: number; offset: number }>();
-        for (const [index, rawData] of (protocol as any).rawRXGroupData.entries()) {
-          rawGroupDataMap.set(index, rawData);
-        }
-        setRawGroupData(rawGroupDataMap);
-      } catch (err) {
-        console.warn('Could not read RX Groups:', err);
-      }
+        const rawGroupMap = new Map<number, { data: Uint8Array; groupIndex: number; offset: number }>();
+        for (const [i, raw] of (proto as any).rawRXGroupData.entries()) rawGroupMap.set(i, raw);
+        setRawGroupData(rawGroupMap);
+      } catch { console.warn('Could not read RX Groups'); }
 
-      // Read Talk Groups (metadata 0x44)
       try {
-        const quickContacts = await (protocol as any).readQuickContacts();
-        setQuickContacts(quickContacts);
-      } catch (err) {
-        console.warn('Could not read Talk Groups:', err);
-      }
+        setQuickContacts(await (proto as any).readQuickContacts());
+      } catch { console.warn('Could not read Talk Groups'); }
 
-      // Step 7: Read configuration blocks (Radio Settings, Emergency Systems, etc.)
       try {
         onProgress?.(90, 'Reading configuration...', 'Reading configuration');
-        
-        // Read Radio Settings (for Radio Boot Text)
-        try {
-          const radioSettings = await protocol.readRadioSettings();
-          if (radioSettings) {
-            setRadioSettings(radioSettings);
-          }
-          // Store raw radio settings data for diagnostics
-          if ((protocol as any).rawRadioSettingsData) {
-            setRawRadioSettingsData((protocol as any).rawRadioSettingsData);
-          }
-        } catch (err) {
-          // Radio settings are optional - don't fail the entire read if they're missing or cause errors
-          console.warn('Could not read Radio Settings:', err);
-        }
 
-        // Read Digital Emergency Systems
         try {
-          const digitalEmergency = await (protocol as any).readDigitalEmergencies();
+          const radioSettings = await proto.readRadioSettings();
+          if (radioSettings) setRadioSettings(radioSettings);
+          if ((proto as any).rawRadioSettingsData) setRawRadioSettingsData((proto as any).rawRadioSettingsData);
+        } catch { console.warn('Could not read Radio Settings'); }
+
+        try {
+          const digitalEmergency = await (proto as any).readDigitalEmergencies();
           if (digitalEmergency) {
             setDigitalEmergencies(digitalEmergency.systems);
             setDigitalEmergencyConfig(digitalEmergency.config);
           }
-        } catch (err) {
-          console.warn('Could not read Digital Emergency Systems:', err);
-        }
+        } catch { console.warn('Could not read Digital Emergency Systems'); }
 
-        // Read Analog Emergency Systems
         try {
-          const analogEmergencies = await (protocol as any).readAnalogEmergencies();
-          if (analogEmergencies) {
-            setAnalogEmergencies(analogEmergencies);
-          }
-        } catch (err) {
-          console.warn('Could not read Analog Emergency Systems:', err);
-        }
+          const analogEmergencies = await (proto as any).readAnalogEmergencies();
+          if (analogEmergencies) setAnalogEmergencies(analogEmergencies);
+        } catch { console.warn('Could not read Analog Emergency Systems'); }
 
-        // Update blockData with all configuration blocks for debug export
-        if ((protocol as any).blockData) {
-          setBlockData((protocol as any).blockData);
-        }
-      } catch (err) {
-        // Configuration blocks are optional - don't fail the entire read if they're missing or cause errors
-        console.warn('Error reading configuration blocks:', err);
-      }
+        if ((proto as any).blockData) setBlockData((proto as any).blockData);
+      } catch { console.warn('Error reading configuration blocks'); }
 
-      // Restore original progress handler
-      protocol.onProgress = originalConfigProgress;
-
-      // Step 6: Complete (contacts are read separately on demand)
+      proto.onProgress = savedProgress;
       onProgress?.(100, 'Read complete!', steps[5]);
+    };
+
+    try {
+      protocol = createProtocolForModel(effectiveModel ?? '') ?? createDefaultProtocol();
+      protocol.onProgress = (progress, message) => onProgress?.(progress, message);
+
+      // caps here is only used for transport selection — re-resolved inside performRead
+      // from the actual model string the radio returns.
+      const caps = getCapabilitiesForModel(effectiveModel);
+      const transport = caps?.supportsBle
+        ? (preferredTransport ?? caps?.preferredTransport ?? 'serial')
+        : undefined;
+      onProgress?.(5, transport === 'ble' ? 'Select BLE device...' : 'Select serial port...', steps[0]);
+      await protocol.connect({ forcePortSelection: true, ...(transport != null && { transport }) });
+
+      await performRead(protocol);
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : 'Read failed';
       const errorMessage = withVisibilityContext(rawMessage, tabWentHiddenDuringOperation);
       const isPortSelectionCancelled = rawMessage.includes('cancelled') || rawMessage.includes('Port selection cancelled');
-      
-      // If it's not a port selection cancellation, try retrying with forced port selection
+
       if (!isPortSelectionCancelled && protocol) {
-        console.warn('Read failed, will retry with port selection:', errorMessage);
+        console.warn('Read failed, will retry:', errorMessage);
+        try { await protocol.disconnect(); } catch { /* ignore */ }
 
-        // Try to disconnect the failed connection
         try {
-          await protocol.disconnect();
-        } catch (disconnectErr) {
-          console.warn('Error during disconnect cleanup:', disconnectErr);
-        }
-
-        // Retry the entire read operation with forced port selection
-        try {
-          onProgress?.(5, 'Retrying with port selection...', steps[0]);
-          // Create a new protocol instance to ensure clean state (same radio as initial read)
+          onProgress?.(5, 'Retrying...', steps[0]);
           protocol = createProtocolForModel(effectiveModel ?? '') ?? createDefaultProtocol();
-          protocol.onProgress = (progress, message) => {
-            onProgress?.(progress, message);
-          };
-
-          // Force port selection for retry
-          (protocol as any).port = null;
+          protocol.onProgress = (progress, message) => onProgress?.(progress, message);
           await protocol.connect();
-
-          // Continue with the read operation from the beginning
-          onProgress?.(10, 'Reading radio information...', steps[2]);
-          const radioInfo = await protocol.getRadioInfo();
-          setRadioInfo(radioInfo);
-          setConnected(true);
-
-          // Re-resolve caps from actual radio model (same fix as first attempt above).
-          const retryCaps = getCapabilitiesForModel(radioInfo.model ?? effectiveModel);
-          if (retryCaps?.supportsBulkRead && typeof (protocol as any).bulkReadRequiredBlocks === 'function') {
-            onProgress?.(15, 'Reading all memory blocks...', steps[3]);
-            await (protocol as any).bulkReadRequiredBlocks();
-          }
-          
-          onProgress?.(20, 'Parsing channels from cache...', steps[4]);
-          const channels = await protocol.readChannels();
-          setChannels(channels);
-          if ((protocol as any).rawChannelData) {
-            setRawChannelData((protocol as any).rawChannelData);
-          }
-          if ((protocol as any).allBlockMetadata) {
-            setBlockMetadata((protocol as any).allBlockMetadata);
-          }
-          if ((protocol as any).allBlockData) {
-            setBlockData((protocol as any).allBlockData);
-          }
-          
-          const originalConfigProgress = protocol.onProgress;
-          protocol.onProgress = (progress, _message) => {
-            const overallProgress = 70 + (progress * 0.25);
-            onProgress?.(overallProgress, 'Parsing configuration...', steps[5]);
-          };
-          
-          onProgress?.(70, 'Parsing configuration from cache...', steps[5]);
-          
-          const zones = await protocol.readZones();
-          setZones(zones);
-          if ((protocol as any).rawZoneData) {
-            setRawZoneData((protocol as any).rawZoneData);
-          }
-          
-          const scanLists = await protocol.readScanLists();
-          setScanLists(scanLists);
-          if ((protocol as any).rawScanListData) {
-            setRawScanListData((protocol as any).rawScanListData);
-          }
-          if ((protocol as any).blockData) {
-            setBlockData((protocol as any).blockData);
-          }
-          
-          try {
-            const messages = await (protocol as any).readQuickMessages();
-            setMessages(messages);
-            const rawDataMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
-            for (const [index, rawData] of (protocol as any).rawMessageData.entries()) {
-              rawDataMap.set(index, rawData);
-            }
-            setRawMessageData(rawDataMap);
-          } catch (msgErr) {
-            console.warn('Could not read Quick Messages:', msgErr);
-          }
-          
-          try {
-            const radioSettings = await protocol.readRadioSettings();
-            setRadioSettings(radioSettings);
-            if ((protocol as any).rawRadioSettingsData) {
-              setRawRadioSettingsData((protocol as any).rawRadioSettingsData);
-            }
-          } catch (settingsErr) {
-            console.warn('Could not read Radio Settings:', settingsErr);
-          }
-          
-          try {
-            const digitalEmergencies = await (protocol as any).readDigitalEmergencies();
-            if (digitalEmergencies) {
-              setDigitalEmergencies(digitalEmergencies.systems);
-              setDigitalEmergencyConfig(digitalEmergencies.config);
-            }
-          } catch (err) {
-            console.warn('Could not read Digital Emergency Systems:', err);
-          }
-          
-          try {
-            const radioIds = await protocol.readDMRRadioIDs();
-            if (radioIds) {
-              setRadioIds(radioIds);
-            }
-          } catch (err) {
-            console.warn('Could not read DMR Radio IDs:', err);
-          }
-          
-          try {
-            const calibration = await (protocol as any).readCalibration();
-            if (calibration) {
-              setCalibration(calibration);
-            }
-          } catch (err) {
-            console.warn('Could not read Calibration:', err);
-          }
-          
-          try {
-            const rxGroups = await (protocol as any).readRXGroups();
-            if (rxGroups) {
-              setRXGroups(rxGroups);
-            }
-          } catch (err) {
-            console.warn('Could not read RX Groups:', err);
-          }
-
-          // Read Talk Groups
-          try {
-            const quickContacts = await (protocol as any).readQuickContacts();
-            if (quickContacts) {
-              setQuickContacts(quickContacts);
-            }
-          } catch (err) {
-            console.warn('Could not read Talk Groups:', err);
-          }
-          
-          try {
-            const analogEmergencies = await (protocol as any).readAnalogEmergencies();
-            if (analogEmergencies) {
-              setAnalogEmergencies(analogEmergencies);
-            }
-          } catch (err) {
-            console.warn('Could not read Analog Emergency Systems:', err);
-          }
-          
-          if ((protocol as any).blockData) {
-            setBlockData((protocol as any).blockData);
-          }
-          
-          protocol.onProgress = originalConfigProgress;
-          
-          onProgress?.(100, 'Read complete!', steps[5]);
-          return; // Success - exit without throwing
+          await performRead(protocol);
+          return;
         } catch (retryErr) {
-          // Retry also failed, fall through to show error
-          console.error('Retry with port selection also failed:', retryErr);
           const retryRawMessage = retryErr instanceof Error ? retryErr.message : 'Read failed';
           const retryErrorMessage = withVisibilityContext(retryRawMessage, tabWentHiddenDuringOperation);
           setError(retryErrorMessage);
           setConnectionError(retryErrorMessage);
           onProgress?.(0, `Error: ${retryErrorMessage}`, 'Error');
           setIsConnecting(false);
-          
-          if (protocol) {
-            try {
-              await protocol.disconnect();
-            } catch (disconnectErr) {
-              console.warn('Error during disconnect cleanup:', disconnectErr);
-            }
-          }
+          try { await protocol?.disconnect(); } catch { /* ignore */ }
           throw retryErr;
         }
       }
-      
-      // If port selection was cancelled or retry didn't happen, show error
+
       setError(errorMessage);
       setConnectionError(errorMessage);
       onProgress?.(0, `Error: ${errorMessage}`, 'Error');
-
       console.error('Radio read error:', err);
-      
-      // Set connecting to false so modal can show error state
       setIsConnecting(false);
-      
-      // Try to disconnect on error (if connection exists)
-      if (protocol) {
-        try {
-          await protocol.disconnect();
-        } catch (disconnectErr) {
-          // Ignore disconnect errors - connection might already be closed
-          console.warn('Error during disconnect cleanup:', disconnectErr);
-        }
-      }
-      
-      // Re-throw the error so the caller (Toolbar) can handle it and show error in modal
+      try { await protocol?.disconnect(); } catch { /* ignore */ }
       throw err;
     } finally {
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      // Only set connecting to false if we didn't already (success case)
-      // On error, we set it in the catch block so modal stays open to show error
-      if (!error) {
-        setIsConnecting(false);
-      }
+      if (!error) setIsConnecting(false);
     }
-  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setSettings, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setConnectionError]);
+  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setConnectionError]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
