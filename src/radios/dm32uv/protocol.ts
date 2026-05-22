@@ -226,8 +226,13 @@ export class DM32UVProtocol implements RadioProtocol {
               // Fall through to prompt
             }
           } else if (!isAlreadyOpen) {
-            // Try to open the port
+            // Port is closed — could be a retry after disconnect() (which closes the port via DTR
+            // toggle). Wait REOPEN_DELAY before opening so the radio finishes its reset cycle.
+            // Without this delay, PSEARCH silently times out on retry even though the first
+            // attempt worked fine (radio not yet ready after coming out of programming mode).
             try {
+              log.debug(`Previously granted port is closed; waiting ${CONNECTION.REOPEN_DELAY}ms before open (radio reset settling)`, 'Protocol');
+              await new Promise((resolve) => setTimeout(resolve, CONNECTION.REOPEN_DELAY));
               await withTimeout(
                 port.open({ baudRate: CONNECTION.BAUD_RATE }),
                 CONNECTION.TIMEOUT.PORT_OPEN,
@@ -289,6 +294,8 @@ export class DM32UVProtocol implements RadioProtocol {
         }
       } else if (!isAlreadyOpen) {
         try {
+          log.debug(`Stored port is closed; waiting ${CONNECTION.REOPEN_DELAY}ms before open (radio reset settling)`, 'Protocol');
+          await new Promise((resolve) => setTimeout(resolve, CONNECTION.REOPEN_DELAY));
           await withTimeout(
             port.open({ baudRate: CONNECTION.BAUD_RATE }),
             CONNECTION.TIMEOUT.PORT_OPEN,
