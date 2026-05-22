@@ -142,7 +142,6 @@ export async function loadJsonFile<T = any>(
   for (const path of pathsToTry) {
     try {
       const data = await tryLoadFromUrl(path, onProgress);
-      console.log(`Successfully loaded ${filename} from ${path}`);
       return data as T;
     } catch (error) {
       // Store the error but continue trying other paths

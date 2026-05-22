@@ -90,6 +90,9 @@ export const useRadioSettingsStore = create<RadioSettingsState>((set, get) => ({
     const { changedFields } = get();
     return Array.from(changedFields);
   },
-  clearChanges: () => set({ changedFields: new Set<string>() }),
+  clearChanges: () => set((state) => ({
+    changedFields: new Set<string>(),
+    originalSettings: state.settings ? JSON.parse(JSON.stringify(state.settings)) : null,
+  })),
 }));
 

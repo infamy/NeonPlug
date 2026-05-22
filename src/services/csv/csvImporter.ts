@@ -8,57 +8,13 @@ export interface ImportResult {
 }
 
 export function parseCSV(content: string): string[][] {
-  const lines: string[] = [];
-  let currentLine = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i];
-    const nextChar = content[i + 1];
-
-    if (char === '"') {
-      if (inQuotes && nextChar === '"') {
-        currentLine += '"';
-        i++; // Skip next quote
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (char === ',' && !inQuotes) {
-      lines.push(currentLine);
-      currentLine = '';
-    } else if (char === '\n' && !inQuotes) {
-      lines.push(currentLine);
-      currentLine = '';
-    } else {
-      currentLine += char;
-    }
-  }
-  if (currentLine) {
-    lines.push(currentLine);
-  }
-
-  // Split into rows
-  const rows: string[][] = [];
-  let row: string[] = [];
-  for (const line of lines) {
-    row.push(line.trim());
-    if (line.includes('\n') || row.length > 50) { // Assume max 50 columns
-      rows.push(row);
-      row = [];
-    }
-  }
-  if (row.length > 0) {
-    rows.push(row);
-  }
-
-  // Simple approach: split by newlines first, then by commas
   return content.split('\n')
     .filter(line => line.trim())
     .map(line => {
       const result: string[] = [];
       let current = '';
       let inQuotes = false;
-      
+
       for (let i = 0; i < line.length; i++) {
         const char = line[i];
         if (char === '"') {

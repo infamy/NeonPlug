@@ -28,6 +28,7 @@ import { useEncryptionKeysStore } from './store/encryptionKeysStore';
 import { useRadioStore } from './store/radioStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
+import type { CodeplugData } from './services/codeplugExport';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
 import { setLogStore, logger, LogLevel } from './utils/protocolLogger';
 import { useLogStore } from './store/logStore';
@@ -138,6 +139,27 @@ function App() {
     }, 100);
   };
 
+  const applyCodeplugToStores = (codeplugData: CodeplugData) => {
+    setChannels(codeplugData.channels);
+    setZones(codeplugData.zones);
+    setScanLists(codeplugData.scanLists);
+    setContacts(codeplugData.contacts);
+    setDigitalEmergencies(codeplugData.digitalEmergencies);
+    if (codeplugData.digitalEmergencyConfig) {
+      setDigitalEmergencyConfig(codeplugData.digitalEmergencyConfig);
+    }
+    setAnalogEmergencies(codeplugData.analogEmergencies);
+    if (codeplugData.radioSettings) {
+      setRadioSettings(codeplugData.radioSettings);
+    }
+    setRadioInfo(codeplugData.radioInfo ?? null);
+    setMessages(codeplugData.messages ?? []);
+    setRadioIds(codeplugData.radioIds ?? []);
+    setQuickContacts(codeplugData.quickContacts ?? []);
+    setRXGroups(codeplugData.rxGroups ?? []);
+    setEncryptionKeys(codeplugData.encryptionKeys ?? []);
+  };
+
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -151,25 +173,7 @@ function App() {
         const { importCodeplug } = await import('./services/codeplugExport');
         const codeplugData = await importCodeplug(file);
         
-        // Populate all stores with imported data
-        setChannels(codeplugData.channels);
-        setZones(codeplugData.zones);
-        setScanLists(codeplugData.scanLists);
-        setContacts(codeplugData.contacts);
-        setDigitalEmergencies(codeplugData.digitalEmergencies);
-        if (codeplugData.digitalEmergencyConfig) {
-          setDigitalEmergencyConfig(codeplugData.digitalEmergencyConfig);
-        }
-        setAnalogEmergencies(codeplugData.analogEmergencies);
-        if (codeplugData.radioSettings) {
-          setRadioSettings(codeplugData.radioSettings);
-        }
-        setRadioInfo(codeplugData.radioInfo ?? null);
-        setMessages(codeplugData.messages ?? []);
-        setRadioIds(codeplugData.radioIds ?? []);
-        setQuickContacts(codeplugData.quickContacts ?? []);
-        setRXGroups(codeplugData.rxGroups ?? []);
-        setEncryptionKeys(codeplugData.encryptionKeys ?? []);
+        applyCodeplugToStores(codeplugData);
         
         setShowStartupModal(false);
         const { saveSnapshot } = await import('./services/codeplugSnapshots');
@@ -241,25 +245,8 @@ function App() {
     setZones(sampleZones);
   };
 
-  const handleRestoreSnapshot = (codeplugData: import('./services/codeplugExport').CodeplugData) => {
-    setChannels(codeplugData.channels);
-    setZones(codeplugData.zones);
-    setScanLists(codeplugData.scanLists);
-    setContacts(codeplugData.contacts);
-    setDigitalEmergencies(codeplugData.digitalEmergencies);
-    if (codeplugData.digitalEmergencyConfig) {
-      setDigitalEmergencyConfig(codeplugData.digitalEmergencyConfig);
-    }
-    setAnalogEmergencies(codeplugData.analogEmergencies);
-    if (codeplugData.radioSettings) {
-      setRadioSettings(codeplugData.radioSettings);
-    }
-    setRadioInfo(codeplugData.radioInfo ?? null);
-    setMessages(codeplugData.messages ?? []);
-    setRadioIds(codeplugData.radioIds ?? []);
-    setQuickContacts(codeplugData.quickContacts ?? []);
-    setRXGroups(codeplugData.rxGroups ?? []);
-    setEncryptionKeys(codeplugData.encryptionKeys ?? []);
+  const handleRestoreSnapshot = (codeplugData: CodeplugData) => {
+    applyCodeplugToStores(codeplugData);
     setShowStartupModal(false);
     setShowPickRadioModal(false);
   };
