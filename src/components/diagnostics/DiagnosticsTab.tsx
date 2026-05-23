@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useRadioStore } from '../../store/radioStore';
-import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
@@ -14,7 +14,6 @@ import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useLogStore } from '../../store/logStore';
-import { getCapabilitiesForModel } from '../../radios/capabilities';
 import {
   POWER_ON_INTERFACE_OPTIONS,
   COLOR_OPTIONS,
@@ -49,8 +48,7 @@ export const DiagnosticsTab: React.FC = () => {
   const { contacts: quickContacts } = useQuickContactsStore();
   const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
   const { keys: encryptionKeys } = useEncryptionKeysStore();
-  const effectiveModel = useEffectiveRadioModel();
-  const caps = useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
+  const { caps } = useRadioCapabilities();
   const [showMetadataBlock, setShowMetadataBlock] = useState(false);
   const [showMetadataBlock41, setShowMetadataBlock41] = useState(false);
   const [showContactBlock, setShowContactBlock] = useState(true);

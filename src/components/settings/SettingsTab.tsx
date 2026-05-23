@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Cropper, { Area } from 'react-easy-crop';
 import { useRadioStore } from '../../store/radioStore';
-import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { parseBootImageHeader, rgb565ToImageData, imageDataToRgb565, buildBootImagePayload, BOOT_IMAGE } from '../../utils/bootImage';
 import { useChannelsStore } from '../../store/channelsStore';
@@ -9,7 +9,6 @@ import { useZonesStore } from '../../store/zonesStore';
 import { useContactsStore } from '../../store/contactsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useCalibrationStore } from '../../store/calibrationStore';
-import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { CALIBRATION_PARAM_NAMES } from '../../models/Calibration';
 import { Modal } from '../ui/Modal';
 import { Card } from '../ui/Card';
@@ -89,8 +88,7 @@ export const SettingsTab: React.FC = () => {
   const [showCalibration, setShowCalibration] = useState(false);
   const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
 
-  const effectiveModel = useEffectiveRadioModel();
-  const caps = useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
+  const { caps, model: effectiveModel } = useRadioCapabilities();
   const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
   const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
   const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));

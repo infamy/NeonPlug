@@ -6,8 +6,7 @@ import { findNearbyRptrs, type RptrData } from '../../data/rptrsData';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
-import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
-import { getCapabilitiesForModel } from '../../radios/capabilities';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { ChirpSource } from './sources/ChirpSource';
 import { AirportSource } from './sources/AirportSource';
 import { TaflSource } from './sources/TaflSource';
@@ -16,8 +15,7 @@ import { MmdvmSource } from './sources/MmdvmSource';
 import { FixedChannelsSource } from './sources/FixedChannelsSource';
 
 export const SmartImportTab: React.FC = () => {
-  const effectiveModel = useEffectiveRadioModel();
-  const caps = React.useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
+  const { caps } = useRadioCapabilities();
   const supportsDigital = caps?.analogOnly !== true;
 
   const {

@@ -8,13 +8,12 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import { useRadioStore } from '../../store/radioStore';
-import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
-import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { getRadioPickerOptions, getMigrationTargetModels } from '../../radios';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 import { migrateCodeplug, type MigrationLoss } from '../../services/codeplugMigration';
@@ -34,7 +33,7 @@ export const Toolbar: React.FC = () => {
   const { systems: digitalEmergencies, config: digitalEmergencyConfig, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
   const { systems: analogEmergencies, setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
   const { radioInfo, setRadioInfo, setShowPickRadioModal, setSelectedRadioModel } = useRadioStore();
-  const effectiveModel = useEffectiveRadioModel();
+  const { caps, model: effectiveModel } = useRadioCapabilities();
   const { messages, setMessages } = useQuickMessagesStore();
   const { radioIds: dmrRadioIds, setRadioIds } = useDMRRadioIDsStore();
   const { contacts: quickContacts, setContacts: setQuickContacts } = useQuickContactsStore();
@@ -375,7 +374,6 @@ export const Toolbar: React.FC = () => {
       return;
     }
     // Run radio-specific validations only when model is known; combine with experimental warning in one modal
-    const caps = getCapabilitiesForModel(effectiveModel);
     const { warnings } = validateCodeplugForWrite(channels, zones, caps?.writeValidations, dmrRadioIds);
     let message = EXPERIMENTAL_WRITE_WARNING;
     if (warnings.length > 0) {
