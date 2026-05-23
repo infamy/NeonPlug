@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
-import { getCurrentLocation, geocodeLocation } from '../../services/repeaterFinder';
+import { useLocationState } from '../../hooks/useLocationState';
+import { getNextChannelNumber } from '../../utils/importHelpers';
 import { getAvailableFixedChannelSets, getChannelsForSet } from '../../services/fixedChannels';
 import { mergeOverlappingChannels, getChannelFullKey } from '../../services/channelMerger';
 import { generateAirportChannels } from '../../services/airportChannels';
@@ -38,15 +39,16 @@ export const SmartImportTab: React.FC = () => {
   const caps = React.useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
   const supportsDigital = caps?.analogOnly !== true;
   
-  const [locationType, setLocationType] = useState<'coordinates' | 'city' | 'current'>('current');
-  const [latitude, setLatitude] = useState('');
-  const [longitude, setLongitude] = useState('');
-  const [city, setCity] = useState('');
-  const [state, setState] = useState('');
+  const {
+    locationType, setLocationType,
+    latitude, setLatitude,
+    longitude, setLongitude,
+    city, setCity,
+    state, setState,
+    searchRadius, setSearchRadius,
+    resolveCoordinates,
+  } = useLocationState();
   const [error, setError] = useState<string | null>(null);
-  
-  // Unified location search state
-  const [searchRadius, setSearchRadius] = useState('50');
   const [searchAirports, setSearchAirports] = useState(true);
   const [searchTafl, setSearchTafl] = useState(true);
   const [searchDmrRepeaters, setSearchDmrRepeaters] = useState(true);
@@ -150,52 +152,7 @@ export const SmartImportTab: React.FC = () => {
     }
 
     try {
-      let lat: number;
-      let lon: number;
-      
-      // Get location
-      if (locationType === 'current') {
-        const currentLoc = await getCurrentLocation();
-        lat = currentLoc.latitude;
-        lon = currentLoc.longitude;
-      } else if (locationType === 'coordinates') {
-        const parsedLat = parseFloat(latitude);
-        const parsedLon = parseFloat(longitude);
-        
-        if (isNaN(parsedLat) || isNaN(parsedLon) || !latitude.trim() || !longitude.trim()) {
-          throw new Error('Invalid coordinates. Please enter valid latitude and longitude.');
-        }
-        
-        if (parsedLat < -90 || parsedLat > 90) {
-          throw new Error('Latitude must be between -90 and 90');
-        }
-        
-        if (parsedLon < -180 || parsedLon > 180) {
-          throw new Error('Longitude must be between -180 and 180');
-        }
-        
-        lat = parsedLat;
-        lon = parsedLon;
-      } else {
-        // City/State - need to geocode
-        if (!city.trim()) {
-          throw new Error('Please enter a city name.');
-        }
-        const geocoded = await geocodeLocation(city, state);
-        if (!geocoded) {
-          throw new Error('Could not find location. Please check the city and state names, or use coordinates instead.');
-        }
-        lat = geocoded.latitude;
-        lon = geocoded.longitude;
-        // Optionally update the coordinates fields so user can see them
-        setLatitude(lat.toFixed(6));
-        setLongitude(lon.toFixed(6));
-      }
-      
-      const radius = parseFloat(searchRadius) || 50;
-      if (isNaN(radius) || radius <= 0) {
-        throw new Error('Please enter a valid search radius (greater than 0).');
-      }
+      const { lat, lon, radius } = await resolveCoordinates();
 
       // Search all selected types in parallel
       const searchPromises: Promise<void>[] = [];
@@ -280,13 +237,8 @@ export const SmartImportTab: React.FC = () => {
     setError(null);
     
     try {
-      // Find next available channel number
-      const existingNumbers = new Set(channels.map(ch => ch.number));
-      let nextChannelNumber = 1;
-      while (existingNumbers.has(nextChannelNumber)) {
-        nextChannelNumber++;
-      }
-      
+      const nextChannelNumber = getNextChannelNumber(channels);
+
       // Generate channels for each selected set (with temporary numbers)
       const channelSets: Channel[][] = [];
       const setNames: string[] = [];
@@ -437,13 +389,8 @@ export const SmartImportTab: React.FC = () => {
         throw new Error('No airports selected');
       }
       
-      // Find next available channel number
-      const existingNumbers = new Set(channels.map(ch => ch.number));
-      let nextChannelNumber = 1;
-      while (existingNumbers.has(nextChannelNumber)) {
-        nextChannelNumber++;
-      }
-      
+      const nextChannelNumber = getNextChannelNumber(channels);
+
       // Generate channels and zones for selected airports
       const result = generateAirportChannels(
         nextChannelNumber,
@@ -542,13 +489,8 @@ export const SmartImportTab: React.FC = () => {
         throw new Error('No TAFL entries selected');
       }
       
-      // Find next available channel number
-      const existingNumbers = new Set(channels.map(ch => ch.number));
-      let nextChannelNumber = 1;
-      while (existingNumbers.has(nextChannelNumber)) {
-        nextChannelNumber++;
-      }
-      
+      const nextChannelNumber = getNextChannelNumber(channels);
+
       // Generate channels and zones for selected entries
       // TAFL always uses individual zones grouped by name
       const result = generateTaflChannels(
@@ -624,13 +566,8 @@ export const SmartImportTab: React.FC = () => {
         throw new Error('No DMR repeaters selected');
       }
       
-      // Find next available channel number
-      const existingNumbers = new Set(channels.map(ch => ch.number));
-      let nextChannelNumber = 1;
-      while (existingNumbers.has(nextChannelNumber)) {
-        nextChannelNumber++;
-      }
-      
+      const nextChannelNumber = getNextChannelNumber(channels);
+
       // Generate channels and zones for selected repeaters
       const result = generateRptrsChannels(
         nextChannelNumber,
@@ -678,12 +615,7 @@ export const SmartImportTab: React.FC = () => {
     try {
       const content = await file.text();
       
-      // Find next available channel number
-      const existingNumbers = new Set(channels.map(ch => ch.number));
-      let nextChannelNumber = 1;
-      while (existingNumbers.has(nextChannelNumber)) {
-        nextChannelNumber++;
-      }
+      const nextChannelNumber = getNextChannelNumber(channels);
 
       const result = importChannelsFromChirpCSV(content, nextChannelNumber);
 
@@ -734,11 +666,7 @@ export const SmartImportTab: React.FC = () => {
     setError(null);
 
     try {
-      const existingChannelNumbers = new Set(channels.map((ch) => ch.number));
-      let nextChannelNumber = 1;
-      while (existingChannelNumbers.has(nextChannelNumber)) {
-        nextChannelNumber++;
-      }
+      const nextChannelNumber = getNextChannelNumber(channels);
 
       const maxContactId = contacts.length > 0 ? Math.max(...contacts.map((c) => c.id)) : 0;
       const firstContactId = maxContactId + 1;
