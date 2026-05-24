@@ -8,7 +8,8 @@ import {
   getFrequencyBand,
   NO_TX_FREQUENCY,
 } from '../../src/services/validation/frequencyValidator';
-import { validateChannel } from '../../src/services/validation/channelValidator';
+import { validateChannel, validateChannels } from '../../src/services/validation/channelValidator';
+import { isValidDMRId, isValidColorCode, isValidTimeSlot } from '../../src/services/validation/dmrValidator';
 import { DEFAULT_BAND_LIMITS } from '../../src/types/radioCapabilities';
 import type { Channel } from '../../src/models/Channel';
 
@@ -238,5 +239,93 @@ describe('validateChannel', () => {
     const ch = validChannel({ mode: 'Digital', colorCode: 1, contactId: 250 });
     const errors = validateChannel(ch);
     expect(errors.some(e => e.field === 'contactId')).toBe(false);
+  });
+
+  it('validates Fixed Digital mode the same as Digital', () => {
+    const ch = validChannel({ mode: 'Fixed Digital', colorCode: 16, contactId: 1 });
+    const errors = validateChannel(ch);
+    expect(errors.some(e => e.field === 'colorCode')).toBe(true);
+  });
+
+  it('exercises slotOperation branch — non-zero slotOperation uses slot 2, still valid', () => {
+    const ch = validChannel({ mode: 'Digital', colorCode: 1, contactId: 1, slotOperation: 1 });
+    const errors = validateChannel(ch);
+    expect(errors.some(e => e.field === 'slotOperation')).toBe(false);
+  });
+
+  it('exercises slotOperation branch — undefined slotOperation defaults to slot 1, still valid', () => {
+    const ch = validChannel({ mode: 'Digital', colorCode: 1, contactId: 1, slotOperation: undefined });
+    const errors = validateChannel(ch);
+    expect(errors.some(e => e.field === 'slotOperation')).toBe(false);
+  });
+});
+
+// ─── validateChannels (multi-channel wrapper) ────────────────────────────────
+
+describe('validateChannels', () => {
+  it('returns empty map when all channels are valid', () => {
+    const channels = [validChannel({ number: 1 }), validChannel({ number: 2 })];
+    expect(validateChannels(channels).size).toBe(0);
+  });
+
+  it('maps channel number to errors for invalid channels', () => {
+    const channels = [
+      validChannel({ number: 1 }),
+      validChannel({ number: 2, name: '' }),
+      validChannel({ number: 3, rxFrequency: 0 }),
+    ];
+    const result = validateChannels(channels);
+    expect(result.has(1)).toBe(false);
+    expect(result.has(2)).toBe(true);
+    expect(result.has(3)).toBe(true);
+  });
+
+  it('omits channels with no errors from the map', () => {
+    const channels = [validChannel({ number: 5 })];
+    const result = validateChannels(channels);
+    expect(result.size).toBe(0);
+  });
+});
+
+// ─── dmrValidator ────────────────────────────────────────────────────────────
+
+describe('isValidDMRId', () => {
+  it('accepts valid DMR IDs (1 – 9999999)', () => {
+    expect(isValidDMRId(1)).toBe(true);
+    expect(isValidDMRId(3112345)).toBe(true);
+    expect(isValidDMRId(9999999)).toBe(true);
+  });
+
+  it('rejects 0 and negative', () => {
+    expect(isValidDMRId(0)).toBe(false);
+    expect(isValidDMRId(-1)).toBe(false);
+  });
+
+  it('rejects IDs above 9999999', () => {
+    expect(isValidDMRId(10000000)).toBe(false);
+  });
+});
+
+describe('isValidColorCode', () => {
+  it('accepts 0 through 15', () => {
+    expect(isValidColorCode(0)).toBe(true);
+    expect(isValidColorCode(15)).toBe(true);
+  });
+
+  it('rejects values outside 0–15', () => {
+    expect(isValidColorCode(-1)).toBe(false);
+    expect(isValidColorCode(16)).toBe(false);
+  });
+});
+
+describe('isValidTimeSlot', () => {
+  it('accepts 1 and 2', () => {
+    expect(isValidTimeSlot(1)).toBe(true);
+    expect(isValidTimeSlot(2)).toBe(true);
+  });
+
+  it('rejects anything else', () => {
+    expect(isValidTimeSlot(0)).toBe(false);
+    expect(isValidTimeSlot(3)).toBe(false);
   });
 });

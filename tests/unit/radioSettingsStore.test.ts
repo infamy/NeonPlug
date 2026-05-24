@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { useRadioSettingsStore } from '../../src/store/radioSettingsStore';
 import type { RadioSettings } from '../../src/models/RadioSettings';
 
+// Helpers for exercising deepEqual's nested-object and array branches
+function settingsWithNested(nested: unknown, arr: unknown[]): RadioSettings {
+  return { squelchLevel: 3, nested, arr } as unknown as RadioSettings;
+}
+
 function makeSettings(overrides: Record<string, unknown> = {}): RadioSettings {
   return { squelchLevel: 3, backlightBrightness: 3, ...overrides } as unknown as RadioSettings;
 }
@@ -98,6 +103,70 @@ describe('clearChanges', () => {
     useRadioSettingsStore.getState().clearChanges();
     useRadioSettingsStore.getState().updateSettings({ squelchLevel: 7 } as any); // same as written value
     expect(useRadioSettingsStore.getState().changedFields.has('squelchLevel')).toBe(false);
+  });
+});
+
+// ─── deepEqual branch coverage via updateSettings ────────────────────────────
+
+describe('updateSettings with nested objects (deepEqual branches)', () => {
+  it('detects a change in a nested object field', () => {
+    useRadioSettingsStore.getState().setSettings(
+      settingsWithNested({ tone: 100 }, [1, 2, 3])
+    );
+    useRadioSettingsStore.getState().updateSettings(
+      { nested: { tone: 200 } } as any
+    );
+    expect(useRadioSettingsStore.getState().changedFields.has('nested')).toBe(true);
+  });
+
+  it('does not mark changed when nested object is equal', () => {
+    useRadioSettingsStore.getState().setSettings(
+      settingsWithNested({ tone: 100 }, [1, 2, 3])
+    );
+    useRadioSettingsStore.getState().updateSettings(
+      { nested: { tone: 100 } } as any
+    );
+    expect(useRadioSettingsStore.getState().changedFields.has('nested')).toBe(false);
+  });
+
+  it('detects a change in an array field', () => {
+    useRadioSettingsStore.getState().setSettings(
+      settingsWithNested({ tone: 100 }, [1, 2, 3])
+    );
+    useRadioSettingsStore.getState().updateSettings(
+      { arr: [1, 2, 9] } as any
+    );
+    expect(useRadioSettingsStore.getState().changedFields.has('arr')).toBe(true);
+  });
+
+  it('does not mark changed when array is equal', () => {
+    useRadioSettingsStore.getState().setSettings(
+      settingsWithNested({ tone: 100 }, [1, 2, 3])
+    );
+    useRadioSettingsStore.getState().updateSettings(
+      { arr: [1, 2, 3] } as any
+    );
+    expect(useRadioSettingsStore.getState().changedFields.has('arr')).toBe(false);
+  });
+
+  it('detects array length change', () => {
+    useRadioSettingsStore.getState().setSettings(
+      settingsWithNested({}, [1, 2, 3])
+    );
+    useRadioSettingsStore.getState().updateSettings(
+      { arr: [1, 2] } as any
+    );
+    expect(useRadioSettingsStore.getState().changedFields.has('arr')).toBe(true);
+  });
+
+  it('detects nested object key count change', () => {
+    useRadioSettingsStore.getState().setSettings(
+      settingsWithNested({ a: 1 }, [])
+    );
+    useRadioSettingsStore.getState().updateSettings(
+      { nested: { a: 1, b: 2 } } as any
+    );
+    expect(useRadioSettingsStore.getState().changedFields.has('nested')).toBe(true);
   });
 });
 
