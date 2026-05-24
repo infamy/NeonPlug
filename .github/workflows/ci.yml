@@ -28,6 +28,9 @@ jobs:
         run: npm audit
         continue-on-error: true
 
+      - name: Run unit tests
+        run: npm test -- --run
+
       - name: Run TypeScript type check and build
         run: npm run build
         env:
