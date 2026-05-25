@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
-import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
-import { getCapabilitiesForModel } from '../../radios/capabilities';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { ChannelsTable } from './ChannelsTable';
 import { createDefaultChannel } from '../../utils/channelHelpers';
 import { ConfirmModal } from '../ui/ConfirmModal';
@@ -13,8 +12,7 @@ const isVFOChannel = (n: number) => n === 4001 || n === 4002;
 export const ChannelsTab: React.FC = () => {
   const { channels, addChannel, deleteChannels } = useChannelsStore();
   const { settings: radioSettings } = useRadioSettingsStore();
-  const effectiveModel = useEffectiveRadioModel();
-  const caps = getCapabilitiesForModel(effectiveModel);
+  const { caps } = useRadioCapabilities();
   const supportsVfoChannels = caps?.supportsVfoChannels === true;
   const [searchQuery, setSearchQuery] = useState('');
   const [scrollToChannel, setScrollToChannel] = useState<number | null>(null);

@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
-import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useScanListsStore } from '../../store/scanListsStore';
-import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
@@ -70,9 +69,8 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   onSelectionChange,
 }) => {
   const { channels: channelsFromStore, updateChannel, deleteChannel, addChannel } = useChannelsStore();
-  const effectiveModel = useEffectiveRadioModel();
+  const { caps } = useRadioCapabilities();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
-  const caps = getCapabilitiesForModel(effectiveModel);
   const bandLimits = caps?.bandLimits ?? null;
   const maxChannels = caps?.maxChannels ?? 4000;
   const analogOnly = caps?.analogOnly === true;

@@ -1,18 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
-import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { Modal } from '../ui/Modal';
-import { getCapabilitiesForModel } from '../../radios/capabilities';
 
 const USER_GESTURE_MESSAGE = 'Unable to read from radio, please read from a radio or load a codeplug to continue';
 
 export const StatusBar: React.FC = () => {
   const { radioInfo, connectionError, setConnectionError } = useRadioStore();
-  const effectiveModel = useEffectiveRadioModel();
+  const { caps } = useRadioCapabilities();
   const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
   const showUserGestureInBar = connectionError?.includes('Please click the button directly') ?? false;
-
-  const caps = useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
   const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
   const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
   const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));

@@ -1,7 +1,6 @@
 import React, { useMemo, useEffect } from 'react';
 import { useDebugStore } from '../../store/debugStore';
-import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
-import { getCapabilitiesForModel } from '../../radios/capabilities';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 
 interface TabNavigationProps {
   activeTab: string;
@@ -25,8 +24,7 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
   onTabChange,
 }) => {
   const { debugMode } = useDebugStore();
-  const effectiveModel = useEffectiveRadioModel();
-  const caps = useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
+  const { caps } = useRadioCapabilities();
 
   const tabs = useMemo(() => {
     return ALL_TABS.filter((tab) => {

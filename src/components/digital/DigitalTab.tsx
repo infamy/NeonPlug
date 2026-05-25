@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
-import { useEffectiveRadioModel } from '../../hooks/useEffectiveRadioModel';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
-import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { isValidDMRId } from '../../services/validation/dmrValidator';
 import { RXGroupsList } from '../rxgroups/RXGroupsList';
 import { Card } from '../ui/Card';
@@ -20,8 +19,7 @@ const DEFAULT_DMR_RADIO_IDS_MAX = 250;
 
 export const DigitalTab: React.FC = () => {
   const { blockMetadata, blockData } = useRadioStore();
-  const effectiveModel = useEffectiveRadioModel();
-  const caps = useMemo(() => getCapabilitiesForModel(effectiveModel), [effectiveModel]);
+  const { caps } = useRadioCapabilities();
   const limits = caps?.digital?.limits;
   const talkGroupsMax = limits?.TALK_GROUPS_MAX ?? DEFAULT_TALK_GROUPS_MAX;
   const dmrRadioIdsMax = limits?.DMR_RADIO_IDS_MAX ?? DEFAULT_DMR_RADIO_IDS_MAX;
