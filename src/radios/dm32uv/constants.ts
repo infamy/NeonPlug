@@ -113,8 +113,8 @@ export const LIMITS = {
   SCAN_LISTS_PER_BLOCK: 44, // First 44 start at offset 16
   SCAN_LISTS_MAX: 32,        // Maximum of 32 scan lists
   SCAN_LIST_CHANNELS_MAX: 15,    // Max 15 channels per scan list (30 bytes / 2)
-  DIGITAL_EMERGENCY_MAX: 37, // (4096 - 0x218) / 40 ≈ 37
-  ANALOG_EMERGENCY_MAX: 108, // (4096 - 0xAC) / 36 ≈ 108
+  DIGITAL_EMERGENCY_MAX: 8,  // 8 entries × 20 bytes = 0x000–0x09F (confirmed by hardware hexdump)
+  ANALOG_EMERGENCY_MAX: 16,  // (0x300 - 0x0AC) / 36 = 16; encryption keys start at 0x300
   QUICK_MESSAGES_MAX: 20,   // Maximum of 20 quick messages
   RX_GROUPS_MAX: 32,        // Max 32 groups (limited by 32-bit bitmask in header)
   DMR_RADIO_IDS_MAX: 250,   // Maximum of 250 DMR Radio IDs per spec
