@@ -4,6 +4,7 @@ import type { Channel } from '../../models/Channel';
 import type { RXGroup } from '../../models/RXGroup';
 import type { EncryptionKey } from '../../models/EncryptionKey';
 import type { QuickContact } from '../../models/QuickContact';
+import type { AnalogEmergency } from '../../models/AnalogEmergency';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
 import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
 import { validateChannel, type ValidationError } from '../../services/validation/channelValidator';
@@ -61,6 +62,7 @@ interface ChannelEditModalProps {
   rxGroups?: RXGroup[];
   encryptionKeys?: EncryptionKey[];
   talkGroups?: QuickContact[];
+  analogEmergencySystems?: AnalogEmergency[];
 }
 
 export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
@@ -74,6 +76,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   rxGroups = [],
   encryptionKeys = [],
   talkGroups = [],
+  analogEmergencySystems = [],
 }) => {
   const [editedChannel, setEditedChannel] = React.useState<Channel>(channel);
   const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
@@ -921,17 +924,18 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-cool-gray mb-1">
-                  Emergency System ID
+                  Emergency System
                 </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="31"
+                <select
                   value={editedChannel.emergencySystemId}
-                  onChange={(e) => handleChange('emergencySystemId', parseInt(e.target.value) || 0)}
-                  className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                />
-                <p className="text-xs text-cool-gray mt-0.5">Emergency system identifier (0-31)</p>
+                  onChange={(e) => handleChange('emergencySystemId', parseInt(e.target.value))}
+                  className="w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                >
+                  <option value={0}>None</option>
+                  {analogEmergencySystems.map((sys, idx) => (
+                    <option key={idx} value={idx + 1}>{idx + 1}: {sys.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </section>

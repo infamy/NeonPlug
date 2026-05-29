@@ -630,6 +630,27 @@ export function useRadioConnection() {
         }
       }
 
+      // Step 5.9: Write Digital Emergency Systems if they have been loaded (DM-32 only)
+      if (typeof (protocol as any).writeDigitalEmergencies === 'function') {
+        const digitalEmergencyStore = useDigitalEmergencyStore.getState();
+        const digitalEmergencySystems = digitalEmergencyStore.systems;
+        const digitalEmergencyConfig = digitalEmergencyStore.config;
+        if (digitalEmergencySystems.length > 0 && digitalEmergencyConfig) {
+          onProgress?.(94, `Writing ${digitalEmergencySystems.length} digital emergency system(s) to radio...`, steps[4]);
+          await (protocol as any).writeDigitalEmergencies(digitalEmergencySystems, digitalEmergencyConfig);
+        }
+      }
+
+      // Step 5.10: Write Analog Emergency Systems if they have been loaded (DM-32 only)
+      if (typeof (protocol as any).writeAnalogEmergencies === 'function') {
+        const analogEmergencyStore = useAnalogEmergencyStore.getState();
+        const analogEmergencySystems = analogEmergencyStore.systems;
+        if (analogEmergencySystems.length > 0) {
+          onProgress?.(94, `Writing ${analogEmergencySystems.length} analog emergency system(s) to radio...`, steps[4]);
+          await (protocol as any).writeAnalogEmergencies(analogEmergencySystems);
+        }
+      }
+
       // Step 6: Write radio settings only if they have been modified (UV5R-Mini and DM-32)
       const radioSettingsStore = useRadioSettingsStore.getState();
       const radioSettings = radioSettingsStore.settings;

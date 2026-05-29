@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Cropper, { Area } from 'react-easy-crop';
+import { AnalogEmergencyList } from '../digital/AnalogEmergencyList';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
@@ -1086,6 +1087,8 @@ export const SettingsTab: React.FC = () => {
           )}
         </Card>
       )}
+      <AnalogEmergencyList />
+
       <Modal
         isOpen={showFirmwareWarning}
         onClose={() => setShowFirmwareWarning(false)}

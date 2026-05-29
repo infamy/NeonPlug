@@ -49,21 +49,8 @@ export function codeplugToJsonSafe(data: CodeplugData): Record<string, unknown> 
     zones: data.zones,
     scanLists: data.scanLists,
     contacts: data.contacts,
-    digitalEmergencies: data.digitalEmergencies.map((de) => ({
-      ...de,
-      fields: Array.from(de.fields),
-    })),
-    digitalEmergencyConfig: data.digitalEmergencyConfig
-      ? {
-          ...data.digitalEmergencyConfig,
-          entryArray: data.digitalEmergencyConfig.entryArray
-            ? Array.from(data.digitalEmergencyConfig.entryArray)
-            : undefined,
-          additionalConfig: data.digitalEmergencyConfig.additionalConfig
-            ? Array.from(data.digitalEmergencyConfig.additionalConfig)
-            : undefined,
-        }
-      : null,
+    digitalEmergencies: data.digitalEmergencies,
+    digitalEmergencyConfig: data.digitalEmergencyConfig ?? null,
     analogEmergencies: data.analogEmergencies,
     radioSettings: data.radioSettings,
     radioInfo: data.radioInfo,
@@ -97,19 +84,8 @@ export function jsonSafeToCodeplug(raw: Record<string, unknown>): CodeplugData {
     })),
     scanLists: (raw.scanLists as ScanList[]) ?? [],
     contacts: (raw.contacts as Contact[]) ?? [],
-    digitalEmergencies: dig.map((de) => ({
-      ...de,
-      fields: new Uint8Array((de.fields as number[]) ?? []),
-    })) as DigitalEmergency[],
-    digitalEmergencyConfig: config
-      ? {
-          ...config,
-          entryArray: config.entryArray ? new Uint8Array(config.entryArray as number[]) : undefined,
-          additionalConfig: config.additionalConfig
-            ? new Uint8Array(config.additionalConfig as number[])
-            : undefined,
-        } as DigitalEmergencyConfig
-      : null,
+    digitalEmergencies: dig as unknown as DigitalEmergency[],
+    digitalEmergencyConfig: config as DigitalEmergencyConfig | null ?? null,
     analogEmergencies: (raw.analogEmergencies as AnalogEmergency[]) ?? [],
     radioSettings: (raw.radioSettings as RadioSettings | null) ?? null,
     radioInfo: (raw.radioInfo as RadioInfo | null) ?? null,

@@ -7,12 +7,14 @@ import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
+import { useChannelsStore } from '../../store/channelsStore';
 import { isValidDMRId } from '../../services/validation/dmrValidator';
 import { RXGroupsList } from '../rxgroups/RXGroupsList';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { LIMITS } from '../../radios/dm32uv/constants';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
@@ -24,11 +26,12 @@ export const DigitalTab: React.FC = () => {
   const talkGroupsMax = limits?.TALK_GROUPS_MAX ?? DEFAULT_TALK_GROUPS_MAX;
   const dmrRadioIdsMax = limits?.DMR_RADIO_IDS_MAX ?? DEFAULT_DMR_RADIO_IDS_MAX;
   const { keys, keysLoaded, setKeys, updateKey } = useEncryptionKeysStore();
-  const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem } = useDigitalEmergencyStore();
+  const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem, addSystem: addDigitalEmergency, deleteSystem: deleteDigitalEmergency } = useDigitalEmergencyStore();
   const { radioIds, radioIdsLoaded, updateRadioId, addRadioId, deleteRadioId } = useDMRRadioIDsStore();
   const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact, setMaxTalkGroups } = useQuickContactsStore();
   const { groupsLoaded: rxGroupsLoaded } = useRXGroupsStore();
   const { messages, messagesLoaded, updateMessage, addMessage, deleteMessage } = useQuickMessagesStore();
+  const { channels } = useChannelsStore();
 
   // Find block with metadata 0x10 (Encryption Keys)
   const block10Address = useMemo(() => {
@@ -441,16 +444,40 @@ export const DigitalTab: React.FC = () => {
 
       {/* Digital Emergency Systems Section */}
       <div className="mb-8">
-        <div className="mb-4">
-          <SectionTitle as="h3" size="xl">Digital Emergency Systems</SectionTitle>
-          <p className="text-cool-gray text-sm">
-            Manage digital emergency systems from metadata block 0x10 (offset 0x000).
-          </p>
-          {block10Address !== null && (
-            <p className="text-cool-gray text-xs mt-1">
-              Block Address: 0x{block10Address.toString(16).toUpperCase()}
+        <div className="mb-4 flex items-start justify-between">
+          <div>
+            <SectionTitle as="h3" size="xl">Digital Emergency Systems</SectionTitle>
+            <p className="text-cool-gray text-sm">
+              Digital emergency configurations — metadata block 0x10, offset 0x000. Max {LIMITS.DIGITAL_EMERGENCY_MAX} entries.
             </p>
-          )}
+            {block10Address !== null && (
+              <p className="text-cool-gray text-xs mt-1">
+                Block Address: 0x{block10Address.toString(16).toUpperCase()}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => {
+              if (digitalEmergencies.length >= LIMITS.DIGITAL_EMERGENCY_MAX) return;
+              addDigitalEmergency({
+                index: digitalEmergencies.length,
+                name: `DEmer ${digitalEmergencies.length + 1}`,
+                alarmType: 0,
+                alarmMode: 0,
+                revertChannel: 0,
+                retransmission: 5,
+                hotMicDuration: 5,
+                emergencyCallsNumber: 10,
+                enabled: false,
+                rxDurationTime: 1,
+                autoEmergencyCallTimer: 10,
+              });
+            }}
+            disabled={digitalEmergencies.length >= LIMITS.DIGITAL_EMERGENCY_MAX}
+            className="px-3 py-1.5 text-xs bg-neon-cyan bg-opacity-10 border border-neon-cyan text-neon-cyan rounded hover:bg-opacity-20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap ml-4"
+          >
+            + Add
+          </button>
         </div>
 
         {!block10Data && digitalEmergencies.length === 0 ? (
@@ -459,7 +486,7 @@ export const DigitalTab: React.FC = () => {
           </Card>
         ) : digitalEmergencies.length === 0 ? (
           <Card variant="subdued">
-            <EmptyState message="No digital emergency systems found." />
+            <EmptyState message="No digital emergency systems configured." />
           </Card>
         ) : (
           <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
@@ -468,45 +495,138 @@ export const DigitalTab: React.FC = () => {
                 <table className="w-full border-collapse text-xs">
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-dark-charcoal border-b border-neon-cyan">
-                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
-                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[200px]">Fields (Hex)</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[30px]">#</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[110px]">Name</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[145px]">Alarm Type</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[130px]">Alarm Mode</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">Revert Ch</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">Retrans</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]">HOT MIC</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">Em Calls</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[55px]">Enabled</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]">Rx Dur</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">Auto Em</th>
+                      <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[40px]"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {digitalEmergencies.map((system) => (
+                    {digitalEmergencies.map((system, i) => (
                       <tr
-                        key={system.index}
+                        key={i}
                         className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
                       >
-                        <td className="px-2 py-2">
+                        <td className="px-2 py-1.5 text-center text-cool-gray font-mono">{i + 1}</td>
+                        <td className="px-2 py-1.5">
                           <input
                             type="text"
                             value={system.name}
-                            onChange={(e) => updateSystem(system.index, { name: e.target.value.slice(0, 10) })}
+                            onChange={(e) => updateSystem(i, { name: e.target.value.slice(0, 10) })}
                             maxLength={10}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
-                            placeholder="Enter name"
+                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
                           />
                         </td>
-                        <td className="px-2 py-2">
+                        <td className="px-2 py-1.5">
+                          <select
+                            value={system.alarmType}
+                            onChange={(e) => updateSystem(i, { alarmType: Number(e.target.value) })}
+                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                          >
+                            {['None', 'Only Whistle', 'Normal', 'Secret', 'Secret With Voice', 'Alarm Whistle'].map((label, v) => (
+                              <option key={v} value={v}>{label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <select
+                            value={system.alarmMode}
+                            onChange={(e) => updateSystem(i, { alarmMode: Number(e.target.value) })}
+                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                          >
+                            {['Emergency Alarm', 'Alarm Call', 'Emergency Call'].map((label, v) => (
+                              <option key={v} value={v}>{label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <select
+                            value={system.revertChannel}
+                            onChange={(e) => updateSystem(i, { revertChannel: Number(e.target.value) })}
+                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                          >
+                            <option value={0}>None</option>
+                            {channels.map((ch) => (
+                              <option key={ch.number} value={ch.number}>{ch.number}: {ch.name}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1.5">
                           <input
-                            type="text"
-                            value={Array.from(system.fields).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase()}
-                            onChange={(e) => {
-                              const hexString = e.target.value.replace(/[^0-9A-Fa-f]/g, '').slice(0, 20);
-                              const newFields = new Uint8Array(10);
-                              for (let i = 0; i < hexString.length && i < 20; i += 2) {
-                                const hexByte = hexString.slice(i, i + 2);
-                                if (hexByte.length === 2) {
-                                  newFields[i / 2] = parseInt(hexByte, 16);
-                                }
-                              }
-                              updateSystem(system.index, { fields: newFields });
-                            }}
-                            maxLength={29}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono"
-                            placeholder="00 00 00 00..."
+                            type="number"
+                            value={system.retransmission}
+                            onChange={(e) => updateSystem(i, { retransmission: Math.max(1, Math.min(15, Number(e.target.value))) })}
+                            min={1}
+                            max={15}
+                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
                           />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            type="number"
+                            value={system.hotMicDuration}
+                            onChange={(e) => updateSystem(i, { hotMicDuration: Math.max(1, Math.min(15, Number(e.target.value))) })}
+                            min={1}
+                            max={15}
+                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <select
+                            value={system.emergencyCallsNumber}
+                            onChange={(e) => updateSystem(i, { emergencyCallsNumber: Number(e.target.value) })}
+                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                          >
+                            {Array.from({ length: 12 }, (_, k) => (k + 1) * 10).map(v => (
+                              <option key={v} value={v}>{v}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <input
+                            type="checkbox"
+                            checked={system.enabled}
+                            onChange={(e) => updateSystem(i, { enabled: e.target.checked })}
+                            className="accent-neon-cyan w-4 h-4"
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input
+                            type="number"
+                            value={system.rxDurationTime}
+                            onChange={(e) => updateSystem(i, { rxDurationTime: Math.max(1, Math.min(255, Number(e.target.value))) })}
+                            min={1}
+                            max={255}
+                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <select
+                            value={system.autoEmergencyCallTimer}
+                            onChange={(e) => updateSystem(i, { autoEmergencyCallTimer: Number(e.target.value) })}
+                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                          >
+                            {Array.from({ length: 12 }, (_, k) => (k + 1) * 10).map(v => (
+                              <option key={v} value={v}>{v}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <button
+                            onClick={() => deleteDigitalEmergency(i)}
+                            className="text-red-400 hover:text-red-300 transition-colors px-1"
+                            title="Delete"
+                          >
+                            ✕
+                          </button>
                         </td>
                       </tr>
                     ))}

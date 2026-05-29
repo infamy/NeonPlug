@@ -3271,8 +3271,9 @@ export class DM32UVProtocol implements RadioProtocol {
 
     this.onProgress?.(0, 'Writing Analog Emergency Systems...');
 
-    // Encode systems to 4KB block
-    const blockData = encodeAnalogEmergencies(systems);
+    // Encode systems to 4KB block, preserving digital emergency entries and encryption keys
+    const existingBlockData = this.getCachedBlockByAddress(emergencyBlock.address)?.data;
+    const blockData = encodeAnalogEmergencies(systems, existingBlockData);
 
     // Write the entire block
     await this.connection!.writeMemory(emergencyBlock.address, blockData, METADATA.ANALOG_EMERGENCY);
