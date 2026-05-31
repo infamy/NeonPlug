@@ -1459,21 +1459,26 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const zoneAColor = getColorField(0x3A);
   const zoneBColor = getColorField(0x3B);
 
-  // Work mode and GPS settings (0x40-0x45)
-  const workModeFlags = data[0x40];
-  const utcZone = Math.max(0, Math.min(25, data[0x41] & 0xFF)); // 0-25
-  const measurePeriodInterval = (data[0x42] & 0xFF) + 5; // value+5
+  // GPS settings (0x40-0x45) — confirmed via CPS RE
+  const gpsByte = data[0x40];
+  const gpsEnabled = (gpsByte & 0x01) !== 0;                       // bit 0
+  const distanceUnit = (gpsByte & 0x02) !== 0 ? 1 : 0;            // bit 1
+  const gpsMode = (gpsByte & 0x0C) >> 2;                           // bits 2-3 (0=GPS, 1=BDS, 2=GPS+BDS)
+  const speedUnit = (gpsByte & 0x30) >> 4;                         // bits 4-5 (0=Kph, 1=Mph, 2=Kts)
+  const gpsDisplayFormat = (gpsByte & 0x40) !== 0 ? 1 : 0;        // bit 6
+  const utcZone = Math.max(0, Math.min(25, data[0x41] & 0xFF));   // 0-25
+  const gpsReportInterval = Math.max(5, data[0x42] & 0xFF);       // 5-255 seconds, raw IS the value
   const unknownFlags = data[0x45];
 
-  // GPS/APRS and Digital settings (0x60-0x67)
-  const gpsAprsFlags = data[0x60];
-  const callHoldTime = Math.max(0, Math.min(61, data[0x61] & 0xFF)); // 0-61
-  const activeWaitTime = (data[0x62] & 0xFF) + 1; // value+1
-  const activeRetriesTime = (data[0x63] & 0xFF) + 1; // value+1
-  const preCarrierTime = data[0x64] & 0xFF; // direct value
-  const digitalSettingsFlags = data[0x65];
-  const remoteMonitorTime = data[0x66] & 0xFF; // direct value
-  const digitalSettingsCont = data[0x67];
+  // Digital Settings (0x60-0x67) — confirmed via CPS RE + en.bf
+  const digitalDecodeFlags = data[0x60];                           // bit 0=Private Call Match, bit 1=Group Call Match
+  const callHoldTime = Math.max(0, Math.min(61, data[0x61] & 0xFF)); // Call Hold Time [s], raw = seconds
+  const activeWaitTime = data[0x62] & 0xFF;                        // Active Wait Time [ms], raw = combo_idx+1
+  const activeRetriesTime = data[0x63] & 0xFF;                     // Active Retries Time, raw = count 1-8
+  const preCarrierTime = data[0x64] & 0xFF;                        // Pre-Carrier Time [ms], raw = combo_idx
+  const digitalSettingsFlags = data[0x65];                         // decode flags + Data Service bits
+  const smsFormat = data[0x66] & 0xFF;                             // SMS Format [s], raw = combo_idx
+  const nameDisplayFlags = data[0x67];                             // Name Data Format / TX Name / Display Priority
 
   // VFO/Embedded settings (0x80-0x81)
   const vfoEmbeddedFlags = data[0x80];
@@ -1690,18 +1695,22 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     standbyCharacterColor2,
     zoneAColor,
     zoneBColor,
-    workModeFlags,
+    gpsEnabled,
+    distanceUnit,
+    gpsMode,
+    speedUnit,
+    gpsDisplayFormat,
     utcZone,
-    measurePeriodInterval,
+    gpsReportInterval,
     unknownFlags,
-    gpsAprsFlags,
+    digitalDecodeFlags,
     callHoldTime,
     activeWaitTime,
     activeRetriesTime,
     preCarrierTime,
     digitalSettingsFlags,
-    remoteMonitorTime,
-    digitalSettingsCont,
+    smsFormat,
+    nameDisplayFlags,
     vfoEmbeddedFlags,
     txDwellTime,
     languageOtherSettings,
@@ -1860,32 +1869,49 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   setColorField(0x3A, settings.zoneAColor, 'zoneAColor');
   setColorField(0x3B, settings.zoneBColor, 'zoneBColor');
 
-  // Work mode and GPS settings (0x40-0x45)
-  if (shouldEncode('workModeFlags')) {
-    data[0x40] = settings.workModeFlags & 0xFF;
+  // GPS settings (0x40-0x45) — confirmed via CPS RE
+  const gpsFields = ['gpsEnabled', 'distanceUnit', 'gpsMode', 'speedUnit', 'gpsDisplayFormat'];
+  if (gpsFields.some(f => shouldEncode(f))) {
+    let gpsByte = data[0x40]; // preserve unknown bits
+    if (shouldEncode('gpsEnabled')) {
+      gpsByte = settings.gpsEnabled ? (gpsByte | 0x01) : (gpsByte & 0xFE);
+    }
+    if (shouldEncode('distanceUnit')) {
+      gpsByte = settings.distanceUnit ? (gpsByte | 0x02) : (gpsByte & 0xFD);
+    }
+    if (shouldEncode('gpsMode')) {
+      gpsByte = (gpsByte & 0xF3) | ((Math.max(0, Math.min(3, settings.gpsMode)) & 0x03) << 2);
+    }
+    if (shouldEncode('speedUnit')) {
+      gpsByte = (gpsByte & 0xCF) | ((Math.max(0, Math.min(3, settings.speedUnit)) & 0x03) << 4);
+    }
+    if (shouldEncode('gpsDisplayFormat')) {
+      gpsByte = settings.gpsDisplayFormat ? (gpsByte | 0x40) : (gpsByte & 0xBF);
+    }
+    data[0x40] = gpsByte;
   }
   if (shouldEncode('utcZone')) {
     data[0x41] = Math.max(0, Math.min(25, settings.utcZone)) & 0xFF;
   }
-  if (shouldEncode('measurePeriodInterval')) {
-    data[0x42] = Math.max(0, Math.min(255, settings.measurePeriodInterval - 5)) & 0xFF; // value+5, so subtract 5
+  if (shouldEncode('gpsReportInterval')) {
+    data[0x42] = Math.max(5, Math.min(255, settings.gpsReportInterval)) & 0xFF;
   }
   if (shouldEncode('unknownFlags')) {
     data[0x45] = settings.unknownFlags & 0xFF;
   }
 
-  // GPS/APRS and Digital settings (0x60-0x67)
-  if (shouldEncode('gpsAprsFlags')) {
-    data[0x60] = settings.gpsAprsFlags & 0xFF;
+  // Digital Settings (0x60-0x67) — confirmed via CPS RE + en.bf
+  if (shouldEncode('digitalDecodeFlags')) {
+    data[0x60] = settings.digitalDecodeFlags & 0xFF;
   }
   if (shouldEncode('callHoldTime')) {
     data[0x61] = Math.max(0, Math.min(61, settings.callHoldTime)) & 0xFF;
   }
   if (shouldEncode('activeWaitTime')) {
-    data[0x62] = Math.max(0, Math.min(255, settings.activeWaitTime - 1)) & 0xFF; // value+1, so subtract 1
+    data[0x62] = settings.activeWaitTime & 0xFF;
   }
   if (shouldEncode('activeRetriesTime')) {
-    data[0x63] = Math.max(0, Math.min(255, settings.activeRetriesTime - 1)) & 0xFF; // value+1, so subtract 1
+    data[0x63] = settings.activeRetriesTime & 0xFF;
   }
   if (shouldEncode('preCarrierTime')) {
     data[0x64] = settings.preCarrierTime & 0xFF;
@@ -1893,11 +1919,11 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   if (shouldEncode('digitalSettingsFlags')) {
     data[0x65] = settings.digitalSettingsFlags & 0xFF;
   }
-  if (shouldEncode('remoteMonitorTime')) {
-    data[0x66] = settings.remoteMonitorTime & 0xFF;
+  if (shouldEncode('smsFormat')) {
+    data[0x66] = settings.smsFormat & 0xFF;
   }
-  if (shouldEncode('digitalSettingsCont')) {
-    data[0x67] = settings.digitalSettingsCont & 0xFF;
+  if (shouldEncode('nameDisplayFlags')) {
+    data[0x67] = settings.nameDisplayFlags & 0xFF;
   }
 
   // VFO/Embedded settings (0x80-0x81)

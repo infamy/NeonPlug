@@ -20,6 +20,28 @@ export const UTC_ZONE_OPTIONS = Array.from({ length: 26 }, (_, i) => ({
   label: i === 12 ? 'UTC' : `UTC ${i < 12 ? '' : '+'}${i - 12}:00`,
 }));
 
+export const GPS_MODE_OPTIONS = [
+  { value: 0, label: 'GPS' },
+  { value: 1, label: 'BDS' },
+  { value: 2, label: 'GPS+BDS' },
+];
+
+export const SPEED_UNIT_OPTIONS = [
+  { value: 0, label: 'Kilometer/h (Kph)' },
+  { value: 1, label: 'Mile/h (Mph)' },
+  { value: 2, label: 'Nautical Mile/h (Kts)' },
+];
+
+export const DISTANCE_UNIT_OPTIONS = [
+  { value: 0, label: 'Metric System' },
+  { value: 1, label: 'British System' },
+];
+
+export const GPS_DISPLAY_FORMAT_OPTIONS = [
+  { value: 0, label: 'Degree' },
+  { value: 1, label: 'Degree/Min/Second' },
+];
+
 export const POWER_ON_INTERFACE_OPTIONS = [
   { value: 0, label: 'Power On Picture' },
   { value: 1, label: 'Custom Message' },
@@ -161,6 +183,10 @@ const OPTIONS_REGISTRY: Record<string, OptionItem[]> = {
   powerOnInterface: POWER_ON_INTERFACE_OPTIONS,
   autoPowerOff: AUTO_POWER_OFF_OPTIONS,
   utcZone: UTC_ZONE_OPTIONS,
+  gpsMode: GPS_MODE_OPTIONS,
+  speedUnit: SPEED_UNIT_OPTIONS,
+  distanceUnit: DISTANCE_UNIT_OPTIONS,
+  gpsDisplayFormat: GPS_DISPLAY_FORMAT_OPTIONS,
   buttonFunction: BUTTON_FUNCTION_OPTIONS,
   analogCallType: ANALOG_CALL_TYPE_OPTIONS,
   oneTouchCallType: ONE_TOUCH_CALL_TYPE_OPTIONS,

@@ -32,21 +32,25 @@ export interface RadioSettings {
   zoneAColor: number;         // Offset 0x3A (0-15) - Zone A Color
   zoneBColor: number;        // Offset 0x3B (0-15) - Zone B Color
 
-  // Work mode and GPS settings (0x40-0x45)
-  workModeFlags: number;             // Offset 0x40 (8 bits, bit flags + 2-bit fields)
-  utcZone: number;                   // Offset 0x41 (0-25)
-  measurePeriodInterval: number;    // Offset 0x42 (value+5)
-  unknownFlags: number;              // Offset 0x45 (8 bits, bit flags + 2-bit field)
+  // GPS settings (0x40-0x45) — confirmed via CPS RE
+  gpsEnabled: boolean;              // Offset 0x40 bit 0 (GPS Switch)
+  distanceUnit: number;             // Offset 0x40 bit 1 (0=Metric, 1=British)
+  gpsMode: number;                  // Offset 0x40 bits 2-3 (0=GPS, 1=BDS, 2=GPS+BDS)
+  speedUnit: number;                // Offset 0x40 bits 4-5 (0=Kph, 1=Mph, 2=Kts)
+  gpsDisplayFormat: number;         // Offset 0x40 bit 6 (0=Degree, 1=Deg/Min/Sec)
+  utcZone: number;                  // Offset 0x41 (0-25, UTC-12 to UTC+13)
+  gpsReportInterval: number;        // Offset 0x42 (5-255 seconds, raw IS the value)
+  unknownFlags: number;             // Offset 0x45 (8 bits, partially identified)
 
-  // GPS/APRS and Digital settings (0x60-0x67)
-  gpsAprsFlags: number;              // Offset 0x60 (8 bits, bit flags)
-  callHoldTime: number;             // Offset 0x61 (0-61)
-  activeWaitTime: number;            // Offset 0x62 (value+1)
-  activeRetriesTime: number;        // Offset 0x63 (value+1)
-  preCarrierTime: number;           // Offset 0x64 (direct value)
-  digitalSettingsFlags: number;     // Offset 0x65 (8 bits, bit flags + 2-bit field)
-  remoteMonitorTime: number;        // Offset 0x66 (direct value)
-  digitalSettingsCont: number;       // Offset 0x67 (8 bits, bit flags + 2-bit field)
+  // Digital Settings (0x60-0x67) — confirmed via CPS RE + en.bf
+  digitalDecodeFlags: number;       // Offset 0x60 (bit 0=Private Call Match, bit 1=Group Call Match)
+  callHoldTime: number;             // Offset 0x61 — Call Hold Time [s] (raw = seconds, 0–61)
+  activeWaitTime: number;           // Offset 0x62 — Active Wait Time [ms] (raw = combo_idx+1; display_ms = (raw-1)*30+300; range 300–4800ms)
+  activeRetriesTime: number;        // Offset 0x63 — Active Retries Time (raw = count 1–8)
+  preCarrierTime: number;           // Offset 0x64 — Pre-Carrier Time [ms] (raw = combo_idx; display_ms = (raw+1)*120; range 120–8640ms)
+  digitalSettingsFlags: number;     // Offset 0x65 (bit7=Remote Monitor Decode, bit6=Radio Disable Decode, bit5=Radio Check Decode, bit4=Radio Enable Decode, bit3=Call Alert Decode, bits2-1=Data Service, bit0=Missed Call Alert)
+  smsFormat: number;                // Offset 0x66 — SMS Format [s] (raw = combo_idx; display_s = (raw+1)*10; range 10–120s)
+  nameDisplayFlags: number;         // Offset 0x67 (bits7-6=Name Data Format, bit3=Send TX Name, bit2=Name Display Priority)
 
   // VFO/Embedded settings (0x80-0x81)
   vfoEmbeddedFlags: number;         // Offset 0x80 (8 bits, bit flags + 2-bit fields)
