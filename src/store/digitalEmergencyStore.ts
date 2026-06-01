@@ -8,6 +8,8 @@ interface DigitalEmergencyState {
   setConfig: (config: DigitalEmergencyConfig | null) => void;
   updateSystem: (index: number, updates: Partial<DigitalEmergency>) => void;
   updateConfig: (updates: Partial<DigitalEmergencyConfig>) => void;
+  addSystem: (system: DigitalEmergency) => void;
+  deleteSystem: (index: number) => void;
 }
 
 export const useDigitalEmergencyStore = create<DigitalEmergencyState>((set) => ({
@@ -22,6 +24,14 @@ export const useDigitalEmergencyStore = create<DigitalEmergencyState>((set) => (
   updateConfig: (updates) =>
     set((state) => ({
       config: state.config ? { ...state.config, ...updates } : null,
+    })),
+  addSystem: (system) =>
+    set((state) => ({ systems: [...state.systems, system] })),
+  deleteSystem: (index) =>
+    set((state) => ({
+      systems: state.systems
+        .filter((_, i) => i !== index)
+        .map((s, i) => ({ ...s, index: i })),
     })),
 }));
 

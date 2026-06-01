@@ -7,6 +7,7 @@ import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
+import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import type { Channel } from '../../models/Channel';
 import { ChannelEditModal } from './ChannelEditModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
@@ -78,6 +79,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const { groups: rxGroups } = useRXGroupsStore();
   const { keys: encryptionKeys } = useEncryptionKeysStore();
   const { contacts: talkGroups } = useQuickContactsStore();
+  const { systems: analogEmergencySystems } = useAnalogEmergencyStore();
   const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
   const channels = channelsProp ?? channelsFromStore;
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
@@ -1103,6 +1105,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
           rxGroups={rxGroups}
           encryptionKeys={encryptionKeys}
           talkGroups={talkGroups}
+          analogEmergencySystems={analogEmergencySystems}
         />
       )}
       <ConfirmModal

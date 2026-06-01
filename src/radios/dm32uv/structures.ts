@@ -1459,21 +1459,26 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
   const zoneAColor = getColorField(0x3A);
   const zoneBColor = getColorField(0x3B);
 
-  // Work mode and GPS settings (0x40-0x45)
-  const workModeFlags = data[0x40];
-  const utcZone = Math.max(0, Math.min(25, data[0x41] & 0xFF)); // 0-25
-  const measurePeriodInterval = (data[0x42] & 0xFF) + 5; // value+5
+  // GPS settings (0x40-0x45) — confirmed via CPS RE
+  const gpsByte = data[0x40];
+  const gpsEnabled = (gpsByte & 0x01) !== 0;                       // bit 0
+  const distanceUnit = (gpsByte & 0x02) !== 0 ? 1 : 0;            // bit 1
+  const gpsMode = (gpsByte & 0x0C) >> 2;                           // bits 2-3 (0=GPS, 1=BDS, 2=GPS+BDS)
+  const speedUnit = (gpsByte & 0x30) >> 4;                         // bits 4-5 (0=Kph, 1=Mph, 2=Kts)
+  const gpsDisplayFormat = (gpsByte & 0x40) !== 0 ? 1 : 0;        // bit 6
+  const utcZone = Math.max(0, Math.min(25, data[0x41] & 0xFF));   // 0-25
+  const gpsReportInterval = Math.max(5, data[0x42] & 0xFF);       // 5-255 seconds, raw IS the value
   const unknownFlags = data[0x45];
 
-  // GPS/APRS and Digital settings (0x60-0x67)
-  const gpsAprsFlags = data[0x60];
-  const callHoldTime = Math.max(0, Math.min(61, data[0x61] & 0xFF)); // 0-61
-  const activeWaitTime = (data[0x62] & 0xFF) + 1; // value+1
-  const activeRetriesTime = (data[0x63] & 0xFF) + 1; // value+1
-  const preCarrierTime = data[0x64] & 0xFF; // direct value
-  const digitalSettingsFlags = data[0x65];
-  const remoteMonitorTime = data[0x66] & 0xFF; // direct value
-  const digitalSettingsCont = data[0x67];
+  // Digital Settings (0x60-0x67) — confirmed via CPS RE + en.bf
+  const digitalDecodeFlags = data[0x60];                           // bit 0=Private Call Match, bit 1=Group Call Match
+  const callHoldTime = Math.max(0, Math.min(61, data[0x61] & 0xFF)); // Call Hold Time [s], raw = seconds
+  const activeWaitTime = data[0x62] & 0xFF;                        // Active Wait Time [ms], raw = combo_idx+1
+  const activeRetriesTime = data[0x63] & 0xFF;                     // Active Retries Time, raw = count 1-8
+  const preCarrierTime = data[0x64] & 0xFF;                        // Pre-Carrier Time [ms], raw = combo_idx
+  const digitalSettingsFlags = data[0x65];                         // decode flags + Data Service bits
+  const smsFormat = data[0x66] & 0xFF;                             // SMS Format [s], raw = combo_idx
+  const nameDisplayFlags = data[0x67];                             // Name Data Format / TX Name / Display Priority
 
   // VFO/Embedded settings (0x80-0x81)
   const vfoEmbeddedFlags = data[0x80];
@@ -1540,40 +1545,30 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     });
   }
 
-  // Legacy fields (0x301+) - keeping for backward compatibility
-  const unknownRadioSetting = data[0x301];
-  const radioFlag = data[0x302];
-  const radioEnabled = (radioFlag & 0x01) !== 0;
-  
-  const latitude = parseString(0x306, 14);
+  // APRS & GPS Position settings (0x301-0x334)
+  const aprsScheduledSendTime = data[0x301];
+  const aprsFixedBeacon = (data[0x302] & 0x01) !== 0;
+
+  const latitude = parseString(0x306, 9);
   const latitudeDirection: 'N' | 'S' = data[0x30F] === 0x4E ? 'N' : 'S';
-  const longitude = parseString(0x310, 14);
+  const longitude = parseString(0x310, 9);
+  const longitudeDirection: 'E' | 'W' = data[0x319] === 0x45 ? 'E' : 'W';
 
-  // Longitude direction (0x319)
-  const lonDirByte = data[0x319];
-  const longitudeDirection: 'E' | 'W' = lonDirByte === 0x45 ? 'E' : 'W';
+  // APRS Report Channels 1-8 (uint16 LE, 0=current channel)
+  const aprsReportChannel1 = data[0x320] | (data[0x321] << 8);
+  const aprsReportChannel2 = data[0x322] | (data[0x323] << 8);
+  const aprsReportChannel3 = data[0x324] | (data[0x325] << 8);
+  const aprsReportChannel4 = data[0x326] | (data[0x327] << 8);
+  const aprsReportChannel5 = data[0x328] | (data[0x329] << 8);
+  const aprsReportChannel6 = data[0x32A] | (data[0x32B] << 8);
+  const aprsReportChannel7 = data[0x32C] | (data[0x32D] << 8);
+  const aprsReportChannel8 = data[0x32E] | (data[0x32F] << 8);
 
-  // Channel settings (little-endian uint16)
-  // Note: Channels are stored as 1-based (channel 1 = 1, channel 2 = 2, 0 = none)
-  const currentChannelA = data[0x320] | (data[0x321] << 8);
-  const currentChannelB = data[0x322] | (data[0x323] << 8);
-  const channelSetting3 = data[0x324] | (data[0x325] << 8);
-  const channelSetting4 = data[0x326] | (data[0x327] << 8);
-  const channelSetting5 = data[0x328] | (data[0x329] << 8);
-  const channelSetting6 = data[0x32A] | (data[0x32B] << 8);
-  const channelSetting7 = data[0x32C] | (data[0x32D] << 8);
-  const channelSetting8 = data[0x32E] | (data[0x32F] << 8);
-
-  // Zone settings
-  const currentZone = data[0x330];
-  const zoneFlag = data[0x331];
-  const zoneEnabled = (zoneFlag & 0x01) !== 0;
-
-  // Unknown value (0x332, 3 bytes, formatted as hex string)
-  const unknownValueBytes = data.slice(0x332, 0x335);
-  const unknownValue = Array.from(unknownValueBytes)
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join(' ');
+  // APRS upload/call settings (0x330-0x334)
+  const aprsRepeaterActiveDelay = data[0x330];
+  const aprsCallType = (data[0x331] & 0x01) !== 0;
+  // 0x332-0x334 is a 24-bit big-endian decimal DMR ID (1-16776415); 0 = unset
+  const aprsUploadId = (data[0x332] << 16) | (data[0x333] << 8) | data[0x334];
 
   // VFO Channel Information
   // Note: VFO A and VFO B are now parsed from block 0x41 as channels 4001 and 4002
@@ -1690,18 +1685,22 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     standbyCharacterColor2,
     zoneAColor,
     zoneBColor,
-    workModeFlags,
+    gpsEnabled,
+    distanceUnit,
+    gpsMode,
+    speedUnit,
+    gpsDisplayFormat,
     utcZone,
-    measurePeriodInterval,
+    gpsReportInterval,
     unknownFlags,
-    gpsAprsFlags,
+    digitalDecodeFlags,
     callHoldTime,
     activeWaitTime,
     activeRetriesTime,
     preCarrierTime,
     digitalSettingsFlags,
-    remoteMonitorTime,
-    digitalSettingsCont,
+    smsFormat,
+    nameDisplayFlags,
     vfoEmbeddedFlags,
     txDwellTime,
     languageOtherSettings,
@@ -1721,23 +1720,23 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     analogCall,
     oneTouchCall,
     funPlus,
-    unknownRadioSetting,
-    radioEnabled,
+    aprsScheduledSendTime,
+    aprsFixedBeacon,
     latitude,
     latitudeDirection,
     longitude,
     longitudeDirection,
-    currentChannelA,
-    currentChannelB,
-    channelSetting3,
-    channelSetting4,
-    channelSetting5,
-    channelSetting6,
-    channelSetting7,
-    channelSetting8,
-    currentZone,
-    zoneEnabled,
-    unknownValue,
+    aprsReportChannel1,
+    aprsReportChannel2,
+    aprsReportChannel3,
+    aprsReportChannel4,
+    aprsReportChannel5,
+    aprsReportChannel6,
+    aprsReportChannel7,
+    aprsReportChannel8,
+    aprsRepeaterActiveDelay,
+    aprsCallType,
+    aprsUploadId,
     vfoA,
     vfoB,
     menuEnableFlags,
@@ -1860,32 +1859,49 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   setColorField(0x3A, settings.zoneAColor, 'zoneAColor');
   setColorField(0x3B, settings.zoneBColor, 'zoneBColor');
 
-  // Work mode and GPS settings (0x40-0x45)
-  if (shouldEncode('workModeFlags')) {
-    data[0x40] = settings.workModeFlags & 0xFF;
+  // GPS settings (0x40-0x45) — confirmed via CPS RE
+  const gpsFields = ['gpsEnabled', 'distanceUnit', 'gpsMode', 'speedUnit', 'gpsDisplayFormat'];
+  if (gpsFields.some(f => shouldEncode(f))) {
+    let gpsByte = data[0x40]; // preserve unknown bits
+    if (shouldEncode('gpsEnabled')) {
+      gpsByte = settings.gpsEnabled ? (gpsByte | 0x01) : (gpsByte & 0xFE);
+    }
+    if (shouldEncode('distanceUnit')) {
+      gpsByte = settings.distanceUnit ? (gpsByte | 0x02) : (gpsByte & 0xFD);
+    }
+    if (shouldEncode('gpsMode')) {
+      gpsByte = (gpsByte & 0xF3) | ((Math.max(0, Math.min(3, settings.gpsMode)) & 0x03) << 2);
+    }
+    if (shouldEncode('speedUnit')) {
+      gpsByte = (gpsByte & 0xCF) | ((Math.max(0, Math.min(3, settings.speedUnit)) & 0x03) << 4);
+    }
+    if (shouldEncode('gpsDisplayFormat')) {
+      gpsByte = settings.gpsDisplayFormat ? (gpsByte | 0x40) : (gpsByte & 0xBF);
+    }
+    data[0x40] = gpsByte;
   }
   if (shouldEncode('utcZone')) {
     data[0x41] = Math.max(0, Math.min(25, settings.utcZone)) & 0xFF;
   }
-  if (shouldEncode('measurePeriodInterval')) {
-    data[0x42] = Math.max(0, Math.min(255, settings.measurePeriodInterval - 5)) & 0xFF; // value+5, so subtract 5
+  if (shouldEncode('gpsReportInterval')) {
+    data[0x42] = Math.max(5, Math.min(255, settings.gpsReportInterval)) & 0xFF;
   }
   if (shouldEncode('unknownFlags')) {
     data[0x45] = settings.unknownFlags & 0xFF;
   }
 
-  // GPS/APRS and Digital settings (0x60-0x67)
-  if (shouldEncode('gpsAprsFlags')) {
-    data[0x60] = settings.gpsAprsFlags & 0xFF;
+  // Digital Settings (0x60-0x67) — confirmed via CPS RE + en.bf
+  if (shouldEncode('digitalDecodeFlags')) {
+    data[0x60] = settings.digitalDecodeFlags & 0xFF;
   }
   if (shouldEncode('callHoldTime')) {
     data[0x61] = Math.max(0, Math.min(61, settings.callHoldTime)) & 0xFF;
   }
   if (shouldEncode('activeWaitTime')) {
-    data[0x62] = Math.max(0, Math.min(255, settings.activeWaitTime - 1)) & 0xFF; // value+1, so subtract 1
+    data[0x62] = settings.activeWaitTime & 0xFF;
   }
   if (shouldEncode('activeRetriesTime')) {
-    data[0x63] = Math.max(0, Math.min(255, settings.activeRetriesTime - 1)) & 0xFF; // value+1, so subtract 1
+    data[0x63] = settings.activeRetriesTime & 0xFF;
   }
   if (shouldEncode('preCarrierTime')) {
     data[0x64] = settings.preCarrierTime & 0xFF;
@@ -1893,11 +1909,11 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   if (shouldEncode('digitalSettingsFlags')) {
     data[0x65] = settings.digitalSettingsFlags & 0xFF;
   }
-  if (shouldEncode('remoteMonitorTime')) {
-    data[0x66] = settings.remoteMonitorTime & 0xFF;
+  if (shouldEncode('smsFormat')) {
+    data[0x66] = settings.smsFormat & 0xFF;
   }
-  if (shouldEncode('digitalSettingsCont')) {
-    data[0x67] = settings.digitalSettingsCont & 0xFF;
+  if (shouldEncode('nameDisplayFlags')) {
+    data[0x67] = settings.nameDisplayFlags & 0xFF;
   }
 
   // VFO/Embedded settings (0x80-0x81)
@@ -2011,11 +2027,11 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   }
 
   // Legacy fields (0x301+)
-  if (shouldEncode('unknownRadioSetting')) {
-    data[0x301] = settings.unknownRadioSetting;
+  if (shouldEncode('aprsScheduledSendTime')) {
+    data[0x301] = settings.aprsScheduledSendTime & 0xFF;
   }
-  if (shouldEncode('radioEnabled')) {
-    data[0x302] = settings.radioEnabled ? 0x01 : 0x00;
+  if (shouldEncode('aprsFixedBeacon')) {
+    data[0x302] = settings.aprsFixedBeacon ? (data[0x302] | 0x01) : (data[0x302] & 0xFE);
   }
 
   // Latitude (0x306, 14 bytes, null-terminated)
@@ -2047,56 +2063,50 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   }
 
   // Channel settings (little-endian uint16) - these are runtime state, usually don't need to write
-  if (shouldEncode('currentChannelA')) {
-    data[0x320] = settings.currentChannelA & 0xFF;
-    data[0x321] = (settings.currentChannelA >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel1')) {
+    data[0x320] = settings.aprsReportChannel1 & 0xFF;
+    data[0x321] = (settings.aprsReportChannel1 >> 8) & 0xFF;
   }
-  if (shouldEncode('currentChannelB')) {
-    data[0x322] = settings.currentChannelB & 0xFF;
-    data[0x323] = (settings.currentChannelB >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel2')) {
+    data[0x322] = settings.aprsReportChannel2 & 0xFF;
+    data[0x323] = (settings.aprsReportChannel2 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting3')) {
-    data[0x324] = settings.channelSetting3 & 0xFF;
-    data[0x325] = (settings.channelSetting3 >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel3')) {
+    data[0x324] = settings.aprsReportChannel3 & 0xFF;
+    data[0x325] = (settings.aprsReportChannel3 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting4')) {
-    data[0x326] = settings.channelSetting4 & 0xFF;
-    data[0x327] = (settings.channelSetting4 >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel4')) {
+    data[0x326] = settings.aprsReportChannel4 & 0xFF;
+    data[0x327] = (settings.aprsReportChannel4 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting5')) {
-    data[0x328] = settings.channelSetting5 & 0xFF;
-    data[0x329] = (settings.channelSetting5 >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel5')) {
+    data[0x328] = settings.aprsReportChannel5 & 0xFF;
+    data[0x329] = (settings.aprsReportChannel5 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting6')) {
-    data[0x32A] = settings.channelSetting6 & 0xFF;
-    data[0x32B] = (settings.channelSetting6 >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel6')) {
+    data[0x32A] = settings.aprsReportChannel6 & 0xFF;
+    data[0x32B] = (settings.aprsReportChannel6 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting7')) {
-    data[0x32C] = settings.channelSetting7 & 0xFF;
-    data[0x32D] = (settings.channelSetting7 >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel7')) {
+    data[0x32C] = settings.aprsReportChannel7 & 0xFF;
+    data[0x32D] = (settings.aprsReportChannel7 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting8')) {
-    data[0x32E] = settings.channelSetting8 & 0xFF;
-    data[0x32F] = (settings.channelSetting8 >> 8) & 0xFF;
-  }
-
-  // Zone settings - runtime state, usually don't need to write
-  if (shouldEncode('currentZone')) {
-    data[0x330] = settings.currentZone;
-  }
-  if (shouldEncode('zoneEnabled')) {
-    data[0x331] = settings.zoneEnabled ? 0x01 : 0x00;
+  if (shouldEncode('aprsReportChannel8')) {
+    data[0x32E] = settings.aprsReportChannel8 & 0xFF;
+    data[0x32F] = (settings.aprsReportChannel8 >> 8) & 0xFF;
   }
 
-  // Unknown value (0x332, 3 bytes)
-  if (shouldEncode('unknownValue')) {
-    const unknownValueParts = settings.unknownValue.split(' ').filter(s => s.length > 0);
-    for (let i = 0; i < Math.min(3, unknownValueParts.length); i++) {
-      const byte = parseInt(unknownValueParts[i], 16);
-      if (!isNaN(byte)) {
-        data[0x332 + i] = byte;
-      }
-    }
+  if (shouldEncode('aprsRepeaterActiveDelay')) {
+    data[0x330] = settings.aprsRepeaterActiveDelay & 0xFF;
+  }
+  if (shouldEncode('aprsCallType')) {
+    data[0x331] = settings.aprsCallType ? (data[0x331] | 0x01) : (data[0x331] & 0xFE);
+  }
+  if (shouldEncode('aprsUploadId')) {
+    const id = Math.max(0, Math.min(16776415, settings.aprsUploadId));
+    data[0x332] = (id >> 16) & 0xFF;
+    data[0x333] = (id >> 8) & 0xFF;
+    data[0x334] = id & 0xFF;
   }
 
   // VFO Channel Information
@@ -2403,41 +2413,61 @@ export function encodeQuickMessages(messages: QuickTextMessage[], buffer: Uint8A
 /**
  * Parse Digital Emergency Systems from metadata 0x10 block
  * Entry structure: 20 bytes (0x14) starting at offset 0x000
- * Entry Calculation: entry_base = 0x000 + entry_num * 0x14
+ * Field layout confirmed by CPS decompilation (DMR CPS.exe.c FUN_00470xxx)
  * Max entries: 8
  */
 export function parseDigitalEmergencies(data: Uint8Array): { systems: DigitalEmergency[]; config: DigitalEmergencyConfig } {
-  const initialOffset = 0x000;
-  const entrySize = 0x14; // 20 bytes per entry
-  const maxEntries = 8; // 8 total entries
-
+  const entrySize = 0x14;
+  const maxEntries = 8;
   const systems: DigitalEmergency[] = [];
 
   for (let i = 0; i < maxEntries; i++) {
-    const entryOffset = initialOffset + (i * entrySize); // Entry 0 → 0x000, Entry 1 → 0x014, etc.
-    if (entryOffset + entrySize > data.length) break;
+    const base = i * entrySize;
+    if (base + entrySize > data.length) break;
 
-    // Check if entry is empty (all zeros or all 0xFF)
-    const entryData = data.slice(entryOffset, entryOffset + entrySize);
-    if (entryData.every(b => b === 0x00 || b === 0xFF)) {
-      continue;
-    }
+    const entry = data.slice(base, base + entrySize);
+    if (entry.every(b => b === 0x00 || b === 0xFF)) continue;
 
-    // Name (10 bytes at +0x00-0x09, ASCII string)
-    const nameBytes = data.slice(entryOffset + 0x00, entryOffset + 0x0A);
-    const nullIndex = nameBytes.indexOf(0);
+    const nameBytes = entry.slice(0x00, 0x0A);
+    const nullIdx = nameBytes.indexOf(0);
     const name = new TextDecoder('ascii', { fatal: false })
-      .decode(nameBytes.slice(0, nullIndex >= 0 ? nullIndex : nameBytes.length))
-      .replace(/\x00/g, '')
-      .trim();
+      .decode(nameBytes.slice(0, nullIdx >= 0 ? nullIdx : nameBytes.length))
+      .replace(/\x00/g, '').trim();
 
-    // Fields (10 bytes at +0x0A-0x13, structure TBD)
-    const fields = data.slice(entryOffset + 0x0A, entryOffset + 0x14);
+    // +0x0A: Alarm Type (raw 0–5)
+    const alarmType = Math.min(entry[0x0A], 5);
+    // +0x0B: Alarm Mode stored as value+1; valid raw 1–3 → model 0–2
+    const alarmModeRaw = entry[0x0B];
+    const alarmMode = (alarmModeRaw >= 1 && alarmModeRaw <= 3) ? alarmModeRaw - 1 : 0;
+    // +0x0C–0x0D: Revert Channel u16 LE
+    const revertChannel = entry[0x0C] | (entry[0x0D] << 8);
+    // +0x0E: Retransmission (raw 1–15 = displayed)
+    const retransmission = entry[0x0E] >= 1 && entry[0x0E] <= 15 ? entry[0x0E] : 1;
+    // +0x0F: HOT MIC Duration (raw 1–15 = displayed)
+    const hotMicDuration = entry[0x0F] >= 1 && entry[0x0F] <= 15 ? entry[0x0F] : 1;
+    // +0x10: Emergency Calls Number raw 0–11, displayed as (raw+1)*10
+    const ecnRaw = Math.min(entry[0x10], 11);
+    const emergencyCallsNumber = (ecnRaw + 1) * 10;
+    // +0x11: Enabled flag, bit 0
+    const enabled = (entry[0x11] & 0x01) !== 0;
+    // +0x12: Rx Duration Time (raw 1–255 = displayed)
+    const rxDurationTime = entry[0x12] >= 1 ? entry[0x12] : 1;
+    // +0x13: Auto Emergency Call Timer raw 0–11, displayed as (raw+1)*10
+    const aecRaw = Math.min(entry[0x13], 11);
+    const autoEmergencyCallTimer = (aecRaw + 1) * 10;
 
     systems.push({
       index: i,
-      name: name || `[Entry ${i}]`,
-      fields: new Uint8Array(fields),
+      name: name || `DEmer ${i + 1}`,
+      alarmType,
+      alarmMode,
+      revertChannel,
+      retransmission,
+      hotMicDuration,
+      emergencyCallsNumber,
+      enabled,
+      rxDurationTime,
+      autoEmergencyCallTimer,
     });
   }
 
@@ -2446,47 +2476,49 @@ export function parseDigitalEmergencies(data: Uint8Array): { systems: DigitalEme
 
 /**
  * Encode Digital Emergency Systems to metadata 0x10 block format
- * Entry structure: 20 bytes (0x14) starting at offset 0x000
- * Entry Calculation: entry_base = 0x000 + entry_num * 0x14
- * Preserves existingBlockData (e.g. encryption keys at 0x300) when provided.
+ * Preserves existingBlockData (analog emergency at 0x0AC, encryption keys at 0x300).
  */
 export function encodeDigitalEmergencies(systems: DigitalEmergency[], _config: DigitalEmergencyConfig, existingBlockData?: Uint8Array): Uint8Array {
-  const data = new Uint8Array(0x1000); // 4KB block
+  const data = new Uint8Array(0x1000);
   if (existingBlockData && existingBlockData.length >= 0x1000) {
     data.set(existingBlockData.slice(0, 0x1000));
   } else {
     data.fill(0xFF);
   }
 
-  const initialOffset = 0x000;
-  const entrySize = 0x14; // 20 bytes per entry
-  const maxEntries = 8; // 8 total entries
+  const entrySize = 0x14;
+  const maxEntries = 8;
 
-  // Write emergency system entries
   for (let i = 0; i < Math.min(systems.length, maxEntries); i++) {
-    const system = systems[i];
-    const entryOffset = initialOffset + (i * entrySize);
-    
-    if (entryOffset + entrySize > data.length) break;
+    const s = systems[i];
+    const base = i * entrySize;
 
-    // Name (10 bytes at +0x00-0x09, ASCII string)
     const nameBytes = new Uint8Array(10);
-    nameBytes.fill(0);
-    if (system.name) {
-      const encoded = new TextEncoder().encode(system.name.slice(0, 10));
-      nameBytes.set(encoded, 0);
+    if (s.name) {
+      const enc = new TextEncoder().encode(s.name.slice(0, 10));
+      nameBytes.set(enc);
     }
-    data.set(nameBytes, entryOffset + 0x00);
+    data.set(nameBytes, base + 0x00);
 
-    // Fields (10 bytes at +0x0A-0x13)
-    if (system.fields && system.fields.length >= 10) {
-      data.set(system.fields.slice(0, 10), entryOffset + 0x0A);
-    }
+    data[base + 0x0A] = Math.min(Math.max(s.alarmType ?? 0, 0), 5);
+    data[base + 0x0B] = (Math.min(Math.max(s.alarmMode ?? 0, 0), 2) + 1);
+    const rc = s.revertChannel ?? 0;
+    data[base + 0x0C] = rc & 0xFF;
+    data[base + 0x0D] = (rc >> 8) & 0xFF;
+    data[base + 0x0E] = Math.min(Math.max(s.retransmission ?? 1, 1), 15);
+    data[base + 0x0F] = Math.min(Math.max(s.hotMicDuration ?? 1, 1), 15);
+    // emergencyCallsNumber: displayed 10–120, raw = displayed/10 - 1
+    const ecn = Math.min(Math.max(s.emergencyCallsNumber ?? 10, 10), 120);
+    data[base + 0x10] = Math.round(ecn / 10) - 1;
+    // enabled: bit 0
+    data[base + 0x11] = s.enabled ? 0x01 : 0x00;
+    data[base + 0x12] = Math.min(Math.max(s.rxDurationTime ?? 1, 1), 255);
+    // autoEmergencyCallTimer: displayed 10–120, raw = displayed/10 - 1
+    const aec = Math.min(Math.max(s.autoEmergencyCallTimer ?? 10, 10), 120);
+    data[base + 0x13] = Math.round(aec / 10) - 1;
   }
 
-  // Set metadata byte at offset 0xFFF
   data[0xFFF] = 0x10;
-
   return data;
 }
 
@@ -2621,7 +2653,7 @@ export function parseAnalogEmergencies(data: Uint8Array): AnalogEmergency[] {
   const systems: AnalogEmergency[] = [];
   const entryBaseOffset = 0xAC; // Entry base offset
   const entrySize = 36; // 36 bytes per entry
-  const maxEntries = Math.floor((data.length - entryBaseOffset) / entrySize);
+  const maxEntries = LIMITS.ANALOG_EMERGENCY_MAX; // 16 — encryption keys start at 0x300
 
   // NOTE: Structure parsing is experimental - data may be encrypted or structure may differ from spec
   for (let i = 0; i < maxEntries; i++) {
@@ -2692,20 +2724,6 @@ export function parseAnalogEmergencies(data: Uint8Array): AnalogEmergency[] {
     const enabledFlag = data[entryOffset + 0x1C];
     const enabled = (enabledFlag & 0x01) !== 0;
 
-    // Secondary structure (20 bytes at offset -0x14 + entry*0x14)
-    const secondaryOffset = -0x14 + (i * 0x14);
-    let secondaryData: Uint8Array | undefined;
-    if (secondaryOffset >= 0 && secondaryOffset + 20 <= data.length) {
-      secondaryData = data.slice(secondaryOffset, secondaryOffset + 20);
-    }
-
-    // Tertiary structure (44 bytes at offset 0x2D5 + entry*0x2C)
-    const tertiaryOffset = 0x2D5 + (i * 0x2C);
-    let tertiaryData: Uint8Array | undefined;
-    if (tertiaryOffset >= 0 && tertiaryOffset + 44 <= data.length) {
-      tertiaryData = data.slice(tertiaryOffset, tertiaryOffset + 44);
-    }
-
     systems.push({
       index: i,
       name,
@@ -2718,8 +2736,6 @@ export function parseAnalogEmergencies(data: Uint8Array): AnalogEmergency[] {
       flags,
       frequencyId,
       enabled,
-      secondaryData,
-      tertiaryData,
     });
   }
 
@@ -2777,35 +2793,24 @@ export function encodeAnalogEmergency(system: AnalogEmergency, index: number, da
   // Flags (1 byte, bit 0: enabled/disabled)
   data[entryOffset + 0x1C] = system.enabled ? 0x01 : 0x00;
 
-  // Secondary structure (if provided)
-  if (system.secondaryData && system.secondaryData.length === 20) {
-    const secondaryOffset = -0x14 + (index * 0x14);
-    if (secondaryOffset >= 0 && secondaryOffset + 20 <= data.length) {
-      data.set(system.secondaryData, secondaryOffset);
-    }
-  }
-
-  // Tertiary structure (if provided)
-  if (system.tertiaryData && system.tertiaryData.length === 44) {
-    const tertiaryOffset = 0x2D5 + (index * 0x2C);
-    if (tertiaryOffset >= 0 && tertiaryOffset + 44 <= data.length) {
-      data.set(system.tertiaryData, tertiaryOffset);
-    }
-  }
 }
 
 /**
  * Encode all Analog Emergency Systems to metadata 0x10 block format
  */
-export function encodeAnalogEmergencies(systems: AnalogEmergency[]): Uint8Array {
-  const data = new Uint8Array(0x1000); // 4KB block
-  data.fill(0xFF);
+export function encodeAnalogEmergencies(systems: AnalogEmergency[], existingBlockData?: Uint8Array): Uint8Array {
+  const data = new Uint8Array(0x1000);
+  if (existingBlockData && existingBlockData.length >= 0x1000) {
+    data.set(existingBlockData.slice(0, 0x1000));
+  }
+  // Clear only the analog emergency section (0x0AC–0x2FF), leaving digital emergency and
+  // encryption keys intact.
+  data.fill(0x00, 0x0AC, 0x300);
 
-  for (let i = 0; i < systems.length; i++) {
+  for (let i = 0; i < Math.min(systems.length, LIMITS.ANALOG_EMERGENCY_MAX); i++) {
     encodeAnalogEmergency(systems[i], i, data);
   }
 
-  // Set metadata byte at offset 0xFFF
   data[0xFFF] = 0x10;
 
   return data;

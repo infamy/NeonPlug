@@ -15,9 +15,5 @@ export interface AnalogEmergency {
   flags: number;                      // Status byte
   frequencyId: number;               // 16-bit value, little-endian
   enabled: boolean;                   // Flags bit 0: enabled/disabled
-  // Secondary structure (20 bytes at offset -0x14 + entry*0x14)
-  secondaryData?: Uint8Array;
-  // Tertiary structure (44 bytes at offset 0x2D5 + entry*0x2C)
-  tertiaryData?: Uint8Array;
 }
 

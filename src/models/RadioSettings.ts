@@ -32,21 +32,25 @@ export interface RadioSettings {
   zoneAColor: number;         // Offset 0x3A (0-15) - Zone A Color
   zoneBColor: number;        // Offset 0x3B (0-15) - Zone B Color
 
-  // Work mode and GPS settings (0x40-0x45)
-  workModeFlags: number;             // Offset 0x40 (8 bits, bit flags + 2-bit fields)
-  utcZone: number;                   // Offset 0x41 (0-25)
-  measurePeriodInterval: number;    // Offset 0x42 (value+5)
-  unknownFlags: number;              // Offset 0x45 (8 bits, bit flags + 2-bit field)
+  // GPS settings (0x40-0x45) — confirmed via CPS RE
+  gpsEnabled: boolean;              // Offset 0x40 bit 0 (GPS Switch)
+  distanceUnit: number;             // Offset 0x40 bit 1 (0=Metric, 1=British)
+  gpsMode: number;                  // Offset 0x40 bits 2-3 (0=GPS, 1=BDS, 2=GPS+BDS)
+  speedUnit: number;                // Offset 0x40 bits 4-5 (0=Kph, 1=Mph, 2=Kts)
+  gpsDisplayFormat: number;         // Offset 0x40 bit 6 (0=Degree, 1=Deg/Min/Sec)
+  utcZone: number;                  // Offset 0x41 (0-25, UTC-12 to UTC+13)
+  gpsReportInterval: number;        // Offset 0x42 (5-255 seconds, raw IS the value)
+  unknownFlags: number;             // Offset 0x45 (8 bits, partially identified)
 
-  // GPS/APRS and Digital settings (0x60-0x67)
-  gpsAprsFlags: number;              // Offset 0x60 (8 bits, bit flags)
-  callHoldTime: number;             // Offset 0x61 (0-61)
-  activeWaitTime: number;            // Offset 0x62 (value+1)
-  activeRetriesTime: number;        // Offset 0x63 (value+1)
-  preCarrierTime: number;           // Offset 0x64 (direct value)
-  digitalSettingsFlags: number;     // Offset 0x65 (8 bits, bit flags + 2-bit field)
-  remoteMonitorTime: number;        // Offset 0x66 (direct value)
-  digitalSettingsCont: number;       // Offset 0x67 (8 bits, bit flags + 2-bit field)
+  // Digital Settings (0x60-0x67) — confirmed via CPS RE + en.bf
+  digitalDecodeFlags: number;       // Offset 0x60 (bit 0=Private Call Match, bit 1=Group Call Match)
+  callHoldTime: number;             // Offset 0x61 — Call Hold Time [s] (raw = seconds, 0–61)
+  activeWaitTime: number;           // Offset 0x62 — Active Wait Time [ms] (raw = combo_idx+1; display_ms = (raw-1)*30+300; range 300–4800ms)
+  activeRetriesTime: number;        // Offset 0x63 — Active Retries Time (raw = count 1–8)
+  preCarrierTime: number;           // Offset 0x64 — Pre-Carrier Time [ms] (raw = combo_idx; display_ms = (raw+1)*120; range 120–8640ms)
+  digitalSettingsFlags: number;     // Offset 0x65 (bit7=Remote Monitor Decode, bit6=Radio Disable Decode, bit5=Radio Check Decode, bit4=Radio Enable Decode, bit3=Call Alert Decode, bits2-1=Data Service, bit0=Missed Call Alert)
+  smsFormat: number;                // Offset 0x66 — SMS Format [s] (raw = combo_idx; display_s = (raw+1)*10; range 10–120s)
+  nameDisplayFlags: number;         // Offset 0x67 (bits7-6=Name Data Format, bit3=Send TX Name, bit2=Name Display Priority)
 
   // VFO/Embedded settings (0x80-0x81)
   vfoEmbeddedFlags: number;         // Offset 0x80 (8 bits, bit flags + 2-bit fields)
@@ -160,24 +164,24 @@ export interface RadioSettings {
     channelName: boolean;      // Bit 4
   };
 
-  // Legacy fields (0x301+) - keeping for backward compatibility
-  unknownRadioSetting: number;       // Offset 0x301
-  radioEnabled: boolean;             // Offset 0x302 (bit 0)
-  latitude: string;                 // Offset 0x306 (14 bytes)
-  latitudeDirection: 'N' | 'S';    // Offset 0x30F (0x4E='N', 0x53='S')
-  longitude: string;                 // Offset 0x310 (14 bytes)
-  longitudeDirection: 'E' | 'W';    // Offset 0x319 (0x45='E', 0x57='W')
-  currentChannelA: number;           // Offset 0x320 (1-based, 0 = none, little-endian uint16)
-  currentChannelB: number;           // Offset 0x322 (1-based, 0 = none, little-endian uint16)
-  channelSetting3: number;           // Offset 0x324 (little-endian uint16)
-  channelSetting4: number;           // Offset 0x326 (little-endian uint16)
-  channelSetting5: number;          // Offset 0x328 (little-endian uint16)
-  channelSetting6: number;           // Offset 0x32A (little-endian uint16)
-  channelSetting7: number;           // Offset 0x32C (little-endian uint16)
-  channelSetting8: number;           // Offset 0x32E (little-endian uint16)
-  currentZone: number;               // Offset 0x330 (1-based, 0 = none)
-  zoneEnabled: boolean;              // Offset 0x331 (bit 0)
-  unknownValue: string;              // Offset 0x332 (3 bytes, formatted as hex string)
+  // APRS & GPS Position settings (0x301-0x334) — confirmed via CPS RE
+  aprsScheduledSendTime: number;    // Offset 0x301 (combo idx: 0=Off, 1=30s, 2=60s, …, n=n*30s ≤7200s)
+  aprsFixedBeacon: boolean;          // Offset 0x302 bit 0 (0=Off, 1=On)
+  latitude: string;                  // Offset 0x306 (9 bytes ASCII, e.g. "45.123456")
+  latitudeDirection: 'N' | 'S';      // Offset 0x30F (0x4E='N', 0x53='S')
+  longitude: string;                 // Offset 0x310 (9 bytes ASCII, e.g. "123.12345")
+  longitudeDirection: 'E' | 'W';     // Offset 0x319 (0x45='E', 0x57='W')
+  aprsReportChannel1: number;        // Offset 0x320 (uint16 LE; 0=current channel)
+  aprsReportChannel2: number;        // Offset 0x322 (uint16 LE)
+  aprsReportChannel3: number;        // Offset 0x324 (uint16 LE)
+  aprsReportChannel4: number;        // Offset 0x326 (uint16 LE)
+  aprsReportChannel5: number;        // Offset 0x328 (uint16 LE)
+  aprsReportChannel6: number;        // Offset 0x32A (uint16 LE)
+  aprsReportChannel7: number;        // Offset 0x32C (uint16 LE)
+  aprsReportChannel8: number;        // Offset 0x32E (uint16 LE)
+  aprsRepeaterActiveDelay: number;   // Offset 0x330 (combo idx: 0=Off, 1=100ms, 2=200ms, …, 10=1000ms)
+  aprsCallType: boolean;             // Offset 0x331 bit 0 (0=Private, 1=Group)
+  aprsUploadId: number;              // Offset 0x332 (24-bit big-endian; decimal DMR ID 1–16776415, 0=unset)
 
   // VFO Channel Information
   vfoA: Channel;                     // Offset 0x276-0x2A5 (48 bytes) - VFO A Channel
