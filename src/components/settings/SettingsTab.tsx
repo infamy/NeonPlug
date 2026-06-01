@@ -937,6 +937,123 @@ export const SettingsTab: React.FC = () => {
             </div>
           </Card>
           )}
+
+          {/* GPS & APRS Settings */}
+          {radioSettings && !radioSettings.uv5rMiniSettings && (
+            <Card className="mt-6">
+              <SectionTitle underline>GPS & APRS</SectionTitle>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                {/* GPS Settings */}
+                <div>
+                  <SectionTitle as="h4" size="md" className="mb-3">GPS Settings</SectionTitle>
+                  <div className="space-y-3">
+                    {([
+                      { key: 'gpsEnabled', label: 'GPS Switch', type: 'checkbox' },
+                      { key: 'gpsMode', label: 'GPS Mode', type: 'select', optionsId: 'gpsMode' },
+                      { key: 'distanceUnit', label: 'Distance Unit', type: 'select', optionsId: 'distanceUnit' },
+                      { key: 'speedUnit', label: 'Speed Unit', type: 'select', optionsId: 'speedUnit' },
+                      { key: 'gpsDisplayFormat', label: 'GPS Display Format', type: 'select', optionsId: 'gpsDisplayFormat' },
+                      { key: 'utcZone', label: 'UTC Zone', type: 'select', optionsId: 'utcZone' },
+                      { key: 'gpsReportInterval', label: 'Report Interval (sec)', type: 'number', min: 5, max: 255 },
+                    ] as SettingsFieldDescriptor[]).map((field) => (
+                      <SettingsFieldRenderer
+                        key={field.key}
+                        field={field}
+                        value={getFieldValue(radioSettings, field.key)}
+                        onChange={(v) => handleFieldChange(radioSettings, field.key, v, updateRadioSettings)}
+                      />
+                    ))}
+                  </div>
+
+                  <SectionTitle as="h4" size="md" className="mt-6 mb-3">GPS Position</SectionTitle>
+                  <div className="space-y-3">
+                    {([
+                      { key: 'latitude', label: 'Latitude', type: 'text', maxLength: 9 },
+                      { key: 'latitudeDirection', label: 'N / S', type: 'select', optionsId: 'latitudeDirection' },
+                      { key: 'longitude', label: 'Longitude', type: 'text', maxLength: 9 },
+                      { key: 'longitudeDirection', label: 'E / W', type: 'select', optionsId: 'longitudeDirection' },
+                    ] as SettingsFieldDescriptor[]).map((field) => (
+                      <SettingsFieldRenderer
+                        key={field.key}
+                        field={field}
+                        value={getFieldValue(radioSettings, field.key)}
+                        onChange={(v) => handleFieldChange(radioSettings, field.key, v, updateRadioSettings)}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* APRS Settings */}
+                <div>
+                  <SectionTitle as="h4" size="md" className="mb-3">APRS Settings</SectionTitle>
+                  <div className="space-y-3">
+                    {([
+                      { key: 'aprsScheduledSendTime', label: 'Scheduled Send Time', type: 'select', optionsId: 'aprsScheduledSendTime' },
+                      { key: 'aprsFixedBeacon', label: 'Fixed Beacon', type: 'checkbox' },
+                      { key: 'aprsRepeaterActiveDelay', label: 'Repeater Active Delay', type: 'select', optionsId: 'aprsRepeaterActiveDelay' },
+                      { key: 'aprsCallType', label: 'Upload Call Type', type: 'select', optionsId: 'aprsCallType' },
+                    ] as SettingsFieldDescriptor[]).map((field) => (
+                      <SettingsFieldRenderer
+                        key={field.key}
+                        field={field}
+                        value={getFieldValue(radioSettings, field.key)}
+                        onChange={(v) => handleFieldChange(radioSettings, field.key, v, updateRadioSettings)}
+                      />
+                    ))}
+
+                    {/* Upload Destination DMR ID */}
+                    <div>
+                      <label className="block text-cool-gray text-sm mb-1">Upload Destination DMR ID</label>
+                      <p className="text-cool-gray text-xs mb-2">DMR ID of the APRS gateway or talk group to send position reports to (0 = unset)</p>
+                      <input
+                        type="number"
+                        min={0}
+                        max={16776415}
+                        value={radioSettings.aprsUploadId ?? 0}
+                        onChange={(e) => updateRadioSettings({ aprsUploadId: Math.max(0, Math.min(16776415, parseInt(e.target.value) || 0)) })}
+                        className="w-full px-3 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        placeholder="0 = unset"
+                      />
+                    </div>
+                  </div>
+
+                  <SectionTitle as="h4" size="md" className="mt-6 mb-3">APRS Report Channels</SectionTitle>
+                  <p className="text-cool-gray text-sm mb-3">Channel numbers to report APRS data on (0 = current channel)</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="border-b border-neon-cyan border-opacity-30">
+                          <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Slot</th>
+                          <th className="text-left py-2 px-3 text-sm font-semibold text-neon-cyan">Channel #</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {([1, 2, 3, 4, 5, 6, 7, 8] as const).map((n) => {
+                          const key = `aprsReportChannel${n}` as keyof typeof radioSettings;
+                          return (
+                            <tr key={n} className="border-b border-neon-cyan border-opacity-10 hover:bg-dark-charcoal">
+                              <td className="py-2 px-3 text-cool-gray">Channel {n}</td>
+                              <td className="py-2 px-3">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={4000}
+                                  value={(radioSettings[key] as number) ?? 0}
+                                  onChange={(e) => updateRadioSettings({ [key]: parseInt(e.target.value) || 0 } as Partial<RadioSettings>)}
+                                  className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
       )}
 

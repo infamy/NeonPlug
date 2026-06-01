@@ -170,6 +170,33 @@ export const ON_OFF_OPTIONS = [
   { value: 1, label: 'On' },
 ];
 
+export const LATITUDE_DIRECTION_OPTIONS = [
+  { value: 0, label: 'N (North)' },
+  { value: 1, label: 'S (South)' },
+];
+
+export const LONGITUDE_DIRECTION_OPTIONS = [
+  { value: 0, label: 'E (East)' },
+  { value: 1, label: 'W (West)' },
+];
+
+// 0=Off, then multiples of 30s up to 7200s
+export const APRS_SCHEDULED_SEND_OPTIONS: OptionItem[] = [
+  { value: 0, label: 'Off' },
+  ...Array.from({ length: 240 }, (_, i) => ({ value: i + 1, label: `${(i + 1) * 30}s` })),
+];
+
+// 0=Off, then 100ms/200ms/.../1000ms
+export const APRS_REPEATER_DELAY_OPTIONS: OptionItem[] = [
+  { value: 0, label: 'Off' },
+  ...Array.from({ length: 10 }, (_, i) => ({ value: i + 1, label: `${(i + 1) * 100} ms` })),
+];
+
+export const APRS_CALL_TYPE_OPTIONS = [
+  { value: 0, label: 'Private' },
+  { value: 1, label: 'Group' },
+];
+
 export const getColorHex = (colorValue: number): string => {
   const color = COLOR_OPTIONS.find(c => c.value === colorValue);
   return color?.hex || '#FFFFFF';
@@ -197,6 +224,11 @@ const OPTIONS_REGISTRY: Record<string, OptionItem[]> = {
   dataDisplayFormat: DATA_DISPLAY_FORMAT_OPTIONS,
   lockKey: LOCK_KEY_OPTIONS,
   onOff: ON_OFF_OPTIONS,
+  latitudeDirection: LATITUDE_DIRECTION_OPTIONS,
+  longitudeDirection: LONGITUDE_DIRECTION_OPTIONS,
+  aprsScheduledSendTime: APRS_SCHEDULED_SEND_OPTIONS,
+  aprsRepeaterActiveDelay: APRS_REPEATER_DELAY_OPTIONS,
+  aprsCallType: APRS_CALL_TYPE_OPTIONS,
 };
 
 export function getOptionsForId(id: string): OptionItem[] {

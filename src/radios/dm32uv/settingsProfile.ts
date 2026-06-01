@@ -37,19 +37,6 @@ export const DM32UV_SETTINGS_PROFILE: SettingsProfile = {
       ],
     },
     {
-      id: 'gpsSettings',
-      title: 'GPS Settings',
-      fields: [
-        { key: 'gpsEnabled', label: 'GPS Switch', type: 'checkbox' },
-        { key: 'gpsMode', label: 'GPS Mode', type: 'select', optionsId: 'gpsMode' },
-        { key: 'distanceUnit', label: 'Distance Unit', type: 'select', optionsId: 'distanceUnit' },
-        { key: 'speedUnit', label: 'Speed Unit', type: 'select', optionsId: 'speedUnit' },
-        { key: 'gpsDisplayFormat', label: 'GPS Display Format', type: 'select', optionsId: 'gpsDisplayFormat' },
-        { key: 'utcZone', label: 'UTC Zone', type: 'select', optionsId: 'utcZone' },
-        { key: 'gpsReportInterval', label: 'GPS Report Interval (sec)', type: 'number', min: 5, max: 255 },
-      ],
-    },
-    {
       id: 'alertTones',
       title: 'Alert Tones',
       fields: [

@@ -164,24 +164,24 @@ export interface RadioSettings {
     channelName: boolean;      // Bit 4
   };
 
-  // Legacy fields (0x301+) - keeping for backward compatibility
-  unknownRadioSetting: number;       // Offset 0x301
-  radioEnabled: boolean;             // Offset 0x302 (bit 0)
-  latitude: string;                 // Offset 0x306 (14 bytes)
-  latitudeDirection: 'N' | 'S';    // Offset 0x30F (0x4E='N', 0x53='S')
-  longitude: string;                 // Offset 0x310 (14 bytes)
-  longitudeDirection: 'E' | 'W';    // Offset 0x319 (0x45='E', 0x57='W')
-  currentChannelA: number;           // Offset 0x320 (1-based, 0 = none, little-endian uint16)
-  currentChannelB: number;           // Offset 0x322 (1-based, 0 = none, little-endian uint16)
-  channelSetting3: number;           // Offset 0x324 (little-endian uint16)
-  channelSetting4: number;           // Offset 0x326 (little-endian uint16)
-  channelSetting5: number;          // Offset 0x328 (little-endian uint16)
-  channelSetting6: number;           // Offset 0x32A (little-endian uint16)
-  channelSetting7: number;           // Offset 0x32C (little-endian uint16)
-  channelSetting8: number;           // Offset 0x32E (little-endian uint16)
-  currentZone: number;               // Offset 0x330 (1-based, 0 = none)
-  zoneEnabled: boolean;              // Offset 0x331 (bit 0)
-  unknownValue: string;              // Offset 0x332 (3 bytes, formatted as hex string)
+  // APRS & GPS Position settings (0x301-0x334) — confirmed via CPS RE
+  aprsScheduledSendTime: number;    // Offset 0x301 (combo idx: 0=Off, 1=30s, 2=60s, …, n=n*30s ≤7200s)
+  aprsFixedBeacon: boolean;          // Offset 0x302 bit 0 (0=Off, 1=On)
+  latitude: string;                  // Offset 0x306 (9 bytes ASCII, e.g. "45.123456")
+  latitudeDirection: 'N' | 'S';      // Offset 0x30F (0x4E='N', 0x53='S')
+  longitude: string;                 // Offset 0x310 (9 bytes ASCII, e.g. "123.12345")
+  longitudeDirection: 'E' | 'W';     // Offset 0x319 (0x45='E', 0x57='W')
+  aprsReportChannel1: number;        // Offset 0x320 (uint16 LE; 0=current channel)
+  aprsReportChannel2: number;        // Offset 0x322 (uint16 LE)
+  aprsReportChannel3: number;        // Offset 0x324 (uint16 LE)
+  aprsReportChannel4: number;        // Offset 0x326 (uint16 LE)
+  aprsReportChannel5: number;        // Offset 0x328 (uint16 LE)
+  aprsReportChannel6: number;        // Offset 0x32A (uint16 LE)
+  aprsReportChannel7: number;        // Offset 0x32C (uint16 LE)
+  aprsReportChannel8: number;        // Offset 0x32E (uint16 LE)
+  aprsRepeaterActiveDelay: number;   // Offset 0x330 (combo idx: 0=Off, 1=100ms, 2=200ms, …, 10=1000ms)
+  aprsCallType: boolean;             // Offset 0x331 bit 0 (0=Private, 1=Group)
+  aprsUploadId: number;              // Offset 0x332 (24-bit big-endian; decimal DMR ID 1–16776415, 0=unset)
 
   // VFO Channel Information
   vfoA: Channel;                     // Offset 0x276-0x2A5 (48 bytes) - VFO A Channel

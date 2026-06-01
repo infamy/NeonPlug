@@ -1545,40 +1545,30 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     });
   }
 
-  // Legacy fields (0x301+) - keeping for backward compatibility
-  const unknownRadioSetting = data[0x301];
-  const radioFlag = data[0x302];
-  const radioEnabled = (radioFlag & 0x01) !== 0;
-  
-  const latitude = parseString(0x306, 14);
+  // APRS & GPS Position settings (0x301-0x334)
+  const aprsScheduledSendTime = data[0x301];
+  const aprsFixedBeacon = (data[0x302] & 0x01) !== 0;
+
+  const latitude = parseString(0x306, 9);
   const latitudeDirection: 'N' | 'S' = data[0x30F] === 0x4E ? 'N' : 'S';
-  const longitude = parseString(0x310, 14);
+  const longitude = parseString(0x310, 9);
+  const longitudeDirection: 'E' | 'W' = data[0x319] === 0x45 ? 'E' : 'W';
 
-  // Longitude direction (0x319)
-  const lonDirByte = data[0x319];
-  const longitudeDirection: 'E' | 'W' = lonDirByte === 0x45 ? 'E' : 'W';
+  // APRS Report Channels 1-8 (uint16 LE, 0=current channel)
+  const aprsReportChannel1 = data[0x320] | (data[0x321] << 8);
+  const aprsReportChannel2 = data[0x322] | (data[0x323] << 8);
+  const aprsReportChannel3 = data[0x324] | (data[0x325] << 8);
+  const aprsReportChannel4 = data[0x326] | (data[0x327] << 8);
+  const aprsReportChannel5 = data[0x328] | (data[0x329] << 8);
+  const aprsReportChannel6 = data[0x32A] | (data[0x32B] << 8);
+  const aprsReportChannel7 = data[0x32C] | (data[0x32D] << 8);
+  const aprsReportChannel8 = data[0x32E] | (data[0x32F] << 8);
 
-  // Channel settings (little-endian uint16)
-  // Note: Channels are stored as 1-based (channel 1 = 1, channel 2 = 2, 0 = none)
-  const currentChannelA = data[0x320] | (data[0x321] << 8);
-  const currentChannelB = data[0x322] | (data[0x323] << 8);
-  const channelSetting3 = data[0x324] | (data[0x325] << 8);
-  const channelSetting4 = data[0x326] | (data[0x327] << 8);
-  const channelSetting5 = data[0x328] | (data[0x329] << 8);
-  const channelSetting6 = data[0x32A] | (data[0x32B] << 8);
-  const channelSetting7 = data[0x32C] | (data[0x32D] << 8);
-  const channelSetting8 = data[0x32E] | (data[0x32F] << 8);
-
-  // Zone settings
-  const currentZone = data[0x330];
-  const zoneFlag = data[0x331];
-  const zoneEnabled = (zoneFlag & 0x01) !== 0;
-
-  // Unknown value (0x332, 3 bytes, formatted as hex string)
-  const unknownValueBytes = data.slice(0x332, 0x335);
-  const unknownValue = Array.from(unknownValueBytes)
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join(' ');
+  // APRS upload/call settings (0x330-0x334)
+  const aprsRepeaterActiveDelay = data[0x330];
+  const aprsCallType = (data[0x331] & 0x01) !== 0;
+  // 0x332-0x334 is a 24-bit big-endian decimal DMR ID (1-16776415); 0 = unset
+  const aprsUploadId = (data[0x332] << 16) | (data[0x333] << 8) | data[0x334];
 
   // VFO Channel Information
   // Note: VFO A and VFO B are now parsed from block 0x41 as channels 4001 and 4002
@@ -1730,23 +1720,23 @@ export function parseRadioSettings(data: Uint8Array): RadioSettings {
     analogCall,
     oneTouchCall,
     funPlus,
-    unknownRadioSetting,
-    radioEnabled,
+    aprsScheduledSendTime,
+    aprsFixedBeacon,
     latitude,
     latitudeDirection,
     longitude,
     longitudeDirection,
-    currentChannelA,
-    currentChannelB,
-    channelSetting3,
-    channelSetting4,
-    channelSetting5,
-    channelSetting6,
-    channelSetting7,
-    channelSetting8,
-    currentZone,
-    zoneEnabled,
-    unknownValue,
+    aprsReportChannel1,
+    aprsReportChannel2,
+    aprsReportChannel3,
+    aprsReportChannel4,
+    aprsReportChannel5,
+    aprsReportChannel6,
+    aprsReportChannel7,
+    aprsReportChannel8,
+    aprsRepeaterActiveDelay,
+    aprsCallType,
+    aprsUploadId,
     vfoA,
     vfoB,
     menuEnableFlags,
@@ -2037,11 +2027,11 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   }
 
   // Legacy fields (0x301+)
-  if (shouldEncode('unknownRadioSetting')) {
-    data[0x301] = settings.unknownRadioSetting;
+  if (shouldEncode('aprsScheduledSendTime')) {
+    data[0x301] = settings.aprsScheduledSendTime & 0xFF;
   }
-  if (shouldEncode('radioEnabled')) {
-    data[0x302] = settings.radioEnabled ? 0x01 : 0x00;
+  if (shouldEncode('aprsFixedBeacon')) {
+    data[0x302] = settings.aprsFixedBeacon ? (data[0x302] | 0x01) : (data[0x302] & 0xFE);
   }
 
   // Latitude (0x306, 14 bytes, null-terminated)
@@ -2073,56 +2063,50 @@ export function encodeRadioSettings(settings: RadioSettings, originalData?: Uint
   }
 
   // Channel settings (little-endian uint16) - these are runtime state, usually don't need to write
-  if (shouldEncode('currentChannelA')) {
-    data[0x320] = settings.currentChannelA & 0xFF;
-    data[0x321] = (settings.currentChannelA >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel1')) {
+    data[0x320] = settings.aprsReportChannel1 & 0xFF;
+    data[0x321] = (settings.aprsReportChannel1 >> 8) & 0xFF;
   }
-  if (shouldEncode('currentChannelB')) {
-    data[0x322] = settings.currentChannelB & 0xFF;
-    data[0x323] = (settings.currentChannelB >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel2')) {
+    data[0x322] = settings.aprsReportChannel2 & 0xFF;
+    data[0x323] = (settings.aprsReportChannel2 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting3')) {
-    data[0x324] = settings.channelSetting3 & 0xFF;
-    data[0x325] = (settings.channelSetting3 >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel3')) {
+    data[0x324] = settings.aprsReportChannel3 & 0xFF;
+    data[0x325] = (settings.aprsReportChannel3 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting4')) {
-    data[0x326] = settings.channelSetting4 & 0xFF;
-    data[0x327] = (settings.channelSetting4 >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel4')) {
+    data[0x326] = settings.aprsReportChannel4 & 0xFF;
+    data[0x327] = (settings.aprsReportChannel4 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting5')) {
-    data[0x328] = settings.channelSetting5 & 0xFF;
-    data[0x329] = (settings.channelSetting5 >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel5')) {
+    data[0x328] = settings.aprsReportChannel5 & 0xFF;
+    data[0x329] = (settings.aprsReportChannel5 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting6')) {
-    data[0x32A] = settings.channelSetting6 & 0xFF;
-    data[0x32B] = (settings.channelSetting6 >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel6')) {
+    data[0x32A] = settings.aprsReportChannel6 & 0xFF;
+    data[0x32B] = (settings.aprsReportChannel6 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting7')) {
-    data[0x32C] = settings.channelSetting7 & 0xFF;
-    data[0x32D] = (settings.channelSetting7 >> 8) & 0xFF;
+  if (shouldEncode('aprsReportChannel7')) {
+    data[0x32C] = settings.aprsReportChannel7 & 0xFF;
+    data[0x32D] = (settings.aprsReportChannel7 >> 8) & 0xFF;
   }
-  if (shouldEncode('channelSetting8')) {
-    data[0x32E] = settings.channelSetting8 & 0xFF;
-    data[0x32F] = (settings.channelSetting8 >> 8) & 0xFF;
-  }
-
-  // Zone settings - runtime state, usually don't need to write
-  if (shouldEncode('currentZone')) {
-    data[0x330] = settings.currentZone;
-  }
-  if (shouldEncode('zoneEnabled')) {
-    data[0x331] = settings.zoneEnabled ? 0x01 : 0x00;
+  if (shouldEncode('aprsReportChannel8')) {
+    data[0x32E] = settings.aprsReportChannel8 & 0xFF;
+    data[0x32F] = (settings.aprsReportChannel8 >> 8) & 0xFF;
   }
 
-  // Unknown value (0x332, 3 bytes)
-  if (shouldEncode('unknownValue')) {
-    const unknownValueParts = settings.unknownValue.split(' ').filter(s => s.length > 0);
-    for (let i = 0; i < Math.min(3, unknownValueParts.length); i++) {
-      const byte = parseInt(unknownValueParts[i], 16);
-      if (!isNaN(byte)) {
-        data[0x332 + i] = byte;
-      }
-    }
+  if (shouldEncode('aprsRepeaterActiveDelay')) {
+    data[0x330] = settings.aprsRepeaterActiveDelay & 0xFF;
+  }
+  if (shouldEncode('aprsCallType')) {
+    data[0x331] = settings.aprsCallType ? (data[0x331] | 0x01) : (data[0x331] & 0xFE);
+  }
+  if (shouldEncode('aprsUploadId')) {
+    const id = Math.max(0, Math.min(16776415, settings.aprsUploadId));
+    data[0x332] = (id >> 16) & 0xFF;
+    data[0x333] = (id >> 8) & 0xFF;
+    data[0x334] = id & 0xFF;
   }
 
   // VFO Channel Information
