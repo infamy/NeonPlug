@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, startTransition } from 'react';
+import { formatPlural } from '../../utils/formatPlural';
 import { useContactsStore } from '../../store/contactsStore';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
@@ -463,12 +464,12 @@ export const ContactsTab: React.FC = () => {
       if (truncated) {
         const removed = totalContacts - contactCapacity;
         setTruncationWarning(
-          `Warning: ${removed.toLocaleString()} contact${removed === 1 ? '' : 's'} were removed due to limited space. ` +
+          `Warning: ${removed.toLocaleString()} ${formatPlural(removed, 'contact')} were removed due to limited space. ` +
           `Your radio supports ${contactCapacity.toLocaleString()} contacts, but ${totalContacts.toLocaleString()} were downloaded.`
         );
       }
 
-      setProgressMessage(`Successfully downloaded ${contactsToSave.length.toLocaleString()} contact${contactsToSave.length === 1 ? '' : 's'} from ${countriesToFetch.length} countr${countriesToFetch.length === 1 ? 'y' : 'ies'}${selectedStates.length > 0 ? ` (${selectedStates.length} US state${selectedStates.length !== 1 ? 's' : ''})` : ''}`);
+      setProgressMessage(`Successfully downloaded ${contactsToSave.length.toLocaleString()} ${formatPlural(contactsToSave.length, 'contact')} from ${countriesToFetch.length} ${formatPlural(countriesToFetch.length, 'country', 'countries')}${selectedStates.length > 0 ? ` (${selectedStates.length} US ${formatPlural(selectedStates.length, 'state')})` : ''}`);
       setProgress(100);
 
       // Keep selection checked so user can download again if needed
@@ -642,7 +643,7 @@ export const ContactsTab: React.FC = () => {
             </div>
             {selectedStates.length > 0 && (
               <p className="text-xs text-neon-cyan mt-2">
-                {selectedStates.length} state{selectedStates.length !== 1 ? 's' : ''} selected
+                {selectedStates.length} {formatPlural(selectedStates.length, 'state')} selected
               </p>
             )}
           </div>
@@ -670,7 +671,7 @@ export const ContactsTab: React.FC = () => {
           
           {selectedCountries.length > 0 && (
             <span className="text-sm text-cool-gray">
-              {selectedCountries.length} countr{selectedCountries.length === 1 ? 'y' : 'ies'} selected
+              {selectedCountries.length} {formatPlural(selectedCountries.length, 'country', 'countries')} selected
             </span>
           )}
         </div>
@@ -699,7 +700,7 @@ export const ContactsTab: React.FC = () => {
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-2xl font-bold text-neon-cyan">CSV Contacts</h2>
           <div className="text-cool-gray">
-            {contacts.length} / {contactCapacity.toLocaleString()} contact{contacts.length !== 1 ? 's' : ''}
+            {contacts.length} / {contactCapacity.toLocaleString()} {formatPlural(contacts.length, 'contact')}
           </div>
         </div>
         <div className="mb-4 text-cool-gray text-sm">

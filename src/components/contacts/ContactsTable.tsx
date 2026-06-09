@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { formatPlural } from '../../utils/formatPlural';
 import { useContactsStore } from '../../store/contactsStore';
 import { EmptyState } from '../ui/EmptyState';
 import { Card } from '../ui/Card';
@@ -75,7 +76,7 @@ export const ContactsTable: React.FC = () => {
         </div>
         {searchQuery && (
           <div className="mt-2 text-xs text-cool-gray">
-            Found {filteredContacts.length.toLocaleString()} contact{filteredContacts.length !== 1 ? 's' : ''} matching "{searchQuery}"
+            Found {filteredContacts.length.toLocaleString()} {formatPlural(filteredContacts.length, 'contact')} matching "{searchQuery}"
           </div>
         )}
       </div>
@@ -130,7 +131,7 @@ export const ContactsTable: React.FC = () => {
       {filteredContacts.length > 0 && totalPages > 1 && (
         <div className="mt-2 pt-2 border-t border-neon-cyan border-opacity-20 flex items-center justify-between text-sm text-cool-gray px-2 pb-2">
           <span>
-            Showing {currentPage * CONTACTS_PER_PAGE + 1}-{Math.min((currentPage + 1) * CONTACTS_PER_PAGE, filteredContacts.length)} of {filteredContacts.length.toLocaleString()} contact{filteredContacts.length !== 1 ? 's' : ''}
+            Showing {currentPage * CONTACTS_PER_PAGE + 1}-{Math.min((currentPage + 1) * CONTACTS_PER_PAGE, filteredContacts.length)} of {filteredContacts.length.toLocaleString()} {formatPlural(filteredContacts.length, 'contact')}
             {searchQuery && ` (${contacts.length.toLocaleString()} total)`}
           </span>
           <div className="flex items-center gap-2">

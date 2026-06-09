@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useAlert } from '../../hooks/useAlert';
+import { formatPlural } from '../../utils/formatPlural';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import type { RXGroup } from '../../models/RXGroup';
@@ -13,13 +15,11 @@ export const RXGroupsList: React.FC = () => {
   const [editingName, setEditingName] = useState<number | null>(null);
   const [editingNameValue, setEditingNameValue] = useState('');
   const [groupToDelete, setGroupToDelete] = useState<{ index: number; name: string } | null>(null);
-  const [alertOpen, setAlertOpen] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
 
   const handleAddGroup = () => {
     if (groups.length >= 32) {
-      setAlertMessage('Maximum of 32 RX groups allowed.');
-      setAlertOpen(true);
+      showAlert('Maximum of 32 RX groups allowed.');
       return;
     }
     if (newGroupName.trim()) {
@@ -100,7 +100,7 @@ export const RXGroupsList: React.FC = () => {
                 </span>
               )}
               <span className="text-cool-gray text-xs">
-                {group.talkGroupIndices.length} talk group{group.talkGroupIndices.length !== 1 ? 's' : ''}
+                {group.talkGroupIndices.length} {formatPlural(group.talkGroupIndices.length, 'talk group')}
               </span>
             </div>
             {group.talkGroupIndices.length > 0 && (
@@ -179,7 +179,7 @@ export const RXGroupsList: React.FC = () => {
         )}
       </div>
       {selectedGroupData ? (
-        <RXGroupEditor group={selectedGroupData} onAlert={(msg) => { setAlertMessage(msg); setAlertOpen(true); }} />
+        <RXGroupEditor group={selectedGroupData} onAlert={showAlert} />
       ) : (
         <EmptyState
           message="Select an RX group to edit"
@@ -222,8 +222,8 @@ export const RXGroupsList: React.FC = () => {
       />
       <ConfirmModal
         isOpen={alertOpen}
-        onClose={() => setAlertOpen(false)}
-        title="Notice"
+        onClose={closeAlert}
+        title={alertTitle}
         message={alertMessage}
         confirmLabel="OK"
         variant="alert"

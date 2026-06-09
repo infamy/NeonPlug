@@ -20,6 +20,7 @@ import { migrateCodeplug, type MigrationLoss } from '../../services/codeplugMigr
 import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
 // Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
+import { useAlert } from '../../hooks/useAlert';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { isWebSerialSupported } from '../../utils/browserSupport';
@@ -49,9 +50,7 @@ export const Toolbar: React.FC = () => {
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
   const [writeWarningMessage, setWriteWarningMessage] = useState('');
-  const [alertOpen, setAlertOpen] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
-  const [alertTitle, setAlertTitle] = useState('Notice');
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [convertTargetModel, setConvertTargetModel] = useState<string>(() => getMigrationTargetModels()[0] ?? 'DM-32UV');
   const [readDropdownOpen, setReadDropdownOpen] = useState(false);
@@ -179,10 +178,8 @@ export const Toolbar: React.FC = () => {
     setSelectedRadioModel(convertTargetModel);
     setConvertModalOpen(false);
     const targetLabel = getRadioPickerOptions().find((o) => o.modelId === convertTargetModel)?.label ?? convertTargetModel;
-    setAlertTitle('Convert');
     const lossText = formatMigrationLoss(loss);
-    setAlertMessage(`Codeplug converted for ${targetLabel}. ${lossText}`);
-    setAlertOpen(true);
+    showAlert(`Codeplug converted for ${targetLabel}. ${lossText}`, 'Convert');
   };
 
   const handleConvertDownload = async () => {
@@ -247,14 +244,10 @@ export const Toolbar: React.FC = () => {
         `• ${rxCount} RX group(s)`,
         `• ${encCount} encryption key(s)`,
       ].filter(Boolean);
-      setAlertTitle('Import');
-      setAlertMessage(`Successfully imported codeplug!\n\n${lines.join('\n')}`);
-      setAlertOpen(true);
+      showAlert(`Successfully imported codeplug!\n\n${lines.join('\n')}`, 'Import');
       saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
     } catch (error) {
-      setAlertTitle('Import');
-      setAlertMessage(error instanceof Error ? error.message : 'Failed to import codeplug');
-      setAlertOpen(true);
+      showAlert(error instanceof Error ? error.message : 'Failed to import codeplug', 'Import');
     }
     
     // Reset file input
@@ -369,8 +362,7 @@ export const Toolbar: React.FC = () => {
 
   const handleWrite = () => {
     if (channels.length === 0 && zones.length === 0 && scanLists.length === 0) {
-      setAlertMessage('No data to write (channels, zones, or scan lists)');
-      setAlertOpen(true);
+      showAlert('No data to write (channels, zones, or scan lists)');
       return;
     }
     // Run radio-specific validations only when model is known; combine with experimental warning in one modal
@@ -442,9 +434,7 @@ export const Toolbar: React.FC = () => {
     setRXGroups(data.rxGroups ?? []);
     setEncryptionKeys(data.encryptionKeys ?? []);
     setSnapshotsModalOpen(false);
-    setAlertTitle('Restore');
-    setAlertMessage(`Restored codeplug: ${data.channels.length} channels, ${data.zones.length} zones`);
-    setAlertOpen(true);
+    showAlert(`Restored codeplug: ${data.channels.length} channels, ${data.zones.length} zones`, 'Restore');
   };
 
   const handleClearSnapshots = () => {
@@ -575,7 +565,7 @@ export const Toolbar: React.FC = () => {
       />
       <ConfirmModal
         isOpen={alertOpen}
-        onClose={() => { setAlertOpen(false); setAlertTitle('Notice'); }}
+        onClose={closeAlert}
         title={alertTitle}
         message={alertMessage}
         confirmLabel="OK"
