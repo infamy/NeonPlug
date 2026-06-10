@@ -27,6 +27,7 @@ import { useRXGroupsStore } from './store/rxGroupsStore';
 import { useEncryptionKeysStore } from './store/encryptionKeysStore';
 import { useRadioStore } from './store/radioStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
+import { useAlert } from './hooks/useAlert';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import type { CodeplugData } from './services/codeplugExport';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
@@ -36,8 +37,7 @@ import { useLogStore } from './store/logStore';
 function App() {
   const [activeTab, setActiveTab] = useState('channels');
   const [showStartupModal, setShowStartupModal] = useState(true);
-  const [alertOpen, setAlertOpen] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Import');
   const { setChannels, channels } = useChannelsStore();
   const { setContacts } = useContactsStore();
   const { setZones } = useZonesStore();
@@ -192,11 +192,9 @@ function App() {
           `• ${codeplugData.rxGroups?.length ?? 0} RX group(s)`,
           `• ${codeplugData.encryptionKeys?.length ?? 0} encryption key(s)`,
         ].filter(Boolean);
-        setAlertMessage(`Successfully imported codeplug!\n\n${lines.join('\n')}`);
-        setAlertOpen(true);
+        showAlert(`Successfully imported codeplug!\n\n${lines.join('\n')}`);
       } catch (error) {
-        setAlertMessage(`Failed to import codeplug: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        setAlertOpen(true);
+        showAlert(`Failed to import codeplug: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else {
       // Legacy CSV import support
@@ -207,26 +205,21 @@ function App() {
         if (result.success && result.channels) {
           setChannels(result.channels);
           setShowStartupModal(false);
-          setAlertMessage(`Successfully imported ${result.channels.length} channels`);
-          setAlertOpen(true);
+          showAlert(`Successfully imported ${result.channels.length} channels`);
         } else {
-          setAlertMessage(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
-          setAlertOpen(true);
+          showAlert(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
         }
       } else if (fileName.includes('contact')) {
         const result = importContactsFromCSV(text);
         if (result.success && result.contacts) {
           setContacts(result.contacts);
           setShowStartupModal(false);
-          setAlertMessage(`Successfully imported ${result.contacts.length} contacts`);
-          setAlertOpen(true);
+          showAlert(`Successfully imported ${result.contacts.length} contacts`);
         } else {
-          setAlertMessage(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
-          setAlertOpen(true);
+          showAlert(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
         }
       } else {
-        setAlertMessage('File must be a codeplug (.neonplug) or CSV file containing "channel" or "contact" in the filename');
-        setAlertOpen(true);
+        showAlert('File must be a codeplug (.neonplug) or CSV file containing "channel" or "contact" in the filename');
       }
     }
 
@@ -307,8 +300,8 @@ function App() {
       />
       <ConfirmModal
         isOpen={alertOpen}
-        onClose={() => setAlertOpen(false)}
-        title="Import"
+        onClose={closeAlert}
+        title={alertTitle}
         message={alertMessage}
         confirmLabel="OK"
         variant="alert"

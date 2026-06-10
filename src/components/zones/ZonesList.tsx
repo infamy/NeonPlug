@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useAlert } from '../../hooks/useAlert';
+import { formatPlural } from '../../utils/formatPlural';
 import { useZonesStore } from '../../store/zonesStore';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { Zone } from '../../models/Zone';
@@ -14,8 +16,7 @@ export const ZonesList: React.FC = () => {
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
   const [editZoneName, setEditZoneName] = useState('');
   const [zoneToDelete, setZoneToDelete] = useState<{ id: string; name: string } | null>(null);
-  const [alertOpen, setAlertOpen] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
 
   const handleAddZone = () => {
     if (newZoneName.trim()) {
@@ -48,8 +49,7 @@ export const ZonesList: React.FC = () => {
       setEditingZoneId(null);
       setEditZoneName('');
     } else {
-      setAlertMessage('Invalid zone name. Zone names must be 1-10 characters.');
-      setAlertOpen(true);
+      showAlert('Invalid zone name. Zone names must be 1-10 characters.');
     }
   };
 
@@ -119,7 +119,7 @@ export const ZonesList: React.FC = () => {
                   <>
                     <span className="text-white font-medium">{zone.name}</span>
                     <span className="text-cool-gray text-xs">
-                      {zone.channels.length} channel{zone.channels.length !== 1 ? 's' : ''}
+                      {zone.channels.length} {formatPlural(zone.channels.length, 'channel')}
                     </span>
                   </>
                 )}
@@ -165,7 +165,7 @@ export const ZonesList: React.FC = () => {
       </div>
       {selectedZoneData ? (
         <div className="flex-1 min-h-0 overflow-hidden">
-          <ZoneEditor zone={selectedZoneData} onAlert={(msg) => { setAlertMessage(msg); setAlertOpen(true); }} />
+          <ZoneEditor zone={selectedZoneData} onAlert={showAlert} />
         </div>
       ) : (
         <EmptyState
@@ -210,8 +210,8 @@ export const ZonesList: React.FC = () => {
       />
       <ConfirmModal
         isOpen={alertOpen}
-        onClose={() => setAlertOpen(false)}
-        title="Notice"
+        onClose={closeAlert}
+        title={alertTitle}
         message={alertMessage}
         confirmLabel="OK"
         variant="alert"

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatPlural } from '../../../utils/formatPlural';
 import { useImportStores } from '../../../hooks/useImportStores';
 import { getNextChannelNumber } from '../../../utils/importHelpers';
 import { generateTaflChannels } from '../../../services/taflChannels';
@@ -318,7 +319,7 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
             >
               {isAddingTafl
                 ? 'Adding TAFL Channels...'
-                : `Add ${selectedTaflEntries.size} TAFL Channel${selectedTaflEntries.size !== 1 ? 's' : ''}`}
+                : `Add ${selectedTaflEntries.size} ${formatPlural(selectedTaflEntries.size, 'TAFL Channel')}`}
             </Button>
           )}
         </>

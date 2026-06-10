@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatPlural } from '../../../utils/formatPlural';
 import { useImportStores } from '../../../hooks/useImportStores';
 import { getNextChannelNumber } from '../../../utils/importHelpers';
 import { getAvailableFixedChannelSets, getChannelsForSet } from '../../../services/fixedChannels';
@@ -238,7 +239,7 @@ export const FixedChannelsSource: React.FC<FixedChannelsSourceProps> = ({
         >
           {isAddingFixed
             ? 'Adding...'
-            : `Add ${selectedFixedSets.size} Channel Set${selectedFixedSets.size !== 1 ? 's' : ''}`}
+            : `Add ${selectedFixedSets.size} ${formatPlural(selectedFixedSets.size, 'Channel Set')}`}
         </Button>
       )}
     </Card>

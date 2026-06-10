@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatPlural } from '../../../utils/formatPlural';
 import { useImportStores } from '../../../hooks/useImportStores';
 import { getNextChannelNumber, selectionCardClass } from '../../../utils/importHelpers';
 import { generateRptrsChannels } from '../../../services/rptrsChannels';
@@ -134,7 +135,7 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
                        r.city.toLowerCase().includes(filter) ||
                        r.state.toLowerCase().includes(filter) ||
                        r.ipsc_network.toLowerCase().includes(filter);
-              }).length} of {rptrs.length} DMR Repeater{rptrs.length !== 1 ? 's' : ''}
+              }).length} of {rptrs.length} {formatPlural(rptrs.length, 'DMR Repeater')}
               {rptrsSearchFilter.trim() && ` (filtered)`}
             </SectionTitle>
             <SelectAllButtons onSelectAll={handleSelectAllRptrs} onDeselectAll={handleDeselectAllRptrs} />
@@ -233,7 +234,7 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
               >
                 {isAddingRptrs
                   ? 'Adding DMR Repeater Channels...'
-                  : `Add ${selectedRptrs.size} DMR Repeater Channel${selectedRptrs.size !== 1 ? 's' : ''}`}
+                  : `Add ${selectedRptrs.size} ${formatPlural(selectedRptrs.size, 'DMR Repeater Channel')}`}
               </Button>
             </div>
           )}

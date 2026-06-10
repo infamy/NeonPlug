@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useAlert } from '../../hooks/useAlert';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
@@ -79,8 +80,7 @@ export const DiagnosticsTab: React.FC = () => {
   const [txContactLookupChannel, setTxContactLookupChannel] = useState<string>('');
   const [showBootImageSection, setShowBootImageSection] = useState(true);
   const [inspectBootImageOffset, setInspectBootImageOffset] = useState<string>('');
-  const [alertOpen, setAlertOpen] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
   
   const { logs, clearLogs, maxLogs, setMaxLogs } = useLogStore();
 
@@ -355,8 +355,7 @@ export const DiagnosticsTab: React.FC = () => {
     }
 
     if (blocksAdded === 0) {
-      setAlertMessage('No metadata blocks available to download. Please read from radio first.');
-      setAlertOpen(true);
+      showAlert('No metadata blocks available to download. Please read from radio first.');
       return;
     }
 
@@ -374,15 +373,13 @@ export const DiagnosticsTab: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error creating zip:', error);
-      setAlertMessage('Failed to create zip file. See console for details.');
-      setAlertOpen(true);
+      showAlert('Failed to create zip file. See console for details.');
     }
   };
 
   const handleExportExpectedWriteHex = () => {
     if (channels.length === 0) {
-      setAlertMessage('No channels available to export.');
-      setAlertOpen(true);
+      showAlert('No channels available to export.');
       return;
     }
 
@@ -422,8 +419,7 @@ export const DiagnosticsTab: React.FC = () => {
 
   const handleExportExpectedWriteBin = () => {
     if (channels.length === 0) {
-      setAlertMessage('No channels available to export.');
-      setAlertOpen(true);
+      showAlert('No channels available to export.');
       return;
     }
 
@@ -452,8 +448,7 @@ export const DiagnosticsTab: React.FC = () => {
 
   const handleFullDebugExport = async () => {
     if (channels.length === 0 && zones.length === 0 && logs.length === 0 && blockMetadata.size === 0 && blockData.size === 0) {
-      setAlertMessage('No data or logs to export. Please read from radio first.');
-      setAlertOpen(true);
+      showAlert('No data or logs to export. Please read from radio first.');
       return;
     }
 
@@ -570,15 +565,13 @@ export const DiagnosticsTab: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error creating export:', error);
-      setAlertMessage('Failed to create export. See console for details.');
-      setAlertOpen(true);
+      showAlert('Failed to create export. See console for details.');
     }
   };
 
   const handleWriteBlocksExport = () => {
     if (writeBlockData.size === 0) {
-      setAlertMessage('No write blocks available. Please write to radio first.');
-      setAlertOpen(true);
+      showAlert('No write blocks available. Please write to radio first.');
       return;
     }
 
@@ -589,8 +582,7 @@ export const DiagnosticsTab: React.FC = () => {
 
   const handleMetadataAnalysisExport = () => {
     if (blockMetadata.size === 0) {
-      setAlertMessage('No block metadata available. Please read from radio first.');
-      setAlertOpen(true);
+      showAlert('No block metadata available. Please read from radio first.');
       return;
     }
 
@@ -2195,8 +2187,7 @@ export const DiagnosticsTab: React.FC = () => {
                       URL.revokeObjectURL(url);
                     } catch (error) {
                       console.error('Error generating zip:', error);
-                      setAlertMessage('Failed to generate zip file');
-                      setAlertOpen(true);
+                      showAlert('Failed to generate zip file');
                     }
                   }}
                   className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
@@ -3281,8 +3272,7 @@ export const DiagnosticsTab: React.FC = () => {
                     // Parse CPS CSV format
                     const lines = content.split('\n').filter(line => line.trim());
                     if (lines.length < 2) {
-                      setAlertMessage('CSV must have at least a header row and one data row');
-                      setAlertOpen(true);
+                      showAlert('CSV must have at least a header row and one data row');
                       return;
                     }
 
@@ -3822,8 +3812,8 @@ export const DiagnosticsTab: React.FC = () => {
     </div>
     <ConfirmModal
       isOpen={alertOpen}
-      onClose={() => setAlertOpen(false)}
-      title="Notice"
+      onClose={closeAlert}
+      title={alertTitle}
       message={alertMessage}
       confirmLabel="OK"
       variant="alert"

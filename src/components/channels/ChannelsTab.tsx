@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
+import { formatPlural } from '../../utils/formatPlural';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
@@ -127,7 +128,7 @@ export const ChannelsTab: React.FC = () => {
         <h2 className="text-2xl font-bold text-neon-cyan">Channels</h2>
         <div className="flex items-center gap-4">
           <div className="text-cool-gray">
-            {filteredChannels.length - vfoChannels.length} channel{(filteredChannels.length - vfoChannels.length) !== 1 ? 's' : ''} {vfoChannels.length > 0 && `(${vfoChannels.length} VFO${vfoChannels.length !== 1 ? 's' : ''})`}
+            {filteredChannels.length - vfoChannels.length} {formatPlural(filteredChannels.length - vfoChannels.length, 'channel')} {vfoChannels.length > 0 && `(${vfoChannels.length} ${formatPlural(vfoChannels.length, 'VFO')})`}
           </div>
           <button
             onClick={handleAddChannel}
@@ -196,7 +197,7 @@ export const ChannelsTab: React.FC = () => {
         onClose={() => setDeleteSelectedOpen(false)}
         onConfirm={handleDeleteSelectedConfirm}
         title="Delete channels"
-        message={`Delete ${pendingDeleteCount} selected channel${pendingDeleteCount !== 1 ? 's' : ''}?`}
+        message={`Delete ${pendingDeleteCount} selected ${formatPlural(pendingDeleteCount, 'channel')}?`}
         confirmLabel="Delete"
         variant="danger"
       />

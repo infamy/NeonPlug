@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useAlert } from '../../hooks/useAlert';
+import { formatPlural } from '../../utils/formatPlural';
 import { createPortal } from 'react-dom';
 import { useScanListsStore } from '../../store/scanListsStore';
 import { useChannelsStore } from '../../store/channelsStore';
@@ -16,15 +18,13 @@ export const ScanListsList: React.FC = () => {
   const [editingScanList, setEditingScanList] = useState<string | null>(null);
   const [editScanListName, setEditScanListName] = useState('');
   const [scanListToDelete, setScanListToDelete] = useState<string | null>(null);
-  const [alertOpen, setAlertOpen] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
 
   const selectedScanListData = scanLists.find(sl => sl.name === selectedScanList);
 
   const handleAddScanList = () => {
     if (scanLists.length >= 32) {
-      setAlertMessage('Maximum of 32 scan lists allowed.');
-      setAlertOpen(true);
+      showAlert('Maximum of 32 scan lists allowed.');
       return;
     }
     if (!newScanListName.trim()) {
@@ -32,8 +32,7 @@ export const ScanListsList: React.FC = () => {
     }
     // Check if name already exists
     if (scanLists.some(sl => sl.name === newScanListName.trim())) {
-      setAlertMessage('A scan list with this name already exists.');
-      setAlertOpen(true);
+      showAlert('A scan list with this name already exists.');
       return;
     }
     const scanListName = newScanListName.trim().slice(0, 16);
@@ -74,8 +73,7 @@ export const ScanListsList: React.FC = () => {
       setEditingScanList(null);
       setEditScanListName('');
     } else {
-      setAlertMessage('Invalid scan list name or name already exists. Scan list names must be 1-16 characters and unique.');
-      setAlertOpen(true);
+      showAlert('Invalid scan list name or name already exists. Scan list names must be 1-16 characters and unique.');
     }
   };
 
@@ -141,7 +139,7 @@ export const ScanListsList: React.FC = () => {
                 <>
                   <span className="text-white font-medium">{scanList.name}</span>
                   <span className="text-cool-gray text-xs">
-                    {scanList.channels.length} channel{scanList.channels.length !== 1 ? 's' : ''}
+                    {scanList.channels.length} {formatPlural(scanList.channels.length, 'channel')}
                   </span>
                 </>
               )}
@@ -186,7 +184,7 @@ export const ScanListsList: React.FC = () => {
         </SectionTitle>
       </div>
       {selectedScanListData ? (
-        <ScanListEditor scanList={selectedScanListData} onAlert={(msg) => { setAlertMessage(msg); setAlertOpen(true); }} />
+        <ScanListEditor scanList={selectedScanListData} onAlert={showAlert} />
       ) : (
         <EmptyState
           message="Select a scan list to edit"
@@ -221,8 +219,8 @@ export const ScanListsList: React.FC = () => {
       />
       <ConfirmModal
         isOpen={alertOpen}
-        onClose={() => setAlertOpen(false)}
-        title="Notice"
+        onClose={closeAlert}
+        title={alertTitle}
         message={alertMessage}
         confirmLabel="OK"
         variant="alert"

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useAlert } from '../../hooks/useAlert';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
@@ -111,8 +112,7 @@ export const DigitalTab: React.FC = () => {
 
   const handleAddContact = () => {
     if (quickContacts.length >= talkGroupsMax) {
-      setAlertMessage(`Maximum of ${talkGroupsMax} talk groups allowed.`);
-      setAlertOpen(true);
+      showAlert(`Maximum of ${talkGroupsMax} talk groups allowed.`);
       return;
     }
     addContact({
@@ -123,8 +123,7 @@ export const DigitalTab: React.FC = () => {
     });
   };
 
-  const [alertOpen, setAlertOpen] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
   const [deleteConfirm, setDeleteConfirm] = useState<
     { type: 'contact'; index: number } | { type: 'message'; index: number } | { type: 'radioId'; index: number } | null
   >(null);
@@ -135,8 +134,7 @@ export const DigitalTab: React.FC = () => {
 
   const handleAddMessage = () => {
     if (messages.length >= 20) {
-      setAlertMessage('Maximum of 20 quick messages allowed.');
-      setAlertOpen(true);
+      showAlert('Maximum of 20 quick messages allowed.');
       return;
     }
     const newIndex = messages.length;
@@ -154,8 +152,7 @@ export const DigitalTab: React.FC = () => {
 
   const handleAddRadioId = () => {
     if (radioIds.length >= dmrRadioIdsMax) {
-      setAlertMessage(`Maximum of ${dmrRadioIdsMax} DMR Radio IDs allowed.`);
-      setAlertOpen(true);
+      showAlert(`Maximum of ${dmrRadioIdsMax} DMR Radio IDs allowed.`);
       return;
     }
     const newIndex = radioIds.length;
@@ -273,8 +270,7 @@ export const DigitalTab: React.FC = () => {
                               const dmrIdValue = parseInt(e.target.value, 10);
                               if (isNaN(dmrIdValue) || dmrIdValue < 0 || dmrIdValue > 0xFFFFFF) return;
                               if (dmrIdValue > 0 && !isValidDMRId(dmrIdValue)) {
-                                setAlertMessage('DMR ID must be between 1 and 9,999,999 (0 = none).');
-                                setAlertOpen(true);
+                                showAlert('DMR ID must be between 1 and 9,999,999 (0 = none).');
                                 return;
                               }
                               updateRadioId(radioId.index, {
@@ -813,8 +809,8 @@ export const DigitalTab: React.FC = () => {
     />
     <ConfirmModal
       isOpen={alertOpen}
-      onClose={() => setAlertOpen(false)}
-      title="Notice"
+      onClose={closeAlert}
+      title={alertTitle}
       message={alertMessage}
       confirmLabel="OK"
       variant="alert"

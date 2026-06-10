@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { formatPlural } from '../../../utils/formatPlural';
 import { useChannelsStore } from '../../../store/channelsStore';
 import { getNextChannelNumber } from '../../../utils/importHelpers';
 import { importChannelsFromChirpCSV, exportChannelsToChirpCSV, downloadCSV } from '../../../services/csv';
@@ -85,7 +86,7 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
         setChirpImportResult({
           operation: 'export',
           channels: analogChannels.length,
-          errors: [`Exported ${analogChannels.length} analog channel${analogChannels.length !== 1 ? 's' : ''}. ${digitalCount} digital channel${digitalCount !== 1 ? 's' : ''} excluded (CHIRP doesn't support digital).`],
+          errors: [`Exported ${analogChannels.length} ${formatPlural(analogChannels.length, 'analog channel')}. ${digitalCount} ${formatPlural(digitalCount, 'digital channel')} excluded (CHIRP doesn't support digital).`],
         });
       } else {
         setChirpImportResult({
@@ -169,8 +170,8 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
             </div>
             <div className="text-sm">
               {chirpImportResult.operation === 'import'
-                ? `Imported ${chirpImportResult.channels} channel${chirpImportResult.channels !== 1 ? 's' : ''}`
-                : `Exported ${chirpImportResult.channels} channel${chirpImportResult.channels !== 1 ? 's' : ''}`}
+                ? `Imported ${chirpImportResult.channels} ${formatPlural(chirpImportResult.channels, 'channel')}`
+                : `Exported ${chirpImportResult.channels} ${formatPlural(chirpImportResult.channels, 'channel')}`}
             </div>
             {chirpImportResult.errors && chirpImportResult.errors.length > 0 && (
               <div className="text-sm mt-2">

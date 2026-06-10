@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatPlural } from '../../../utils/formatPlural';
 import { useImportStores } from '../../../hooks/useImportStores';
 import { getNextChannelNumber, selectionCardClass } from '../../../utils/importHelpers';
 import { generateAirportChannels } from '../../../services/airportChannels';
@@ -108,7 +109,7 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
         <>
           <div className="flex justify-between items-center mb-4">
             <SectionTitle as="h4" size="md">
-              Found {airports.length} Airport{airports.length !== 1 ? 's' : ''}
+              Found {airports.length} {formatPlural(airports.length, 'Airport')}
             </SectionTitle>
             <SelectAllButtons onSelectAll={handleSelectAllAirports} onDeselectAll={handleDeselectAllAirports} />
           </div>
@@ -195,7 +196,7 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
               >
                 {isAddingAirports
                   ? 'Adding Airport Channels...'
-                  : `Add ${selectedAirports.size} Airport Channel${selectedAirports.size !== 1 ? 's' : ''}`}
+                  : `Add ${selectedAirports.size} ${formatPlural(selectedAirports.size, 'Airport Channel')}`}
               </Button>
             </>
           )}

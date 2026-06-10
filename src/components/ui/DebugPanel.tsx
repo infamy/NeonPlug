@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useAlert } from '../../hooks/useAlert';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useZonesStore } from '../../store/zonesStore';
 import { useRadioStore } from '../../store/radioStore';
@@ -19,8 +20,7 @@ export const DebugPanel: React.FC = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [maxLogs] = useState(100);
   const [showProtocolLogs, setShowProtocolLogs] = useState(true);
-  const [alertOpen, setAlertOpen] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
   const logEndRef = useRef<HTMLDivElement>(null);
   const { channels, rawChannelData } = useChannelsStore();
   const { zones, rawZoneData } = useZonesStore();
@@ -122,8 +122,7 @@ export const DebugPanel: React.FC = () => {
 
   const handleDebugExport = async () => {
     if (channels.length === 0 && zones.length === 0 && allLogs.length === 0 && blockMetadata.size === 0 && blockData.size === 0) {
-      setAlertMessage('No data or logs to export. Please read from radio first.');
-      setAlertOpen(true);
+      showAlert('No data or logs to export. Please read from radio first.');
       return;
     }
 
@@ -265,15 +264,13 @@ export const DebugPanel: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error creating export:', error);
-      setAlertMessage('Failed to create export. See console for details.');
-      setAlertOpen(true);
+      showAlert('Failed to create export. See console for details.');
     }
   };
 
   const handleWriteBlocksExport = () => {
     if (writeBlockData.size === 0) {
-      setAlertMessage('No write blocks available. Please write to radio first.');
-      setAlertOpen(true);
+      showAlert('No write blocks available. Please write to radio first.');
       return;
     }
 
@@ -284,8 +281,7 @@ export const DebugPanel: React.FC = () => {
 
   const handleMetadataAnalysisExport = () => {
     if (blockMetadata.size === 0) {
-      setAlertMessage('No block metadata available. Please read from radio first.');
-      setAlertOpen(true);
+      showAlert('No block metadata available. Please read from radio first.');
       return;
     }
 
@@ -444,8 +440,8 @@ export const DebugPanel: React.FC = () => {
     </div>
     <ConfirmModal
       isOpen={alertOpen}
-      onClose={() => setAlertOpen(false)}
-      title="Notice"
+      onClose={closeAlert}
+      title={alertTitle}
       message={alertMessage}
       confirmLabel="OK"
       variant="alert"
