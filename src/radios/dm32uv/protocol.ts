@@ -16,7 +16,7 @@ import {
   type MemoryBlock,
 } from './memory';
 import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, encodeEncryptionKey, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
-import type { RadioInfo } from '../../types/radio';
+import type { RadioInfo, DM32Protocol } from '../../types/radio';
 import { BaseDigitalProtocol } from '../shared/BaseProtocols';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact, EncryptionKey } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
@@ -41,7 +41,7 @@ import { log } from '../../utils/protocolLogger';
  * await protocol.disconnect();
  * ```
  */
-export class DM32UVProtocol extends BaseDigitalProtocol {
+export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol {
   private connection: DM32Connection | null = null;
   private port: WebSerialPort | null = null;
   private radioInfo: RadioInfo | null = null;

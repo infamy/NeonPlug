@@ -1,4 +1,8 @@
-import type { Channel, Zone, Contact, RadioSettings, ScanList, DMRRadioID } from '../models';
+import type {
+  Channel, Zone, Contact, RadioSettings, ScanList, DMRRadioID,
+  QuickTextMessage, Calibration, RXGroup, QuickContact, EncryptionKey,
+  DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency,
+} from '../models';
 
 // Re-export RadioSettings for use in stores
 export type { RadioSettings } from '../models';
@@ -17,6 +21,8 @@ export interface AnalogRadioProtocol {
   readRadioSettings(): Promise<RadioSettings | null>;
   writeRadioSettings(settings: RadioSettings, options?: { changedFields?: string[] }): Promise<void>;
   onProgress?: (progress: number, message: string) => void;
+  /** Extract firmware version from the cached clone image. UV5R-Mini and DM-32UV implement this. */
+  getFirmwareFromCache?(): string | null;
 }
 
 /**
@@ -31,6 +37,70 @@ export interface DigitalRadioProtocol extends AnalogRadioProtocol {
   writeDMRRadioIDs(radioIds: DMRRadioID[]): Promise<void>;
   readContacts(): Promise<Contact[]>;
   writeContacts(contacts: Contact[]): Promise<void>;
+}
+
+/**
+ * Full public API of the DM-32UV protocol, including DM32-specific operations
+ * not present in the base digital radio interface.
+ *
+ * DM32UVProtocol implements this. A future DM32-compatible radio should also
+ * implement this if it shares the same on-air structures.
+ */
+export interface DM32Protocol extends DigitalRadioProtocol {
+  // Bulk memory read (DM-32 reads all 4 KB blocks up front)
+  bulkReadRequiredBlocks(): Promise<void>;
+
+  // Write-path cache restore (avoids re-reading from radio before write)
+  restoreCacheFromStore(
+    blockData: Map<number, Uint8Array>,
+    blockMetadata: Map<number, { metadata: number; type: string }>
+  ): void;
+
+  // Boot image
+  readBootImage(): Promise<Uint8Array>;
+  writeBootImage(data: Uint8Array): Promise<void>;
+
+  // Quick text messages
+  readQuickMessages(): Promise<QuickTextMessage[]>;
+  writeQuickMessages(messages: QuickTextMessage[]): Promise<void>;
+
+  // Calibration (read-only)
+  readCalibration(): Promise<Calibration | null>;
+
+  // RX groups
+  readRXGroups(): Promise<RXGroup[]>;
+  writeRXGroups(groups: RXGroup[]): Promise<void>;
+
+  // Quick contacts (talk groups in the DM-32 sense)
+  readQuickContacts(): Promise<QuickContact[]>;
+  writeQuickContacts(contacts: QuickContact[]): Promise<void>;
+
+  // Single-session write for channels + zones + scan lists
+  writeAllData(channels: Channel[], zones: Zone[], scanLists: ScanList[]): Promise<void>;
+
+  // Encryption keys
+  writeEncryptionKeys(keys: EncryptionKey[]): Promise<void>;
+
+  // Emergency systems
+  readDigitalEmergencies(): Promise<{ systems: DigitalEmergency[]; config: DigitalEmergencyConfig } | null>;
+  writeDigitalEmergencies(systems: DigitalEmergency[], config: DigitalEmergencyConfig): Promise<void>;
+  readAnalogEmergencies(): Promise<AnalogEmergency[] | null>;
+  writeAnalogEmergencies(systems: AnalogEmergency[]): Promise<void>;
+
+  // Raw/debug data (set after each read for the Diagnostics tab)
+  rawChannelData: Map<number, { data: Uint8Array; blockAddr: number; offset: number }>;
+  rawZoneData: Map<string, { data: Uint8Array; zoneNum: number; offset: number }>;
+  rawContactBlockData: Uint8Array | null;
+  rawContactBlockAddress: number | null;
+  rawContactBlocks: Map<number, Uint8Array>;
+  rawScanListData: Map<string, { data: Uint8Array; listNum: number; offset: number }>;
+  rawRadioSettingsData: Uint8Array | null;
+  rawMessageData: Map<number, { data: Uint8Array; messageIndex: number; offset: number }>;
+  rawDMRRadioIDData: Map<number, { data: Uint8Array; idIndex: number; offset: number }>;
+  rawRXGroupData: Map<number, { data: Uint8Array; groupIndex: number; offset: number }>;
+  blockData: Map<number, Uint8Array>;
+  blockMetadata: Map<number, { metadata: number; type: string }>;
+  writeBlockData: Map<number, { address: number; data: Uint8Array; metadata: number }>;
 }
 
 export interface RadioInfo {
@@ -57,38 +127,21 @@ export interface RadioInfo {
  * linear addresses) and decode/encode are implementation details of each radio.
  */
 export interface RadioProtocol {
-  // Connection
-  // port: legacy for protocols that take a path; options: e.g. { forcePortSelection } for Web Serial
   connect(portOrOptions?: string | { forcePortSelection?: boolean }): Promise<void>;
   disconnect(): Promise<void>;
   isConnected(): boolean;
-
-  // Radio Info
   getRadioInfo(): Promise<RadioInfo>;
-
-  // Channels
   readChannels(): Promise<Channel[]>;
   writeChannels(channels: Channel[]): Promise<void>;
-
-  // Zones
   readZones(): Promise<Zone[]>;
   writeZones(zones: Zone[]): Promise<void>;
-
-  // Scan Lists
   readScanLists(): Promise<ScanList[]>;
-
-  // DMR Radio IDs
   readDMRRadioIDs(): Promise<DMRRadioID[]>;
   writeDMRRadioIDs(radioIds: DMRRadioID[]): Promise<void>;
-
-  // Contacts
   readContacts(): Promise<Contact[]>;
   writeContacts(contacts: Contact[]): Promise<void>;
-
-  // Settings
   readRadioSettings(): Promise<RadioSettings | null>;
   writeRadioSettings(settings: RadioSettings, options?: { changedFields?: string[] }): Promise<void>;
-
-  // Progress callbacks
   onProgress?: (progress: number, message: string) => void;
+  getFirmwareFromCache?(): string | null;
 }
