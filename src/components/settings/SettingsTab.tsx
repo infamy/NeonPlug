@@ -90,6 +90,8 @@ export const SettingsTab: React.FC = () => {
   const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
 
   const { caps, model: effectiveModel } = useRadioCapabilities();
+  const settingsProfile = getSettingsProfileForModel(effectiveModel);
+
   const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
   const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
   const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));
@@ -504,10 +506,7 @@ export const SettingsTab: React.FC = () => {
           </Card>
 
           {/* Boot / Startup Image Section - only when profile declares bootImage feature */}
-          {(() => {
-            const profile = getSettingsProfileForModel(effectiveModel);
-            return profile?.features?.includes('bootImage');
-          })() && (
+          {settingsProfile?.features?.includes('bootImage') && (
           <Card>
             <SectionTitle size="lg" underline>Boot / Startup Image</SectionTitle>
             <p className="text-cool-gray text-sm mb-6">
@@ -632,7 +631,7 @@ export const SettingsTab: React.FC = () => {
 
           {/* Radio Configuration - profile-driven */}
           {(() => {
-            const profile = getSettingsProfileForModel(effectiveModel);
+            const profile = settingsProfile;
             if (!profile) {
               return radioSettings ? (
                 <Card>
@@ -665,8 +664,8 @@ export const SettingsTab: React.FC = () => {
             );
           })()}
 
-          {/* One Key Operation (DM-32 only; UV5R-Mini uses uv5rMiniSettings, FT-65 uses ft65Settings) */}
-          {radioSettings && !radioSettings.uv5rMiniSettings && !radioSettings.ft65Settings && (
+          {/* One Key Operation - only when profile declares the feature */}
+          {radioSettings && settingsProfile?.features?.includes('oneKeyOperation') && (
             <Card className="mt-6">
               <SectionTitle underline>One Key Operation</SectionTitle>
 
@@ -939,7 +938,7 @@ export const SettingsTab: React.FC = () => {
           )}
 
           {/* GPS & APRS Settings */}
-          {radioSettings && !radioSettings.uv5rMiniSettings && !radioSettings.ft65Settings && (
+          {radioSettings && settingsProfile?.features?.includes('gpsAprs') && (
             <Card className="mt-6">
               <SectionTitle underline>GPS & APRS</SectionTitle>
 

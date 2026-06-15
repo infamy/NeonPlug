@@ -6,7 +6,7 @@ import type { SettingsProfile } from '../../types/settingsProfile';
 
 export const DM32UV_SETTINGS_PROFILE: SettingsProfile = {
   radioType: 'DM-32UV',
-  features: ['bootImage'],
+  features: ['bootImage', 'oneKeyOperation', 'gpsAprs'],
   sections: [
     {
       id: 'powerOnDisplay',

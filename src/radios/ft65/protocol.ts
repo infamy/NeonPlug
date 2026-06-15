@@ -10,7 +10,7 @@
 import type { RadioProtocol, RadioInfo } from '../../types/radio';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DMRRadioID } from '../../models';
 import { FT65Connection, openFT65Port, type FT65SerialPort } from './connection';
-import { FT65_NUM_BLOCKS, FT65_BLOCK_SIZE, FT65_MEM_SIZE, FT65_ADDR_SETTINGS } from './constants';
+import { FT65_NUM_BLOCKS, FT65_BLOCK_SIZE, FT65_MEM_SIZE } from './constants';
 import { parseAllChannels, encodeChannel, clearChannelRegions } from './structures';
 import { parseFt65Settings, writeFt65Settings } from './settingsFormat';
 
@@ -20,6 +20,7 @@ export class FT65Protocol implements RadioProtocol {
   private conn: FT65Connection | null = null;
   private port: FT65SerialPort | null = null;
   private cachedImage: Uint8Array | null = null;
+  private pendingSettings: import('../../types/ft65Settings').Ft65Settings | null = null;
 
   constructor(
     private readonly modelId: string,
@@ -43,6 +44,7 @@ export class FT65Protocol implements RadioProtocol {
 
   async disconnect(): Promise<void> {
     this.cachedImage = null;
+    this.pendingSettings = null;
     if (this.conn) {
       await this.conn.close();
       this.conn = null;
@@ -97,6 +99,12 @@ export class FT65Protocol implements RadioProtocol {
       image.set(this.cachedImage);
     }
 
+    // Flush any pending settings changes into the image before writing
+    if (this.pendingSettings) {
+      writeFt65Settings(image, this.pendingSettings);
+      this.pendingSettings = null;
+    }
+
     // Clear channel data regions so deleted channels don't leave ghost entries
     clearChannelRegions(image);
 
@@ -140,21 +148,9 @@ export class FT65Protocol implements RadioProtocol {
   }
 
   async writeRadioSettings(settings: RadioSettings): Promise<void> {
-    if (!this.conn) throw new Error('Not connected');
-    if (!this.cachedImage) throw new Error('Read from radio before writing settings');
-
     const ft65Settings = settings.ft65Settings;
     if (!ft65Settings) return;
-
-    // Apply changes to cached image so it stays consistent with what's on the radio
-    writeFt65Settings(this.cachedImage, ft65Settings);
-
-    // Write only the 4 blocks covering the 64-byte settings region (0x2000–0x203F)
-    await this.conn.enterCloneMode();
-    for (let i = 0; i < 4; i++) {
-      const addr = FT65_ADDR_SETTINGS + i * FT65_BLOCK_SIZE;
-      await this.conn.writeBlock(addr, this.cachedImage.subarray(addr, addr + FT65_BLOCK_SIZE));
-    }
-    await this.conn.sendEnd();
+    // Buffer settings; writeChannels picks them up and writes everything in one clone session.
+    this.pendingSettings = ft65Settings;
   }
 }
