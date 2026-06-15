@@ -14,6 +14,7 @@
  */
 
 import { FT65_BAUD_RATE, FT65_BLOCK_SIZE } from './constants';
+import { BaseSerialConnection, type SerialLikePort } from '../shared/BaseSerialConnection';
 
 const PROGRAM_CMD = new TextEncoder().encode('PROGRAM');
 const END_CMD     = new TextEncoder().encode('END');
@@ -21,12 +22,7 @@ const ACK = 0x06;
 const TIMEOUT_MS = 8000;
 const BLOCK_TIMEOUT_MS = 5000;
 
-export interface FT65SerialPort {
-  readonly readable: ReadableStream<Uint8Array> | null;
-  readonly writable: WritableStream<Uint8Array> | null;
-  open(options: { baudRate: number }): Promise<void>;
-  close(): Promise<void>;
-}
+export type FT65SerialPort = SerialLikePort;
 
 /** Request / reuse a Web Serial port and open it at 9600 baud. */
 export async function openFT65Port(forceSelection = false): Promise<FT65SerialPort> {
@@ -43,25 +39,20 @@ export async function openFT65Port(forceSelection = false): Promise<FT65SerialPo
   return port;
 }
 
-export class FT65Connection {
-  private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
-  private buf = new Uint8Array(0);
-  private port: FT65SerialPort | null = null;
-
+export class FT65Connection extends BaseSerialConnection {
   /** Valid radio ID prefixes — any match accepted. */
   validIdPrefixes: string[] = [];
 
   /** Open the port and set up reader/writer. Does NOT enter clone mode. */
   async open(port: FT65SerialPort): Promise<void> {
-    this.port = port;
-    this.buf = new Uint8Array(0);
-    if (!port.readable || !port.writable) throw new Error('Port streams unavailable');
-    if (port.readable.locked || port.writable.locked) throw new Error('Port already in use');
-    this.reader = port.readable.getReader();
-    this.writer = port.writable.getWriter();
+    await super.openPort(port);
     await this.delay(300);
     this.buf = new Uint8Array(0);
+  }
+
+  /** Close reader/writer and port. Does NOT send END — call sendEnd() first. */
+  async close(): Promise<void> {
+    await super.closeStreams();
   }
 
   /**
@@ -105,18 +96,6 @@ export class FT65Connection {
   /** Send END to release the radio from clone mode. Call after every read/write session. */
   async sendEnd(): Promise<void> {
     await this.sendcmd(END_CMD, 0);
-  }
-
-  /** Close reader/writer and port. Does NOT send END — call sendEnd() first. */
-  async close(): Promise<void> {
-    try { await this.reader?.cancel(); } catch { /* ignore */ }
-    try { await this.writer?.close(); } catch { /* ignore */ }
-    if (this.port) {
-      try { await this.port.close(); } catch { /* ignore */ }
-    }
-    this.reader = null;
-    this.writer = null;
-    this.port = null;
   }
 
   /** Read one 16-byte block at byte address `addr`. */
@@ -183,35 +162,5 @@ export class FT65Connection {
     const ack = await this.readExact(1, timeoutMs);
     if (ack[0] !== ACK) throw new Error(`Expected ACK 0x06, got 0x${ack[0].toString(16)}`);
     return response;
-  }
-
-  private async write(data: Uint8Array): Promise<void> {
-    if (!this.writer) throw new Error('Not connected');
-    await this.writer.write(data);
-  }
-
-  private async readExact(n: number, timeoutMs: number): Promise<Uint8Array<ArrayBuffer>> {
-    const deadline = Date.now() + timeoutMs;
-    while (this.buf.length < n) {
-      if (Date.now() > deadline) {
-        throw new Error(`Timeout: needed ${n} bytes, have ${this.buf.length}`);
-      }
-      const { value, done } = await this.reader!.read();
-      if (done) throw new Error('Serial port closed unexpectedly');
-      if (value && value.length > 0) {
-        const next = new Uint8Array(this.buf.length + value.length);
-        next.set(this.buf);
-        next.set(value, this.buf.length);
-        this.buf = next;
-      }
-      if (this.buf.length < n) await this.delay(10);
-    }
-    const result = new Uint8Array(this.buf.slice(0, n));
-    this.buf = this.buf.length > n ? this.buf.slice(n) : new Uint8Array(0);
-    return result;
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((r) => setTimeout(r, ms));
   }
 }

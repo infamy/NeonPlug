@@ -7,27 +7,29 @@
  * The port stays open between operations; each read/write enters/exits independently.
  */
 
-import type { RadioProtocol, RadioInfo } from '../../types/radio';
-import type { Channel, Zone, Contact, RadioSettings, ScanList, DMRRadioID } from '../../models';
+import type { RadioInfo } from '../../types/radio';
+import type { Channel, RadioSettings } from '../../models';
+import type { Ft65Settings } from '../../types/ft65Settings';
+import { BaseRadioProtocol } from '../shared/BaseRadioProtocol';
 import { FT65Connection, openFT65Port, type FT65SerialPort } from './connection';
 import { FT65_NUM_BLOCKS, FT65_BLOCK_SIZE, FT65_MEM_SIZE } from './constants';
 import { parseAllChannels, encodeChannel, clearChannelRegions } from './structures';
 import { parseFt65Settings, writeFt65Settings } from './settingsFormat';
 
-export class FT65Protocol implements RadioProtocol {
-  public onProgress?: (progress: number, message: string) => void;
-
+export class FT65Protocol extends BaseRadioProtocol {
   private conn: FT65Connection | null = null;
   private port: FT65SerialPort | null = null;
   private cachedImage: Uint8Array | null = null;
-  private pendingSettings: import('../../types/ft65Settings').Ft65Settings | null = null;
+  private pendingSettings: Ft65Settings | null = null;
 
   constructor(
     private readonly modelId: string,
     private readonly idPrefixes: string[],
     private readonly offsetFactor: number,
     private readonly maxNameLen: number = 8,
-  ) {}
+  ) {
+    super();
+  }
 
   async connect(
     portOrOptions?: string | { forcePortSelection?: boolean; transport?: string }
@@ -133,24 +135,17 @@ export class FT65Protocol implements RadioProtocol {
     await this.conn.sendEnd();
   }
 
-  async readZones(): Promise<Zone[]> { return []; }
-  async writeZones(_zones: Zone[]): Promise<void> {}
-  async readScanLists(): Promise<ScanList[]> { return []; }
-  async readDMRRadioIDs(): Promise<DMRRadioID[]> { return []; }
-  async writeDMRRadioIDs(_ids: DMRRadioID[]): Promise<void> {}
-  async readContacts(): Promise<Contact[]> { return []; }
-  async writeContacts(_contacts: Contact[]): Promise<void> {}
-  async readRadioSettings(): Promise<RadioSettings | null> {
+  override async readRadioSettings(): Promise<RadioSettings | null> {
     if (!this.cachedImage) return null;
-    const ft65Settings = parseFt65Settings(this.cachedImage);
-    if (!ft65Settings) return null;
-    return { ft65Settings } as RadioSettings;
+    const radioSpecific = parseFt65Settings(this.cachedImage);
+    if (!radioSpecific) return null;
+    return { radioSpecific } as unknown as RadioSettings;
   }
 
-  async writeRadioSettings(settings: RadioSettings): Promise<void> {
-    const ft65Settings = settings.ft65Settings;
-    if (!ft65Settings) return;
+  override async writeRadioSettings(settings: RadioSettings): Promise<void> {
+    const radioSpecific = settings.radioSpecific as Ft65Settings | undefined;
+    if (!radioSpecific) return;
     // Buffer settings; writeChannels picks them up and writes everything in one clone session.
-    this.pendingSettings = ft65Settings;
+    this.pendingSettings = radioSpecific;
   }
 }

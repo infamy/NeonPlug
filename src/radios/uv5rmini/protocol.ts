@@ -2,8 +2,10 @@
  * UV5R-Mini protocol: implements RadioProtocol (Serial and BLE).
  */
 
-import type { RadioProtocol, RadioInfo } from '../../types/radio';
-import type { Channel, Zone, Contact, RadioSettings, ScanList, DMRRadioID } from '../../models';
+import type { RadioInfo } from '../../types/radio';
+import type { Channel, RadioSettings } from '../../models';
+import type { Uv5rMiniSettings } from '../../types/uv5rMiniSettings';
+import { BaseRadioProtocol } from '../shared/BaseRadioProtocol';
 import { UV5RMiniSerialConnection, openUV5RMiniPort } from './serialConnection';
 import { UV5RMiniBleConnection, requestUV5RMiniBleDevice } from './bleConnection';
 import {
@@ -28,7 +30,7 @@ type ConnectionLike = {
   disconnect(): Promise<void>;
 };
 
-export class UV5RMiniProtocol implements RadioProtocol {
+export class UV5RMiniProtocol extends BaseRadioProtocol {
   private connection: ConnectionLike | null = null;
   private port: import('./serialConnection').UV5RMiniSerialPort | null = null;
   /** Cached image from last readChannels (used by readRadioSettings and getFirmwareFromCache). */
@@ -48,7 +50,6 @@ export class UV5RMiniProtocol implements RadioProtocol {
     }
     return String.fromCharCode(...slice.subarray(0, end)).trim();
   }
-  public onProgress?: (progress: number, message: string) => void;
 
   async connect(portOrOptions?: string | { forcePortSelection?: boolean; transport?: 'serial' | 'ble' }): Promise<void> {
     const options =
@@ -182,54 +183,23 @@ export class UV5RMiniProtocol implements RadioProtocol {
     }
   }
 
-  async readZones(): Promise<Zone[]> {
-    return [];
-  }
-
-  async writeZones(_zones: Zone[]): Promise<void> {
-    // no-op
-  }
-
-  async readScanLists(): Promise<ScanList[]> {
-    return [];
-  }
-
-  async readDMRRadioIDs(): Promise<DMRRadioID[]> {
-    return [];
-  }
-
-  async writeDMRRadioIDs(_ids: DMRRadioID[]): Promise<void> {
-    // no-op
-  }
-
-  async readContacts(): Promise<Contact[]> {
-    return [];
-  }
-
-  async writeContacts(_contacts: Contact[]): Promise<void> {
-    // no-op
-  }
-
-  async readRadioSettings(): Promise<RadioSettings | null> {
+  override async readRadioSettings(): Promise<RadioSettings | null> {
     const image = this.cachedImage;
     if (!image || image.length < 0x8080) return null;
-
-    const uv5rMiniSettings = parseUv5rMiniSettings(image);
-    if (!uv5rMiniSettings) return null;
-
-    return { uv5rMiniSettings } as RadioSettings;
+    const radioSpecific = parseUv5rMiniSettings(image);
+    if (!radioSpecific) return null;
+    return { radioSpecific } as unknown as RadioSettings;
   }
 
-  async writeRadioSettings(settings: RadioSettings, _options?: { changedFields?: string[] }): Promise<void> {
-    const uv5rMiniSettings = settings.uv5rMiniSettings;
-    if (!uv5rMiniSettings || !this.connection) return;
-
+  override async writeRadioSettings(settings: RadioSettings, _options?: { changedFields?: string[] }): Promise<void> {
+    const radioSpecific = settings.radioSpecific as Uv5rMiniSettings | undefined;
+    if (!radioSpecific || !this.connection) return;
     // Read current settings block from radio, merge our changes, write back
     const block = await this.connection.readBlock(UV5RMINI_SETTINGS_OFFSET);
     const image = new Uint8Array(UV5RMINI_SETTINGS_OFFSET + 64);
     image.fill(0xff);
     image.set(block, UV5RMINI_SETTINGS_OFFSET);
-    writeUv5rMiniSettings(image, uv5rMiniSettings);
+    writeUv5rMiniSettings(image, radioSpecific);
     await this.connection.writeBlock(UV5RMINI_SETTINGS_OFFSET, image.subarray(UV5RMINI_SETTINGS_OFFSET));
   }
 }
