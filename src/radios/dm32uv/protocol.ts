@@ -16,7 +16,8 @@ import {
   type MemoryBlock,
 } from './memory';
 import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, encodeEncryptionKey, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
-import type { RadioProtocol, RadioInfo } from '../../types/radio';
+import type { RadioInfo } from '../../types/radio';
+import { BaseDigitalProtocol } from '../shared/BaseProtocols';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact, EncryptionKey } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
 import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION, LIMITS } from './constants';
@@ -40,17 +41,10 @@ import { log } from '../../utils/protocolLogger';
  * await protocol.disconnect();
  * ```
  */
-export class DM32UVProtocol implements RadioProtocol {
+export class DM32UVProtocol extends BaseDigitalProtocol {
   private connection: DM32Connection | null = null;
   private port: WebSerialPort | null = null;
   private radioInfo: RadioInfo | null = null;
-  
-  /**
-   * Progress callback for long-running operations
-   * @param progress Progress percentage (0-100)
-   * @param message Status message
-   */
-  public onProgress?: (progress: number, message: string) => void;
   public rawChannelData: Map<number, { data: Uint8Array; blockAddr: number; offset: number }> = new Map();
   public rawZoneData: Map<string, { data: Uint8Array; zoneNum: number; offset: number }> = new Map();
   public rawContactBlockData: Uint8Array | null = null;

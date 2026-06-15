@@ -67,7 +67,8 @@ export function useRadioConnection() {
   const { clearKeys: clearEncryptionKeys } = useEncryptionKeysStore();
 
   const readFromRadio = useCallback(async (
-    onProgress?: (progress: number, message: string, step?: string) => void
+    onProgress?: (progress: number, message: string, step?: string) => void,
+    { forcePortSelection = true }: { forcePortSelection?: boolean } = {}
   ) => {
     setIsConnecting(true);
     setError(null);
@@ -239,8 +240,12 @@ export function useRadioConnection() {
       const transport = caps?.supportsBle
         ? (preferredTransport ?? caps?.preferredTransport ?? 'serial')
         : undefined;
-      onProgress?.(5, transport === 'ble' ? 'Select BLE device...' : 'Select serial port...', steps[0]);
-      await protocol.connect({ forcePortSelection: true, ...(transport != null && { transport }) });
+      onProgress?.(5,
+        forcePortSelection
+          ? (transport === 'ble' ? 'Select BLE device...' : 'Select serial port...')
+          : 'Reconnecting to radio...',
+        steps[0]);
+      await protocol.connect({ forcePortSelection, ...(transport != null && { transport }) });
 
       await performRead(protocol);
     } catch (err) {

@@ -10,13 +10,13 @@
 import type { RadioInfo } from '../../types/radio';
 import type { Channel, RadioSettings } from '../../models';
 import type { Ft65Settings } from '../../types/ft65Settings';
-import { BaseRadioProtocol } from '../shared/BaseRadioProtocol';
+import { BaseAnalogProtocol } from '../shared/BaseProtocols';
 import { FT65Connection, openFT65Port, type FT65SerialPort } from './connection';
 import { FT65_NUM_BLOCKS, FT65_BLOCK_SIZE, FT65_MEM_SIZE } from './constants';
 import { parseAllChannels, encodeChannel, clearChannelRegions } from './structures';
 import { parseFt65Settings, writeFt65Settings } from './settingsFormat';
 
-export class FT65Protocol extends BaseRadioProtocol {
+export class FT65Protocol extends BaseAnalogProtocol {
   private conn: FT65Connection | null = null;
   private port: FT65SerialPort | null = null;
   private cachedImage: Uint8Array | null = null;

@@ -2284,6 +2284,7 @@ export function parseQuickMessages(
     const textBytes = messageBytes.slice(0, textEndOffset);
     const text = new TextDecoder('ascii', { fatal: false })
       .decode(textBytes)
+      .replace(/\x00/g, '')  // strip null-byte padding (radio uses 0x00 before the 0xFF terminator)
       .trim();
 
     // Skip empty messages

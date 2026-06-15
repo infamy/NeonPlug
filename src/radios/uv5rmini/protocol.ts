@@ -5,7 +5,7 @@
 import type { RadioInfo } from '../../types/radio';
 import type { Channel, RadioSettings } from '../../models';
 import type { Uv5rMiniSettings } from '../../types/uv5rMiniSettings';
-import { BaseRadioProtocol } from '../shared/BaseRadioProtocol';
+import { BaseAnalogProtocol } from '../shared/BaseProtocols';
 import { UV5RMiniSerialConnection, openUV5RMiniPort } from './serialConnection';
 import { UV5RMiniBleConnection, requestUV5RMiniBleDevice } from './bleConnection';
 import {
@@ -30,7 +30,7 @@ type ConnectionLike = {
   disconnect(): Promise<void>;
 };
 
-export class UV5RMiniProtocol extends BaseRadioProtocol {
+export class UV5RMiniProtocol extends BaseAnalogProtocol {
   private connection: ConnectionLike | null = null;
   private port: import('./serialConnection').UV5RMiniSerialPort | null = null;
   /** Cached image from last readChannels (used by readRadioSettings and getFirmwareFromCache). */

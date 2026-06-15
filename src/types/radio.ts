@@ -3,6 +3,36 @@ import type { Channel, Zone, Contact, RadioSettings, ScanList, DMRRadioID } from
 // Re-export RadioSettings for use in stores
 export type { RadioSettings } from '../models';
 
+/**
+ * Minimal interface shared by all radios: channels + settings.
+ * Analog radios (FT-65, UV5R-Mini) implement only this surface.
+ */
+export interface AnalogRadioProtocol {
+  connect(portOrOptions?: string | { forcePortSelection?: boolean; transport?: string }): Promise<void>;
+  disconnect(): Promise<void>;
+  isConnected(): boolean;
+  getRadioInfo(): Promise<RadioInfo>;
+  readChannels(): Promise<Channel[]>;
+  writeChannels(channels: Channel[]): Promise<void>;
+  readRadioSettings(): Promise<RadioSettings | null>;
+  writeRadioSettings(settings: RadioSettings, options?: { changedFields?: string[] }): Promise<void>;
+  onProgress?: (progress: number, message: string) => void;
+}
+
+/**
+ * Full interface for digital radios: zones, contacts, scan lists, DMR IDs, etc.
+ * Digital radios (DM-32UV and future) implement this.
+ */
+export interface DigitalRadioProtocol extends AnalogRadioProtocol {
+  readZones(): Promise<Zone[]>;
+  writeZones(zones: Zone[]): Promise<void>;
+  readScanLists(): Promise<ScanList[]>;
+  readDMRRadioIDs(): Promise<DMRRadioID[]>;
+  writeDMRRadioIDs(radioIds: DMRRadioID[]): Promise<void>;
+  readContacts(): Promise<Contact[]>;
+  writeContacts(contacts: Contact[]): Promise<void>;
+}
+
 export interface RadioInfo {
   model: string;               // "DP570UV"
   firmware: string;            // "DM32.01.01.046"
