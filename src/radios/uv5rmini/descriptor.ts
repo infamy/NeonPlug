@@ -12,6 +12,7 @@ export const UV5RMINI_DESCRIPTOR: RadioDescriptor = {
   modelIds: [UV5RMINI_MODEL_ID],
   label: 'UV5R-Mini',
   icon: '📻',
+  group: 'Baofeng',
   supportsBle: true,
   protocolFactory: () => new UV5RMiniProtocol(),
   capabilities: UV5RMINI_CAPABILITIES,

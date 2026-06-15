@@ -89,4 +89,6 @@ export interface RadioCapabilities {
   supportsBootImage?: boolean;
   /** If true, protocol supports readQuickMessages. */
   supportsQuickMessages?: boolean;
+  /** If true, radio has Analog Emergency Systems (DM-32UV only). */
+  supportsAnalogEmergency?: boolean;
 }

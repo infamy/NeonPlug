@@ -6,6 +6,7 @@ import type { RadioProtocol } from '../types/radio';
 import type { RadioDescriptor } from './types';
 import { DM32UV_DESCRIPTOR } from './dm32uv/descriptor';
 import { UV5RMINI_DESCRIPTOR } from './uv5rmini/descriptor';
+import { FT65_DESCRIPTOR, FT4_DESCRIPTOR, FT25R_DESCRIPTOR } from './ft65/descriptor';
 
 export type ProtocolFactory = () => RadioProtocol;
 
@@ -13,6 +14,9 @@ export type ProtocolFactory = () => RadioProtocol;
 export const RADIO_DESCRIPTORS: readonly RadioDescriptor[] = [
   DM32UV_DESCRIPTOR,
   UV5RMINI_DESCRIPTOR,
+  FT65_DESCRIPTOR,
+  FT4_DESCRIPTOR,
+  FT25R_DESCRIPTOR,
 ];
 
 /** Backward compatibility: same radio, multiple model IDs. */
@@ -33,6 +37,7 @@ export interface RadioPickerOption {
   modelId: string;
   label: string;
   icon: string;
+  group?: string;
   supportsBle: boolean;
 }
 
@@ -40,6 +45,7 @@ const RADIO_PICKER_OPTIONS: RadioPickerOption[] = RADIO_DESCRIPTORS.map((d) => (
   modelId: d.modelIds[0],
   label: d.label,
   icon: d.icon,
+  group: d.group,
   supportsBle: d.supportsBle,
 }));
 

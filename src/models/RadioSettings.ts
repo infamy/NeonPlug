@@ -189,4 +189,7 @@ export interface RadioSettings {
 
   /** UV5R-Mini specific settings (when radio is UV5R-Mini). Select fields use 0-based index. */
   uv5rMiniSettings?: import('../types/uv5rMiniSettings').Uv5rMiniSettings;
+
+  /** FT-65 / FT-4 / FT-25R specific settings. Select fields use 0-based index. */
+  ft65Settings?: import('../types/ft65Settings').Ft65Settings;
 }

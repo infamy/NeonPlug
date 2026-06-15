@@ -665,8 +665,8 @@ export const SettingsTab: React.FC = () => {
             );
           })()}
 
-          {/* One Key Operation (DM-32 only; UV5R-Mini uses uv5rMiniSettings) */}
-          {radioSettings && (!radioSettings.uv5rMiniSettings || radioSettings.analogCall) && (
+          {/* One Key Operation (DM-32 only; UV5R-Mini uses uv5rMiniSettings, FT-65 uses ft65Settings) */}
+          {radioSettings && !radioSettings.uv5rMiniSettings && !radioSettings.ft65Settings && (
             <Card className="mt-6">
               <SectionTitle underline>One Key Operation</SectionTitle>
 
@@ -939,7 +939,7 @@ export const SettingsTab: React.FC = () => {
           )}
 
           {/* GPS & APRS Settings */}
-          {radioSettings && !radioSettings.uv5rMiniSettings && (
+          {radioSettings && !radioSettings.uv5rMiniSettings && !radioSettings.ft65Settings && (
             <Card className="mt-6">
               <SectionTitle underline>GPS & APRS</SectionTitle>
 
@@ -1204,7 +1204,7 @@ export const SettingsTab: React.FC = () => {
           )}
         </Card>
       )}
-      <AnalogEmergencyList />
+      {caps?.supportsAnalogEmergency && <AnalogEmergencyList />}
 
       <Modal
         isOpen={showFirmwareWarning}

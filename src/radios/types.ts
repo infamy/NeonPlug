@@ -14,6 +14,8 @@ export interface RadioDescriptor {
   label: string;
   /** Icon (emoji or character) for picker. */
   icon: string;
+  /** Manufacturer/family group for the picker UI (e.g. "Yaesu", "Baofeng"). */
+  group?: string;
   /** Whether the radio supports BLE in addition to serial. */
   supportsBle: boolean;
   /** Factory that returns a new protocol instance. */
