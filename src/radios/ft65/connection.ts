@@ -15,6 +15,7 @@
 
 import { FT65_BAUD_RATE, FT65_BLOCK_SIZE } from './constants';
 import { BaseSerialConnection, type SerialLikePort } from '../shared/BaseSerialConnection';
+import { requestSerialPort } from '../shared/serialPort';
 
 const PROGRAM_CMD = new TextEncoder().encode('PROGRAM');
 const END_CMD     = new TextEncoder().encode('END');
@@ -26,17 +27,7 @@ export type FT65SerialPort = SerialLikePort;
 
 /** Request / reuse a Web Serial port and open it at 9600 baud. */
 export async function openFT65Port(forceSelection = false): Promise<FT65SerialPort> {
-  if (!('serial' in navigator)) throw new Error('Web Serial API not supported. Use Chrome/Edge.');
-  const nav = (navigator as any).serial;
-  let port: FT65SerialPort;
-  if (forceSelection) {
-    port = await nav.requestPort();
-  } else {
-    const ports: FT65SerialPort[] = await nav.getPorts();
-    port = ports.length > 0 ? ports[0] : await nav.requestPort();
-  }
-  await port.open({ baudRate: FT65_BAUD_RATE });
-  return port;
+  return requestSerialPort(FT65_BAUD_RATE, forceSelection);
 }
 
 export class FT65Connection extends BaseSerialConnection {

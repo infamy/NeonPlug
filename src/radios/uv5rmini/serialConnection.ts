@@ -18,6 +18,7 @@ import {
   parseBaofengReadResponse,
 } from './baofengProtocol';
 import { BaseSerialConnection, type SerialLikePort } from '../shared/BaseSerialConnection';
+import { requestSerialPort } from '../shared/serialPort';
 
 export type UV5RMiniSerialPort = SerialLikePort;
 
@@ -127,24 +128,6 @@ export class UV5RMiniSerialConnection extends BaseSerialConnection {
 }
 
 /** Request Web Serial port and open at UV5R-Mini baud rate. */
-export async function openUV5RMiniPort(
-  forcePortSelection?: boolean
-): Promise<UV5RMiniSerialPort> {
-  if (!('serial' in navigator)) {
-    throw new Error('Web Serial API not supported. Please use Chrome/Edge.');
-  }
-  const nav = (navigator as any).serial;
-  let port: UV5RMiniSerialPort;
-  if (forcePortSelection) {
-    port = await nav.requestPort();
-  } else {
-    const ports = await nav.getPorts();
-    if (ports.length === 0) {
-      port = await nav.requestPort();
-    } else {
-      port = ports[0];
-    }
-  }
-  await port.open({ baudRate: UV5RMINI_BAUD_RATE });
-  return port;
+export async function openUV5RMiniPort(forcePortSelection = false): Promise<UV5RMiniSerialPort> {
+  return requestSerialPort(UV5RMINI_BAUD_RATE, forcePortSelection);
 }
