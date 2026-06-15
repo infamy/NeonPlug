@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useDebugStore } from '../../store/debugStore';
+import { RADIO_DESCRIPTORS } from '../../radios';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { Button } from '../ui/Button';
@@ -23,7 +24,7 @@ export const AboutTab: React.FC = () => {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-neon-cyan mb-2">About NeonPlug</h2>
         <p className="text-cool-gray">
-          Channel programming software. Supports: DM-32UV, DP570UV.
+          Online Digital CPS — program your radio directly from your browser.
         </p>
       </div>
 
@@ -101,11 +102,40 @@ npm run build:single</code>
           <SectionTitle>Project Information</SectionTitle>
           <div className="space-y-3 text-cool-gray">
             <p>
-              <span className="text-neon-cyan font-semibold">NeonPlug</span> is a next-generation, web-based Channel Programming Software (CPS) for supported radios, including DM-32UV / DP570UV and UV5R-Mini. Built with a modern cyberpunk neon-themed UI, it provides an intuitive interface for managing channels, zones, scan lists, contacts, and radio settings.
+              <span className="text-neon-cyan font-semibold">NeonPlug</span> is a next-generation, web-based Channel Programming Software (CPS). Built with a cyberpunk neon-themed UI, it provides an intuitive interface for managing channels, zones, scan lists, contacts, and radio settings — all from your browser, with no drivers or software to install.
             </p>
             <p>
-              This software implements protocol support for each radio, enabling full read and write operations directly from your web browser via the Web Serial API and—where supported—Bluetooth Low Energy (BLE).
+              Each radio's full protocol is implemented natively, enabling read and write operations via the Web Serial API and — where supported — Bluetooth Low Energy (BLE).
             </p>
+          </div>
+        </Card>
+
+        {/* Supported Radios */}
+        <Card>
+          <SectionTitle>Supported Radios</SectionTitle>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neon-cyan border-opacity-30">
+                  <th className="text-left py-2 pr-4 text-neon-cyan font-semibold">Radio</th>
+                  <th className="text-left py-2 pr-4 text-neon-cyan font-semibold">Manufacturer</th>
+                  <th className="text-left py-2 text-neon-cyan font-semibold">Connection</th>
+                </tr>
+              </thead>
+              <tbody>
+                {RADIO_DESCRIPTORS.map((d) => (
+                  <tr key={d.modelIds[0]} className="border-b border-neon-cyan border-opacity-10">
+                    <td className="py-2 pr-4 text-white font-medium">
+                      {d.icon} {d.modelIds.join(' / ')}
+                    </td>
+                    <td className="py-2 pr-4 text-cool-gray">{d.group ?? '—'}</td>
+                    <td className="py-2 text-cool-gray">
+                      {d.supportsBle ? 'USB or BLE' : 'USB'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </Card>
 
@@ -162,8 +192,9 @@ npm run build:single</code>
               </a>
             </p>
             <p>
-              This project implements the DM-32UV protocol specification, which was reverse-engineered 
-              through analysis of serial port captures and the official CPS software.
+              Radio protocols were implemented through reverse engineering — serial port captures,
+              analysis of official CPS software, and reference to open-source projects including
+              CHIRP. The DM-32UV protocol specification is documented separately.
             </p>
             <div className="mt-4 space-y-2">
               <p className="text-sm text-cool-gray">
