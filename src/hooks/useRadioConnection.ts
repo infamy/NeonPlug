@@ -175,10 +175,7 @@ export function useRadioConnection() {
       if (caps?.supportsScanLists) {
         const scanLists = await proto.readScanLists();
         setScanLists(scanLists);
-        if (dm32) {
-          setRawScanListData(dm32.rawScanListData);
-          setBlockData(dm32.blockData);
-        }
+        if (dm32) setRawScanListData(dm32.rawScanListData);
       }
 
       if (dm32) {
@@ -237,8 +234,6 @@ export function useRadioConnection() {
             const analogEmergencies = await dm32.readAnalogEmergencies();
             if (analogEmergencies) setAnalogEmergencies(analogEmergencies);
           } catch { console.warn('Could not read Analog Emergency Systems'); }
-
-          setBlockData(dm32.blockData);
         }
       } catch { console.warn('Error reading configuration blocks'); }
 
