@@ -489,8 +489,8 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       blockData: this.blockData,
       writeBlockData: this.writeBlockData,
       zoneComparisonData: this.zoneComparisonData,
-      allBlockMetadata: (this as any).allBlockMetadata || new Map(),
-      allBlockData: (this as any).allBlockData || new Map(),
+      allBlockMetadata: this.blockMetadata,
+      allBlockData: new Map(this.blockData),
       cachedBlockData: this.cachedBlockData,
       discoveredBlocks: this.discoveredBlocks,
     };
@@ -554,8 +554,7 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
         type: block.type,
       });
     }
-    (this as any).allBlockMetadata = blockMetadataMap;
-    // Note: allBlockData will be set after all blocks are read (see end of bulkReadRequiredBlocks)
+    this.blockMetadata = blockMetadataMap;
 
     // Step 2: Determine which blocks we need to read
     const blocksToRead: MemoryBlock[] = [];
@@ -753,10 +752,7 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     
     log.debug('All blocks are now in cache - parsing can proceed without additional radio reads', 'Protocol');
     
-    // Update allBlockData after all blocks are read (for store persistence)
-    // This is critical - the store needs this data for cache restoration during writes
-    (this as any).allBlockData = new Map(this.blockData); // Create a new Map to ensure it's a copy
-    log.info(`Set allBlockData with ${this.blockData.size} blocks for store persistence (allBlockMetadata has ${(this as any).allBlockMetadata?.size || 0} entries)`, 'Protocol');
+    log.info(`All blocks read: ${this.blockData.size} blocks, ${this.blockMetadata.size} metadata entries`, 'Protocol');
     
     // Verify critical blocks are in allBlockData
     const tx42Addr = this.discoveredBlocks.find(b => b.metadata === METADATA.TX_CONTACT_LOW)?.address;
