@@ -50,6 +50,8 @@ export const Toolbar: React.FC = () => {
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
   const [writeWarningMessage, setWriteWarningMessage] = useState('');
+  const [cloneInstructionsOpen, setCloneInstructionsOpen] = useState(false);
+  const [pendingReadForceSelection, setPendingReadForceSelection] = useState(true);
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [convertTargetModel, setConvertTargetModel] = useState<string>(() => getMigrationTargetModels()[0] ?? 'DM-32UV');
@@ -261,7 +263,7 @@ export const Toolbar: React.FC = () => {
     await exportCodeplug(buildCodeplugData());
   };
 
-  const handleRead = async (forcePortSelection = true) => {
+  const doRead = async (forcePortSelection = true) => {
     window.focus();
     try {
       setConnectionError(null);
@@ -293,6 +295,20 @@ export const Toolbar: React.FC = () => {
       setProgress(0);
       setProgressMessage('Connection failed');
     }
+  };
+
+  const handleRead = (forcePortSelection = true) => {
+    if (caps?.cloneModeInstructions) {
+      setPendingReadForceSelection(forcePortSelection);
+      setCloneInstructionsOpen(true);
+      return;
+    }
+    doRead(forcePortSelection);
+  };
+
+  const handleCloneInstructionsConfirm = () => {
+    setCloneInstructionsOpen(false);
+    doRead(pendingReadForceSelection);
   };
 
   const handleRetry = () => {
@@ -400,6 +416,9 @@ export const Toolbar: React.FC = () => {
         return w.message;
       });
       message = '⚠️ Codeplug check\n\n' + validationLines.join('\n\n') + '\n\n' + message;
+    }
+    if (caps?.cloneModeInstructions) {
+      message = caps.cloneModeInstructions.write + '\n\n' + message;
     }
     setWriteWarningMessage(message);
     setWriteWarningOpen(true);
@@ -563,6 +582,16 @@ export const Toolbar: React.FC = () => {
         onConfirm={handleWriteWarningConfirm}
         title="Write to radio"
         message={writeWarningMessage}
+        confirmLabel="Continue"
+        cancelLabel="Cancel"
+        variant="default"
+      />
+      <ConfirmModal
+        isOpen={cloneInstructionsOpen}
+        onClose={() => setCloneInstructionsOpen(false)}
+        onConfirm={handleCloneInstructionsConfirm}
+        title="Prepare radio for clone mode"
+        message={caps?.cloneModeInstructions?.read ?? ''}
         confirmLabel="Continue"
         cancelLabel="Cancel"
         variant="default"

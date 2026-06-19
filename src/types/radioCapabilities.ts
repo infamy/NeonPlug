@@ -91,4 +91,14 @@ export interface RadioCapabilities {
   supportsQuickMessages?: boolean;
   /** If true, radio has Analog Emergency Systems (DM-32UV only). */
   supportsAnalogEmergency?: boolean;
+  /**
+   * Manual button-press steps the user must perform on the radio itself before a
+   * Read/Write can proceed (e.g. FT-70D: software can't trigger clone mode over
+   * the cable, the user has to arm it on the radio). When set, the UI shows a
+   * confirmation modal with this text before starting the corresponding operation.
+   */
+  cloneModeInstructions?: {
+    read: string;
+    write: string;
+  };
 }

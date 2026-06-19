@@ -7,6 +7,7 @@ import type { RadioDescriptor } from './types';
 import { DM32UV_DESCRIPTOR } from './dm32uv/descriptor';
 import { UV5RMINI_DESCRIPTOR } from './uv5rmini/descriptor';
 import { FT65_DESCRIPTOR, FT4_DESCRIPTOR, FT25R_DESCRIPTOR } from './ft65/descriptor';
+import { FT70_DESCRIPTOR } from './ft70/descriptor';
 
 export type ProtocolFactory = () => RadioProtocol;
 
@@ -17,6 +18,7 @@ export const RADIO_DESCRIPTORS: readonly RadioDescriptor[] = [
   FT65_DESCRIPTOR,
   FT4_DESCRIPTOR,
   FT25R_DESCRIPTOR,
+  FT70_DESCRIPTOR,
 ];
 
 /** Backward compatibility: same radio, multiple model IDs. */
