@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { RadioProtocol } from '../types/radio';
 import { createDefaultProtocol, createProtocolForModel } from '../radios';
+import { DM32UVProtocol } from '../radios/dm32uv/protocol';
 import { getCapabilitiesForModel } from '../radios/capabilities';
 import type { Contact } from '../models/Contact';
 import { useRadioStore } from '../store/radioStore';
@@ -67,7 +68,8 @@ export function useRadioConnection() {
   const { clearKeys: clearEncryptionKeys } = useEncryptionKeysStore();
 
   const readFromRadio = useCallback(async (
-    onProgress?: (progress: number, message: string, step?: string) => void
+    onProgress?: (progress: number, message: string, step?: string) => void,
+    { forcePortSelection = true }: { forcePortSelection?: boolean } = {}
   ) => {
     setIsConnecting(true);
     setError(null);
@@ -131,25 +133,30 @@ export function useRadioConnection() {
       // on first connect, which would cause bulk read to be skipped if we used it here.
       const caps = getCapabilitiesForModel(info.model ?? effectiveModel);
 
-      if (caps?.supportsBulkRead && typeof (proto as any).bulkReadRequiredBlocks === 'function') {
+      // Narrow to DM32UVProtocol once; all DM32-specific calls go through this variable.
+      const dm32 = proto instanceof DM32UVProtocol ? proto : null;
+
+      if (caps?.supportsBulkRead && dm32) {
         onProgress?.(15, 'Reading all memory blocks...', steps[3]);
-        await (proto as any).bulkReadRequiredBlocks();
+        await dm32.bulkReadRequiredBlocks();
       }
 
       onProgress?.(20, 'Parsing channels...', steps[4]);
       const channels = await proto.readChannels();
       setChannels(channels);
-      // Enrich radioInfo with firmware from cached image (UV5R-Mini path)
-      if (typeof (proto as any).getFirmwareFromCache === 'function') {
-        const fw = (proto as any).getFirmwareFromCache();
-        if (fw) {
-          const current = useRadioStore.getState().radioInfo;
-          if (current) setRadioInfo({ ...current, firmware: fw });
-        }
+
+      // Enrich radioInfo with firmware from cached image (UV5R-Mini and DM-32UV)
+      const fw = proto.getFirmwareFromCache?.();
+      if (fw) {
+        const current = useRadioStore.getState().radioInfo;
+        if (current) setRadioInfo({ ...current, firmware: fw });
       }
-      if ((proto as any).rawChannelData) setRawChannelData((proto as any).rawChannelData);
-      if ((proto as any).allBlockMetadata) setBlockMetadata(new Map<number, { metadata: number; type: string }>((proto as any).allBlockMetadata));
-      if ((proto as any).allBlockData) setBlockData(new Map<number, Uint8Array>((proto as any).allBlockData));
+
+      if (dm32) {
+        setRawChannelData(dm32.rawChannelData);
+        setBlockMetadata(new Map(dm32.blockMetadata));
+        setBlockData(new Map(dm32.blockData));
+      }
 
       // Suppress per-item progress messages during config parsing; only surface the percentage.
       const savedProgress = proto.onProgress;
@@ -159,46 +166,51 @@ export function useRadioConnection() {
 
       onProgress?.(70, 'Parsing configuration from cache...', steps[5]);
 
-      const zones = await proto.readZones();
-      setZones(zones);
-      if ((proto as any).rawZoneData) setRawZoneData((proto as any).rawZoneData);
+      if (caps?.supportsZones) {
+        const zones = await proto.readZones();
+        setZones(zones);
+        if (dm32) setRawZoneData(dm32.rawZoneData);
+      }
 
-      const scanLists = await proto.readScanLists();
-      setScanLists(scanLists);
-      if ((proto as any).rawScanListData) setRawScanListData((proto as any).rawScanListData);
-      if ((proto as any).blockData) setBlockData((proto as any).blockData);
+      if (caps?.supportsScanLists) {
+        const scanLists = await proto.readScanLists();
+        setScanLists(scanLists);
+        if (dm32) setRawScanListData(dm32.rawScanListData);
+      }
 
-      try {
-        const messages = await (proto as any).readQuickMessages();
-        setMessages(messages);
-        const rawMsgMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
-        for (const [i, raw] of (proto as any).rawMessageData.entries()) rawMsgMap.set(i, raw);
-        setRawMessageData(rawMsgMap);
-      } catch { console.warn('Could not read Quick Messages'); }
+      if (dm32) {
+        try {
+          const messages = await dm32.readQuickMessages();
+          setMessages(messages);
+          const rawMsgMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
+          for (const [i, raw] of dm32.rawMessageData.entries()) rawMsgMap.set(i, raw);
+          setRawMessageData(rawMsgMap);
+        } catch { console.warn('Could not read Quick Messages'); }
 
-      try {
-        const radioIds = await proto.readDMRRadioIDs();
-        setRadioIds(radioIds);
-        const rawIdMap = new Map<number, { data: Uint8Array; idIndex: number; offset: number }>();
-        for (const [i, raw] of (proto as any).rawDMRRadioIDData.entries()) rawIdMap.set(i, raw);
-        setRawRadioIdData(rawIdMap);
-      } catch { console.warn('Could not read DMR Radio IDs'); }
+        try {
+          const radioIds = await dm32.readDMRRadioIDs();
+          setRadioIds(radioIds);
+          const rawIdMap = new Map<number, { data: Uint8Array; idIndex: number; offset: number }>();
+          for (const [i, raw] of dm32.rawDMRRadioIDData.entries()) rawIdMap.set(i, raw);
+          setRawRadioIdData(rawIdMap);
+        } catch { console.warn('Could not read DMR Radio IDs'); }
 
-      try {
-        setCalibration(await (proto as any).readCalibration());
-      } catch { console.warn('Could not read calibration data'); }
+        try {
+          setCalibration(await dm32.readCalibration());
+        } catch { console.warn('Could not read calibration data'); }
 
-      try {
-        const rxGroups = await (proto as any).readRXGroups();
-        setRXGroups(rxGroups);
-        const rawGroupMap = new Map<number, { data: Uint8Array; groupIndex: number; offset: number }>();
-        for (const [i, raw] of (proto as any).rawRXGroupData.entries()) rawGroupMap.set(i, raw);
-        setRawGroupData(rawGroupMap);
-      } catch { console.warn('Could not read RX Groups'); }
+        try {
+          const rxGroups = await dm32.readRXGroups();
+          setRXGroups(rxGroups);
+          const rawGroupMap = new Map<number, { data: Uint8Array; groupIndex: number; offset: number }>();
+          for (const [i, raw] of dm32.rawRXGroupData.entries()) rawGroupMap.set(i, raw);
+          setRawGroupData(rawGroupMap);
+        } catch { console.warn('Could not read RX Groups'); }
 
-      try {
-        setQuickContacts(await (proto as any).readQuickContacts());
-      } catch { console.warn('Could not read Talk Groups'); }
+        try {
+          setQuickContacts(await dm32.readQuickContacts());
+        } catch { console.warn('Could not read Talk Groups'); }
+      }
 
       try {
         onProgress?.(90, 'Reading configuration...', 'Reading configuration');
@@ -206,23 +218,23 @@ export function useRadioConnection() {
         try {
           const radioSettings = await proto.readRadioSettings();
           if (radioSettings) setRadioSettings(radioSettings);
-          if ((proto as any).rawRadioSettingsData) setRawRadioSettingsData((proto as any).rawRadioSettingsData);
+          if (dm32?.rawRadioSettingsData) setRawRadioSettingsData(dm32.rawRadioSettingsData);
         } catch { console.warn('Could not read Radio Settings'); }
 
-        try {
-          const digitalEmergency = await (proto as any).readDigitalEmergencies();
-          if (digitalEmergency) {
-            setDigitalEmergencies(digitalEmergency.systems);
-            setDigitalEmergencyConfig(digitalEmergency.config);
-          }
-        } catch { console.warn('Could not read Digital Emergency Systems'); }
+        if (dm32) {
+          try {
+            const digitalEmergency = await dm32.readDigitalEmergencies();
+            if (digitalEmergency) {
+              setDigitalEmergencies(digitalEmergency.systems);
+              setDigitalEmergencyConfig(digitalEmergency.config);
+            }
+          } catch { console.warn('Could not read Digital Emergency Systems'); }
 
-        try {
-          const analogEmergencies = await (proto as any).readAnalogEmergencies();
-          if (analogEmergencies) setAnalogEmergencies(analogEmergencies);
-        } catch { console.warn('Could not read Analog Emergency Systems'); }
-
-        if ((proto as any).blockData) setBlockData((proto as any).blockData);
+          try {
+            const analogEmergencies = await dm32.readAnalogEmergencies();
+            if (analogEmergencies) setAnalogEmergencies(analogEmergencies);
+          } catch { console.warn('Could not read Analog Emergency Systems'); }
+        }
       } catch { console.warn('Error reading configuration blocks'); }
 
       proto.onProgress = savedProgress;
@@ -239,8 +251,12 @@ export function useRadioConnection() {
       const transport = caps?.supportsBle
         ? (preferredTransport ?? caps?.preferredTransport ?? 'serial')
         : undefined;
-      onProgress?.(5, transport === 'ble' ? 'Select BLE device...' : 'Select serial port...', steps[0]);
-      await protocol.connect({ forcePortSelection: true, ...(transport != null && { transport }) });
+      onProgress?.(5,
+        forcePortSelection
+          ? (transport === 'ble' ? 'Select BLE device...' : 'Select serial port...')
+          : 'Reconnecting to radio...',
+        steps[0]);
+      await protocol.connect({ forcePortSelection, ...(transport != null && { transport }) });
 
       await performRead(protocol);
     } catch (err) {
@@ -318,13 +334,12 @@ export function useRadioConnection() {
       const contacts = await protocol.readContacts();
       setContacts(contacts);
       
-      // Store first contact block for debugging
-      if ((protocol as any).rawContactBlockData) {
-        setRawContactBlockData((protocol as any).rawContactBlockData, (protocol as any).rawContactBlockAddress || null);
+      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+      if (dm32?.rawContactBlockData) {
+        setRawContactBlockData(dm32.rawContactBlockData, dm32.rawContactBlockAddress);
       }
-      // Store all contact blocks for diagnostics
-      if ((protocol as any).rawContactBlocks) {
-        setRawContactBlocks((protocol as any).rawContactBlocks);
+      if (dm32?.rawContactBlocks) {
+        setRawContactBlocks(dm32.rawContactBlocks);
       }
       
       onProgress?.(100, `Successfully read ${contacts.length} contacts`);
@@ -365,7 +380,9 @@ export function useRadioConnection() {
         setConnected(true);
       }
       onProgress?.(10, 'Reading boot image from radio...');
-      const raw = await (protocol as any).readBootImage();
+      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+      if (!dm32) throw new Error('Boot image is only supported on DM-32UV');
+      const raw = await dm32.readBootImage();
       setBootImageRaw(raw);
       const parsed = parseBootImageHeader(raw);
       setBootImageDescription(parsed.description || null);
@@ -408,7 +425,9 @@ export function useRadioConnection() {
         setConnected(true);
       }
       onProgress?.(10, 'Writing boot image to radio...');
-      await (protocol as any).writeBootImage(data);
+      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+      if (!dm32) throw new Error('Boot image is only supported on DM-32UV');
+      await dm32.writeBootImage(data);
       setBootImageRaw(data);
       const parsed = parseBootImageHeader(data);
       setBootImageDescription(parsed.description || null);
@@ -537,16 +556,15 @@ export function useRadioConnection() {
       
       // Use protocol for connected radio (write path)
       protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
-      
+      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+
       // Restore cache from store if available (DM-32 bulk read path)
-      const storeState = useRadioStore.getState();
-      const storeBlockData = storeState.blockData;
-      const storeBlockMetadata = storeState.blockMetadata;
-      if (typeof (protocol as any).restoreCacheFromStore === 'function') {
+      if (dm32) {
+        const storeState = useRadioStore.getState();
+        const storeBlockData = storeState.blockData;
+        const storeBlockMetadata = storeState.blockMetadata;
         if (storeBlockData && storeBlockData.size > 0 && storeBlockMetadata && storeBlockMetadata.size > 0) {
-          const dataCopy = new Map<number, Uint8Array>(storeBlockData);
-          const metadataCopy = new Map<number, { metadata: number; type: string }>(storeBlockMetadata);
-          (protocol as any).restoreCacheFromStore(dataCopy, metadataCopy);
+          dm32.restoreCacheFromStore(new Map(storeBlockData), new Map(storeBlockMetadata));
         } else {
           console.warn('[Connection] Store cache is empty - will need to read all blocks from radio');
         }
@@ -571,83 +589,63 @@ export function useRadioConnection() {
       setRadioInfo(connectedRadioInfo);
       setConnected(true);
       
-      // Step 4: Write channels (and zones/scan lists for DM-32; UV5R-Mini uses writeChannels only)
-      if (typeof (protocol as any).writeAllData === 'function') {
+      // Step 4: Write channels (and zones/scan lists for DM-32; analog radios use writeChannels only)
+      if (dm32) {
         onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
-        await (protocol as any).writeAllData(validChannels, filteredZones, filteredScanLists);
-      } else if (typeof protocol.writeChannels === 'function') {
+        await dm32.writeAllData(validChannels, filteredZones, filteredScanLists);
+      } else {
         onProgress?.(20, 'Writing channels to radio...', steps[4]);
         await protocol.writeChannels(validChannels);
-      } else {
-        throw new Error('Protocol does not support writing channels');
       }
 
-      // Step 5: Write Talk Groups if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeQuickContacts === 'function') {
-        const quickContactsStore = useQuickContactsStore.getState();
-        const quickContacts = quickContactsStore.contacts;
+      if (dm32) {
+        // Step 5: Talk Groups
+        const quickContacts = useQuickContactsStore.getState().contacts;
         if (quickContacts && quickContacts.length > 0) {
           onProgress?.(90, `Writing ${quickContacts.length} talk group(s) to radio...`, steps[4]);
-          await (protocol as any).writeQuickContacts(quickContacts);
+          await dm32.writeQuickContacts(quickContacts);
         }
-      }
 
-      // Step 5.5: Write Quick Messages if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeQuickMessages === 'function') {
-        const quickMessagesStore = useQuickMessagesStore.getState();
-        const quickMessages = quickMessagesStore.messages;
+        // Step 5.5: Quick Messages
+        const quickMessages = useQuickMessagesStore.getState().messages;
         if (quickMessages && quickMessages.length > 0) {
           onProgress?.(92, `Writing ${quickMessages.length} quick message(s) to radio...`, steps[4]);
-          await (protocol as any).writeQuickMessages(quickMessages);
+          await dm32.writeQuickMessages(quickMessages);
         }
-      }
 
-      // Step 5.6: Write RX Groups if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeRXGroups === 'function') {
+        // Step 5.6: RX Groups
         const rxGroupsStore = useRXGroupsStore.getState();
-        const rxGroups = rxGroupsStore.groups;
-        if (rxGroups && rxGroups.length > 0 && rxGroupsStore.groupsLoaded) {
-          onProgress?.(93, `Writing ${rxGroups.length} RX group(s) to radio...`, steps[4]);
-          await (protocol as any).writeRXGroups(rxGroups);
+        if (rxGroupsStore.groups.length > 0 && rxGroupsStore.groupsLoaded) {
+          onProgress?.(93, `Writing ${rxGroupsStore.groups.length} RX group(s) to radio...`, steps[4]);
+          await dm32.writeRXGroups(rxGroupsStore.groups);
         }
-      }
 
-      // Step 5.7: Write DMR Radio IDs if they have been loaded (DM-32 only)
-      const dmrRadioIDsStore = useDMRRadioIDsStore.getState();
-      const dmrRadioIds = dmrRadioIDsStore.radioIds;
-      if (dmrRadioIds && dmrRadioIds.length > 0) {
-        onProgress?.(94, `Writing ${dmrRadioIds.length} DMR Radio ID(s) to radio...`, steps[4]);
-        await protocol.writeDMRRadioIDs(dmrRadioIds);
-      }
+        // Step 5.7: DMR Radio IDs
+        const dmrRadioIDsStore = useDMRRadioIDsStore.getState();
+        if (dmrRadioIDsStore.radioIds.length > 0) {
+          onProgress?.(94, `Writing ${dmrRadioIDsStore.radioIds.length} DMR Radio ID(s) to radio...`, steps[4]);
+          await dm32.writeDMRRadioIDs(dmrRadioIDsStore.radioIds);
+        }
 
-      // Step 5.8: Write Encryption Keys if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeEncryptionKeys === 'function') {
+        // Step 5.8: Encryption Keys
         const encryptionKeysStore = useEncryptionKeysStore.getState();
-        const encryptionKeys = encryptionKeysStore.keys;
-        if (encryptionKeys && encryptionKeys.length > 0 && encryptionKeysStore.keysLoaded) {
-          onProgress?.(94, `Writing ${encryptionKeys.length} encryption key(s) to radio...`, steps[4]);
-          await (protocol as any).writeEncryptionKeys(encryptionKeys);
+        if (encryptionKeysStore.keys.length > 0 && encryptionKeysStore.keysLoaded) {
+          onProgress?.(94, `Writing ${encryptionKeysStore.keys.length} encryption key(s) to radio...`, steps[4]);
+          await dm32.writeEncryptionKeys(encryptionKeysStore.keys);
         }
-      }
 
-      // Step 5.9: Write Digital Emergency Systems if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeDigitalEmergencies === 'function') {
+        // Step 5.9: Digital Emergency Systems
         const digitalEmergencyStore = useDigitalEmergencyStore.getState();
-        const digitalEmergencySystems = digitalEmergencyStore.systems;
-        const digitalEmergencyConfig = digitalEmergencyStore.config;
-        if (digitalEmergencySystems.length > 0 && digitalEmergencyConfig) {
-          onProgress?.(94, `Writing ${digitalEmergencySystems.length} digital emergency system(s) to radio...`, steps[4]);
-          await (protocol as any).writeDigitalEmergencies(digitalEmergencySystems, digitalEmergencyConfig);
+        if (digitalEmergencyStore.systems.length > 0 && digitalEmergencyStore.config) {
+          onProgress?.(94, `Writing ${digitalEmergencyStore.systems.length} digital emergency system(s) to radio...`, steps[4]);
+          await dm32.writeDigitalEmergencies(digitalEmergencyStore.systems, digitalEmergencyStore.config);
         }
-      }
 
-      // Step 5.10: Write Analog Emergency Systems if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeAnalogEmergencies === 'function') {
+        // Step 5.10: Analog Emergency Systems
         const analogEmergencyStore = useAnalogEmergencyStore.getState();
-        const analogEmergencySystems = analogEmergencyStore.systems;
-        if (analogEmergencySystems.length > 0) {
-          onProgress?.(94, `Writing ${analogEmergencySystems.length} analog emergency system(s) to radio...`, steps[4]);
-          await (protocol as any).writeAnalogEmergencies(analogEmergencySystems);
+        if (analogEmergencyStore.systems.length > 0) {
+          onProgress?.(94, `Writing ${analogEmergencyStore.systems.length} analog emergency system(s) to radio...`, steps[4]);
+          await dm32.writeAnalogEmergencies(analogEmergencyStore.systems);
         }
       }
 
@@ -665,8 +663,10 @@ export function useRadioConnection() {
       }
       
       // Store write block data and zone comparison data for debug export (DM-32 only)
-      if ((protocol as any).writeBlockData != null) setWriteBlockData((protocol as any).writeBlockData);
-      if ((protocol as any).zoneComparisonData != null) setZoneComparisonData((protocol as any).zoneComparisonData);
+      if (dm32) {
+        setWriteBlockData(dm32.writeBlockData);
+        setZoneComparisonData(dm32.zoneComparisonData);
+      }
       
       // Step 6: Disconnect
       await protocol.disconnect();

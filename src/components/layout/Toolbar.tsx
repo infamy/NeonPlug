@@ -261,7 +261,7 @@ export const Toolbar: React.FC = () => {
     await exportCodeplug(buildCodeplugData());
   };
 
-  const handleRead = async () => {
+  const handleRead = async (forcePortSelection = true) => {
     window.focus();
     try {
       setConnectionError(null);
@@ -269,15 +269,15 @@ export const Toolbar: React.FC = () => {
       setProgress(0);
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
-      
+
       await readFromRadio((progress, message, step) => {
         setProgress(progress);
         setProgressMessage(message);
         if (step) {
           setCurrentStep(step);
         }
-      });
-      
+      }, { forcePortSelection });
+
       setConnectionError(null);
       setLastOperationMode(null);
       const modelLabel = useRadioStore.getState().radioInfo?.model ?? effectiveModel ?? undefined;
@@ -289,8 +289,7 @@ export const Toolbar: React.FC = () => {
       }, 2000);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      const displayError = errorMessage;
-      setConnectionError(displayError);
+      setConnectionError(errorMessage);
       setProgress(0);
       setProgressMessage('Connection failed');
     }
@@ -300,8 +299,12 @@ export const Toolbar: React.FC = () => {
     if (lastOperationMode === 'write') {
       handleWrite();
     } else {
-      window.location.reload();
+      handleRead(false);
     }
+  };
+
+  const handleChangePort = () => {
+    handleRead(true);
   };
 
   const handleCloseModal = () => {
@@ -494,7 +497,7 @@ export const Toolbar: React.FC = () => {
               <Button
                 variant="primary"
                 data-action="read-from-radio"
-                onClick={handleRead}
+                onClick={() => handleRead()}
                 disabled={isConnecting || !webSerialSupported}
                 className={`rounded-r-none border-r border-white border-opacity-20 ${!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Read codeplug from current radio type'}
@@ -550,6 +553,7 @@ export const Toolbar: React.FC = () => {
         steps={isWriting ? writeChannelsSteps : readSteps}
         error={connectionError}
         onRetry={handleRetry}
+        onChangePort={!isWriting ? handleChangePort : undefined}
         onClose={handleCloseModal}
         mode={isWriting ? 'write' : 'read'}
       />

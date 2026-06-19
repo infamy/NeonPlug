@@ -26,6 +26,7 @@ interface ReadProgressModalProps {
   steps: string[];
   error?: string | null;
   onRetry?: () => void;
+  onChangePort?: () => void;
   onClose?: () => void;
   mode?: 'read' | 'write';
 }
@@ -40,6 +41,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
   steps,
   error,
   onRetry,
+  onChangePort,
   onClose,
   mode = 'read',
 }) => {
@@ -222,12 +224,20 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
               Close
             </button>
           )}
+          {isError && onChangePort && (
+            <button
+              onClick={onChangePort}
+              className="px-4 py-2 bg-deep-gray text-cool-gray font-semibold rounded hover:bg-neon-cyan hover:text-dark-charcoal transition-all border border-neon-cyan border-opacity-30"
+            >
+              Change Port
+            </button>
+          )}
           {isError && onRetry && (
             <button
               onClick={onRetry}
               className="px-4 py-2 bg-neon-cyan text-deep-gray font-semibold rounded hover:bg-neon-cyan hover:bg-opacity-80 transition-all shadow-lg hover:shadow-glow-cyan border border-neon-cyan border-opacity-50"
             >
-              Retry Connection
+              Retry
             </button>
           )}
         </div>

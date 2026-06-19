@@ -42,4 +42,5 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   maxScanLists: LIMITS.SCAN_LISTS_MAX,
   supportsBootImage: true,
   supportsQuickMessages: true,
+  supportsAnalogEmergency: true,
 };

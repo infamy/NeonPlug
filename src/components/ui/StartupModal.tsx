@@ -67,6 +67,17 @@ export const StartupModal: React.FC<StartupModalProps> = ({
   }, [isOpen]);
   const options = useMemo(() => getRadioPickerOptions(), []);
 
+  // Group options by manufacturer; ungrouped radios go under a blank key
+  const groupedOptions = useMemo(() => {
+    const groups = new Map<string, typeof options>();
+    for (const opt of options) {
+      const key = opt.group ?? '';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(opt);
+    }
+    return groups;
+  }, [options]);
+
   // Default to first radio if none selected
   const effectiveSelected = selectedRadioModel ?? options[0]?.modelId ?? null;
   const selectedOption = options.find(o => o.modelId === effectiveSelected);
@@ -108,20 +119,31 @@ export const StartupModal: React.FC<StartupModalProps> = ({
         </div>
 
         <p className="text-white text-center mb-4">Pick a radio</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-          {options.map((opt) => (
-            <button
-              key={opt.modelId}
-              type="button"
-              onClick={() => setSelectedRadioModel(opt.modelId)}
-              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
-                effectiveSelected === opt.modelId
-                  ? 'border-neon-cyan bg-neon-cyan bg-opacity-10 shadow-glow-cyan'
-                  : 'border-cool-gray hover:border-neon-cyan hover:bg-opacity-5'
-              }`}
-            >
-              <span className="text-white font-medium text-lg">{opt.label}</span>
-            </button>
+        <div className="mb-6 space-y-3 max-h-64 overflow-y-auto pr-1">
+          {Array.from(groupedOptions.entries()).map(([group, opts]) => (
+            <div key={group || '__ungrouped'}>
+              {group && (
+                <p className="text-cool-gray text-xs font-semibold uppercase tracking-wider mb-1 px-1">
+                  {group}
+                </p>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                {opts.map((opt) => (
+                  <button
+                    key={opt.modelId}
+                    type="button"
+                    onClick={() => setSelectedRadioModel(opt.modelId)}
+                    className={`flex items-center justify-center px-3 py-2 rounded border-2 transition-all text-sm font-medium ${
+                      effectiveSelected === opt.modelId
+                        ? 'border-neon-cyan bg-neon-cyan bg-opacity-10 shadow-glow-cyan text-white'
+                        : 'border-cool-gray hover:border-neon-cyan text-cool-gray hover:text-white'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
 
