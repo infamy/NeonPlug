@@ -10,7 +10,10 @@ const FT70_CLONE_MODE_INSTRUCTIONS = {
     'FT-70D Clone Mode — Read (radio → computer)\n\n' +
     '1. Turn the radio on and connect the USB clone cable to the DATA terminal.\n' +
     '2. Unclip the battery, then press and hold [AMS] + the power key while clipping the battery back in. "ADMS" appears on the display.\n' +
-    '3. Click Continue below, then immediately press the [BAND] key on the radio to start sending.',
+    '3. Click Continue below to connect (you may be asked to select the serial port). Don\'t press [BAND] yet — the radio sends immediately on that key press with no handshake, so it has to happen after the connection is already open and listening.',
+  readStart:
+    'Connected and listening for the radio.\n\n' +
+    'Press the [BAND] key on the radio now to start sending, then click Continue.',
   write:
     'FT-70D Clone Mode — Write (computer → radio)\n\n' +
     '1. Turn the radio on and connect the USB clone cable to the DATA terminal.\n' +

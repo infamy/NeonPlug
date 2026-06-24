@@ -98,7 +98,16 @@ export interface RadioCapabilities {
    * confirmation modal with this text before starting the corresponding operation.
    */
   cloneModeInstructions?: {
+    /** Shown before connecting — arm clone mode, then click Continue to open the port. */
     read: string;
+    /**
+     * Shown after the port is open and actively listening, instructing the user to
+     * trigger the radio's send. Must come after the port is open: the radio starts
+     * streaming the instant the button is pressed, with no handshake to wait for the
+     * host, so if this were shown before connecting the radio's one-shot transmission
+     * could finish before anyone is listening.
+     */
+    readStart: string;
     write: string;
   };
 }

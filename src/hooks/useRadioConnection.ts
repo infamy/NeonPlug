@@ -69,7 +69,7 @@ export function useRadioConnection() {
 
   const readFromRadio = useCallback(async (
     onProgress?: (progress: number, message: string, step?: string) => void,
-    { forcePortSelection = true }: { forcePortSelection?: boolean } = {}
+    { forcePortSelection = true, onConnected }: { forcePortSelection?: boolean; onConnected?: () => Promise<void> | void } = {}
   ) => {
     setIsConnecting(true);
     setError(null);
@@ -274,6 +274,7 @@ export function useRadioConnection() {
           : 'Reconnecting to radio...',
         steps[0]);
       await protocol.connect({ forcePortSelection, ...(transport != null && { transport }) });
+      if (onConnected) await onConnected();
 
       await performRead(protocol);
     } catch (err) {
@@ -290,6 +291,7 @@ export function useRadioConnection() {
           protocol = createProtocolForModel(effectiveModel ?? '') ?? createDefaultProtocol();
           protocol.onProgress = (progress, message) => onProgress?.(progress, message);
           await protocol.connect();
+          if (onConnected) await onConnected();
           await performRead(protocol);
           return;
         } catch (retryErr) {
