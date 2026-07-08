@@ -3,7 +3,7 @@ import { formatPlural } from '../../../utils/formatPlural';
 import { useImportStores } from '../../../hooks/useImportStores';
 import { getNextChannelNumber, selectionCardClass } from '../../../utils/importHelpers';
 import { generateRptrsChannels } from '../../../services/rptrsChannels';
-import { mergeOverlappingChannels } from '../../../services/channelMerger';
+import { mergeChannelSetsWithExisting } from '../../../services/channelMerger';
 import { convertRptrFrequency, type RptrData } from '../../../data/rptrsData';
 import { SelectAllButtons } from '../SelectAllButtons';
 import { Button } from '../../ui/Button';
@@ -88,17 +88,33 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
         return;
       }
 
-      // Merge with existing channels to avoid duplicates
-      const mergedResult = mergeOverlappingChannels([channels, result.channels]);
-      setChannels(mergedResult.mergedChannels);
+      // Merge overlaps within the new channels and dedupe against existing ones.
+      // Existing channels are never renumbered — renumbering them would break
+      // every zone and scan list that references them.
+      const { channelsToAdd, channelMapping } = mergeChannelSetsWithExisting(
+        channels,
+        [result.channels],
+        nextChannelNumber
+      );
+      setChannels([...channels, ...channelsToAdd]);
 
-      // Add zones
-      const updatedZones = [...zones, ...result.zones];
-      setZones(updatedZones);
+      // Remap the generated zones through the merge mapping: a new channel that
+      // collapsed into another (or matched an existing channel) changed number.
+      const remappedZones = result.zones
+        .map(zone => ({
+          ...zone,
+          channels: [...new Set(
+            zone.channels
+              .map(num => channelMapping.get(num))
+              .filter((num): num is number => num !== undefined)
+          )].sort((a, b) => a - b),
+        }))
+        .filter(zone => zone.channels.length > 0);
+      setZones([...zones, ...remappedZones]);
 
       onGenerationResult({
-        channels: result.channels.length,
-        zones: result.zones.length,
+        channels: channelsToAdd.length,
+        zones: remappedZones.length,
       });
 
       // Clear selection

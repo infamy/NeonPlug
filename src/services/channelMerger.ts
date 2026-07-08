@@ -102,6 +102,56 @@ export function mergeOverlappingChannels(
 }
 
 /**
+ * Merge new channel sets against each other AND against the existing channel list.
+ *
+ * - Overlapping frequencies WITHIN the new sets are merged (combined name, higher power).
+ * - A new channel whose full key (frequency + name + mode + bandwidth + power + tones)
+ *   matches an existing channel is dropped and mapped to the existing channel's number.
+ * - Existing channels are never renumbered, merged, or modified.
+ *
+ * IMPORTANT: channel numbers must be unique ACROSS all newChannelSets — the returned
+ * mapping is keyed by them. Number each set with a distinct range before calling
+ * (e.g. set 1 → 1..N, set 2 → N+1..M).
+ *
+ * Returns the channels to append and a mapping from each new channel's original
+ * number to its final number, for remapping zone/scan-list references.
+ */
+export function mergeChannelSetsWithExisting(
+  existingChannels: Channel[],
+  newChannelSets: Channel[][],
+  startChannelNumber: number
+): {
+  channelsToAdd: Channel[];
+  channelMapping: Map<number, number>; // original number -> final number
+} {
+  const existingChannelMap = new Map<string, number>(); // full key -> channel number
+  for (const ch of existingChannels) {
+    existingChannelMap.set(getChannelFullKey(ch), ch.number);
+  }
+
+  const { mergedChannels, channelMapping } = mergeOverlappingChannels(newChannelSets, startChannelNumber);
+
+  const finalChannelMapping = new Map<number, number>();
+  const channelsToAdd: Channel[] = [];
+
+  for (const newChannel of mergedChannels) {
+    const fullKey = getChannelFullKey(newChannel);
+    // An exact match reuses the existing channel; otherwise the channel is added.
+    const finalNumber = existingChannelMap.get(fullKey) ?? newChannel.number;
+    if (finalNumber === newChannel.number) {
+      channelsToAdd.push(newChannel);
+    }
+    for (const [origNum, mergedNum] of channelMapping.entries()) {
+      if (mergedNum === newChannel.number) {
+        finalChannelMapping.set(origNum, finalNumber);
+      }
+    }
+  }
+
+  return { channelsToAdd, channelMapping: finalChannelMapping };
+}
+
+/**
  * Get a frequency key for a channel (for comparison)
  */
 export function getChannelFrequencyKey(channel: Channel): string {
