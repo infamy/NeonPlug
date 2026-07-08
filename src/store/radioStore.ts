@@ -39,6 +39,11 @@ interface RadioState {
   rawContactBlocks: Map<number, Uint8Array>;
   blockMetadata: Map<number, { metadata: number; type: string }>;
   blockData: Map<number, Uint8Array>;
+  /** Full memory image from the last read of a clone-style radio (FT-65 family).
+   *  Restored into the fresh protocol instance on write so non-channel regions
+   *  (settings, DTMF, P-keys) survive the read→write cycle. Tagged with the
+   *  model it came from so it is never written to a different radio. */
+  cachedMemoryImage: { model: string; image: Uint8Array } | null;
   writeBlockData: Map<number, { address: number; data: Uint8Array; metadata: number }>;
   zoneComparisonData: ZoneComparisonData;
   bootImageRaw: Uint8Array | null;
@@ -52,6 +57,7 @@ interface RadioState {
   setRawContactBlocks: (blocks: Map<number, Uint8Array>) => void;
   setBlockMetadata: (metadata: Map<number, { metadata: number; type: string }>) => void;
   setBlockData: (data: Map<number, Uint8Array>) => void;
+  setCachedMemoryImage: (entry: { model: string; image: Uint8Array } | null) => void;
   setWriteBlockData: (data: Map<number, { address: number; data: Uint8Array; metadata: number }>) => void;
   setZoneComparisonData: (data: ZoneComparisonData) => void;
   setBootImageRaw: (data: Uint8Array | null) => void;
@@ -75,6 +81,7 @@ export const useRadioStore = create<RadioState>((set) => ({
   rawContactBlocks: new Map(),
   blockMetadata: new Map(),
   blockData: new Map(),
+  cachedMemoryImage: null,
   writeBlockData: new Map(),
   zoneComparisonData: [],
   bootImageRaw: null,
@@ -88,6 +95,7 @@ export const useRadioStore = create<RadioState>((set) => ({
   setRawContactBlocks: (blocks) => set({ rawContactBlocks: blocks }),
   setBlockMetadata: (metadata) => set({ blockMetadata: metadata }),
   setBlockData: (data) => set({ blockData: data }),
+  setCachedMemoryImage: (entry) => set({ cachedMemoryImage: entry }),
   setWriteBlockData: (data) => set({ writeBlockData: data }),
   setZoneComparisonData: (data) => set({ zoneComparisonData: data }),
   setBootImageRaw: (data) => set({ bootImageRaw: data }),

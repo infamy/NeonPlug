@@ -17,6 +17,10 @@ import { parseAllChannels, encodeChannel, clearChannelRegions } from './structur
 import { parseFt65Settings, writeFt65Settings } from './settingsFormat';
 
 export class FT65Protocol extends BaseAnalogProtocol {
+  /** Settings are buffered into the memory image and uploaded by writeChannels —
+   *  the connection hook must call writeRadioSettings before writeChannels. */
+  readonly bufferedSettingsWrite = true;
+
   private conn: FT65Connection | null = null;
   private port: FT65SerialPort | null = null;
   private cachedImage: Uint8Array | null = null;
@@ -92,14 +96,25 @@ export class FT65Protocol extends BaseAnalogProtocol {
     return parseAllChannels(image, this.offsetFactor);
   }
 
+  getMemoryImage(): Uint8Array | null {
+    return this.cachedImage;
+  }
+
+  setMemoryImage(image: Uint8Array): void {
+    this.cachedImage = new Uint8Array(image);
+  }
+
   async writeChannels(channels: Channel[]): Promise<void> {
     if (!this.conn) throw new Error('Not connected');
-
-    const image = new Uint8Array(FT65_MEM_SIZE);
-    // Start from the cached read image so settings/DTMF/P-keys are preserved
-    if (this.cachedImage) {
-      image.set(this.cachedImage);
+    if (!this.cachedImage) {
+      // The write uploads a full memory image; without a read image every
+      // non-channel byte (settings, DTMF, P-keys) would be written as zero.
+      throw new Error('Read the radio first. Writing needs the memory image from a read to preserve radio settings.');
     }
+
+    // Start from the cached read image so settings/DTMF/P-keys are preserved
+    const image = new Uint8Array(FT65_MEM_SIZE);
+    image.set(this.cachedImage);
 
     // Flush any pending settings changes into the image before writing
     if (this.pendingSettings) {
@@ -133,6 +148,10 @@ export class FT65Protocol extends BaseAnalogProtocol {
     }
 
     await this.conn.sendEnd();
+
+    // The uploaded image is the radio's new state — it becomes the cache baseline
+    // for subsequent writes in this session.
+    this.cachedImage = image;
   }
 
   override async readRadioSettings(): Promise<RadioSettings | null> {

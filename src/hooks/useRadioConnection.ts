@@ -52,7 +52,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setConnectionError } = useRadioStore();
+  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setConnectionError } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -104,6 +104,7 @@ export function useRadioConnection() {
     setAnalogEmergencies([]);
     setBlockMetadata(new Map());
     setBlockData(new Map());
+    setCachedMemoryImage(null);
     setRawRadioSettingsData(null);
 
     let protocol: RadioProtocol | null = null;
@@ -238,6 +239,22 @@ export function useRadioConnection() {
       } catch { console.warn('Error reading configuration blocks'); }
 
       proto.onProgress = savedProgress;
+
+      // Persist the clone-radio memory image (FT-65 family) so a later write —
+      // which runs on a fresh protocol instance — can preserve non-channel
+      // regions (settings, DTMF, P-keys) instead of writing zeros.
+      const memoryImage = proto.getMemoryImage?.();
+      if (memoryImage) {
+        setCachedMemoryImage({ model: info.model, image: memoryImage });
+      }
+
+      // Close the connection — everything past this point parses from cache.
+      // DM-32 already disconnected itself after its bulk read (disconnect is
+      // idempotent); for clone radios this releases the port's stream locks so
+      // the next operation can reopen the port instead of hitting
+      // InvalidStateError ("port already open").
+      try { await proto.disconnect(); } catch { /* already closed */ }
+
       onProgress?.(100, 'Read complete!', steps[5]);
     };
 
@@ -296,9 +313,9 @@ export function useRadioConnection() {
       throw err;
     } finally {
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      if (!error) setIsConnecting(false);
+      setIsConnecting(false);
     }
-  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setConnectionError]);
+  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setConnectionError]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
@@ -568,6 +585,14 @@ export function useRadioConnection() {
         } else {
           console.warn('[Connection] Store cache is empty - will need to read all blocks from radio');
         }
+      } else if (protocol.setMemoryImage) {
+        // Clone radios (FT-65 family): restore the memory image from the last read
+        // so the full-image write preserves non-channel regions. Only restore an
+        // image that came from the same model — never write one radio's image to another.
+        const { cachedMemoryImage } = useRadioStore.getState();
+        if (cachedMemoryImage && cachedMemoryImage.model === effectiveModel) {
+          protocol.setMemoryImage(cachedMemoryImage.image);
+        }
       }
       
       // Set up progress callback that forwards to our callback
@@ -589,13 +614,29 @@ export function useRadioConnection() {
       setRadioInfo(connectedRadioInfo);
       setConnected(true);
       
+      // Settings state is needed before the channel write: buffered-settings
+      // protocols (Yaesu clone) flush settings into the memory image that
+      // writeChannels uploads, so they must be staged first or they are never sent.
+      const radioSettingsStore = useRadioSettingsStore.getState();
+      const radioSettings = radioSettingsStore.settings;
+      const changedFields = radioSettingsStore.getChangedFields();
+      const hasSettingsToWrite = radioSettings != null && changedFields.length > 0;
+
       // Step 4: Write channels (and zones/scan lists for DM-32; analog radios use writeChannels only)
       if (dm32) {
         onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
         await dm32.writeAllData(validChannels, filteredZones, filteredScanLists);
       } else {
+        if (hasSettingsToWrite && protocol.bufferedSettingsWrite) {
+          onProgress?.(15, `Staging ${changedFields.length} changed setting(s)...`, steps[4]);
+          await protocol.writeRadioSettings(radioSettings, { changedFields });
+        }
         onProgress?.(20, 'Writing channels to radio...', steps[4]);
         await protocol.writeChannels(validChannels);
+        if (hasSettingsToWrite && protocol.bufferedSettingsWrite) {
+          // The channel write uploaded the image containing the staged settings.
+          radioSettingsStore.clearChanges();
+        }
       }
 
       if (dm32) {
@@ -649,23 +690,27 @@ export function useRadioConnection() {
         }
       }
 
-      // Step 6: Write radio settings only if they have been modified (UV5R-Mini and DM-32)
-      const radioSettingsStore = useRadioSettingsStore.getState();
-      const radioSettings = radioSettingsStore.settings;
-      const changedFields = radioSettingsStore.getChangedFields();
-      const hasSettingsToWrite = radioSettings && changedFields.length > 0;
-
-      if (hasSettingsToWrite) {
+      // Step 6: Write radio settings if modified — direct-write protocols only
+      // (DM-32, UV5R-Mini); buffered-settings protocols were handled with the
+      // channel write above.
+      if (hasSettingsToWrite && !protocol.bufferedSettingsWrite) {
         onProgress?.(95, `Writing ${changedFields.length} changed setting(s) to radio...`, steps[4]);
         await protocol.writeRadioSettings(radioSettings, { changedFields });
         // Clear changes after successful write
         radioSettingsStore.clearChanges();
       }
-      
+
       // Store write block data and zone comparison data for debug export (DM-32 only)
       if (dm32) {
         setWriteBlockData(dm32.writeBlockData);
         setZoneComparisonData(dm32.zoneComparisonData);
+      } else {
+        // Persist the just-written image as the new baseline for this session
+        // (the write may have flushed settings changes into it).
+        const writtenImage = protocol.getMemoryImage?.();
+        if (writtenImage) {
+          setCachedMemoryImage({ model: connectedRadioInfo.model, image: writtenImage });
+        }
       }
       
       // Step 6: Disconnect
@@ -719,13 +764,9 @@ export function useRadioConnection() {
       throw err;
     } finally {
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      // Only set connecting to false if we didn't already (success case)
-      // On error, we set it in the catch block so modal stays open to show error
-      if (!error) {
-        setIsConnecting(false);
-      }
+      setIsConnecting(false);
     }
-  }, [radioInfo, setConnected, setRadioInfo, setWriteBlockData, setZoneComparisonData, setConnectionError]);
+  }, [radioInfo, selectedRadioModel, setConnected, setRadioInfo, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setConnectionError]);
 
   return {
     isConnecting,

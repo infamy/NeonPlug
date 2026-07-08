@@ -7,6 +7,8 @@ import { useChannelsStore } from '../../store/channelsStore';
 import type { ScanList } from '../../models/ScanList';
 import type { Channel } from '../../models/Channel';
 import { ListDetailLayout } from '../ui/ListDetailLayout';
+import { OrderedItemPicker } from '../ui/OrderedItemPicker';
+import { channelPickerItem } from '../ui/pickerItems';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
@@ -402,73 +404,12 @@ interface ScanListEditorProps {
 const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) => {
   const { updateScanList } = useScanListsStore();
   const { channels } = useChannelsStore();
-  const [searchQuery, setSearchQuery] = useState('');
   const [showSettings, setShowSettings] = useState(true);
 
-  const handleAddChannel = (channelNumber: number) => {
-    if (scanList.channels.length >= 15) {
-      onAlert('Maximum of 15 channels per scan list allowed.');
-      return;
-    }
-    if (!scanList.channels.includes(channelNumber)) {
-      updateScanList(scanList.name, {
-        channels: [...scanList.channels, channelNumber].sort((a, b) => a - b),
-      });
-    }
-  };
-
-  const handleRemoveChannel = (channelNumber: number) => {
-    updateScanList(scanList.name, {
-      channels: scanList.channels.filter(ch => ch !== channelNumber),
-    });
-  };
-
-  const handleReorderChannel = (fromIndex: number, toIndex: number) => {
-    const newChannels = [...scanList.channels];
-    const [removed] = newChannels.splice(fromIndex, 1);
-    newChannels.splice(toIndex, 0, removed);
-    updateScanList(scanList.name, { channels: newChannels });
-  };
-
-  const availableChannels = channels
+  const availableItems = channels
     .filter(ch => !scanList.channels.includes(ch.number))
-    .map(ch => ch.number)
-    .sort((a, b) => a - b);
-
-  const filteredAvailableChannels = searchQuery.trim()
-    ? availableChannels.filter((chNum) => {
-        const channel = channels.find(ch => ch.number === chNum);
-        if (!channel) return false;
-        
-        const query = searchQuery.toLowerCase().trim();
-        
-        // Search in name
-        if (channel.name.toLowerCase().includes(query)) return true;
-        
-        // Search in channel number
-        if (channel.number.toString().includes(query)) return true;
-        
-        // Search in frequencies
-        const rxFreq = channel.rxFrequency.toFixed(4);
-        const txFreq = channel.txFrequency.toFixed(4);
-        if (rxFreq.includes(query) || txFreq.includes(query)) return true;
-        
-        // Search in mode
-        if (channel.mode.toLowerCase().includes(query)) return true;
-        
-        // Search in bandwidth
-        if (channel.bandwidth.toLowerCase().includes(query)) return true;
-        
-        // Search in power
-        if (channel.power.toLowerCase().includes(query)) return true;
-        
-        return false;
-      })
-    : availableChannels;
-
-  const scanListChannels = scanList.channels
-    .map(chNum => channels.find(ch => ch.number === chNum))
-    .filter(ch => ch !== undefined);
+    .sort((a, b) => a.number - b.number)
+    .map(channelPickerItem);
 
   // Get sorted list of channels for dropdowns
   const sortedChannels = [...channels].sort((a, b) => a.number - b.number);
@@ -609,111 +550,20 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
       </div>
 
       {/* Channels Section */}
-      <div>
-        <h4 className="text-white font-medium mb-2">
-          Channels in Scan List ({scanList.channels.length}/15)
-        </h4>
-        {scanList.channels.length === 0 ? (
-          <p className="text-cool-gray text-sm">No channels in this scan list</p>
-        ) : (
-          <div className="space-y-1 max-h-64 overflow-y-auto">
-            {scanListChannels.map((channel, index) => (
-              <div
-                key={channel!.number}
-                className="px-3 py-2 bg-neon-cyan bg-opacity-10 border border-neon-cyan border-opacity-30 rounded flex items-center justify-between hover:bg-opacity-20"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-cool-gray text-xs w-8">{index + 1}.</span>
-                  <span className="text-white text-xs">
-                    {channel!.number}: {channel!.name}
-                  </span>
-                </div>
-                <div className="flex gap-1">
-                  {index > 0 && (
-                    <button
-                      onClick={() => handleReorderChannel(index, index - 1)}
-                      className="px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-neon-cyan text-xs hover:bg-opacity-50"
-                      title="Move up"
-                    >
-                      ↑
-                    </button>
-                  )}
-                  {index < scanListChannels.length - 1 && (
-                    <button
-                      onClick={() => handleReorderChannel(index, index + 1)}
-                      className="px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-neon-cyan text-xs hover:bg-opacity-50"
-                      title="Move down"
-                    >
-                      ↓
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleRemoveChannel(channel!.number)}
-                    className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <h4 className="text-white font-medium mb-2">
-          Available Channels ({filteredAvailableChannels.length} of {availableChannels.length})
-        </h4>
-        {availableChannels.length === 0 ? (
-          <p className="text-cool-gray text-sm">All channels are in this scan list</p>
-        ) : scanList.channels.length >= 15 ? (
-          <p className="text-cool-gray text-sm">Scan list is full (15 channels maximum)</p>
-        ) : (
-          <>
-            <div className="mb-3">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search channels..."
-                  className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-3 py-1.5 pl-9 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                />
-                <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-cool-gray text-xs">
-                  🔍
-                </span>
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-cool-gray hover:text-white text-sm"
-                    title="Clear search"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            </div>
-            {filteredAvailableChannels.length === 0 ? (
-              <p className="text-cool-gray text-sm">No channels match your search</p>
-            ) : (
-              <div className="flex flex-wrap gap-2 max-h-64 overflow-y-auto">
-                {filteredAvailableChannels.map((chNum) => {
-                  const channel = channels.find(ch => ch.number === chNum);
-                  return (
-                    <button
-                      key={chNum}
-                      onClick={() => handleAddChannel(chNum)}
-                      className="px-3 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-xs hover:bg-opacity-50 hover:border-neon-cyan transition-colors"
-                    >
-                      {chNum}: {channel?.name || 'Unknown'}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+      <OrderedItemPicker
+        selectedIds={scanList.channels}
+        availableItems={availableItems}
+        resolveItem={(num) => {
+          const ch = channels.find(c => c.number === num);
+          return ch ? channelPickerItem(ch) : undefined;
+        }}
+        onChange={(ids) => updateScanList(scanList.name, { channels: ids })}
+        maxItems={15}
+        itemNoun="channel"
+        containerNoun="scan list"
+        onAlert={onAlert}
+        padded={false}
+      />
     </div>
   );
 };

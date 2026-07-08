@@ -3,7 +3,7 @@ import { formatPlural } from '../../../utils/formatPlural';
 import { useImportStores } from '../../../hooks/useImportStores';
 import { getNextChannelNumber } from '../../../utils/importHelpers';
 import { getAvailableFixedChannelSets, getChannelsForSet } from '../../../services/fixedChannels';
-import { mergeOverlappingChannels, getChannelFullKey } from '../../../services/channelMerger';
+import { mergeChannelSetsWithExisting } from '../../../services/channelMerger';
 import { generateZoneId } from '../../../utils/zoneHelpers';
 import type { Channel } from '../../../models';
 import type { Zone } from '../../../models';
@@ -40,60 +40,31 @@ export const FixedChannelsSource: React.FC<FixedChannelsSourceProps> = ({
     try {
       const nextChannelNumber = getNextChannelNumber(channels);
 
-      // Generate channels for each selected set (with temporary numbers)
+      // Generate channels for each selected set. Each set gets a distinct
+      // temporary number range — the merge mapping is keyed by these numbers,
+      // so ranges that overlap between sets would clobber each other and
+      // scramble the zones built below.
       const channelSets: Channel[][] = [];
       const setNames: string[] = [];
+      let tempNumber = 1;
 
       for (const setName of selectedFixedSets) {
-        // Use generic function to get channels for any set
-        const setChannels = getChannelsForSet(setName, 1);
+        const setChannels = getChannelsForSet(setName, tempNumber);
 
         if (setChannels.length > 0) {
           channelSets.push(setChannels);
           setNames.push(setName);
+          tempNumber += setChannels.length;
         }
       }
 
-      // FIRST: Check against existing channels and build mapping for duplicates
-      // Match on ALL settings: frequency, name, mode, bandwidth, power, CTCSS/DCS
-      const existingChannelMap = new Map<string, number>(); // full key -> channel number
-      for (const ch of channels) {
-        const fullKey = getChannelFullKey(ch);
-        existingChannelMap.set(fullKey, ch.number);
-      }
-
-      // Merge overlapping channels (within new sets only)
-      const { mergedChannels, channelMapping } = mergeOverlappingChannels(channelSets, nextChannelNumber);
-
-      // Update mapping to use existing channels where ALL settings match
-      const finalChannelMapping = new Map<number, number>();
-      const channelsToAdd: Channel[] = [];
-
-      for (const newChannel of mergedChannels) {
-        const fullKey = getChannelFullKey(newChannel);
-
-        if (existingChannelMap.has(fullKey)) {
-          // This exact channel already exists - use existing channel
-          const existingChannelNum = existingChannelMap.get(fullKey)!;
-
-          // Update all mappings that point to this merged channel
-          for (const [origNum, mergedNum] of channelMapping.entries()) {
-            if (mergedNum === newChannel.number) {
-              finalChannelMapping.set(origNum, existingChannelNum);
-            }
-          }
-        } else {
-          // New unique channel (or different settings) - add it
-          channelsToAdd.push(newChannel);
-
-          // Copy mapping as-is for this channel
-          for (const [origNum, mergedNum] of channelMapping.entries()) {
-            if (mergedNum === newChannel.number) {
-              finalChannelMapping.set(origNum, newChannel.number);
-            }
-          }
-        }
-      }
+      // Merge overlaps within the new sets and dedupe against existing channels
+      // (a new channel is reused only when ALL settings match an existing one).
+      const { channelsToAdd, channelMapping } = mergeChannelSetsWithExisting(
+        channels,
+        channelSets,
+        nextChannelNumber
+      );
 
       // Create zones with final channel numbers
       const newZones: Zone[] = [];
@@ -103,7 +74,7 @@ export const FixedChannelsSource: React.FC<FixedChannelsSourceProps> = ({
 
         // Map original channel numbers to final channel numbers
         const zoneChannelNumbers = setChannels
-          .map(ch => finalChannelMapping.get(ch.number))
+          .map(ch => channelMapping.get(ch.number))
           .filter((num): num is number => num !== undefined)
           .sort((a, b) => a - b);
 

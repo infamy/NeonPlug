@@ -56,9 +56,11 @@ export function decodeCTCSSDCS(data: Uint8Array): CTCSSDCSResult {
     return { type: 'None' };
   }
   if (high >= 0x80) {
+    // DCS code digits are stored as BCD nibbles (DM32-Protocol-Spec/06-ENCODING.md):
+    // low byte = tens/ones digits, high byte low nibble = hundreds digit.
+    // High byte base: 0x80-0xBF = normal, 0xC0-0xFF = inverted. D754I → [0x54, 0xC7]
     const isInverted = high >= 0xC0;
-    const highNibble = high & 0x0F;
-    const code = (highNibble << 8) | low;
+    const code = (high & 0x0F) * 100 + ((low >> 4) & 0x0F) * 10 + (low & 0x0F);
     const polarity = isInverted ? 'P' : 'N';
     return { type: 'DCS', value: code, polarity };
   }
@@ -78,9 +80,13 @@ export function encodeCTCSSDCS(ctcssDcs: CTCSSDCSResult): Uint8Array {
     return new Uint8Array([0x00, 0x00]);
   }
   if (ctcssDcs.type === 'DCS') {
+    // DCS code digits are stored as BCD nibbles — see decodeCTCSSDCS. D754I → [0x54, 0xC7]
     const code = ctcssDcs.value;
-    const polarityBit = ctcssDcs.polarity === 'P' ? 0x01 : 0x00;
-    return new Uint8Array([code, 0x80 | polarityBit]);
+    const hundreds = Math.floor(code / 100) % 10;
+    const tens = Math.floor((code % 100) / 10);
+    const ones = code % 10;
+    const base = ctcssDcs.polarity === 'P' ? 0xC0 : 0x80;
+    return new Uint8Array([(tens << 4) | ones, base | hundreds]);
   }
   const frequency = ctcssDcs.value;
   const integerPart = Math.floor(frequency);

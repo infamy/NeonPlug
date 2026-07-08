@@ -37,7 +37,11 @@ export function parseCSV(content: string): string[][] {
 }
 
 export function getValue(headers: string[], row: string[], headerName: string): string {
-  const index = headers.findIndex(h => h.includes(headerName.toLowerCase()));
+  const name = headerName.toLowerCase();
+  // Exact match wins; partial match alone would let 'ptt id' hit the earlier
+  // 'ptt id display' column. Partial stays as fallback ('id' → 'dmr id').
+  let index = headers.indexOf(name);
+  if (index < 0) index = headers.findIndex(h => h.includes(name));
   return index >= 0 && index < row.length ? row[index].trim() : '';
 }
 
