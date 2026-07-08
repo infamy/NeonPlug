@@ -18,10 +18,22 @@ import { parseAllChannels, encodeChannel, clearChannelRegions, applyChecksum } f
 import { parseFt70Settings, writeFt70Settings } from './settingsFormat';
 
 export class FT70Protocol extends BaseAnalogProtocol {
+  /** Settings are buffered into the memory image and uploaded by writeChannels —
+   *  the connection hook must call writeRadioSettings before writeChannels. */
+  readonly bufferedSettingsWrite = true;
+
   private conn: FT70Connection | null = null;
   private port: FT70SerialPort | null = null;
   private cachedImage: Uint8Array | null = null;
   private pendingSettings: Ft70Settings | null = null;
+
+  getMemoryImage(): Uint8Array | null {
+    return this.cachedImage;
+  }
+
+  setMemoryImage(image: Uint8Array): void {
+    this.cachedImage = new Uint8Array(image);
+  }
 
   async connect(
     portOrOptions?: string | { forcePortSelection?: boolean; transport?: string }
@@ -76,13 +88,15 @@ export class FT70Protocol extends BaseAnalogProtocol {
 
   async writeChannels(channels: Channel[]): Promise<void> {
     if (!this.conn) throw new Error('Not connected');
-
-    const image = new Uint8Array(FT70_MEM_SIZE);
-    if (this.cachedImage) {
-      image.set(this.cachedImage);
-    } else {
-      image.set(new TextEncoder().encode(FT70_MODEL_ID), 0);
+    if (!this.cachedImage) {
+      // The write streams the full memory image; without a read image every
+      // non-channel byte (settings, APRS, GM, banks, DTMF) would be written as zero.
+      throw new Error('Read the radio first. Writing needs the memory image from a read to preserve radio settings.');
     }
+
+    // Start from the cached read image so non-channel regions are preserved
+    const image = new Uint8Array(FT70_MEM_SIZE);
+    image.set(this.cachedImage);
 
     if (this.pendingSettings) {
       writeFt70Settings(image, this.pendingSettings);
@@ -99,6 +113,10 @@ export class FT70Protocol extends BaseAnalogProtocol {
     applyChecksum(image);
 
     await this.conn.writeImage(image, (pct, msg) => this.onProgress?.(pct, msg));
+
+    // The uploaded image is the radio's new state — it becomes the cache baseline
+    // for subsequent writes in this session.
+    this.cachedImage = image;
   }
 
   override async readRadioSettings(): Promise<RadioSettings | null> {

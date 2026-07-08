@@ -12,7 +12,7 @@
  *   2. the remaining 65217-byte data block, streamed continuously
  */
 
-import { FT70_BAUD_RATE, FT70_ID_BLOCK_SIZE, FT70_DATA_BLOCK_SIZE, FT70_CHUNK_SIZE } from './constants';
+import { FT70_BAUD_RATE, FT70_RX_BUFFER_SIZE, FT70_ID_BLOCK_SIZE, FT70_DATA_BLOCK_SIZE, FT70_CHUNK_SIZE } from './constants';
 import { BaseSerialConnection, type SerialLikePort } from '../shared/BaseSerialConnection';
 import { requestSerialPort } from '../shared/serialPort';
 
@@ -23,9 +23,9 @@ const WRITE_CHUNK_DELAY_MS = 30;
 
 export type FT70SerialPort = SerialLikePort;
 
-/** Request / reuse a Web Serial port and open it at 38400 baud. */
+/** Request a Web Serial port and open it at 38400 baud with a clone-stream-sized buffer. */
 export async function openFT70Port(forceSelection = false): Promise<FT70SerialPort> {
-  return requestSerialPort(FT70_BAUD_RATE, forceSelection);
+  return requestSerialPort(FT70_BAUD_RATE, forceSelection, FT70_RX_BUFFER_SIZE);
 }
 
 export class FT70Connection extends BaseSerialConnection {
@@ -59,7 +59,17 @@ export class FT70Connection extends BaseSerialConnection {
     // Tell the radio to continue with the data block.
     await this.write(new Uint8Array([ACK]));
 
-    let received = 0;
+    // Echoing cables (TX/RX OR'd together) reflect the ACK we just sent ahead
+    // of the radio's data. Strip it exactly like CHIRP's _chunk_read does —
+    // without this the whole image shifts by one byte and the read times out
+    // waiting for the last byte.
+    let firstByte = await this.readExact(1, READ_TIMEOUT_MS);
+    if (firstByte[0] === ACK) {
+      firstByte = await this.readExact(1, READ_TIMEOUT_MS);
+    }
+    image[FT70_ID_BLOCK_SIZE] = firstByte[0];
+
+    let received = 1;
     while (received < FT70_DATA_BLOCK_SIZE) {
       const step = Math.min(FT70_CHUNK_SIZE, FT70_DATA_BLOCK_SIZE - received);
       const chunk = await this.readExact(step, READ_TIMEOUT_MS);

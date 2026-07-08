@@ -11,6 +11,13 @@
 
 export const FT70_BAUD_RATE = 38400;
 
+/**
+ * WebSerial receive buffer. Must hold the radio's entire one-shot clone stream:
+ * the radio starts sending the instant the user presses [BAND] — before they
+ * click Continue in the app — and Chrome's default buffer is only 255 bytes.
+ */
+export const FT70_RX_BUFFER_SIZE = 256 * 1024;
+
 /** Image is split into two clone blocks: a 10-byte ID block, then the rest. */
 export const FT70_ID_BLOCK_SIZE = 10;
 export const FT70_DATA_BLOCK_SIZE = 65217;
