@@ -68,6 +68,16 @@ describe('getValue', () => {
     expect(getValue(headers, row, 'rx')).toBe('146.520');
   });
 
+  it('prefers an exact header match over an earlier partial match', () => {
+    // Export order puts 'ptt id display' before 'ptt id' — partial matching
+    // alone would return the display column for 'ptt id'.
+    const h = ['ptt id display', 'ptt id', 'ptt id type'];
+    const r = ['Yes', '42', 'BOT'];
+    expect(getValue(h, r, 'ptt id')).toBe('42');
+    expect(getValue(h, r, 'ptt id display')).toBe('Yes');
+    expect(getValue(h, r, 'ptt id type')).toBe('BOT');
+  });
+
   it('returns empty string when header not found', () => {
     expect(getValue(headers, row, 'nonexistent')).toBe('');
   });
@@ -160,6 +170,17 @@ describe('importChannelsFromCSV', () => {
     expect(ch.rxFrequency).toBeCloseTo(146.52, 3);
     expect(ch.txFrequency).toBeCloseTo(146.52, 3);
     expect(ch.mode).toBe('Analog');
+  });
+
+  it('imports pttId despite the PTT ID Display column exported before it', () => {
+    const csv = 'Name,RX Frequency,TX Frequency,PTT ID Display,PTT ID,PTT ID Type\n' +
+      'Chan,146.520,146.520,Yes,42,BOT';
+    const result = importChannelsFromCSV(csv);
+    expect(result.success).toBe(true);
+    const ch = result.channels![0];
+    expect(ch.pttId).toBe(42);
+    expect(ch.pttIdDisplay).toBe(true);
+    expect(ch.pttIdType).toBe('BOT');
   });
 
   it('falls back to row index when Channel Number is missing', () => {

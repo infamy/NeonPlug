@@ -313,7 +313,7 @@ export function useRadioConnection() {
       throw err;
     } finally {
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      if (!error) setIsConnecting(false);
+      setIsConnecting(false);
     }
   }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setConnectionError]);
 
@@ -764,11 +764,7 @@ export function useRadioConnection() {
       throw err;
     } finally {
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      // Only set connecting to false if we didn't already (success case)
-      // On error, we set it in the catch block so modal stays open to show error
-      if (!error) {
-        setIsConnecting(false);
-      }
+      setIsConnecting(false);
     }
   }, [radioInfo, selectedRadioModel, setConnected, setRadioInfo, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setConnectionError]);
 
