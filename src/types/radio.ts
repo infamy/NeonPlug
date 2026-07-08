@@ -144,4 +144,12 @@ export interface RadioProtocol {
   writeRadioSettings(settings: RadioSettings, options?: { changedFields?: string[] }): Promise<void>;
   onProgress?: (progress: number, message: string) => void;
   getFirmwareFromCache?(): string | null;
+  /** Clone-style radios: full memory image cached by the last read/write. */
+  getMemoryImage?(): Uint8Array | null;
+  /** Clone-style radios: restore a previously read memory image into a fresh instance before writing. */
+  setMemoryImage?(image: Uint8Array): void;
+  /** True when writeRadioSettings only buffers changes into the memory image that the
+   *  next writeChannels uploads (Yaesu clone protocol). The connection hook must call
+   *  writeRadioSettings BEFORE writeChannels for these protocols. */
+  readonly bufferedSettingsWrite?: boolean;
 }
