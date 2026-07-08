@@ -5,6 +5,7 @@ import {
   decodeCTCSSDCS,
   encodeCTCSSDCS,
 } from '../../src/radios/dm32uv/structures';
+import { DCS_CODES } from '../../src/utils/ctcssConstants';
 
 // ─── BCD frequency ────────────────────────────────────────────────────────────
 
@@ -99,29 +100,29 @@ describe('decodeCTCSSDCS', () => {
     expect(r.value).toBeCloseTo(203.5, 1);
   });
 
-  it('decodes DCS normal polarity (high=0x80, code in low byte)', () => {
-    // code 23 decimal, high=0x80 → DCS, not inverted
-    expect(decodeCTCSSDCS(new Uint8Array([0x17, 0x80]))).toEqual({
+  it('decodes DCS normal polarity (BCD digits, high byte 0x80-0xBF)', () => {
+    // D023N → [0x23, 0x80] per DM32-Protocol-Spec/06-ENCODING.md
+    expect(decodeCTCSSDCS(new Uint8Array([0x23, 0x80]))).toEqual({
       type: 'DCS',
       value: 23,
       polarity: 'N',
     });
   });
 
-  it('decodes DCS inverted polarity (high >= 0xC0)', () => {
-    // code 23, high=0xC0 → DCS, inverted
-    expect(decodeCTCSSDCS(new Uint8Array([0x17, 0xC0]))).toEqual({
+  it('decodes DCS inverted polarity (high byte >= 0xC0)', () => {
+    // D023I → [0x23, 0xC0]
+    expect(decodeCTCSSDCS(new Uint8Array([0x23, 0xC0]))).toEqual({
       type: 'DCS',
       value: 23,
       polarity: 'P',
     });
   });
 
-  it('decodes DCS codes > 255 using high nibble of high byte', () => {
-    // high=0x81: DCS (>=0x80), not inverted (<0xC0), highNibble=0x01 → code=(1<<8)|0x2C=300
-    expect(decodeCTCSSDCS(new Uint8Array([0x2C, 0x81]))).toEqual({
+  it('decodes DCS codes >= 100 (hundreds digit in high byte low nibble)', () => {
+    // D754N → [0x54, 0x87]
+    expect(decodeCTCSSDCS(new Uint8Array([0x54, 0x87]))).toEqual({
       type: 'DCS',
-      value: 300,
+      value: 754,
       polarity: 'N',
     });
   });
@@ -154,9 +155,17 @@ describe('encodeCTCSSDCS', () => {
     expect(encodeCTCSSDCS({ type: 'CTCSS', value: 203.5 })).toEqual(new Uint8Array([0x35, 0x20]));
   });
 
-  it('encodes DCS normal polarity as [code, 0x80]', () => {
+  it('encodes DCS normal polarity as BCD digits with 0x80 base', () => {
+    // D023N → [0x23, 0x80] per DM32-Protocol-Spec/06-ENCODING.md
     expect(encodeCTCSSDCS({ type: 'DCS', value: 23, polarity: 'N' })).toEqual(
-      new Uint8Array([0x17, 0x80])
+      new Uint8Array([0x23, 0x80])
+    );
+  });
+
+  it('encodes DCS inverted polarity with 0xC0 base and hundreds digit', () => {
+    // D754I → [0x54, 0xC7]
+    expect(encodeCTCSSDCS({ type: 'DCS', value: 754, polarity: 'P' })).toEqual(
+      new Uint8Array([0x54, 0xC7])
     );
   });
 
@@ -184,20 +193,12 @@ describe('CTCSS/DCS round-trip', () => {
     });
   }
 
-  it('DCS normal polarity round-trips for codes ≤ 255', () => {
-    const input = { type: 'DCS' as const, value: 23, polarity: 'N' as const };
-    expect(decodeCTCSSDCS(encodeCTCSSDCS(input))).toEqual(input);
-  });
-
-  // Known encoder bug: encodeCTCSSDCS uses polarityBit=0x01 for inverted ('P'), producing
-  // high byte 0x81. But decodeCTCSSDCS expects high >= 0xC0 for inverted and reads
-  // bit 0 of the high byte as part of the code's highNibble. The round-trip is broken:
-  // encode({type:'DCS', value:23, polarity:'P'}) → [0x17, 0x81]
-  // decode([0x17, 0x81]) → {type:'DCS', value:279, polarity:'N'}  ← wrong value and polarity
-  // This test locks in the current broken behaviour so any future fix is a deliberate change.
-  it('DCS inverted polarity does NOT round-trip (known encoder bug)', () => {
-    const input = { type: 'DCS' as const, value: 23, polarity: 'P' as const };
-    const roundTripped = decodeCTCSSDCS(encodeCTCSSDCS(input));
-    expect(roundTripped).not.toEqual(input);
-  });
+  for (const polarity of ['N', 'P'] as const) {
+    it(`every standard DCS code round-trips with polarity ${polarity}`, () => {
+      for (const code of DCS_CODES) {
+        const input = { type: 'DCS' as const, value: code, polarity };
+        expect(decodeCTCSSDCS(encodeCTCSSDCS(input))).toEqual(input);
+      }
+    });
+  }
 });
