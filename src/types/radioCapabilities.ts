@@ -91,4 +91,23 @@ export interface RadioCapabilities {
   supportsQuickMessages?: boolean;
   /** If true, radio has Analog Emergency Systems (DM-32UV only). */
   supportsAnalogEmergency?: boolean;
+  /**
+   * Manual button-press steps the user must perform on the radio itself before a
+   * Read/Write can proceed (e.g. FT-70D: software can't trigger clone mode over
+   * the cable, the user has to arm it on the radio). When set, the UI shows a
+   * confirmation modal with this text before starting the corresponding operation.
+   */
+  cloneModeInstructions?: {
+    /** Shown before connecting — arm clone mode, then click Continue to open the port. */
+    read: string;
+    /**
+     * Shown after the port is open and actively listening, instructing the user to
+     * trigger the radio's send. Must come after the port is open: the radio starts
+     * streaming the instant the button is pressed, with no handshake to wait for the
+     * host, so if this were shown before connecting the radio's one-shot transmission
+     * could finish before anyone is listening.
+     */
+    readStart: string;
+    write: string;
+  };
 }

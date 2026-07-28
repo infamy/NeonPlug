@@ -50,6 +50,11 @@ export const Toolbar: React.FC = () => {
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
   const [writeWarningMessage, setWriteWarningMessage] = useState('');
+  const [cloneInstructionsOpen, setCloneInstructionsOpen] = useState(false);
+  const [pendingReadForceSelection, setPendingReadForceSelection] = useState(true);
+  const [cloneStartOpen, setCloneStartOpen] = useState(false);
+  const cloneStartResolveRef = useRef<(() => void) | null>(null);
+  const cloneStartRejectRef = useRef<((err: Error) => void) | null>(null);
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [convertTargetModel, setConvertTargetModel] = useState<string>(() => getMigrationTargetModels()[0] ?? 'DM-32UV');
@@ -261,7 +266,31 @@ export const Toolbar: React.FC = () => {
     await exportCodeplug(buildCodeplugData());
   };
 
-  const handleRead = async (forcePortSelection = true) => {
+  // For radios that need a manual button-press to start sending (e.g. FT-70D): the radio
+  // streams immediately with no handshake, so we must already be connected and listening
+  // before asking the user to press it — otherwise the transmission can finish before
+  // anyone is reading. Resolves once the user confirms the "press it now" modal.
+  const waitForCloneStart = () => new Promise<void>((resolve, reject) => {
+    cloneStartResolveRef.current = resolve;
+    cloneStartRejectRef.current = reject;
+    setCloneStartOpen(true);
+  });
+
+  const handleCloneStartConfirm = () => {
+    setCloneStartOpen(false);
+    cloneStartResolveRef.current?.();
+    cloneStartResolveRef.current = null;
+    cloneStartRejectRef.current = null;
+  };
+
+  const handleCloneStartCancel = () => {
+    setCloneStartOpen(false);
+    cloneStartRejectRef.current?.(new Error('Read cancelled by user.'));
+    cloneStartResolveRef.current = null;
+    cloneStartRejectRef.current = null;
+  };
+
+  const doRead = async (forcePortSelection = true) => {
     window.focus();
     try {
       setConnectionError(null);
@@ -270,13 +299,14 @@ export const Toolbar: React.FC = () => {
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
 
+      const onConnected = caps?.cloneModeInstructions ? waitForCloneStart : undefined;
       await readFromRadio((progress, message, step) => {
         setProgress(progress);
         setProgressMessage(message);
         if (step) {
           setCurrentStep(step);
         }
-      }, { forcePortSelection });
+      }, { forcePortSelection, onConnected });
 
       setConnectionError(null);
       setLastOperationMode(null);
@@ -293,6 +323,20 @@ export const Toolbar: React.FC = () => {
       setProgress(0);
       setProgressMessage('Connection failed');
     }
+  };
+
+  const handleRead = (forcePortSelection = true) => {
+    if (caps?.cloneModeInstructions) {
+      setPendingReadForceSelection(forcePortSelection);
+      setCloneInstructionsOpen(true);
+      return;
+    }
+    doRead(forcePortSelection);
+  };
+
+  const handleCloneInstructionsConfirm = () => {
+    setCloneInstructionsOpen(false);
+    doRead(pendingReadForceSelection);
   };
 
   const handleRetry = () => {
@@ -400,6 +444,9 @@ export const Toolbar: React.FC = () => {
         return w.message;
       });
       message = '⚠️ Codeplug check\n\n' + validationLines.join('\n\n') + '\n\n' + message;
+    }
+    if (caps?.cloneModeInstructions) {
+      message = caps.cloneModeInstructions.write + '\n\n' + message;
     }
     setWriteWarningMessage(message);
     setWriteWarningOpen(true);
@@ -563,6 +610,26 @@ export const Toolbar: React.FC = () => {
         onConfirm={handleWriteWarningConfirm}
         title="Write to radio"
         message={writeWarningMessage}
+        confirmLabel="Continue"
+        cancelLabel="Cancel"
+        variant="default"
+      />
+      <ConfirmModal
+        isOpen={cloneInstructionsOpen}
+        onClose={() => setCloneInstructionsOpen(false)}
+        onConfirm={handleCloneInstructionsConfirm}
+        title="Prepare radio for clone mode"
+        message={caps?.cloneModeInstructions?.read ?? ''}
+        confirmLabel="Continue"
+        cancelLabel="Cancel"
+        variant="default"
+      />
+      <ConfirmModal
+        isOpen={cloneStartOpen}
+        onClose={handleCloneStartCancel}
+        onConfirm={handleCloneStartConfirm}
+        title="Start sending from radio"
+        message={caps?.cloneModeInstructions?.readStart ?? ''}
         confirmLabel="Continue"
         cancelLabel="Cancel"
         variant="default"
