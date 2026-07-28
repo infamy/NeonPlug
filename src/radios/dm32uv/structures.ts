@@ -784,13 +784,20 @@ export function parseZones(
 ): Zone[] {
   const zones: Zone[] = [];
 
-  // Zones are 145 bytes each, starting at offset 16
-  // Zone 1: offset 16
-  // Zone 2: offset 161 (16 + 145)
-  // Zone 3: offset 306 (16 + 145*2)
-  // Maximum zones: (4096 - 16) / 145 ≈ 28 zones per 4KB block
-  for (let zoneNum = 1; zoneNum <= 30; zoneNum++) {
-    const offset = 16 + (zoneNum - 1) * 145;
+  // Zones are 145 bytes each. The first zone block reserves a 16-byte header
+  // (zone count), so zones start at offset 16 there; every subsequent 4KB
+  // block has no header and zones start at offset 0. Both cases hold exactly
+  // LIMITS.ZONES_PER_BLOCK (28) zones, so blocks can be indexed uniformly.
+  // Zone 1: offset 16 (block 0)
+  // Zone 29: offset 4096 (block 1, byte 0 - no header)
+  // Zone 57: offset 8192 (block 2, byte 0 - no header)
+  for (let zoneNum = 1; zoneNum <= LIMITS.ZONES_MAX; zoneNum++) {
+    const zoneIdx = zoneNum - 1;
+    const blockIdx = Math.floor(zoneIdx / LIMITS.ZONES_PER_BLOCK);
+    const indexInBlock = zoneIdx % LIMITS.ZONES_PER_BLOCK;
+    const offset = blockIdx === 0
+      ? OFFSET.ZONE_START + indexInBlock * BLOCK_SIZE.ZONE
+      : blockIdx * BLOCK_SIZE.STANDARD + indexInBlock * BLOCK_SIZE.ZONE;
     if (offset + 145 > data.length) {
       log.debug(`Zone ${zoneNum} would be at offset ${offset}, but data length is only ${data.length}`, 'Structures');
       break;
