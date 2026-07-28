@@ -17,7 +17,6 @@ permissions:
   contents: read
   pages: write
   id-token: write
-  pull-requests: write
 
 concurrency:
   group: "pages"
@@ -108,16 +107,24 @@ jobs:
         with:
           path: './dist'
 
-      - name: Comment PR with preview link
+      - name: Save PR preview info
         if: github.event_name == 'pull_request'
         run: |
           branch="${{ github.head_ref }}"
           name=$(echo "$branch" | sed 's/\//-/g' | sed 's/[^a-zA-Z0-9_-]//g' | cut -c1-50)
           [ -z "$name" ] && name="pr-${{ github.event.pull_request.number }}"
           url="https://neonplug.app/test/${name}/"
-          gh pr comment "${{ github.event.pull_request.number }}" --body "Preview: $url"
-        env:
-          GH_TOKEN: ${{ github.token }}
+          mkdir -p pr-preview
+          echo "${{ github.event.pull_request.number }}" > pr-preview/pr_number.txt
+          echo "$url" > pr-preview/preview_url.txt
+
+      - name: Upload PR preview info
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-preview
+          path: pr-preview/
+          retention-days: 1
 
   deploy:
     environment:
