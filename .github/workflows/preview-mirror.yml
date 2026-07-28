@@ -1,0 +1,76 @@
+name: Preview Mirror
+
+# Lets the repo owner comment "/preview" on a PR from an outside contributor
+# (fork) to mirror it into a same-repo branch + PR. Same-repo PRs aren't
+# subject to GitHub's fork token restrictions, so the existing deploy.yml
+# workflow just works on the mirror unchanged - no elevated/OIDC permissions
+# needed here, since this workflow never builds or executes the PR's code,
+# only moves git refs around and talks to the GitHub API.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  mirror:
+    if: >
+      github.event.issue.pull_request != null &&
+      contains(github.event.comment.body, '/preview') &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch PR title and author
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh pr view "$PR_NUMBER" --json title -q '.title' | tr -d '\n' > /tmp/pr_title.txt
+          gh pr view "$PR_NUMBER" --json author -q '.author.login' | tr -d '\n' > /tmp/pr_author.txt
+
+      - name: Mirror PR branch into this repo
+        env:
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          BRANCH="preview/pr-${PR_NUMBER}"
+          git fetch origin "refs/pull/${PR_NUMBER}/head:${BRANCH}"
+          git push origin "${BRANCH}" --force
+          echo "BRANCH=${BRANCH}" >> "$GITHUB_ENV"
+
+      - name: Create or reuse mirror PR
+        id: mirror
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          TITLE="$(cat /tmp/pr_title.txt)"
+          AUTHOR="$(cat /tmp/pr_author.txt)"
+
+          EXISTING="$(gh pr list --head "$BRANCH" --json number -q '.[0].number' || true)"
+          if [ -n "$EXISTING" ]; then
+            URL="$(gh pr view "$EXISTING" --json url -q '.url')"
+            echo "Mirror PR already exists: $URL"
+          else
+            BODY="Mirror of #${PR_NUMBER} by @${AUTHOR}, opened for CI preview/deploy testing only. Do not merge this PR - close it once testing is done; merge the original #${PR_NUMBER} instead if the change is good."
+            URL="$(gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "[PREVIEW - DO NOT MERGE] #${PR_NUMBER}: ${TITLE}" \
+              --body "$BODY")"
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Comment back on original PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          MIRROR_URL: ${{ steps.mirror.outputs.url }}
+        run: |
+          gh pr comment "$PR_NUMBER" --body "Mirrored for preview/deploy testing: ${MIRROR_URL}"
