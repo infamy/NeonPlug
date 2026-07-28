@@ -44,6 +44,11 @@ jobs:
           git push origin "${BRANCH}" --force
           echo "BRANCH=${BRANCH}" >> "$GITHUB_ENV"
 
+          # Matches deploy.yml's own sanitize() exactly, so this is the same
+          # URL it will publish the preview to.
+          NAME="$(echo "$BRANCH" | sed 's/\//-/g' | sed 's/[^a-zA-Z0-9_-]//g' | cut -c1-50)"
+          echo "PREVIEW_URL=https://neonplug.app/test/${NAME}/" >> "$GITHUB_ENV"
+
       - name: Create or reuse mirror PR
         id: mirror
         env:
@@ -73,4 +78,5 @@ jobs:
           PR_NUMBER: ${{ github.event.issue.number }}
           MIRROR_URL: ${{ steps.mirror.outputs.url }}
         run: |
-          gh pr comment "$PR_NUMBER" --body "Mirrored for preview/deploy testing: ${MIRROR_URL}"
+          printf -v BODY 'Mirrored for CI/deploy testing: %s\n\nPreview will be live at %s once the build finishes (usually a few minutes).' "$MIRROR_URL" "$PREVIEW_URL"
+          gh pr comment "$PR_NUMBER" --body "$BODY"
