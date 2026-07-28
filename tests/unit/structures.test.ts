@@ -4,8 +4,32 @@ import {
   encodeBCDFrequency,
   decodeCTCSSDCS,
   encodeCTCSSDCS,
+  parseZones,
+  encodeZone,
 } from '../../src/radios/dm32uv/structures';
 import { DCS_CODES } from '../../src/utils/ctcssConstants';
+import { LIMITS, BLOCK_SIZE, OFFSET } from '../../src/radios/dm32uv/constants';
+import type { Zone } from '../../src/models';
+
+// Builds a concatenated multi-block zone buffer the way protocol.ts's
+// concatenateCachedBlocks() does: block 0 has a 16-byte header before zones
+// start, every later 4KB block has zones starting at byte 0.
+function buildZoneBuffer(zones: Zone[]): Uint8Array {
+  const blockCount = Math.max(1, Math.ceil(zones.length / LIMITS.ZONES_PER_BLOCK));
+  const data = new Uint8Array(blockCount * BLOCK_SIZE.STANDARD);
+  data.fill(0xFF);
+
+  zones.forEach((zone, idx) => {
+    const blockIdx = Math.floor(idx / LIMITS.ZONES_PER_BLOCK);
+    const indexInBlock = idx % LIMITS.ZONES_PER_BLOCK;
+    const offset = blockIdx === 0
+      ? OFFSET.ZONE_START + indexInBlock * BLOCK_SIZE.ZONE
+      : blockIdx * BLOCK_SIZE.STANDARD + indexInBlock * BLOCK_SIZE.ZONE;
+    data.set(encodeZone(zone, idx + 1), offset);
+  });
+
+  return data;
+}
 
 // ─── BCD frequency ────────────────────────────────────────────────────────────
 
@@ -201,4 +225,54 @@ describe('CTCSS/DCS round-trip', () => {
       }
     });
   }
+});
+
+// ─── Zone parsing across block boundaries ─────────────────────────────────────
+// Regression coverage for a bug where zones beyond the first 4KB block (28 zones,
+// since the first block reserves a 16-byte header) were silently misread, and a
+// hardcoded 30-zone cap dropped everything past it. See LIMITS.ZONES_MAX (250).
+
+describe('parseZones across multiple blocks', () => {
+  function makeZones(count: number): Zone[] {
+    return Array.from({ length: count }, (_, i) => ({
+      id: `z${i + 1}`,
+      name: `Zone${i + 1}`,
+      channels: [i + 1, i + 2],
+    }));
+  }
+
+  it('parses a single block of 28 zones (fills the first block exactly)', () => {
+    const zones = makeZones(LIMITS.ZONES_PER_BLOCK);
+    const data = buildZoneBuffer(zones);
+    const parsed = parseZones(data);
+    expect(parsed).toHaveLength(28);
+    expect(parsed[0].name).toBe('Zone1');
+    expect(parsed[27].name).toBe('Zone28');
+  });
+
+  it('correctly parses zone 29, the first zone in the second block', () => {
+    const zones = makeZones(30);
+    const data = buildZoneBuffer(zones);
+    const parsed = parseZones(data);
+    expect(parsed).toHaveLength(30);
+    expect(parsed[28].name).toBe('Zone29');
+    expect(parsed[28].channels).toEqual([29, 30]);
+    expect(parsed[29].name).toBe('Zone30');
+  });
+
+  it('parses more than 30 zones (past the old hardcoded cap) across three blocks', () => {
+    const zones = makeZones(60);
+    const data = buildZoneBuffer(zones);
+    const parsed = parseZones(data);
+    expect(parsed).toHaveLength(60);
+    expect(parsed[56].name).toBe('Zone57'); // first zone of the third block
+    expect(parsed[59].name).toBe('Zone60');
+  });
+
+  it('stops at an empty zone within a later block instead of reading garbage', () => {
+    const zones = makeZones(29); // one zone into the second block
+    const data = buildZoneBuffer(zones);
+    const parsed = parseZones(data);
+    expect(parsed).toHaveLength(29);
+  });
 });

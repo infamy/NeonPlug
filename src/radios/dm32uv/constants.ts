@@ -7,7 +7,8 @@
 export const METADATA = {
   CHANNEL_FIRST: 0x12,      // First channel block
   CHANNEL_LAST: 0x41,       // Last channel block (max)
-  ZONE: 0x5c,               // Zone block
+  ZONE_FIRST: 0x5c,         // First zone block
+  ZONE_LAST: 0x64,          // Last zone block (9 blocks x 28 zones/block = 252, covers LIMITS.ZONES_MAX 250) — unverified, pending hardware confirmation
   SCAN_LIST: 0x11,          // Scan list block
   DIGITAL_EMERGENCY: 0x10,  // Digital Emergency Systems (same block as encryption keys, offset 0x000)
   VFO_SETTINGS: 0x04,       // Radio Settings / Radio Names / Embedded Information

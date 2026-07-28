@@ -1569,9 +1569,11 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
 
     this.onProgress?.(0, 'Parsing zones from cached blocks...');
 
-    // Zone metadata identified from debug export: 0x5c
-    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE);
-    log.info(`Found ${zoneBlocks.length} zone blocks (metadata 0x${METADATA.ZONE.toString(16)})`, 'Protocol');
+    // Zone blocks span metadata 0x5c-0x64 (9 blocks, covers LIMITS.ZONES_MAX)
+    const zoneBlocks = this.discoveredBlocks
+      .filter(b => b.type === 'zone')
+      .sort((a, b) => a.metadata - b.metadata);
+    log.info(`Found ${zoneBlocks.length} zone blocks (metadata 0x${METADATA.ZONE_FIRST.toString(16)}-0x${METADATA.ZONE_LAST.toString(16)})`, 'Protocol');
 
     if (checkEmptyBlocks(zoneBlocks, 'zone', this.onProgress)) {
       return [];
@@ -1583,12 +1585,19 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     this.onProgress?.(50, 'Parsing zone data...');
     const zones = parseZones(allZoneData, (zoneNum, rawData, name) => {
       // Store raw zone data for debug export
+      // Offset math mirrors parseZones(): first block has a 16-byte header, later blocks don't
+      const zoneIdx = zoneNum - 1;
+      const blockIdx = Math.floor(zoneIdx / LIMITS.ZONES_PER_BLOCK);
+      const indexInBlock = zoneIdx % LIMITS.ZONES_PER_BLOCK;
+      const zoneOffset = blockIdx === 0
+        ? OFFSET.ZONE_START + indexInBlock * BLOCK_SIZE.ZONE
+        : blockIdx * BLOCK_SIZE.STANDARD + indexInBlock * BLOCK_SIZE.ZONE;
       storeRawData(
         this.rawZoneData,
         name,
         rawData,
         { zoneNum },
-        OFFSET.ZONE_START + (zoneNum - 1) * BLOCK_SIZE.ZONE
+        zoneOffset
       );
     });
 
@@ -1629,8 +1638,12 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       this.discoveredBlocks = blocks;
     }
 
-    // Get zone blocks (metadata 0x5c)
-    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE);
+    // NOTE: unlike writeAllData() (the multi-block-aware path actually used by the app),
+    // this legacy single-block method only targets the first zone block and intentionally
+    // does not recognize the full 0x5c-0x64 zone range — its flat write-offset math below
+    // isn't block-boundary aware, so writing to multiple blocks here would silently
+    // misplace zone data. Fix that before broadening this to multiple blocks.
+    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE_FIRST);
 
     if (zoneBlocks.length === 0) {
       throw new Error('No zone blocks found');
@@ -3402,7 +3415,10 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     }
 
     // Generate zone blocks - ALWAYS write zones when writing channels
-    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE);
+    // Zone blocks span metadata 0x5c-0x64 (9 blocks, covers LIMITS.ZONES_MAX)
+    const zoneBlocks = this.discoveredBlocks
+      .filter(b => b.type === 'zone')
+      .sort((a, b) => a.metadata - b.metadata);
     if (zoneBlocks.length === 0) {
       throw new Error('No zone blocks found');
     }
@@ -3511,11 +3527,13 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
         const destOffset = isFirstBlock ? OFFSET.ZONE_START : 0;
         blockData.set(sourceData, destOffset);
         
-        // Only set zone count at byte 0 for the first block
+        // Byte 0 of the first block holds the GLOBAL total zone count (not just
+        // this block's share) - confirmed against hardware: a radio with 29 real
+        // zones had byte 0 = 0x1d (29), not clamped to 28.
         if (isFirstBlock) {
-          const zoneCount = Math.min(Math.max(zonesInBlock, 1), 28); // Clamp to 1-28
+          const zoneCount = Math.min(Math.max(zonesToWrite.length, 1), 255);
           blockData[0] = zoneCount;
-          log.debug(`Set zone count in byte 0: ${zoneCount} zones for first block`, 'Protocol');
+          log.debug(`Set zone count in byte 0: ${zoneCount} (total zones across all blocks)`, 'Protocol');
           
           // Preserve the original bytes 1-15 if available (to match original structure)
           if (originalBlockData) {
@@ -3750,9 +3768,9 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       finalBlocksToWrite.push(block);
     }
     
-    // 2. Zone blocks (metadata 0x5c)
+    // 2. Zone blocks (metadata 0x5c-0x64)
     const zoneBlocksToWrite = blocksToWrite
-      .filter(b => b.metadata === METADATA.ZONE)
+      .filter(b => b.metadata >= METADATA.ZONE_FIRST && b.metadata <= METADATA.ZONE_LAST)
       .sort((a, b) => a.address - b.address);
     
     for (const block of zoneBlocksToWrite) {
