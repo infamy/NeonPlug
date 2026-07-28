@@ -20,14 +20,31 @@ jobs:
   mirror:
     if: >
       github.event.issue.pull_request != null &&
-      contains(github.event.comment.body, '/preview') &&
       github.event.comment.user.login == github.repository_owner
     runs-on: ubuntu-latest
     steps:
+      - name: Require exact /preview command
+        id: gate
+        env:
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          # Trim leading/trailing whitespace only (preserves internal content,
+          # so a comment merely CONTAINING "/preview" - e.g. a pasted preview
+          # URL like ".../test/preview-pr-141/" - correctly does NOT match).
+          TRIMMED="${BODY#"${BODY%%[![:space:]]*}"}"
+          TRIMMED="${TRIMMED%"${TRIMMED##*[![:space:]]}"}"
+          if [ "$TRIMMED" = "/preview" ]; then
+            echo "match=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "match=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
+        if: steps.gate.outputs.match == 'true'
         uses: actions/checkout@v4
 
       - name: Fetch PR title and author
+        if: steps.gate.outputs.match == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.issue.number }}
@@ -36,6 +53,7 @@ jobs:
           gh pr view "$PR_NUMBER" --json author -q '.author.login' | tr -d '\n' > /tmp/pr_author.txt
 
       - name: Mirror PR branch into this repo
+        if: steps.gate.outputs.match == 'true'
         env:
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
@@ -50,6 +68,7 @@ jobs:
           echo "PREVIEW_URL=https://neonplug.app/test/${NAME}/" >> "$GITHUB_ENV"
 
       - name: Create or reuse mirror PR
+        if: steps.gate.outputs.match == 'true'
         id: mirror
         env:
           GH_TOKEN: ${{ github.token }}
@@ -73,6 +92,7 @@ jobs:
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
       - name: Comment back on original PR
+        if: steps.gate.outputs.match == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.issue.number }}
