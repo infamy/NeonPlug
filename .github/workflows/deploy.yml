@@ -24,6 +24,11 @@ concurrency:
 
 jobs:
   build:
+    # Fork PRs never get the id-token permission, so deploy-pages can't
+    # authenticate from their runs — skip them entirely. Contributor PRs get
+    # previews via the maintainer-invoked /preview comment command instead.
+    # (Skipping this job auto-skips the deploy job via `needs`.)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -34,7 +39,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       # NOTE: every build below runs `npm ci` after its `git checkout` — this
