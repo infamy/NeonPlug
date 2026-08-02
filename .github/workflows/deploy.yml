@@ -37,14 +37,16 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
-
+      # NOTE: every build below runs `npm ci` after its `git checkout` — this
+      # workflow builds several refs (main + each open PR) in one job, and each
+      # ref can have different dependencies. A single shared install broke the
+      # moment a PR changed package.json.
       - name: Build main (production)
         env:
           VITE_COMMIT_HASH: ${{ github.sha }}
         run: |
           git checkout main
+          npm ci
           npm run build:single
 
       - name: Copy data files to dist root
@@ -77,6 +79,7 @@ jobs:
             echo "Building PR #$num branch=$branch -> test/$name"
             git fetch origin "pull/$num/head:pr-$num" 2>/dev/null || git fetch origin "$branch" 2>/dev/null || true
             git checkout "pr-$num" 2>/dev/null || git checkout "$branch"
+            npm ci
             npm run build:single
             cp src/data/rptrs.json dist/rptrs.json
             cp src/data/tafl_min.json dist/tafl_min.json
