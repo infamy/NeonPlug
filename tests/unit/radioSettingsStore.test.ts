@@ -188,3 +188,27 @@ describe('hasChanges / getChangedFields', () => {
     expect(useRadioSettingsStore.getState().getChangedFields()).toContain('squelchLevel');
   });
 });
+
+describe('setSettings markAllChanged (import write-gate fix, issue #2)', () => {
+  it('default (read-from-radio) marks no fields changed', () => {
+    useRadioSettingsStore.getState().setSettings(makeSettings({ squelchLevel: 3, backlightBrightness: 4 }));
+    expect(useRadioSettingsStore.getState().getChangedFields()).toHaveLength(0);
+    expect(useRadioSettingsStore.getState().hasChanges()).toBe(false);
+  });
+
+  it('markAllChanged flags every settings key so an imported codeplug writes back', () => {
+    const s = makeSettings({ squelchLevel: 3, backlightBrightness: 4 });
+    useRadioSettingsStore.getState().setSettings(s, { markAllChanged: true });
+    const changed = useRadioSettingsStore.getState().getChangedFields();
+    // every own key of the imported settings should be marked changed
+    for (const key of Object.keys(s)) {
+      expect(changed).toContain(key);
+    }
+    expect(useRadioSettingsStore.getState().hasChanges()).toBe(true);
+  });
+
+  it('markAllChanged with null settings marks nothing', () => {
+    useRadioSettingsStore.getState().setSettings(null, { markAllChanged: true });
+    expect(useRadioSettingsStore.getState().getChangedFields()).toHaveLength(0);
+  });
+});
