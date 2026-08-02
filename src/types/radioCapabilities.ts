@@ -13,10 +13,38 @@ export interface CTCSSDCSResultLike {
   polarity?: 'N' | 'P';
 }
 
+/**
+ * One annotated field/region inside a raw memory block. Display-only —
+ * drives Diagnostics hex overlays, tooltips, offset lookup, and legends.
+ */
+export interface BlockFieldSpec {
+  /** Byte offset of the (first) occurrence within the block. */
+  at: number;
+  /** Length in bytes per occurrence. Default 1. */
+  len?: number;
+  name: string;
+  /** Bit range [hi, lo] within a single-byte field. */
+  bits?: [number, number];
+  /** Repeating record array: occurrences at `at + i * stride` for i < count. */
+  repeat?: { count: number; stride: number };
+  /** Optional human-readable decode of one occurrence's bytes. */
+  decode?: (bytes: Uint8Array, index: number) => string;
+  /** Free-form note shown in the layout legend. */
+  notes?: string;
+}
+
+/** Declarative annotation of one memory block. Earlier fields win on overlap. */
+export interface BlockLayoutSpec {
+  label: string;
+  fields: BlockFieldSpec[];
+}
+
 export interface RadioCapabilitiesDiagnostics {
   parseRadioSettings: (data: Uint8Array) => RadioSettings;
   decodeBCDFrequency: (data: Uint8Array) => number;
   decodeCTCSSDCS: (data: Uint8Array) => CTCSSDCSResultLike;
+  /** Per-block hex annotations, keyed by metadata id (e.g. 0x04, 0x41). */
+  blockLayouts?: Record<number, BlockLayoutSpec>;
 }
 
 export interface RadioCapabilitiesDigitalLimits {
@@ -36,8 +64,9 @@ export interface RadioCapabilitiesDigital {
 export interface RadioBandLimits {
   vhfMin: number;
   vhfMax: number;
-  uhfMin: number;
-  uhfMax: number;
+  /** Absent on VHF-only radios (e.g. FT-25R, FT-4VR): the radio has no UHF band. */
+  uhfMin?: number;
+  uhfMax?: number;
 }
 
 /** Fallback band limits when no radio/model is known (VHF 87–174, UHF 400–470 MHz). */

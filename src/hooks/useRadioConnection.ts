@@ -179,6 +179,11 @@ export function useRadioConnection() {
         if (dm32) setRawScanListData(dm32.rawScanListData);
       }
 
+      // Sections that fail to read are collected here and surfaced in the
+      // completion message — a silent failure would leave the UI showing an
+      // empty section while the radio still holds data.
+      const sectionReadWarnings: string[] = [];
+
       if (dm32) {
         try {
           const messages = await dm32.readQuickMessages();
@@ -186,7 +191,7 @@ export function useRadioConnection() {
           const rawMsgMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
           for (const [i, raw] of dm32.rawMessageData.entries()) rawMsgMap.set(i, raw);
           setRawMessageData(rawMsgMap);
-        } catch { console.warn('Could not read Quick Messages'); }
+        } catch (err) { console.warn('Could not read Quick Messages:', err); sectionReadWarnings.push('Quick Messages'); }
 
         try {
           const radioIds = await dm32.readDMRRadioIDs();
@@ -194,11 +199,11 @@ export function useRadioConnection() {
           const rawIdMap = new Map<number, { data: Uint8Array; idIndex: number; offset: number }>();
           for (const [i, raw] of dm32.rawDMRRadioIDData.entries()) rawIdMap.set(i, raw);
           setRawRadioIdData(rawIdMap);
-        } catch { console.warn('Could not read DMR Radio IDs'); }
+        } catch (err) { console.warn('Could not read DMR Radio IDs:', err); sectionReadWarnings.push('DMR Radio IDs'); }
 
         try {
           setCalibration(await dm32.readCalibration());
-        } catch { console.warn('Could not read calibration data'); }
+        } catch (err) { console.warn('Could not read calibration data:', err); sectionReadWarnings.push('Calibration'); }
 
         try {
           const rxGroups = await dm32.readRXGroups();
@@ -206,11 +211,11 @@ export function useRadioConnection() {
           const rawGroupMap = new Map<number, { data: Uint8Array; groupIndex: number; offset: number }>();
           for (const [i, raw] of dm32.rawRXGroupData.entries()) rawGroupMap.set(i, raw);
           setRawGroupData(rawGroupMap);
-        } catch { console.warn('Could not read RX Groups'); }
+        } catch (err) { console.warn('Could not read RX Groups:', err); sectionReadWarnings.push('RX Groups'); }
 
         try {
           setQuickContacts(await dm32.readQuickContacts());
-        } catch { console.warn('Could not read Talk Groups'); }
+        } catch (err) { console.warn('Could not read Talk Groups:', err); sectionReadWarnings.push('Talk Groups'); }
       }
 
       try {
@@ -220,7 +225,7 @@ export function useRadioConnection() {
           const radioSettings = await proto.readRadioSettings();
           if (radioSettings) setRadioSettings(radioSettings);
           if (dm32?.rawRadioSettingsData) setRawRadioSettingsData(dm32.rawRadioSettingsData);
-        } catch { console.warn('Could not read Radio Settings'); }
+        } catch (err) { console.warn('Could not read Radio Settings:', err); sectionReadWarnings.push('Radio Settings'); }
 
         if (dm32) {
           try {
@@ -229,14 +234,14 @@ export function useRadioConnection() {
               setDigitalEmergencies(digitalEmergency.systems);
               setDigitalEmergencyConfig(digitalEmergency.config);
             }
-          } catch { console.warn('Could not read Digital Emergency Systems'); }
+          } catch (err) { console.warn('Could not read Digital Emergency Systems:', err); sectionReadWarnings.push('Digital Emergency Systems'); }
 
           try {
             const analogEmergencies = await dm32.readAnalogEmergencies();
             if (analogEmergencies) setAnalogEmergencies(analogEmergencies);
-          } catch { console.warn('Could not read Analog Emergency Systems'); }
+          } catch (err) { console.warn('Could not read Analog Emergency Systems:', err); sectionReadWarnings.push('Analog Emergency Systems'); }
         }
-      } catch { console.warn('Error reading configuration blocks'); }
+      } catch (err) { console.warn('Error reading configuration blocks:', err); sectionReadWarnings.push('configuration blocks'); }
 
       proto.onProgress = savedProgress;
 
@@ -255,7 +260,16 @@ export function useRadioConnection() {
       // InvalidStateError ("port already open").
       try { await proto.disconnect(); } catch { /* already closed */ }
 
-      onProgress?.(100, 'Read complete!', steps[5]);
+      if (sectionReadWarnings.length > 0) {
+        onProgress?.(
+          100,
+          `Read complete — warning: could not read ${sectionReadWarnings.join(', ')}. ` +
+            'These sections show as empty; re-read before editing them.',
+          steps[5]
+        );
+      } else {
+        onProgress?.(100, 'Read complete!', steps[5]);
+      }
     };
 
     try {

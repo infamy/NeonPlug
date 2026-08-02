@@ -155,14 +155,25 @@ export class UV5RMiniProtocol extends BaseAnalogProtocol {
   /** Write channels: build image from channels, then write blocks (upload handshake first). */
   async writeChannels(channels: Channel[]): Promise<void> {
     if (!this.connection) throw new Error('Not connected');
-    await this.connection.handshakeUpload();
 
-    const image = new Uint8Array(0x8240);
-    image.fill(0xff);
     const rawList: Uv5rMiniChannelRaw[] = channels
       .filter((c) => c.number >= 1 && c.number <= BAOFENG_CHANNEL_COUNT)
       .slice(0, BAOFENG_CHANNEL_COUNT)
       .map((c) => channelToUv5rMiniRaw(c));
+    // Every channel not in the list is written as 0xff (the radio's empty
+    // marker), so a write with no valid channels would erase every channel.
+    // The app UI guards this; direct callers (libneonplug) reach this method
+    // without that guard, so refuse before touching the radio.
+    if (rawList.length === 0) {
+      throw new Error(
+        'Refusing to write: no valid channels in list — this would erase every channel on the radio.'
+      );
+    }
+
+    await this.connection.handshakeUpload();
+
+    const image = new Uint8Array(0x8240);
+    image.fill(0xff);
     for (let i = 0; i < rawList.length; i++) {
       const raw = rawList[i];
       const idx = raw.num - 1;

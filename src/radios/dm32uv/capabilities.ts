@@ -7,6 +7,7 @@ import { DEFAULT_BAND_LIMITS } from '../../types/radioCapabilities';
 import { parseRadioSettings } from './structures';
 import { decodeBCDFrequency, decodeCTCSSDCS } from './structures';
 import { parseEncryptionKeys, parseDigitalEmergencies } from './structures';
+import { DM32_BLOCK_LAYOUTS } from './blockLayouts';
 import { LIMITS } from './constants';
 import { isFirmware049OrNewer } from '../../utils/firmware';
 
@@ -15,6 +16,7 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
     parseRadioSettings,
     decodeBCDFrequency,
     decodeCTCSSDCS,
+    blockLayouts: DM32_BLOCK_LAYOUTS,
   },
   digital: {
     parseEncryptionKeys,

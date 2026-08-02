@@ -5,6 +5,7 @@
 
 import type { Channel, Zone } from '../models';
 import { analyzeMetadata, exportMetadataAnalysis } from './metadataAnalysis';
+import { downloadFile } from '../utils/download';
 
 export interface RawChannelData {
   channelNumber: number;
@@ -382,14 +383,6 @@ export function exportFullDebug(
  * Download debug data as file
  */
 export function downloadDebug(data: string, filename: string): void {
-  const blob = new Blob([data], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadFile(data, filename, 'application/json');
 }
 

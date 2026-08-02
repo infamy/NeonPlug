@@ -6,7 +6,7 @@ import type { RadioProtocol } from '../types/radio';
 import type { RadioDescriptor } from './types';
 import { DM32UV_DESCRIPTOR } from './dm32uv/descriptor';
 import { UV5RMINI_DESCRIPTOR } from './uv5rmini/descriptor';
-import { FT65_DESCRIPTOR, FT4_DESCRIPTOR, FT25R_DESCRIPTOR } from './ft65/descriptor';
+import { FT65_DESCRIPTOR, FT4_DESCRIPTOR, FT4VR_DESCRIPTOR, FT25R_DESCRIPTOR } from './ft65/descriptor';
 
 export type ProtocolFactory = () => RadioProtocol;
 
@@ -16,6 +16,7 @@ export const RADIO_DESCRIPTORS: readonly RadioDescriptor[] = [
   UV5RMINI_DESCRIPTOR,
   FT65_DESCRIPTOR,
   FT4_DESCRIPTOR,
+  FT4VR_DESCRIPTOR,
   FT25R_DESCRIPTOR,
 ];
 

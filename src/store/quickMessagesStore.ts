@@ -23,10 +23,15 @@ export const useQuickMessagesStore = create<QuickMessagesState>((set) => ({
   messages: [],
   rawMessageData: new Map(),
   messagesLoaded: false,
-  setMessages: (messages) => set({ messages, messagesLoaded: true }),
+  // Normalize .index to array position — the encoder (encodeQuickMessages)
+  // places messages by array order, so position is the canonical identity.
+  setMessages: (messages) => set({
+    messages: messages.map((m, i) => ({ ...m, index: i })),
+    messagesLoaded: true,
+  }),
   setRawMessageData: (rawData) => set({ rawMessageData: rawData }),
   addMessage: (message) => set((state) => ({
-    messages: [...state.messages, message]
+    messages: [...state.messages, { ...message, index: state.messages.length }]
   })),
   updateMessage: (index, updates) => set((state) => ({
     messages: state.messages.map((m, i) => 

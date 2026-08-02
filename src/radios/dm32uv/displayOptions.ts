@@ -1,4 +1,8 @@
-// Constants used in DiagnosticsTab - extracted from SettingsTab
+/**
+ * DM-32UV value → label tables used for display (settings UI, diagnostics
+ * hex-layout decodes). These are radio-specific facts, so they live with the
+ * radio, not in the component layer.
+ */
 
 export const POWER_ON_INTERFACE_OPTIONS = [
   { value: 0, label: 'Power On Picture' },
@@ -17,34 +21,10 @@ export const COLOR_OPTIONS = [
   { value: 7, label: 'Blue', hex: '#0000FF' },
 ];
 
-export const UTC_ZONE_OPTIONS = [
-  { value: 0, label: 'UTC -12:00' },
-  { value: 1, label: 'UTC -11:00' },
-  { value: 2, label: 'UTC -10:00' },
-  { value: 3, label: 'UTC -9:00' },
-  { value: 4, label: 'UTC -8:00' },
-  { value: 5, label: 'UTC -7:00' },
-  { value: 6, label: 'UTC -6:00' },
-  { value: 7, label: 'UTC -5:00' },
-  { value: 8, label: 'UTC -4:00' },
-  { value: 9, label: 'UTC -3:00' },
-  { value: 10, label: 'UTC -2:00' },
-  { value: 11, label: 'UTC -1:00' },
-  { value: 12, label: 'UTC' },
-  { value: 13, label: 'UTC +1:00' },
-  { value: 14, label: 'UTC +2:00' },
-  { value: 15, label: 'UTC +3:00' },
-  { value: 16, label: 'UTC +4:00' },
-  { value: 17, label: 'UTC +5:00' },
-  { value: 18, label: 'UTC +6:00' },
-  { value: 19, label: 'UTC +7:00' },
-  { value: 20, label: 'UTC +8:00' },
-  { value: 21, label: 'UTC +9:00' },
-  { value: 22, label: 'UTC +10:00' },
-  { value: 23, label: 'UTC +11:00' },
-  { value: 24, label: 'UTC +12:00' },
-  { value: 25, label: 'UTC +13:00' },
-];
+export const UTC_ZONE_OPTIONS = Array.from({ length: 26 }, (_, i) => ({
+  value: i,
+  label: i === 12 ? 'UTC' : `UTC ${i < 12 ? '-' : '+'}${Math.abs(i - 12)}:00`,
+}));
 
 export const BUTTON_FUNCTION_OPTIONS = [
   { value: 0, label: 'None' },
@@ -91,30 +71,3 @@ export const BUTTON_FUNCTION_OPTIONS = [
   { value: 41, label: 'Flashlight' },
   { value: 42, label: 'Man Down Alarm' },
 ];
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

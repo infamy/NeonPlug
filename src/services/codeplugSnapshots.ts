@@ -3,7 +3,7 @@
  * Stores recent reads/writes/imports in localStorage with pako compression.
  */
 
-import pako from 'pako';
+import { compressText, decompressText } from '../utils/compression';
 import type { CodeplugData } from './codeplugExport';
 import { codeplugToJsonSafe, jsonSafeToCodeplug } from './codeplugExport';
 
@@ -49,16 +49,16 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-function compress(data: CodeplugData): string {
+async function compress(data: CodeplugData): Promise<string> {
   const jsonSafe = codeplugToJsonSafe(data);
   const jsonString = JSON.stringify(jsonSafe);
-  const deflated = pako.deflate(jsonString, { level: 6 });
+  const deflated = await compressText(jsonString);
   return uint8ArrayToBase64(deflated);
 }
 
-function decompress(base64: string): CodeplugData {
+async function decompress(base64: string): Promise<CodeplugData> {
   const deflated = base64ToUint8Array(base64);
-  const jsonString = pako.inflate(deflated, { to: 'string' });
+  const jsonString = await decompressText(deflated);
   const raw = JSON.parse(jsonString) as Record<string, unknown>;
   return jsonSafeToCodeplug(raw);
 }
@@ -112,11 +112,12 @@ function buildSnapshotLabel(options: SaveSnapshotOptions): string {
 }
 
 /** Save a codeplug snapshot. Skips empty codeplugs (0 channels, 0 zones). */
-export function saveSnapshot(data: CodeplugData, options: SaveSnapshotOptions): void {
+export async function saveSnapshot(data: CodeplugData, options: SaveSnapshotOptions): Promise<void> {
   if (data.channels.length === 0 && data.zones.length === 0) return;
 
   const radioModel = options.radioModel ?? data.radioInfo?.model;
   const label = buildSnapshotLabel({ ...options, radioModel });
+  const compressed = await compress(data);
   const stored = loadFromStorage();
   const entry: SnapshotEntry = {
     id: generateId(),
@@ -125,7 +126,7 @@ export function saveSnapshot(data: CodeplugData, options: SaveSnapshotOptions): 
     source: options.fileName ?? radioModel,
     eventType: options.eventType,
     radioModel: radioModel ?? options.radioModel,
-    data: compress(data),
+    data: compressed,
   };
   const snapshots = [entry, ...stored.snapshots].slice(0, MAX_SNAPSHOTS);
   saveToStorage({ snapshots });
@@ -145,12 +146,12 @@ export function getSnapshots(): Omit<SnapshotEntry, 'data'>[] {
 }
 
 /** Load and decompress full codeplug data for a snapshot. */
-export function getSnapshotData(id: string): CodeplugData | null {
+export async function getSnapshotData(id: string): Promise<CodeplugData | null> {
   const stored = loadFromStorage();
   const entry = stored.snapshots.find((s) => s.id === id);
   if (!entry) return null;
   try {
-    return decompress(entry.data);
+    return await decompress(entry.data);
   } catch {
     return null;
   }

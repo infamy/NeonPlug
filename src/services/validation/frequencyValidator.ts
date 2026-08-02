@@ -25,12 +25,10 @@ export function isRxInNoTxBand(rxFrequency: number): boolean {
  */
 export function isValidFrequencyRange(frequency: number, limits?: RadioBandLimits | null): boolean {
   const resolved = limits ?? DEFAULT_BAND_LIMITS;
-  const vhfMin = resolved.vhfMin;
-  const vhfMax = resolved.vhfMax;
-  const uhfMin = resolved.uhfMin;
-  const uhfMax = resolved.uhfMax;
-  const isVHF = frequency >= vhfMin && frequency <= vhfMax;
-  const isUHF = frequency >= uhfMin && frequency <= uhfMax;
+  const isVHF = frequency >= resolved.vhfMin && frequency <= resolved.vhfMax;
+  // VHF-only radios (e.g. FT-25R, FT-4VR) have no UHF band at all.
+  const isUHF = resolved.uhfMin != null && resolved.uhfMax != null &&
+    frequency >= resolved.uhfMin && frequency <= resolved.uhfMax;
   return isVHF || isUHF;
 }
 
@@ -60,7 +58,8 @@ export function isValidFrequency(frequency: number, bandLimits?: RadioBandLimits
 export function getFrequencyBand(frequency: number, bandLimits?: RadioBandLimits | null): 'VHF' | 'UHF' | 'Unknown' {
   if (!bandLimits) return 'Unknown';
   if (frequency >= bandLimits.vhfMin && frequency <= bandLimits.vhfMax) return 'VHF';
-  if (frequency >= bandLimits.uhfMin && frequency <= bandLimits.uhfMax) return 'UHF';
+  if (bandLimits.uhfMin != null && bandLimits.uhfMax != null &&
+      frequency >= bandLimits.uhfMin && frequency <= bandLimits.uhfMax) return 'UHF';
   return 'Unknown';
 }
 

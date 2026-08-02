@@ -42,11 +42,16 @@ export function validateChannel(
   // Band limits validation (from radio capabilities)
   if (bandLimits) {
     const isVHF = channel.rxFrequency >= bandLimits.vhfMin && channel.rxFrequency <= bandLimits.vhfMax;
-    const isUHF = channel.rxFrequency >= bandLimits.uhfMin && channel.rxFrequency <= bandLimits.uhfMax;
+    const hasUhfBand = bandLimits.uhfMin != null && bandLimits.uhfMax != null;
+    const isUHF = bandLimits.uhfMin != null && bandLimits.uhfMax != null &&
+      channel.rxFrequency >= bandLimits.uhfMin && channel.rxFrequency <= bandLimits.uhfMax;
     if (!isVHF && !isUHF) {
+      const ranges = hasUhfBand
+        ? `VHF: ${bandLimits.vhfMin}-${bandLimits.vhfMax} MHz, UHF: ${bandLimits.uhfMin}-${bandLimits.uhfMax} MHz`
+        : `VHF: ${bandLimits.vhfMin}-${bandLimits.vhfMax} MHz`;
       errors.push({
         field: 'rxFrequency',
-        message: `RX frequency must be within radio band limits (VHF: ${bandLimits.vhfMin}-${bandLimits.vhfMax} MHz, UHF: ${bandLimits.uhfMin}-${bandLimits.uhfMax} MHz)`,
+        message: `RX frequency must be within radio band limits (${ranges})`,
       });
     }
   }
