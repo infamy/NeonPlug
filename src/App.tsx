@@ -34,11 +34,6 @@ import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData'
 import { setLogStore, logger, LogLevel } from './utils/protocolLogger';
 import { useLogStore } from './store/logStore';
 
-// TEMP DEBUG HOOK - exposes zonesStore to the console for local testing. Remove before commit.
-if (import.meta.env.DEV) {
-  (window as unknown as { __zonesStore: typeof useZonesStore }).__zonesStore = useZonesStore;
-}
-
 function App() {
   const [activeTab, setActiveTab] = useState('channels');
   const [showStartupModal, setShowStartupModal] = useState(true);
@@ -182,7 +177,7 @@ function App() {
         
         setShowStartupModal(false);
         const { saveSnapshot } = await import('./services/codeplugSnapshots');
-        saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
+        await saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
         const lines = [
           `• ${codeplugData.channels.length} channels`,
           `• ${codeplugData.zones.length} zones`,

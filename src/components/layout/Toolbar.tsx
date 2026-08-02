@@ -245,7 +245,7 @@ export const Toolbar: React.FC = () => {
         `• ${encCount} encryption key(s)`,
       ].filter(Boolean);
       showAlert(`Successfully imported codeplug!\n\n${lines.join('\n')}`, 'Import');
-      saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
+      await saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
     } catch (error) {
       showAlert(error instanceof Error ? error.message : 'Failed to import codeplug', 'Import');
     }
@@ -281,7 +281,7 @@ export const Toolbar: React.FC = () => {
       setConnectionError(null);
       setLastOperationMode(null);
       const modelLabel = useRadioStore.getState().radioInfo?.model ?? effectiveModel ?? undefined;
-      saveSnapshot(buildCodeplugDataFromStores(), { eventType: 'read', radioModel: modelLabel });
+      await saveSnapshot(buildCodeplugDataFromStores(), { eventType: 'read', radioModel: modelLabel });
       setTimeout(() => {
         setProgress(0);
         setProgressMessage('');
@@ -346,7 +346,7 @@ export const Toolbar: React.FC = () => {
       setConnectionError(null);
       setLastOperationMode(null);
       const modelLabel = useRadioStore.getState().radioInfo?.model ?? effectiveModel ?? undefined;
-      saveSnapshot(buildCodeplugDataFromStores(), { eventType: 'write', radioModel: modelLabel });
+      await saveSnapshot(buildCodeplugDataFromStores(), { eventType: 'write', radioModel: modelLabel });
       setTimeout(() => {
         setIsWriting(false);
         setProgress(0);
@@ -415,8 +415,8 @@ export const Toolbar: React.FC = () => {
     setSnapshotsModalOpen(true);
   };
 
-  const handleRestoreSnapshot = (id: string) => {
-    const data = getSnapshotData(id);
+  const handleRestoreSnapshot = async (id: string) => {
+    const data = await getSnapshotData(id);
     if (!data) return;
     setChannels(data.channels);
     setZones(data.zones);

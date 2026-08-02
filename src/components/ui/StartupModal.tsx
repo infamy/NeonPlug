@@ -227,8 +227,8 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                       </div>
                       <button
                         type="button"
-                        onClick={() => {
-                          const data = getSnapshotData(s.id);
+                        onClick={async () => {
+                          const data = await getSnapshotData(s.id);
                           if (data) {
                             onRestoreSnapshot(data);
                             setRecentExpanded(false);

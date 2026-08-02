@@ -6,6 +6,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { useLogStore } from '../../store/logStore';
 import { exportFullDebug, exportWriteBlocks, downloadDebug } from '../../services/debugExport';
 import { analyzeMetadata, generateMetadataReport } from '../../services/metadataAnalysis';
+import { downloadBlob } from '../../utils/download';
 import { ConfirmModal } from './ConfirmModal';
 
 export interface LogEntry {
@@ -127,8 +128,8 @@ export const DebugPanel: React.FC = () => {
     }
 
     try {
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
+      const { createZip } = await import('../../utils/zip');
+      const entries: Array<{ name: string; data: Uint8Array | string | Blob }> = [];
 
       // Convert logs to export format (Date -> ISO string)
       const exportLogs = allLogs.map(log => ({
@@ -151,33 +152,25 @@ export const DebugPanel: React.FC = () => {
         zoneComparisonData
       );
 
-      // Create read folder with data from radio
-      const readFolder = zip.folder('read');
-      if (readFolder) {
-        readFolder.file('full-debug-data.json', debugData);
-        
-        // Add individual block data
-        for (const [address, data] of blockData.entries()) {
-          const metadataInfo = blockMetadata.get(address);
-          if (metadataInfo) {
-            const metadataHex = metadataInfo.metadata.toString(16).toUpperCase().padStart(2, '0');
-            const addressHex = address.toString(16).toUpperCase().padStart(6, '0');
-            readFolder.file(`block-0x${metadataHex}-addr-0x${addressHex}.bin`, data);
-          }
+      // read/ — data from radio
+      entries.push({ name: 'read/full-debug-data.json', data: debugData });
+      for (const [address, data] of blockData.entries()) {
+        const metadataInfo = blockMetadata.get(address);
+        if (metadataInfo) {
+          const metadataHex = metadataInfo.metadata.toString(16).toUpperCase().padStart(2, '0');
+          const addressHex = address.toString(16).toUpperCase().padStart(6, '0');
+          entries.push({ name: `read/block-0x${metadataHex}-addr-0x${addressHex}.bin`, data });
         }
       }
 
-      // Create write folder with expected write data
-      const writeFolder = zip.folder('write');
-      if (writeFolder && writeBlockData.size > 0) {
-        // Add write blocks
+      // write/ — expected write data
+      if (writeBlockData.size > 0) {
         for (const [, block] of writeBlockData.entries()) {
           const metadataHex = block.metadata.toString(16).toUpperCase().padStart(2, '0');
           const addressHex = block.address.toString(16).toUpperCase().padStart(6, '0');
-          writeFolder.file(`write-block-0x${metadataHex}-addr-0x${addressHex}.bin`, block.data);
+          entries.push({ name: `write/write-block-0x${metadataHex}-addr-0x${addressHex}.bin`, data: block.data });
         }
-        
-        // Add write summary
+
         const writeSummary = {
           totalBlocks: writeBlockData.size,
           channels: channels.length,
@@ -188,9 +181,9 @@ export const DebugPanel: React.FC = () => {
             size: block.data.length,
           })),
         };
-        writeFolder.file('write-summary.json', JSON.stringify(writeSummary, null, 2));
-      } else if (writeFolder) {
-        // Add placeholder if no write data
+        entries.push({ name: 'write/write-summary.json', data: JSON.stringify(writeSummary, null, 2) });
+      } else {
+        // Placeholder if no write data
         const expectedWrite = {
           channels: channels.length,
           zones: zones.length,
@@ -198,7 +191,7 @@ export const DebugPanel: React.FC = () => {
           estimatedChannelBlocks: Math.ceil(channels.length / 125),
           estimatedZoneBlocks: zones.length > 0 ? 1 : 0,
         };
-        writeFolder.file('expected-write-data.json', JSON.stringify(expectedWrite, null, 2));
+        entries.push({ name: 'write/expected-write-data.json', data: JSON.stringify(expectedWrite, null, 2) });
       }
 
       // Add codeplug (.neonplug = zipped JSON)
@@ -248,20 +241,13 @@ export const DebugPanel: React.FC = () => {
 
       const codeplugBlob = await exportCodeplug(codeplugData, true);
       if (codeplugBlob instanceof Blob) {
-        zip.file('codeplug.neonplug', codeplugBlob);
+        entries.push({ name: 'codeplug.neonplug', data: codeplugBlob });
       }
 
       // Generate and download zip
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
+      const blob = await createZip(entries);
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-      a.download = `neonplug-full-export-${timestamp}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `neonplug-full-export-${timestamp}.zip`);
     } catch (error) {
       console.error('Error creating export:', error);
       showAlert('Failed to create export. See console for details.');

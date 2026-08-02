@@ -43,14 +43,6 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: isSingleFile ? 5000 : 1000,
       rollupOptions: isSingleFile ? undefined : {
         treeshake: {
-          moduleSideEffects: (id) => {
-            // Allow tree-shaking for exceljs
-            if (id.includes('exceljs')) {
-              return false;
-            }
-            // Default behavior for other modules
-            return null;
-          },
           propertyReadSideEffects: false,
           tryCatchDeoptimization: false,
         },
@@ -58,10 +50,6 @@ export default defineConfig(({ mode }) => {
           manualChunks: (id) => {
             // Split vendor libraries
             if (id.includes('node_modules')) {
-              // Separate exceljs as it's large
-              if (id.includes('exceljs')) {
-                return 'exceljs';
-              }
               // Combine all other vendor code into one chunk to avoid circular dependencies
               // This includes react, react-dom, zustand, reactgrid, and all other dependencies
               // While this is less optimal for caching, it eliminates circular chunk warnings
@@ -92,7 +80,7 @@ export default defineConfig(({ mode }) => {
     },
     // Optimize dependencies
     optimizeDeps: {
-      include: ['react', 'react-dom', 'zustand', 'exceljs'], // Include exceljs so it gets a proper ESM default export
+      include: ['react', 'react-dom', 'zustand'],
     },
     // Base path for deployment (empty for root)
     base: './',

@@ -18,14 +18,11 @@ const FT65_CAPS_BASE: RadioCapabilities = {
   supportsBulkRead: false,
 };
 
-/** FT-65R / FT-65E: dual-band VHF+UHF. */
+/** FT-65R / FT-65E and FT-4XR / FT-4XE: dual-band VHF+UHF. */
 export const FT65_CAPS_DUAL: RadioCapabilities = { ...FT65_CAPS_BASE };
 
-/** FT-4XR / FT-4XE: dual-band VHF+UHF. */
-export const FT4X_CAPS_DUAL: RadioCapabilities = { ...FT65_CAPS_BASE };
-
-/** FT-25R / FT-4VR: VHF-only. */
+/** FT-25R / FT-4VR: VHF-only — no UHF band, so UHF channels are filtered out before write. */
 export const FT_CAPS_VHF: RadioCapabilities = {
   ...FT65_CAPS_BASE,
-  bandLimits: { vhfMin: 136, vhfMax: 174, uhfMin: 400, uhfMax: 480 },
+  bandLimits: { vhfMin: 136, vhfMax: 174 },
 };

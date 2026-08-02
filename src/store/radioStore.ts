@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { RadioSettings, RadioInfo } from '../types/radio';
+import type { RadioInfo } from '../types/radio';
 
 type ZoneComparisonData = Array<{
   blockIndex: number;
@@ -32,7 +32,6 @@ interface RadioState {
   showPickRadioModal: boolean;
   isConnected: boolean;
   radioInfo: RadioInfo | null;
-  settings: RadioSettings | null;
   rawRadioSettingsData: Uint8Array | null;
   rawContactBlockData: Uint8Array | null;
   rawContactBlockAddress: number | null;
@@ -51,7 +50,6 @@ interface RadioState {
   connectionError: string | null;
   setConnected: (connected: boolean) => void;
   setRadioInfo: (info: RadioInfo | null) => void;
-  setSettings: (settings: RadioSettings | null) => void;
   setRawRadioSettingsData: (data: Uint8Array | null) => void;
   setRawContactBlockData: (data: Uint8Array | null, address: number | null) => void;
   setRawContactBlocks: (blocks: Map<number, Uint8Array>) => void;
@@ -74,7 +72,6 @@ export const useRadioStore = create<RadioState>((set) => ({
   showPickRadioModal: false,
   isConnected: false,
   radioInfo: null,
-  settings: null,
   rawRadioSettingsData: null,
   rawContactBlockData: null,
   rawContactBlockAddress: null,
@@ -89,7 +86,6 @@ export const useRadioStore = create<RadioState>((set) => ({
   connectionError: null,
   setConnected: (connected) => set({ isConnected: connected }),
   setRadioInfo: (info) => set({ radioInfo: info }),
-  setSettings: (settings) => set({ settings }),
   setRawRadioSettingsData: (data) => set({ rawRadioSettingsData: data }),
   setRawContactBlockData: (data, address) => set({ rawContactBlockData: data, rawContactBlockAddress: address }),
   setRawContactBlocks: (blocks) => set({ rawContactBlocks: blocks }),

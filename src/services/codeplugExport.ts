@@ -3,7 +3,8 @@
  * Exports and imports full codeplug data to/from a zipped JSON file (.neonplug)
  */
 
-import JSZip from 'jszip';
+import { createZip, readZip } from '../utils/zip';
+import { downloadBlob } from '../utils/download';
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
@@ -114,30 +115,14 @@ export async function exportCodeplug(data: CodeplugData, returnBlob?: boolean): 
   const jsonSafe = codeplugToJsonSafe(data);
   const jsonString = JSON.stringify(jsonSafe, null, 0);
 
-  const zip = new JSZip();
-  zip.file(CODEPLUG_JSON_FILENAME, jsonString);
-
-  const blob = await zip.generateAsync({
-    type: 'blob',
-    mimeType: 'application/zip',
-    compression: 'DEFLATE',
-    compressionOptions: { level: 6 },
-  });
+  const blob = await createZip([{ name: CODEPLUG_JSON_FILENAME, data: jsonString }]);
 
   if (returnBlob) {
     return blob;
   }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-  const filename = `codeplug-export-${timestamp}.neonplug`;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `codeplug-export-${timestamp}.neonplug`);
 }
 
 /**
@@ -145,38 +130,14 @@ export async function exportCodeplug(data: CodeplugData, returnBlob?: boolean): 
  */
 export async function importCodeplug(file: File): Promise<CodeplugData> {
   const buffer = await file.arrayBuffer();
-  const zip = await JSZip.loadAsync(buffer);
+  const files = await readZip(buffer);
 
-  const entry = zip.file(CODEPLUG_JSON_FILENAME);
-  if (!entry) {
+  const bytes = files.get(CODEPLUG_JSON_FILENAME);
+  if (!bytes) {
     throw new Error(`Invalid codeplug file: missing ${CODEPLUG_JSON_FILENAME}`);
   }
 
-  const text = await entry.async('string');
+  const text = new TextDecoder().decode(bytes);
   const raw = JSON.parse(text) as Record<string, unknown>;
   return jsonSafeToCodeplug(raw);
-}
-
-/**
- * Get codeplug data from all stores (stub - callers build from stores when needed)
- */
-export function getCodeplugDataFromStores(): CodeplugData {
-  return {
-    channels: [],
-    zones: [],
-    scanLists: [],
-    contacts: [],
-    digitalEmergencies: [],
-    digitalEmergencyConfig: null,
-    analogEmergencies: [],
-    radioSettings: null,
-    radioInfo: null,
-    messages: [],
-    radioIds: [],
-    quickContacts: [],
-    rxGroups: [],
-    encryptionKeys: [],
-    exportDate: new Date().toISOString(),
-    version: CODEPLUG_VERSION,
-  };
 }
