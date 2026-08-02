@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { formatPlural } from '../../../utils/formatPlural';
 import { useImportStores } from '../../../hooks/useImportStores';
 import { getNextChannelNumber, selectionCardClass } from '../../../utils/importHelpers';
-import { generateAirportChannels } from '../../../services/airportChannels';
+import { generateAirportChannels, COMMON_AIRCRAFT_FREQUENCIES } from '../../../services/airportChannels';
 import { getAirportFrequenciesWithTypes, type AirportData } from '../../../data/airportsData';
 import { SelectAllButtons } from '../SelectAllButtons';
 import { Button } from '../../ui/Button';
@@ -26,7 +26,21 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
 
   const [selectedAirports, setSelectedAirports] = useState<Set<number>>(new Set());
   const [airportZoneGrouping, setAirportZoneGrouping] = useState<'individual' | 'single'>('individual');
+  const [includeCommonFrequencies, setIncludeCommonFrequencies] = useState(false);
+  const [selectedCommonFreqs, setSelectedCommonFreqs] = useState<Set<number>>(
+    new Set(COMMON_AIRCRAFT_FREQUENCIES.map((_, i) => i))
+  );
   const [isAddingAirports, setIsAddingAirports] = useState(false);
+
+  const handleToggleCommonFreq = (index: number) => {
+    const newSelected = new Set(selectedCommonFreqs);
+    if (newSelected.has(index)) {
+      newSelected.delete(index);
+    } else {
+      newSelected.add(index);
+    }
+    setSelectedCommonFreqs(newSelected);
+  };
 
   const handleToggleAirport = (index: number) => {
     const newSelected = new Set(selectedAirports);
@@ -67,11 +81,17 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
 
       const nextChannelNumber = getNextChannelNumber(channels);
 
+      // Build the selected subset of common aircraft frequencies (if enabled)
+      const commonFreqs = includeCommonFrequencies
+        ? COMMON_AIRCRAFT_FREQUENCIES.filter((_, i) => selectedCommonFreqs.has(i))
+        : [];
+
       // Generate channels and zones for selected airports
       const result = generateAirportChannels(
         nextChannelNumber,
         selectedAirportList, // Pass selected airports
-        airportZoneGrouping === 'single' // Group all in one zone if selected
+        airportZoneGrouping === 'single', // Group all in one zone if selected
+        commonFreqs // Common aircraft frequencies to also add
       );
 
       if (result.channels.length === 0) {
@@ -188,6 +208,45 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
                     <span className="text-cool-gray">Single zone (all airports together)</span>
                   </label>
                 </div>
+                <label className="flex items-center mt-3">
+                  <input
+                    type="checkbox"
+                    checked={includeCommonFrequencies}
+                    onChange={(e) => setIncludeCommonFrequencies(e.target.checked)}
+                    className="mr-2"
+                  />
+                  <span className="text-cool-gray">Add common aircraft frequencies (Guard, UNICOM, air-to-air, etc.)</span>
+                </label>
+                {includeCommonFrequencies && (
+                  <div className="mt-2 ml-6">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs text-cool-gray opacity-75">
+                        {airportZoneGrouping === 'single'
+                          ? 'Added to the Airports zone'
+                          : 'Added as a separate "Aircraft" zone'}
+                      </span>
+                      <SelectAllButtons
+                        onSelectAll={() =>
+                          setSelectedCommonFreqs(new Set(COMMON_AIRCRAFT_FREQUENCIES.map((_, i) => i)))
+                        }
+                        onDeselectAll={() => setSelectedCommonFreqs(new Set())}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 max-h-56 overflow-y-auto">
+                      {COMMON_AIRCRAFT_FREQUENCIES.map((freq, index) => (
+                        <label key={index} className="flex items-center gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={selectedCommonFreqs.has(index)}
+                            onChange={() => handleToggleCommonFreq(index)}
+                          />
+                          <span className="text-neon-cyan min-w-[55px]">{freq.freq.toFixed(3)}</span>
+                          <span className="text-cool-gray">{freq.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <Button
                 onClick={handleAddAirportChannels}
