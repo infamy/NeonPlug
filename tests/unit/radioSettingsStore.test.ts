@@ -189,7 +189,7 @@ describe('hasChanges / getChangedFields', () => {
   });
 });
 
-describe('setSettings markAllChanged (import write-gate fix, issue #2)', () => {
+describe('setSettings markAllChanged (import write-gate fix)', () => {
   it('default (read-from-radio) marks no fields changed', () => {
     useRadioSettingsStore.getState().setSettings(makeSettings({ squelchLevel: 3, backlightBrightness: 4 }));
     expect(useRadioSettingsStore.getState().getChangedFields()).toHaveLength(0);
