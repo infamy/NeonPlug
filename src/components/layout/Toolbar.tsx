@@ -214,7 +214,11 @@ export const Toolbar: React.FC = () => {
       }
       setAnalogEmergencies(codeplugData.analogEmergencies);
       if (codeplugData.radioSettings) {
-        setRadioSettings(codeplugData.radioSettings);
+        // Mark all imported settings as changed so a subsequent Write pushes
+        // the full block to the radio. Without this, imported settings load
+        // into the UI but never get written (issue #2 — the write path only
+        // encodes changedFields, which is empty right after import).
+        setRadioSettings(codeplugData.radioSettings, { markAllChanged: true });
       }
       setRadioInfo(codeplugData.radioInfo ?? null);
       setMessages(codeplugData.messages ?? []);
