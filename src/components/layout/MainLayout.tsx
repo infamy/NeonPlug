@@ -15,11 +15,13 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   onTabChange,
 }) => {
   return (
-    <div className="min-h-screen bg-dark-charcoal flex flex-col">
+    <div className="h-screen overflow-hidden bg-dark-charcoal flex flex-col">
       <StatusBar />
       <Toolbar />
       <TabNavigation activeTab={activeTab} onTabChange={onTabChange} />
-      <main className="flex-1 p-6">
+      {/* Single scroll surface for tabs that overflow; tabs that manage their
+          own height (Channels) fit exactly and produce no scrollbar here. */}
+      <main className="flex-1 min-h-0 overflow-y-auto p-6">
         {children}
       </main>
     </div>

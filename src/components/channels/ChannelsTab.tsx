@@ -123,8 +123,8 @@ export const ChannelsTab: React.FC = () => {
   }, [channels, vfoChannels, searchQuery]);
 
   return (
-    <div className="h-full">
-      <div className="mb-4 flex items-center justify-between">
+    <div className="h-full flex flex-col min-h-0">
+      <div className="mb-4 flex items-center justify-between shrink-0">
         <h2 className="text-2xl font-bold text-neon-cyan">Channels</h2>
         <div className="flex items-center gap-4">
           <div className="text-cool-gray">
@@ -139,7 +139,7 @@ export const ChannelsTab: React.FC = () => {
           </button>
         </div>
       </div>
-      <div className="mb-3 flex items-center gap-3">
+      <div className="mb-3 flex items-center gap-3 shrink-0">
         <div className="relative flex-1 min-w-0">
           <input
             type="text"
@@ -185,13 +185,15 @@ export const ChannelsTab: React.FC = () => {
           </p>
         )}
       </div>
-      <ChannelsTable
-        channels={filteredChannels}
-        scrollToChannel={scrollToChannel}
-        onScrollComplete={handleScrollComplete}
-        selectedChannelNumbers={selectedChannelNumbers}
-        onSelectionChange={setSelectedChannelNumbers}
-      />
+      <div className="flex-1 min-h-0">
+        <ChannelsTable
+          channels={filteredChannels}
+          scrollToChannel={scrollToChannel}
+          onScrollComplete={handleScrollComplete}
+          selectedChannelNumbers={selectedChannelNumbers}
+          onSelectionChange={setSelectedChannelNumbers}
+        />
+      </div>
       <ConfirmModal
         isOpen={deleteSelectedOpen}
         onClose={() => setDeleteSelectedOpen(false)}
