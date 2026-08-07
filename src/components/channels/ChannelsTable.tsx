@@ -290,7 +290,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]" title="Receive tone (CTCSS/DCS)">RX Tone</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]" title="Transmit tone (CTCSS/DCS)">TX Tone</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Lone Worker">LW</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[50px]" title="Scan list assignment">Scan List</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="Scan list assignment">Scan List</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Free to Air">FTA</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Emergency">Emerg</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Emergency acknowledge">Emerg Ack</th>
@@ -656,14 +656,22 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                   <select
                     value={channel.scanListId}
                     onChange={(e) => handleCellChange(channel.number, 'scanListId', parseInt(e.target.value) || 0)}
+                    title={
+                      channel.scanListId > 0
+                        ? `${channel.scanListId}: ${scanLists[channel.scanListId - 1]?.name ?? '(missing list)'}`
+                        : 'No scan list'
+                    }
                     className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
                   >
                     <option value={0}>None</option>
                     {scanLists.map((scanList, index) => (
                       <option key={scanList.name} value={index + 1}>
-                        {scanList.name}
+                        {index + 1}: {scanList.name}
                       </option>
                     ))}
+                    {channel.scanListId > scanLists.length && (
+                      <option value={channel.scanListId}>{channel.scanListId}: (missing list)</option>
+                    )}
                   </select>
                 </td>
                 <td className="px-2 py-2 text-center">

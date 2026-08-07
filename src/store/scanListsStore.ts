@@ -49,7 +49,8 @@ export const useScanListsStore = create<ScanListsState>((set) => ({
     if (!trimmedNewName || trimmedNewName.length === 0) {
       return false;
     }
-    if (trimmedNewName.length > 16) {
+    // Radio name field is 11 bytes; longer names are truncated on write
+    if (trimmedNewName.length > 11) {
       return false;
     }
     

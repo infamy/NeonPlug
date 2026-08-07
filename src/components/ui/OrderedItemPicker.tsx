@@ -33,6 +33,9 @@ interface OrderedItemPickerProps {
   fillHeight?: boolean;
   /** Disable the root padding when nested in an already-padded container */
   padded?: boolean;
+  /** Optional per-row controls rendered next to the reorder buttons
+      (e.g. the scan list's priority toggles) */
+  renderRowExtras?: (id: number) => React.ReactNode;
 }
 
 export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
@@ -46,6 +49,7 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
   onAlert,
   fillHeight = false,
   padded = true,
+  renderRowExtras,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -112,7 +116,8 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
                   <span className="text-cool-gray text-xs w-8">{index + 1}.</span>
                   <span className="text-white text-xs">{item.label}</span>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex gap-1 items-center">
+                  {renderRowExtras?.(item.id)}
                   {index > 0 && (
                     <button
                       onClick={() => handleReorder(index, index - 1)}

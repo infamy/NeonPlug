@@ -24,7 +24,7 @@ export interface Channel {
   // Scan & Bandwidth (0x19)
   bandwidth: Bandwidth;        // Bit 7: 0=12.5KHz/Narrow, 1=25KHz/Wide (spec appears inverted)
   scanAdd: boolean;            // Bit 6: 0=Off, 1=On
-  scanListId: number;         // Bits 5-2: 0-15
+  scanListId: number;         // Byte 0x19 bits 5-0: 0=None, 1-32 = 1-indexed scan list
   
   // Talkaround & APRS (0x1A)
   forbidTalkaround: boolean;  // Bit 7: 0=Allow, 1=Forbid
