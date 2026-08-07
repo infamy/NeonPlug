@@ -236,7 +236,6 @@ export const DebugPanel: React.FC = () => {
         rxGroups: rxGroupsStore.groups,
         encryptionKeys: encryptionKeysStore.keys,
         exportDate: new Date().toISOString(),
-        version: '1.0.0',
       };
 
       const codeplugBlob = await exportCodeplug(codeplugData, true);

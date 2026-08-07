@@ -6,7 +6,9 @@ import { useRadioStore } from '../../store/radioStore';
 import { isWebSerialSupported, isWebBluetoothSupported, getSupportedBrowsers } from '../../utils/browserSupport';
 import { downloadOfflineAsZip } from '../../utils/offlineDownload';
 import { getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
-import type { CodeplugData } from '../../services/codeplugExport';
+import { readWithFormatOverride, type CodeplugData } from '../../services/codeplugExport';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
+import { confirmNewerFormat } from '../../utils/codeplugFormatPrompt';
 
 const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
 
@@ -58,6 +60,8 @@ export const StartupModal: React.FC<StartupModalProps> = ({
   const [recentExpanded, setRecentExpanded] = useState(false);
   const [snapshots, setSnapshots] = useState<ReturnType<typeof getSnapshots>>([]);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const { confirm, confirmProps } = useConfirmDialog();
   const { selectedRadioModel, setSelectedRadioModel } = useRadioStore();
 
   useEffect(() => {
@@ -228,7 +232,18 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                       <button
                         type="button"
                         onClick={async () => {
-                          const data = await getSnapshotData(s.id);
+                          let data;
+                          try {
+                            data = await readWithFormatOverride(
+                              (opts) => getSnapshotData(s.id, opts),
+                              confirmNewerFormat(confirm)
+                            );
+                          } catch (error) {
+                            setRestoreError(
+                              error instanceof Error ? error.message : 'Unknown error'
+                            );
+                            return;
+                          }
                           if (data) {
                             onRestoreSnapshot(data);
                             setRecentExpanded(false);
@@ -342,6 +357,15 @@ export const StartupModal: React.FC<StartupModalProps> = ({
         confirmLabel="Clear all"
         variant="alert"
       />
+      <ConfirmModal
+        isOpen={restoreError !== null}
+        onClose={() => setRestoreError(null)}
+        title="Cannot restore snapshot"
+        message={restoreError ?? ''}
+        confirmLabel="OK"
+        variant="alert"
+      />
+      <ConfirmModal {...confirmProps} />
     </div>
   );
 };

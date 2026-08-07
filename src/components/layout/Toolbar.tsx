@@ -21,6 +21,11 @@ import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type Snaps
 // Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { useAlert } from '../../hooks/useAlert';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
+import { confirmNewerFormat } from '../../utils/codeplugFormatPrompt';
+// Statically imported: codeplugSnapshots already pulls codeplugExport into this
+// component's graph, so lazy-loading it here would save nothing.
+import { readWithFormatOverride } from '../../services/codeplugExport';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { isWebSerialSupported } from '../../utils/browserSupport';
@@ -51,6 +56,7 @@ export const Toolbar: React.FC = () => {
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
   const [writeWarningMessage, setWriteWarningMessage] = useState('');
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
+  const { confirm, confirmProps } = useConfirmDialog();
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [convertTargetModel, setConvertTargetModel] = useState<string>(() => getMigrationTargetModels()[0] ?? 'DM-32UV');
   const [readDropdownOpen, setReadDropdownOpen] = useState(false);
@@ -105,7 +111,6 @@ export const Toolbar: React.FC = () => {
     rxGroups,
     encryptionKeys,
     exportDate: new Date().toISOString(),
-    version: '1.0.0',
   });
 
   const buildCodeplugDataFromStores = () => {
@@ -138,7 +143,6 @@ export const Toolbar: React.FC = () => {
       rxGroups: rgs.groups,
       encryptionKeys: eks.keys,
       exportDate: new Date().toISOString(),
-      version: '1.0.0',
     };
   };
 
@@ -201,8 +205,13 @@ export const Toolbar: React.FC = () => {
     try {
       // Lazy load codeplug import when needed
       const { importCodeplug } = await import('../../services/codeplugExport');
-      const codeplugData = await importCodeplug(file);
-      
+      const codeplugData = await readWithFormatOverride(
+        (opts) => importCodeplug(file, opts),
+        confirmNewerFormat(confirm)
+      );
+      // null = user declined the newer-format warning; not an error.
+      if (!codeplugData) return;
+
       // Populate all stores with imported data
       setChannels(codeplugData.channels);
       setZones(codeplugData.zones);
@@ -416,7 +425,20 @@ export const Toolbar: React.FC = () => {
   };
 
   const handleRestoreSnapshot = async (id: string) => {
-    const data = await getSnapshotData(id);
+    let data;
+    try {
+      data = await readWithFormatOverride(
+        (opts) => getSnapshotData(id, opts),
+        confirmNewerFormat(confirm)
+      );
+    } catch (error) {
+      // Previously getSnapshotData swallowed everything and Restore just did
+      // nothing; a format reject now says why.
+      showAlert(
+        `Cannot restore snapshot: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+      return;
+    }
     if (!data) return;
     setChannels(data.channels);
     setZones(data.zones);
@@ -695,6 +717,7 @@ export const Toolbar: React.FC = () => {
         confirmLabel="Clear all"
         variant="alert"
       />
+      <ConfirmModal {...confirmProps} />
     </>
   );
 };
