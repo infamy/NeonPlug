@@ -1,0 +1,35 @@
+name: Refresh RadioID Data
+
+on:
+  schedule:
+    - cron: '0 6 */3 * *'  # Every 3 days at 06:00 UTC
+  workflow_dispatch:        # Manual trigger via GitHub Actions UI
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download latest RadioID data
+        run: |
+          curl -fsSL "https://radioid.net/static/user.csv" -o src/data/radioid-users.csv
+          echo "user.csv: $(wc -l < src/data/radioid-users.csv) rows, $(wc -c < src/data/radioid-users.csv | tr -d ' ') bytes"
+          curl -fsSL "https://radioid.net/static/rptrs.json" -o src/data/rptrs.json
+          echo "rptrs.json: $(wc -c < src/data/rptrs.json | tr -d ' ') bytes"
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/data/radioid-users.csv src/data/rptrs.json
+          if git diff --staged --quiet; then
+            echo "No changes — data is already up to date"
+          else
+            git commit -m "chore: refresh RadioID data $(date -u +%Y-%m-%d)"
+            git push
+          fi
