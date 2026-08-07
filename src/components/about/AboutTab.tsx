@@ -6,13 +6,22 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { Button } from '../ui/Button';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { downloadOfflineAsZip } from '../../utils/offlineDownload';
+import { VERSION_LABEL, COMMIT_HASH, BUILD_TIME, IS_RELEASE_BUILD, RELEASE_NOTES_URL } from '../../utils/version';
+import { latestEntry } from '../../utils/changelog';
+import changelogSource from '../../../CHANGELOG.md?raw';
 
 const OFFLINE_FALLBACK_MESSAGE =
-  'The offline version is available on GitHub Pages.\n\n' +
-  'Click OK to open it, then use your browser\'s "Save Page As" to save as neonplug.html.\n\n' +
+  'The latest tagged release is published as a single downloadable HTML file.\n\n' +
+  'Click OK to download neonplug-latest.html from GitHub Releases.\n\n' +
   'Or build it locally using the instructions below.';
 
-const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
+// Permanent redirect to the newest release's asset — the release workflow uploads
+// every build twice, as neonplug-vX.Y.Z.html and again as neonplug-latest.html,
+// so this URL never needs updating.
+const OFFLINE_VERSION_URL =
+  'https://github.com/infamy/NeonPlug/releases/latest/download/neonplug-latest.html';
+
+const LATEST_RELEASE = latestEntry(changelogSource);
 
 export const AboutTab: React.FC = () => {
   const { debugMode, setDebugMode } = useDebugStore();
@@ -29,6 +38,44 @@ export const AboutTab: React.FC = () => {
       </div>
 
       <div className="space-y-6">
+        {/* What's new — parsed from the bundled CHANGELOG.md so it works offline */}
+        {LATEST_RELEASE && (
+          <Card>
+            <div className="flex items-baseline justify-between gap-3 flex-wrap">
+              <SectionTitle>What's New</SectionTitle>
+              <span className="text-xs font-mono text-muted">
+                {VERSION_LABEL}
+                {LATEST_RELEASE.date && ` · ${LATEST_RELEASE.date}`}
+              </span>
+            </div>
+            {!IS_RELEASE_BUILD && (
+              <p className="text-xs text-muted mb-3">
+                You're on a development build, which is ahead of the notes below.
+              </p>
+            )}
+            <ul className="list-disc list-inside text-cool-gray text-sm space-y-1 ml-4">
+              {LATEST_RELEASE.items.slice(0, 12).map((item, i) => (
+                <li key={i}>{item}</li>
+              ))}
+            </ul>
+            {LATEST_RELEASE.items.length > 12 && (
+              <p className="text-xs text-muted mt-2">
+                …and {LATEST_RELEASE.items.length - 12} more.
+              </p>
+            )}
+            <p className="text-xs text-muted mt-3">
+              <a
+                href={RELEASE_NOTES_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="link-accent"
+              >
+                Full release notes and previous versions
+              </a>
+            </p>
+          </Card>
+        )}
+
         {/* Offline Version */}
         <Card>
           <SectionTitle>Offline Version</SectionTitle>
@@ -203,15 +250,20 @@ npm run build:single</code>
               <div className="text-xs text-cool-gray font-mono">
                 <div>
                   <span className="text-cool-gray">Version: </span>
-                  <span className="text-neon-cyan">
-                    {typeof __COMMIT_HASH__ !== 'undefined' ? __COMMIT_HASH__ : 'dev'}
-                  </span>
+                  <span className="text-neon-cyan">{VERSION_LABEL}</span>
+                  {!IS_RELEASE_BUILD && (
+                    <span className="text-muted"> (development build)</span>
+                  )}
                 </div>
-                {typeof __BUILD_TIME__ !== 'undefined' && (
+                <div className="mt-1">
+                  <span className="text-cool-gray">Commit: </span>
+                  <span className="text-neon-cyan">{COMMIT_HASH}</span>
+                </div>
+                {BUILD_TIME && (
                   <div className="mt-1">
                     <span className="text-cool-gray">Built: </span>
                     <span className="text-neon-cyan">
-                      {new Date(__BUILD_TIME__).toLocaleString()}
+                      {new Date(BUILD_TIME).toLocaleString()}
                     </span>
                   </div>
                 )}
