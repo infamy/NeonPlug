@@ -254,12 +254,13 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   // Scan & Bandwidth (0x19)
   // Bit 7 (mask 0x80): Bandwidth (0=12.5kHz/Narrow, 1=25kHz/Wide) - NOTE: Spec appears inverted!
   // Bit 6 (mask 0x40): Scan Add (0=Off, 1=On)
-  // Bits 5-2 (mask 0x3C): Scan List ID (0-15)
-  // Bits 1-0 (mask 0x03): Reserved
+  // Bits 5-0 (mask 0x3F): Scan List ID (0=None, 1-32 = 1-indexed scan list)
+  // The spec claims bits 5-2, but a real radio with channels referencing 7 scan
+  // lists stores 0x42/0x43/... here — the ID is the low 6 bits (2026-08 dump).
   const scanBw = data[0x19];
   const bandwidth: Channel['bandwidth'] = (scanBw & 0x80) !== 0 ? '25kHz' : '12.5kHz';
   const scanAdd = (scanBw & 0x40) !== 0;
-  const scanListId = (scanBw >> 2) & 0x0F;
+  const scanListId = scanBw & 0x3F;
 
   // Talkaround & APRS (0x1A)
   // Bit 7 (mask 0x80): Forbid Talkaround (0=Allow, 1=Forbid)
@@ -605,7 +606,7 @@ export function encodeChannel(channel: Channel): Uint8Array {
   let scanBw = 0;
   if (channel.bandwidth === '25kHz') scanBw |= 0x80; // Bit 7: 1=25kHz, 0=12.5kHz
   if (channel.scanAdd) scanBw |= 0x40; // Bit 6
-  scanBw |= (channel.scanListId << 2) & 0x3C; // Bits 5-2
+  scanBw |= channel.scanListId & 0x3F; // Bits 5-0: 0=None, 1-32 = scan list index
   data[0x19] = scanBw;
 
   // Talkaround & APRS (0x1A)
@@ -989,16 +990,26 @@ export function encodeZone(zone: Zone, _zoneIndex: number): Uint8Array {
  * - Entry 3: offset 115
  * 
  * 57-Byte Entry Structure:
- * - +0x00: Name (11 bytes, null-terminated, max 10 chars)
- * - +0x0B: Channel Count (1 byte, 0-15)
+ * - +0x00: Name (11 bytes, null-terminated only when shorter than 11 chars —
+ *          an 11-char name fills the field with no terminator)
+ * - +0x0B: Channel Count (1 byte; the OEM CPS writes members + 1 when it has
+ *          populated +0x0F — the raw byte can overstate real membership)
  * - +0x0C: CTC/TX Mode (1 byte, bits 0-1: CTC, bits 2-3: TX)
- * - +0x0D: Hang Time (1 byte, tenths of seconds, 1-255 = 0.1s to 25.5s)
+ * - +0x0D: Hang Time (1 byte, 0.5s steps: 6 = 3.0s. The spec said tenths of a
+ *          second, but a radio showing 3.0s in the CPS stores 6 here)
  * - +0x0E: Priority Types (1 byte, bits 0-3: Pri1 Type, bits 4-7: Pri2 Type)
- * - +0x0F: Priority Channel 1 (2 bytes LE, stored directly)
- * - +0x11: Designated TX Channel (2 bytes LE, ENCODED with -2)
- * - +0x13: Priority Channel 2 (2 bytes LE, ENCODED with -2)
+ * - +0x0F: NOT a member (2 bytes LE). The OEM CPS moves the first grid member
+ *          here on write, but a channel in this slot is not scanned and not
+ *          shown by the radio or the CPS grid (hardware-verified 2026-08-07).
+ *          True purpose unknown; left 0 on write.
+ * - +0x11: Priority Channel 1 (2 bytes LE, stored DIRECTLY, must be a member)
+ * - +0x13: Priority Channel 2 (2 bytes LE, stored DIRECTLY, must be a member)
+ *          (hardware-confirmed via OEM CPS writes; the old spec's
+ *          labels/-2 encodings were wrong. Designated TX Channel's real
+ *          offset is unknown — possibly +0x15.)
  * - +0x15: Unknown (5 bytes)
- * - +0x1A: Channel List (30 bytes, uint16 array LE, 0x0000 terminated, max 15 channels)
+ * - +0x1A: Channel List (30 bytes, uint16 array LE, 0x0000 terminated,
+ *          max 15 members — this IS the entire effective membership)
  * - +0x38: Padding (1 byte)
  */
 export function parseScanLists(
@@ -1027,70 +1038,71 @@ export function parseScanLists(
     // Extract 57-byte entry
     const entry = data.slice(entryOffset, entryOffset + BLOCK_SIZE.SCAN_LIST);
     
-    // Name at +0x00 (11 bytes, null-terminated, max 10 chars)
+    // Name at +0x00 (11 bytes; an 11-char name has no null terminator)
     const nameBytes = entry.slice(0x00, 0x0B);
     const nullIndex = nameBytes.indexOf(0);
+    const nameEnd = nullIndex >= 0 ? nullIndex : nameBytes.length;
     let name = '';
-    if (nullIndex >= 0 && nullIndex > 0) {
+    if (nameEnd > 0) {
       name = new TextDecoder('ascii', { fatal: false })
-        .decode(nameBytes.slice(0, nullIndex))
+        .decode(nameBytes.slice(0, nameEnd))
         .trim();
     }
     if (!name) {
       name = `Scan List ${listNum}`;
     }
-    
-    // Channel Count at +0x0B (1 byte, 0-15)
-    const channelCount = entry[0x0B];
+
+    // Channel Count at +0x0B: raw byte only — the OEM CPS writes members + 1
+    // when +0x0F is populated, so real membership comes from the +0x1A list.
     
     // CTC/TX Mode at +0x0C (1 byte)
     const ctcTxMode = entry[0x0C];
     const ctcScanMode = (ctcTxMode & 0x03); // Bits 0-1
     const scanTxMode = ((ctcTxMode >> 2) & 0x03); // Bits 2-3
     
-    // Hang Time at +0x0D (1 byte, tenths of seconds)
+    // Hang Time at +0x0D (1 byte, 0.5s steps)
     const hangTime = entry[0x0D] || undefined;
-    
+
     // Priority Types at +0x0E (1 byte)
     const priorityTypes = entry[0x0E];
     const priority1Type = (priorityTypes & 0x0F); // Bits 0-3
     const priority2Type = ((priorityTypes >> 4) & 0x0F); // Bits 4-7
-    
-    // Priority Channel 1 at +0x0F (2 bytes LE, stored directly)
-    const priorityCh1Raw = entry[0x0F] | (entry[0x10] << 8);
+
+    // +0x0F (2 bytes LE): NOT a scannable member. Hardware-verified
+    // 2026-08-07 on a DP570UV: a channel written here does not appear in the
+    // radio's scan menu or the CPS grid — it is effectively removed from the
+    // list. The OEM CPS moves the first grid member into this slot on write
+    // and its Scan Numb column counts it (which is why CPS-written lists
+    // read count = 1 + list length), but only the +0x1A list is real
+    // membership (max 15). The slot's true purpose is unknown; we neither
+    // parse it as a member nor write to it.
+
+    // Priority Channel 1 at +0x11 (2 bytes LE, stored DIRECTLY — not -2
+    // encoded). Hardware-confirmed 2026-08-07: setting FRS3 (channel 3) as
+    // priority in the OEM CPS wrote 03 00 here with priority1Type = 2. The
+    // old spec mislabeled this slot "Designated TX Channel".
+    const priorityCh1Raw = entry[0x11] | (entry[0x12] << 8);
     const priorityChannel1 = (priority1Type === 2 && priorityCh1Raw > 0) ? priorityCh1Raw : undefined;
-    
-    // Designated TX Channel at +0x11 (2 bytes LE, ENCODED with -2)
-    const designatedTxRaw = entry[0x11] | (entry[0x12] << 8);
-    let designatedTxChannel: number | undefined;
-    // Decode: if type==0 → 0 (None), if type==1 → 1 (Current), if type==2 → stored+2
-    const designatedTxType = (scanTxMode === 2) ? 2 : (scanTxMode === 1 ? 1 : 0);
-    if (designatedTxType === 0) {
-      designatedTxChannel = undefined; // None
-    } else if (designatedTxType === 1) {
-      designatedTxChannel = undefined; // Current (we'll store in scanTxMode instead)
-    } else {
-      designatedTxChannel = designatedTxRaw + 2;
-    }
-    
-    // Priority Channel 2 at +0x13 (2 bytes LE, ENCODED with -2)
+
+    // Designated TX Channel: storage offset UNKNOWN. +0x11 was believed to
+    // hold it (-2 encoded), but hardware proved +0x11 is Priority Channel 1.
+    // Until its real offset is found, it is not parsed.
+    const designatedTxChannel: number | undefined = undefined;
+
+    // Priority Channel 2 at +0x13 (2 bytes LE, stored DIRECTLY — not -2
+    // encoded). Hardware-confirmed 2026-08-07: setting channel 75 as
+    // Priority 2 in the OEM CPS wrote 4B 00 here with the priority-types
+    // high nibble = 2.
     const priorityCh2Raw = entry[0x13] | (entry[0x14] << 8);
-    let priorityChannel2: number | undefined;
-    // Decode: if type==0 → 0 (None), if type==1 → 1 (Current), if type==2 → stored+2
-    if (priority2Type === 0) {
-      priorityChannel2 = undefined; // None
-    } else if (priority2Type === 1) {
-      priorityChannel2 = undefined; // Current (stored in priority2Type)
-    } else {
-      priorityChannel2 = priorityCh2Raw + 2;
-    }
-    
-    // Channel List at +0x1A (30 bytes, uint16 array LE, 0x0000 terminated, max 15 channels)
+    const priorityChannel2 = (priority2Type === 2 && priorityCh2Raw > 0) ? priorityCh2Raw : undefined;
+
+    // Membership: the +0x1A list only
+    // (30 bytes, uint16 array LE, 0x0000 terminated, max 15 entries)
     const channels: number[] = [];
     for (let i = 0; i < 15; i++) {
       const chOffset = 0x1A + (i * 2);
       if (chOffset + 2 > entry.length) break;
-      
+
       const chNum = entry[chOffset] | (entry[chOffset + 1] << 8);
       if (chNum === 0 || chNum === 0xFFFF) {
         break; // End of channel list
@@ -1099,11 +1111,13 @@ export function parseScanLists(
         channels.push(chNum);
       }
     }
-    
+
     const scanList: ScanList = {
       name,
       channels,
-      channelCount,
+      // The raw count byte often reads channels.length + 1 because the OEM
+      // CPS counts the phantom +0x0F entry; report the real membership.
+      channelCount: channels.length,
       ctcScanMode,
       scanTxMode,
       hangTime,
@@ -1137,16 +1151,25 @@ export function encodeScanList(scanList: ScanList, _listNum: number): Uint8Array
   // Initialize to 0x00
   data.fill(0x00);
   
-  // Name at +0x00 (11 bytes, null-terminated, max 10 chars)
-  const nameBytes = new TextEncoder().encode(scanList.name.slice(0, 10));
-  const nameLength = Math.min(nameBytes.length, 10);
+  // Name at +0x00 (11 bytes; null-terminated only when shorter than 11 chars)
+  const nameBytes = new TextEncoder().encode(scanList.name.slice(0, 11));
+  const nameLength = Math.min(nameBytes.length, 11);
   for (let i = 0; i < nameLength; i++) {
     data[0x00 + i] = nameBytes[i];
   }
-  data[nameLength] = 0; // Null terminator
-  
+  if (nameLength < 11) {
+    data[nameLength] = 0; // Null terminator
+  }
+
+  // Membership, max 15, all at +0x1A. Do NOT put a member into +0x0F — a
+  // channel written there is not scanned and effectively vanishes from the
+  // list (hardware-verified 2026-08-07; the old-NeonPlug format of
+  // +0x0F = 0 + members at +0x1A is the one the radio displays and scans
+  // correctly).
+  const members = scanList.channels.slice(0, 15);
+
   // Channel Count at +0x0B (1 byte, 0-15)
-  const channelCount = Math.min(scanList.channels.length, 15);
+  const channelCount = members.length;
   data[0x0B] = channelCount;
   
   // CTC/TX Mode at +0x0C (1 byte)
@@ -1154,49 +1177,60 @@ export function encodeScanList(scanList: ScanList, _listNum: number): Uint8Array
   const scanTxMode = (scanList.scanTxMode || 0) & 0x03;
   data[0x0C] = ctcScanMode | (scanTxMode << 2);
   
-  // Hang Time at +0x0D (1 byte, tenths of seconds)
+  // Hang Time at +0x0D (1 byte, 0.5s steps: 6 = 3.0s)
   if (scanList.hangTime) {
     data[0x0D] = scanList.hangTime & 0xFF;
   }
-  
-  // Priority Types at +0x0E (1 byte)
-  const priority1Type = (scanList.priority1Type || 0) & 0x0F;
-  const priority2Type = (scanList.priority2Type || 0) & 0x0F;
+
+  // Priority Types at +0x0E (1 byte). A "Specific" type whose channel is not
+  // a list member is downgraded to None — the OEM CPS never produces that
+  // state and the radio discards it (observed 2026-08-07).
+  const rawPri1Type = (scanList.priority1Type || 0) & 0x0F;
+  const rawPri2Type = (scanList.priority2Type || 0) & 0x0F;
+  const pri1Valid = rawPri1Type === 2
+    && scanList.priorityChannel1 !== undefined
+    && members.includes(scanList.priorityChannel1);
+  const pri2Valid = rawPri2Type === 2
+    && scanList.priorityChannel2 !== undefined
+    && members.includes(scanList.priorityChannel2);
+  const priority1Type = (rawPri1Type === 2 && !pri1Valid) ? 0 : rawPri1Type;
+  const priority2Type = (rawPri2Type === 2 && !pri2Valid) ? 0 : rawPri2Type;
   data[0x0E] = priority1Type | (priority2Type << 4);
-  
-  // Priority Channel 1 at +0x0F (2 bytes LE, stored directly)
-  if (scanList.priorityChannel1 && priority1Type === 2) {
-    const ch1 = scanList.priorityChannel1;
-    data[0x0F] = ch1 & 0xFF;
-    data[0x10] = (ch1 >> 8) & 0xFF;
+
+  // +0x0F intentionally left 0 — see parseScanLists: a channel stored there
+  // is removed from effective membership by the radio.
+
+  // Priority Channel 1 at +0x11 (2 bytes LE, stored DIRECTLY).
+  // Hardware-confirmed 2026-08-07: the OEM CPS wrote 03 00 here for FRS3
+  // with priority1Type = 2. Do NOT write designatedTxChannel here — its
+  // real storage offset is unknown and this slot belongs to priority 1.
+  // A priority channel MUST be a member of the list — the OEM CPS enforces
+  // this and the radio discards non-member priorities (observed on a
+  // DP570UV: FRS 10 as priority of a list it wasn't in came back empty).
+  if (pri1Valid) {
+    const pri1 = scanList.priorityChannel1!;
+    data[0x11] = pri1 & 0xFF;
+    data[0x12] = (pri1 >> 8) & 0xFF;
   }
   
-  // Designated TX Channel at +0x11 (2 bytes LE, ENCODED with -2)
-  // Encode: if (ch < 2) store 0, type=ch; else store ch-2, type=2
-  if (scanList.designatedTxChannel !== undefined) {
-    const ch = scanList.designatedTxChannel;
-    const encoded = ch < 2 ? 0 : ch - 2;
-    data[0x11] = encoded & 0xFF;
-    data[0x12] = (encoded >> 8) & 0xFF;
+  // Priority Channel 2 at +0x13 (2 bytes LE, stored DIRECTLY —
+  // hardware-confirmed 2026-08-07, same as Priority Channel 1). Must also
+  // be a list member.
+  if (pri2Valid) {
+    const pri2 = scanList.priorityChannel2!;
+    data[0x13] = pri2 & 0xFF;
+    data[0x14] = (pri2 >> 8) & 0xFF;
   }
   
-  // Priority Channel 2 at +0x13 (2 bytes LE, ENCODED with -2)
-  // Encode: if (ch < 2) store 0, type=ch; else store ch-2, type=2
-  if (scanList.priorityChannel2 !== undefined && priority2Type === 2) {
-    const ch = scanList.priorityChannel2;
-    const encoded = ch < 2 ? 0 : ch - 2;
-    data[0x13] = encoded & 0xFF;
-    data[0x14] = (encoded >> 8) & 0xFF;
-  }
-  
-  // Channel List at +0x1A (30 bytes, uint16 array LE, 0x0000 terminated, max 15 channels)
-  for (let i = 0; i < channelCount && i < 15; i++) {
-    const chNum = scanList.channels[i];
+  // Channel List at +0x1A (30 bytes, uint16 array LE, 0x0000 terminated):
+  // the entire membership, max 15.
+  for (let i = 0; i < channelCount; i++) {
+    const chNum = members[i];
     const offset = 0x1A + (i * 2);
     data[offset] = chNum & 0xFF;
     data[offset + 1] = (chNum >> 8) & 0xFF;
   }
-  // End marker (0x0000 after last channel)
+  // End marker (0x0000 after the last list entry)
   if (channelCount < 15) {
     const endOffset = 0x1A + (channelCount * 2);
     data[endOffset] = 0x00;

@@ -436,14 +436,22 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         <select
           value={channel.scanListId}
           onChange={(e) => handleCellChange(channel.number, 'scanListId', parseInt(e.target.value) || 0)}
-          className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[120px]"
+          title={
+            channel.scanListId > 0
+              ? `${channel.scanListId}: ${scanLists[channel.scanListId - 1]?.name ?? '(missing list)'}`
+              : 'No scan list'
+          }
+          className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full min-w-[100px] max-w-[120px]"
         >
           <option value={0}>None</option>
           {scanLists.map((scanList, index) => (
             <option key={scanList.name} value={index + 1}>
-              {scanList.name}
+              {index + 1}: {scanList.name}
             </option>
           ))}
+          {channel.scanListId > scanLists.length && (
+            <option value={channel.scanListId}>{channel.scanListId}: (missing list)</option>
+          )}
         </select>
       </td>
       <td className="px-2 py-2 text-center">

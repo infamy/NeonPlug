@@ -186,7 +186,7 @@ export const ChannelParserPanel: React.FC<ChannelParserPanelProps> = ({
                 const scanBw = channelBytes[0x19];
                 const bandwidth = (scanBw & 0x80) !== 0 ? '25kHz' : '12.5kHz';
                 const scanAdd = (scanBw & 0x40) !== 0;
-                const scanListId = (scanBw >> 2) & 0x0F;
+                const scanListId = scanBw & 0x3F;
 
                 const talkaroundAprs = channelBytes[0x1A];
                 const forbidTalkaround = (talkaroundAprs & 0x80) !== 0;
@@ -388,7 +388,7 @@ export const ChannelParserPanel: React.FC<ChannelParserPanelProps> = ({
                 }},
                 { offset: 0x19, label: 'Bandwidth (0x19 bit 7)', getValue: (f: typeof fields1) => f.bandwidth },
                 { offset: 0x19, label: 'Scan Add (0x19 bit 6)', getValue: (f: typeof fields1) => f.scanAdd ? 'Yes' : 'No' },
-                { offset: 0x19, label: 'Scan List ID (0x19 bits 5-2)', getValue: (f: typeof fields1) => f.scanListId.toString() },
+                { offset: 0x19, label: 'Scan List ID (0x19 bits 5-0)', getValue: (f: typeof fields1) => f.scanListId.toString() },
                 { offset: 0x1A, label: 'Talkaround & APRS (0x1A)', getValue: (f: typeof fields1) => {
                   const talkaroundAprs = f.bytes[0x1A];
                   return `0x${talkaroundAprs.toString(16).toUpperCase().padStart(2, '0')} (forbidTalkaround=${f.forbidTalkaround}, aprsReceive=${f.aprsReceive})`;

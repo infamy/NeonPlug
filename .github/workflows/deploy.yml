@@ -1,5 +1,13 @@
 name: Deploy to GitHub Pages
 
+# The published site is assembled fresh on every run, because deploy-pages
+# replaces the whole site each time. Layout:
+#
+#   /                  latest published release (falls back to main until the
+#                      first release exists)
+#   /dev/              latest main
+#   /test/<branch>/    every open PR
+#   /*.json, /*.csv    datasets, always from main — see "Copy datasets" below
 on:
   push:
     branches:
@@ -11,6 +19,13 @@ on:
       - opened
       - synchronize
       - reopened
+  # Fires only for a release published by a human through the GitHub UI — events
+  # raised by GITHUB_TOKEN never create workflow runs, so release.yml cannot rely
+  # on this and dispatches a run explicitly instead. Keep both: this covers the
+  # manual path, the dispatch covers the workflow path.
+  release:
+    types:
+      - published
   workflow_dispatch:
 
 permissions:
@@ -42,30 +57,86 @@ jobs:
           node-version: '24'
           cache: 'npm'
 
+      # Single source for the dataset copy, which used to be duplicated per
+      # build target and drifted. Kept as a file because each `run:` block is a
+      # separate shell.
+      - name: Create dataset copy helper
+        run: |
+          cat > /tmp/copy-data.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          dest="$1"
+          mkdir -p "$dest"
+          for f in rptrs.json tafl_min.json airports_min.json radioid-users.csv; do
+            cp "src/data/$f" "$dest/$f"
+          done
+          EOF
+          chmod +x /tmp/copy-data.sh
+
       # NOTE: every build below runs `npm ci` after its `git checkout` — this
       # workflow builds several refs (main + each open PR) in one job, and each
       # ref can have different dependencies. A single shared install broke the
       # moment a PR changed package.json.
-      - name: Build main (production)
-        env:
-          VITE_COMMIT_HASH: ${{ github.sha }}
+      # No VITE_COMMIT_HASH here on purpose: this step builds *main*, but
+      # github.sha is the PR merge commit on pull_request events and the tag's
+      # commit on release events. vite.config.ts falls back to
+      # `git rev-parse --short HEAD`, which after the checkout below is right.
+      - name: Build main (production) -> /dev/
         run: |
+          set -euo pipefail
           git checkout main
           npm ci
           npm run build:single
+          rm -rf dist_root dist_dev dist_test
+          mkdir -p dist_dev
+          mv dist/* dist_dev/
 
-      - name: Copy data files to dist root
+      # The root is the *exact artifact that was tested and published*, not a
+      # rebuild of the tag: for software that writes to radio hardware, the file
+      # users download offline and the file the site serves must be byte-identical.
+      - name: Fetch latest release -> /
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          cp src/data/rptrs.json dist/rptrs.json
-          cp src/data/tafl_min.json dist/tafl_min.json
-          cp src/data/airports_min.json dist/airports_min.json
-          cp src/data/radioid-users.csv dist/radioid-users.csv
-
-      - name: Stage main build to dist_root
-        run: |
-          rm -rf dist_root dist_test
+          set -euo pipefail
           mkdir -p dist_root
-          mv dist/* dist_root/
+          repo="${{ github.repository }}"
+
+          # Deliberately three branches, not "try and fall back on any error".
+          # Collapsing them meant a rate limit or a 5xx silently replaced the
+          # release at `/` with an untested build of main — advertised to users as
+          # the stable version — and the next deploy quietly undid it, so nobody
+          # would ever find out.
+          #
+          # Keyed on the tag name rather than on gh's exit code: with zero releases
+          # published, `gh release view` returning empty and `gh release view`
+          # exiting non-zero must both mean "no release yet". Branching on the exit
+          # code alone would hard-fail every deploy until the first release exists.
+          tag=$(gh release view --repo "$repo" --json tagName --jq '.tagName' 2>/dev/null || true)
+
+          if [ -z "$tag" ]; then
+            echo "::notice::No published release yet — serving main at the root until the first release is cut."
+            cp dist_dev/index.html dist_root/index.html
+          elif ! gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name' | grep -qx 'neonplug-latest.html'; then
+            echo "::error::Release $tag has no neonplug-latest.html asset. Releases must be cut by release.yml, which uploads it; a hand-made release will not serve. Refusing to silently publish main at the root."
+            exit 1
+          else
+            # No error suppression and no fallback: a transient failure here must
+            # fail the deploy, not quietly downgrade what the site serves.
+            gh release download "$tag" --repo "$repo" \
+              --pattern 'neonplug-latest.html' --output dist_root/index.html
+            echo "Site root = $tag release asset"
+          fi
+
+      # Datasets are deliberately NOT pinned to the release. src/services/jsonLoader.ts
+      # and ContactsTab.tsx both try https://neonplug.app/<file> first and fall back
+      # to raw.githubusercontent.com on main, so this data is already "latest from
+      # main" by design. Pinning it would freeze repeater/DMR-user data at tag time
+      # and add ~30 MB to every release.
+      - name: Copy datasets (from main) to root and /dev/
+        run: |
+          /tmp/copy-data.sh dist_root
+          /tmp/copy-data.sh dist_dev
 
       - name: List open PRs and build previews
         env:
@@ -84,20 +155,28 @@ jobs:
             echo "Building PR #$num branch=$branch -> test/$name"
             git fetch origin "pull/$num/head:pr-$num" 2>/dev/null || git fetch origin "$branch" 2>/dev/null || true
             git checkout "pr-$num" 2>/dev/null || git checkout "$branch"
-            npm ci
-            npm run build:single
-            cp src/data/rptrs.json dist/rptrs.json
-            cp src/data/tafl_min.json dist/tafl_min.json
-            cp src/data/airports_min.json dist/airports_min.json
-            cp src/data/radioid-users.csv dist/radioid-users.csv
+            # A PR that doesn't build must not take the whole deploy with it. The
+            # default shell is `bash -e`, so without this guard one broken open PR
+            # aborts the step, the job, and the deploy — which now includes the
+            # release at `/`, so a stale PR could block a freshly cut release from
+            # ever reaching the site.
+            if ! ( npm ci && npm run build:single ); then
+              echo "::warning::PR #$num ($branch) failed to build — preview skipped"
+              continue
+            fi
             mkdir -p "dist_test/$name"
             mv dist/* "dist_test/$name/"
+            /tmp/copy-data.sh "dist_test/$name"
           done
 
       - name: Combine artifact
         run: |
+          set -euo pipefail
+          rm -rf dist
           mkdir -p dist
           cp -r dist_root/. dist/
+          mkdir -p dist/dev
+          cp -r dist_dev/. dist/dev/
           if [ -d dist_test ]; then
             for d in dist_test/*/; do
               [ -d "$d" ] || continue
@@ -106,6 +185,9 @@ jobs:
               cp -r "$d"* "dist/test/$name/"
             done
           fi
+          echo "Published tree:"
+          # depth 3 — PR previews live at dist/test/<name>/index.html
+          find dist -maxdepth 3 -name index.html | sort
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

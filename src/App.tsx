@@ -28,6 +28,8 @@ import { useEncryptionKeysStore } from './store/encryptionKeysStore';
 import { useRadioStore } from './store/radioStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { useAlert } from './hooks/useAlert';
+import { useConfirmDialog } from './hooks/useConfirmDialog';
+import { confirmNewerFormat } from './utils/codeplugFormatPrompt';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import type { CodeplugData } from './services/codeplugExport';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
@@ -38,6 +40,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('channels');
   const [showStartupModal, setShowStartupModal] = useState(true);
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Import');
+  const { confirm, confirmProps } = useConfirmDialog();
   const { setChannels, channels } = useChannelsStore();
   const { setContacts } = useContactsStore();
   const { setZones } = useZonesStore();
@@ -170,9 +173,14 @@ function App() {
     // Check if it's a codeplug file (.neonplug = zipped JSON)
     if (fileExtension === 'neonplug') {
       try {
-        const { importCodeplug } = await import('./services/codeplugExport');
-        const codeplugData = await importCodeplug(file);
-        
+        const { importCodeplug, readWithFormatOverride } = await import('./services/codeplugExport');
+        const codeplugData = await readWithFormatOverride(
+          (opts) => importCodeplug(file, opts),
+          confirmNewerFormat(confirm)
+        );
+        // null = user declined the newer-format warning; not an error.
+        if (!codeplugData) return;
+
         applyCodeplugToStores(codeplugData);
         
         setShowStartupModal(false);
@@ -306,6 +314,7 @@ function App() {
         confirmLabel="OK"
         variant="alert"
       />
+      <ConfirmModal {...confirmProps} />
     </>
   );
 }
