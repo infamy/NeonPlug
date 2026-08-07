@@ -3701,11 +3701,20 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
           totalScanListSize = Math.max(totalScanListSize, offset);
         }
       }
-      const totalScanListBlocksNeeded = Math.ceil(totalScanListSize / BLOCK_SIZE.STANDARD);
+      // Allocate at least one full block per discovered scan block: with zero
+      // scan lists (or more discovered blocks than data) the slice below would
+      // otherwise come up short/empty, and writing a short block crashes with
+      // "Cannot read properties of undefined" at the metadata-byte log — the
+      // "always fails on block 13" bug. Every written block must be 4096 bytes.
+      const totalScanListBlocksNeeded = Math.max(
+        scanBlocks.length,
+        Math.ceil(totalScanListSize / BLOCK_SIZE.STANDARD)
+      );
       
-      // Generate concatenated scan list data
+      // Generate concatenated scan list data. Pad with 0x00, not 0xFF — a real
+      // radio's scan block (2026-08 dump) is zero-filled after the last entry.
       const allScanListData = new Uint8Array(totalScanListBlocksNeeded * BLOCK_SIZE.STANDARD);
-      allScanListData.fill(0xFF);
+      allScanListData.fill(0x00);
       
       // Write scan lists to fixed 57-byte boundaries: (57 * N) - 56
       // Entry 1 at offset 1, Entry 2 at offset 58, Entry 3 at offset 115, etc.

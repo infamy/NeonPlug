@@ -55,6 +55,12 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   maxRxGroupMembers: LIMITS.RX_GROUPS_MAX,
   maxScanLists: LIMITS.SCAN_LISTS_MAX,
   maxScanListChannels: LIMITS.SCAN_LIST_CHANNELS_MAX,
+  // An 11-byte name, a hang time byte in 0.5 s steps (the editor offers up to
+  // 30 s), and priority channels the radio honours only when they are list
+  // members. Names, steps and membership were verified on hardware 2026-08-07.
+  maxScanListNameLength: 11,
+  scanListHangTime: { stepMs: 500, max: 60, default: 6 },
+  scanListPriorityMembersOnly: true,
   maxRadioIds: LIMITS.DMR_RADIO_IDS_MAX,
   maxTalkGroups: LIMITS.TALK_GROUPS_MAX,
   // What every DM-32 holds. L01 firmware holds 150,000; a read reports that,

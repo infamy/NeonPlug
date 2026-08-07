@@ -684,12 +684,12 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 <input
                   type="number"
                   min="0"
-                  max="15"
+                  max={caps?.maxScanLists ?? 32}
                   value={editedChannel.scanListId}
                   onChange={(e) => handleChange('scanListId', parseInt(e.target.value) || 0)}
                   className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                 />
-                <p className="text-xs text-cool-gray mt-0.5">Scan list to add this channel to (0-15)</p>
+                <p className="text-xs text-cool-gray mt-0.5">Scan list this channel references (0 = None, 1-{caps?.maxScanLists ?? 32})</p>
               </div>
 
               {hasColumn('loneWorker') && (

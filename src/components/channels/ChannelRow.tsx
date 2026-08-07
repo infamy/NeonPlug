@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { isVFOChannel, getVFOIdentifier } from '../../utils/vfoChannels';
 import type { Channel } from '../../models/Channel';
 import type { ScanList } from '../../models/ScanList';
+import { scanListByReference, scanListReference } from '../../utils/scanListReference';
 import type { RXGroup } from '../../models/RXGroup';
 import type { EncryptionKey } from '../../models/EncryptionKey';
 import type { QuickContact } from '../../models/QuickContact';
@@ -229,6 +230,8 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
   // every column after it, so the two lists are pinned by test.
   const declaredColumns = new Set(caps?.channelColumns ?? []);
   const hasColumn = (g: ChannelColumnGroup) => declaredColumns.has(g);
+  // Whether this radio's channels name a scan list by slot or by position: see utils/scanListReference.ts.
+  const scanListsBySlot = caps?.scanListsBySlot === true;
 
   return (
     <tr
@@ -554,14 +557,22 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         <select
           value={channel.scanListId}
           onChange={(e) => handleCellChange(channel.number, 'scanListId', parseInt(e.target.value) || 0)}
+          title={
+            channel.scanListId > 0
+              ? `${channel.scanListId}: ${scanListByReference(scanLists, channel.scanListId, scanListsBySlot)?.name ?? '(missing list)'}`
+              : 'No scan list'
+          }
           className={`${FIELD} border rounded px-2 py-1 text-xs w-full min-w-[6rem] max-w-[120px]`}
         >
           <option value={0}>None</option>
           {scanLists.map((scanList, index) => (
-            <option key={scanList.name} value={index + 1}>
-              {scanList.name}
+            <option key={scanList.name} value={scanListReference(scanList, index, scanListsBySlot)}>
+              {scanListReference(scanList, index, scanListsBySlot)}: {scanList.name}
             </option>
           ))}
+          {channel.scanListId > 0 && !scanListByReference(scanLists, channel.scanListId, scanListsBySlot) && (
+            <option value={channel.scanListId}>{channel.scanListId}: (missing list)</option>
+          )}
         </select>
       </td>
       {hasColumn('freeToAir') && (
