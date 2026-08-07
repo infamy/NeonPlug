@@ -17,7 +17,15 @@ NeonPlug lets you program your radio directly from your browser—no software in
 | FT-4 / FT-4XR / FT-4XE / FT-4VR | Yaesu | VHF + UHF (Analog) | USB (SCU-35) |
 | FT-25R | Yaesu | VHF (Analog) | USB (SCU-35) |
 
-**🚀 Try it live:** [https://neonplug.app](https://neonplug.app) · **📥 [Download offline version](https://neonplug.app)** (single-file, no install)
+**🚀 Try it live:** [https://neonplug.app](https://neonplug.app) · **📥 [Download offline version](https://github.com/infamy/NeonPlug/releases/latest/download/neonplug-latest.html)** (single-file, no install)
+
+[![Latest release](https://img.shields.io/github/v/release/infamy/NeonPlug?label=release&color=00e5ff)](https://github.com/infamy/NeonPlug/releases/latest)
+
+| Build | URL | What it is |
+|---|---|---|
+| **Release** | [neonplug.app](https://neonplug.app) | Latest tagged version — what you want |
+| **Development** | [neonplug.app/dev](https://neonplug.app/dev/) | Latest `main`, unreleased and untagged |
+| **PR preview** | `neonplug.app/test/<branch>/` | A specific open pull request |
 
 **💬 Join us:** [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/j59TBHVD22)
 
@@ -71,13 +79,14 @@ Just visit **[neonplug.app](https://neonplug.app)** in a Chrome-based browser (C
 
 ### 📥 Offline mode
 
-You can use NeonPlug without an internet connection. From the live app:
+You can use NeonPlug without an internet connection. Either:
 
-1. On the startup screen, click **Download offline version (ZIP)**  
-   — or open **Settings → About** and click **Download Offline Version (ZIP)**.
-2. Save the ZIP, unzip it, and open **neonplug.html** in your browser.
+- **Download a released build directly:** [neonplug-latest.html](https://github.com/infamy/NeonPlug/releases/latest/download/neonplug-latest.html) — or pick a specific version from [Releases](https://github.com/infamy/NeonPlug/releases). This is the same file the live site serves, so it is a known, citable version.
+- **Or export from the running app:** on the startup screen click **Download offline version (ZIP)** — or open **Settings → About** and click **Download Offline Version (ZIP)** — then unzip and open **neonplug.html**.
 
-The file is a single, self-contained HTML (all assets inlined). No server or network required; Web Serial for the radio still works when the file is opened locally.
+Either way the result is a single, self-contained HTML file (all assets inlined). No server or network required; Web Serial for the radio still works when the file is opened locally.
+
+The version you are running is shown in **Settings → About**. A tagged release reads `v1.2.3`; anything built from `main` or a PR reads `v1.2.3-dev+abc1234` so bug reports can be traced to an exact commit.
 
 ---
 

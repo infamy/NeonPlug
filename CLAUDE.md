@@ -83,7 +83,9 @@ Because the absolute `neonplug.app` URL always wins, the per-PR and `/dev/` data
   (Caveat: `-dev+` is semver-**backwards** — `1.2.3-dev` is a *pre*release of `1.2.3`, i.e. sorts
   *before* it. Cosmetic today because nothing parses the label; `TODO-RELEASE.md` V3.)
 - **Codeplug format version** (`CODEPLUG_FORMAT_VERSION` in `services/codeplugExport.ts`), currently
-  `1.0.0`. Changes only when the `.neonplug` schema changes. `codeplugToJsonSafe` stamps
+  `1.1.0`, which added the optional `tables` field (main wrote `tables` files as plain
+  `version: '1.1.0'` before `formatVersion` existed, so a reader at 1.0.0 would warn on all of
+  them). Changes only when the `.neonplug` schema changes. `codeplugToJsonSafe` stamps
   `formatVersion` + `appVersion` + `appCommit` and **ignores any caller-supplied version** — four call
   sites used to hardcode `'1.0.0'`, so the writer is now the only authority. Reads accept older and
   same-major files (missing version ⇒ legacy `1.0.0`) and reject a **higher major** via
@@ -291,10 +293,9 @@ Statement coverage is low (~20%) *by construction* — the two 3.8k-line DM-32 f
   refactor. `DiagnosticsTab.tsx` is **400 lines** and no longer a rough edge (it was ~3.8k; the split
   landed 2026-08-02 — this bullet claimed the old number until 2026-08-06).
 - CI runs `npm audit` over dev deps too, so a dev-only advisory can redden the build; `audit:prod` exists for this.
-- Several root docs are **untracked** (`CLAUDE.md`, `TODO.md`, `TODO-RELEASE.md`, `ADDING_A_RADIO.md`,
+- Several root docs are **untracked** (`TODO.md`, `TODO-RELEASE.md`, `ADDING_A_RADIO.md`,
   `DESKTOP_APP.md`, `IMPROVEMENTS.md`, `TODO-DM32-SPEC-AUDIT.md`) — real project docs that should be
-  committed. **`CHANGELOG.md` is also untracked and is a hard build dependency** — committing the
-  release work without it breaks every fresh clone and every CI run (`TODO-RELEASE.md` B2).
+  committed.
 
 ## Where to look things up
 

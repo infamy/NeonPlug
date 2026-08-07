@@ -2,7 +2,12 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 import { execSync } from 'child_process'
+import { readFileSync } from 'fs'
 import { inlineFavicon } from './vite-plugin-inline-favicon'
+
+const pkg = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf-8')
+) as { version: string }
 
 // Get commit hash from environment or git
 function getCommitHash(): string {
@@ -18,6 +23,21 @@ function getCommitHash(): string {
   }
 }
 
+// The semver the build reports. release.yml bumps package.json and then sets
+// VITE_APP_VERSION to the same value, so the two can't drift; every other build
+// (local, main, PR preview) just reads whatever package.json currently says.
+function getAppVersion(): string {
+  return process.env.VITE_APP_VERSION || pkg.version;
+}
+
+// True only for builds produced by the release workflow from a vX.Y.Z tag.
+// Everything else is a dev build of some in-flight commit and says so — a user
+// reporting a radio-write bug from `/dev/` must not look like they were on the
+// tagged release.
+function isReleaseBuild(): boolean {
+  return process.env.VITE_RELEASE === '1';
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const isSingleFile = mode === 'singlefile'
@@ -28,6 +48,8 @@ export default defineConfig(({ mode }) => {
     define: {
       __COMMIT_HASH__: JSON.stringify(commitHash),
       __BUILD_TIME__: JSON.stringify(buildTime),
+      __APP_VERSION__: JSON.stringify(getAppVersion()),
+      __RELEASE_BUILD__: JSON.stringify(isReleaseBuild()),
     },
     plugins: [
       react(),

@@ -1,0 +1,285 @@
+name: Release
+
+# Manual only. Cutting a release is a deliberate act: the tag it produces becomes
+# what neonplug.app serves and what users download as the offline app, so it must
+# never happen as a side effect of a merge.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Semver bump (ignored if "version" is set)'
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      version:
+        description: 'Explicit version, e.g. 1.0.0 (overrides "bump")'
+        type: string
+        required: false
+      dry_run:
+        description: 'Build and generate notes, but do not tag, push, or publish'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+  # Needed by the final `gh workflow run deploy.yml` — contents: write does not
+  # cover dispatching a workflow.
+  actions: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          # Full history so `git describe` can find the previous tag.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # This is the gate that deploy.yml never had. A release is the only build
+      # users are told is safe to point at a radio, so it does not get cut from a
+      # red tree.
+      - name: Run unit tests
+        run: npm test -- --run
+
+      - name: Type check and build
+        run: npm run build
+
+      - name: Resolve version
+        id: version
+        # Dispatch inputs come in through env, never `${{ }}` interpolated into the
+        # script. Interpolation happens before the shell parses anything, so a
+        # crafted `version` would execute in a job holding contents+actions write —
+        # and the semver check below, which runs after, could not stop it.
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_VERSION" ]; then
+            # Accept either "1.2.3" or "v1.2.3"; normalise to bare semver.
+            raw="${INPUT_VERSION#v}"
+            if ! echo "$raw" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+              echo "::error::'$raw' is not a valid semver version"
+              exit 1
+            fi
+            npm version "$raw" --no-git-tag-version --allow-same-version >/dev/null
+          else
+            npm version "$INPUT_BUMP" --no-git-tag-version >/dev/null
+          fi
+          # Read the result back rather than parsing npm's stdout, which can carry
+          # notices. package.json is the authority the build reads anyway.
+          new=$(node -p "require('./package.json').version")
+
+          if git rev-parse "v$new" >/dev/null 2>&1; then
+            echo "::error::Tag v$new already exists"
+            exit 1
+          fi
+
+          prev=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "version=$new"       >> "$GITHUB_OUTPUT"
+          echo "tag=v$new"          >> "$GITHUB_OUTPUT"
+          echo "previous_tag=$prev" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$new (previous: ${prev:-none})"
+
+      # Generated before the tag is pushed, so the changelog entry can be part of
+      # the release commit itself. GitHub happily generates notes for a tag that
+      # does not exist yet as long as target_commitish is given.
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          args=(
+            --method POST
+            "repos/${{ github.repository }}/releases/generate-notes"
+            -f "tag_name=${{ steps.version.outputs.tag }}"
+            -f "target_commitish=main"
+          )
+          if [ -n "${{ steps.version.outputs.previous_tag }}" ]; then
+            args+=(-f "previous_tag_name=${{ steps.version.outputs.previous_tag }}")
+          fi
+          # Two copies on purpose. The release page wants GitHub's own "## What's
+          # Changed" heading level; CHANGELOG.md needs it demoted so it nests under
+          # the "## [x.y.z]" heading the parser keys on. Demoting the shared file
+          # would have published "### What's Changed" on the release page.
+          gh api "${args[@]}" --jq '.body' > /tmp/notes-release.md
+          sed 's/^## /### /' /tmp/notes-release.md > /tmp/notes-changelog.md
+          echo "--- generated notes ---"
+          cat /tmp/notes-release.md
+
+      - name: Update CHANGELOG.md
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          today=$(date -u +%Y-%m-%d)
+
+          # The awk below matches on this marker and is a silent no-op without it:
+          # it would print the file unchanged and exit 0, and the release would ship
+          # an About tab headed vX.Y.Z showing the *previous* release's notes.
+          if ! grep -q '^## \[Unreleased\]' CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [Unreleased]' marker — release notes are inserted directly after it. Restore the marker and re-run."
+            exit 1
+          fi
+
+          {
+            printf '## [%s] — %s\n\n' "$version" "$today"
+            cat /tmp/notes-changelog.md
+            printf '\n'
+          } > /tmp/entry.md
+
+          if [ ! -s /tmp/entry.md ]; then
+            echo "::error::Generated release notes are empty."
+            exit 1
+          fi
+
+          # Inserted immediately after the marker, so the marker survives for the
+          # next cycle. Anything hand-written under Unreleased ends up inside this
+          # release's section — i.e. it ships as part of these notes, which is the
+          # intent, but it does not stay under Unreleased.
+          awk '
+            /^## \[Unreleased\]/ && !done {
+              print
+              print ""
+              while ((getline line < "/tmp/entry.md") > 0) print line
+              done = 1
+              next
+            }
+            { print }
+          ' CHANGELOG.md > /tmp/CHANGELOG.md
+
+          # Assert the outcome, not a proxy for it. A size comparison does not work
+          # here: awk emits a blank line after the marker, so the file grows by a
+          # byte even when the entry was not inserted at all.
+          if ! grep -q "^## \[$version\] — " /tmp/CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$version]' section after insertion — the release notes were not written."
+            exit 1
+          fi
+          mv /tmp/CHANGELOG.md CHANGELOG.md
+          echo "--- CHANGELOG.md head ---"
+          head -30 CHANGELOG.md
+
+      # The gate at the top ran before the version bump and before CHANGELOG.md was
+      # rewritten — and CHANGELOG.md is bundled into the app and parsed by
+      # tests/unit/changelog.test.ts. Without this, the tree that ships is not the
+      # tree that was tested, which is the one guarantee a release is supposed to
+      # carry. Cheap: the suite is ~1s.
+      - name: Re-run tests against the release content
+        run: npm test -- --run
+
+      # Must come AFTER the commit/tag: VITE_COMMIT_HASH is baked into the About
+      # tab and stamped into every .neonplug file this build writes. Built earlier,
+      # it recorded the parent of its own tag — the exact provenance the feature
+      # exists to provide, pointing at the wrong commit.
+      # On a dry run there is no commit, so HEAD is main and the artifact is still
+      # produced for inspection.
+      - name: Commit, tag and push
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json CHANGELOG.md
+          git commit -m 'chore(release): ${{ steps.version.outputs.tag }}'
+          git tag -a '${{ steps.version.outputs.tag }}' -m 'Release ${{ steps.version.outputs.tag }}'
+          git push origin main --follow-tags
+
+      - name: Build release artifact
+        env:
+          VITE_APP_VERSION: ${{ steps.version.outputs.version }}
+          # The only place this is set — it is what makes the About tab report a
+          # clean "v1.2.3" instead of "v1.2.3-dev+abc1234".
+          VITE_RELEASE: '1'
+        run: |
+          set -euo pipefail
+          # Resolved here, not from github.sha, so it is the commit the tag points at.
+          export VITE_COMMIT_HASH="$(git rev-parse HEAD)"
+          echo "Building ${{ steps.version.outputs.tag }} at $VITE_COMMIT_HASH"
+          npm run build:single
+          mkdir -p release
+          cp dist/index.html "release/neonplug-${{ steps.version.outputs.tag }}.html"
+          # Second copy under a fixed name so
+          # /releases/latest/download/neonplug-latest.html is a permanent URL the
+          # About tab can hardcode.
+          cp dist/index.html release/neonplug-latest.html
+          ls -lh release/
+
+      - name: Publish GitHub release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create '${{ steps.version.outputs.tag }}' \
+            --title 'NeonPlug ${{ steps.version.outputs.tag }}' \
+            --notes-file /tmp/notes-release.md \
+            release/neonplug-${{ steps.version.outputs.tag }}.html \
+            release/neonplug-latest.html
+
+      # The site root does NOT update on its own. Events raised by GITHUB_TOKEN
+      # do not create workflow runs — `workflow_dispatch` and `repository_dispatch`
+      # are the only exceptions — so neither the `gh release create` above nor the
+      # `git push` before it can trigger deploy.yml (or ci.yml). Without this
+      # explicit dispatch a release publishes correctly and `/` keeps serving the
+      # previous build until some unrelated PR happens to land.
+      #
+      # deploy.yml also keeps its `release: published` trigger: that one DOES fire
+      # for a release published by a human through the GitHub UI, which this step
+      # cannot cover. The two never both fire for the same release.
+      - name: Trigger Pages deploy
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref main
+
+      - name: Upload dry-run artifacts
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run-${{ steps.version.outputs.version }}
+          path: |
+            release/
+            CHANGELOG.md
+          retention-days: 7
+
+      # Same env-not-interpolation rule as "Resolve version". dry_run is a boolean
+      # input so it can only be true/false, but keeping one rule for every dispatch
+      # input is easier to hold than a per-field judgement about which are safe.
+      - name: Summary
+        env:
+          IS_DRY_RUN: ${{ inputs.dry_run }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PREVIOUS_TAG: ${{ steps.version.outputs.previous_tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          {
+            echo "## $TAG"
+            if [ "$IS_DRY_RUN" = 'true' ]; then
+              echo "**Dry run** — nothing was tagged, pushed, or published."
+            else
+              echo "Published: https://github.com/$REPO/releases/tag/$TAG"
+            fi
+            echo ""
+            echo "Previous tag: \`$PREVIOUS_TAG\`"
+            echo ""
+            cat /tmp/notes-release.md
+          } >> "$GITHUB_STEP_SUMMARY"
