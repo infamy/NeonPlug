@@ -1,13 +1,13 @@
 /**
  * MMDVM Channel Generator
- * Creates digital channels and talk groups for an MMDVM hotspot — either simplex
- * (single frequency, the common case) or duplex (separate RX/TX, for a hotspot
- * linked to a real repeater pair on 2m or 70cm). Color Code 1, user-defined talk groups.
+ * Creates digital channels for an MMDVM hotspot — either simplex (single frequency, the
+ * common case) or duplex (separate RX/TX, for a hotspot linked to a real repeater pair on
+ * 2m or 70cm). Color Code 1. Talk groups are resolved by the caller against the Talk Groups
+ * (QuickContact) list before calling this — this function only builds channels.
  */
 
-import type { Channel, Contact, Zone } from '../models';
+import type { Channel } from '../models';
 import { createDefaultChannel } from '../utils/channelHelpers';
-import { generateZoneId } from '../utils/zoneHelpers';
 
 export const MMDVM_FREQ_MIN_MHZ = 431;
 export const MMDVM_FREQ_MAX_MHZ = 435;
@@ -28,8 +28,10 @@ export const MMDVM_DUPLEX_RANGE_DESCRIPTION =
 
 export interface MMDVMChannelEntry {
   channelName: string;
-  talkGroupName: string;
-  talkGroupId: number; // DMR talk group number (e.g. 9 for local, 3100 for BM Canada)
+  /** Index into the Talk Groups (QuickContact) list — what the channel actually references
+   *  for TX. Resolve this against an existing talk group or a newly-created one before
+   *  calling generateMMDVMChannels(); 0 = None. */
+  contactId: number;
 }
 
 export interface MMDVMGenerateOptions {
@@ -38,17 +40,13 @@ export interface MMDVMGenerateOptions {
   txFrequencyMhz?: number;
   entries: MMDVMChannelEntry[];
   firstChannelNumber: number;
-  firstContactId: number; // Next available contact id (e.g. max(existing contact ids) + 1)
   dmrRadioIdIndex: number | undefined; // 0-based index into DMR Radio IDs; undefined = None
-  zoneName?: string;
   /** 1 = TS1, 2 = TS2. Defaults to TS2 (the usual MMDVM hotspot convention). */
   timeslot?: 1 | 2;
 }
 
 export interface MMDVMGenerateResult {
   channels: Channel[];
-  contacts: Contact[];
-  zone: Zone;
 }
 
 /**
@@ -70,15 +68,14 @@ export function isValidMMDVMDuplexFrequency(mhz: number): boolean {
 }
 
 /**
- * Generate MMDVM channels and talk group contacts, simplex or duplex.
- * Same RX/TX pair for all channels; Slot 2, Color Code 1; each channel gets its own talk group.
+ * Generate MMDVM channels, simplex or duplex. Same RX/TX pair for all channels, Color Code 1.
  */
 export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGenerateResult {
-  const { frequencyMhz, txFrequencyMhz, entries, firstChannelNumber, firstContactId, dmrRadioIdIndex, zoneName, timeslot } = options;
+  const { frequencyMhz, txFrequencyMhz, entries, firstChannelNumber, dmrRadioIdIndex, timeslot } = options;
 
   // The narrow 431-435 MHz range is a simplex-hotspot calling-frequency convention — it
   // doesn't apply to duplex, where RX mirrors the hotspot's own transmit-to-repeater
-  // frequency and can be anywhere in the 70cm band, same as TX.
+  // frequency and can be anywhere in the 2m/70cm band, same as TX.
   const isDuplex = txFrequencyMhz !== undefined && txFrequencyMhz !== frequencyMhz;
   if (isDuplex) {
     if (!isValidMMDVMDuplexFrequency(frequencyMhz)) {
@@ -93,46 +90,23 @@ export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGener
   const txFreq = txFrequencyMhz ?? frequencyMhz;
   const slotOperation = timeslot === 1 ? 0 : 1; // Storage: 0 = TS1, 1 = TS2
   if (!entries.length) {
-    throw new Error('At least one channel/talk group entry is required');
+    throw new Error('At least one channel entry is required');
   }
 
-  const contacts: Contact[] = [];
-  const channels: Channel[] = [];
-  let nextContactId = firstContactId;
+  const channels: Channel[] = entries.map((entry, i) => createDefaultChannel({
+    number: firstChannelNumber + i,
+    name: (entry.channelName || `MMDVM ${i + 1}`).substring(0, 16),
+    rxFrequency: frequencyMhz,
+    txFrequency: txFreq,
+    mode: 'Digital',
+    bandwidth: '12.5kHz',
+    power: 'Low',
+    scanAdd: true,
+    colorCode: 1,
+    contactId: entry.contactId,
+    slotOperation,
+    dmrRadioIdIndex,
+  }));
 
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    const contactId = nextContactId++;
-    const contact: Contact = {
-      id: contactId,
-      name: (entry.talkGroupName || `TG ${entry.talkGroupId}`).substring(0, 16),
-      dmrId: entry.talkGroupId,
-    };
-    contacts.push(contact);
-
-    const channelName = (entry.channelName || entry.talkGroupName || `MMDVM ${i + 1}`).substring(0, 16);
-    const ch = createDefaultChannel({
-      number: firstChannelNumber + i,
-      name: channelName,
-      rxFrequency: frequencyMhz,
-      txFrequency: txFreq,
-      mode: 'Digital',
-      bandwidth: '12.5kHz',
-      power: 'Low',
-      scanAdd: true,
-      colorCode: 1,
-      contactId,
-      slotOperation,
-      dmrRadioIdIndex,
-    });
-    channels.push(ch);
-  }
-
-  const zone: Zone = {
-    id: generateZoneId(),
-    name: (zoneName || 'MMDVM').substring(0, 16),
-    channels: channels.map((c) => c.number),
-  };
-
-  return { channels, contacts, zone };
+  return { channels };
 }
