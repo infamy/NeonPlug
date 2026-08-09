@@ -6,6 +6,9 @@ import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { ChannelsTable } from './ChannelsTable';
 import { createDefaultChannel } from '../../utils/channelHelpers';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
+import { useAlert } from '../../hooks/useAlert';
+import { exportChannelsToCSV, importChannelsFromCSV, downloadCSV } from '../../services/csv';
 import type { Channel } from '../../models/Channel';
 
 import { isVFOChannel } from '../../utils/vfoChannels';
@@ -19,7 +22,7 @@ import { BUTTON, FIELD } from '../ui/controlStyles';
 type ChannelView = 'main' | 'am' | 'fm';
 
 export const ChannelsTab: React.FC = () => {
-  const { channels, addChannel, deleteChannels } = useChannelsStore();
+  const { channels, addChannel, deleteChannels, setChannels } = useChannelsStore();
   const { settings: radioSettings } = useRadioSettingsStore();
   const { caps } = useRadioCapabilities();
   const supportsVfoChannels = caps?.supportsVfoChannels === true;
@@ -53,6 +56,9 @@ export const ChannelsTab: React.FC = () => {
         String(ch.index + 1).includes(query)
     );
   }, [broadcast, searchQuery]);
+
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Full CSV Export/Import');
+  const [pendingChannelsImport, setPendingChannelsImport] = useState<Channel[] | null>(null);
 
   const handleAddChannel = () => {
     // Find the next available channel number
@@ -102,6 +108,34 @@ export const ChannelsTab: React.FC = () => {
   }, [deleteChannels]);
 
   const handleClearSelection = useCallback(() => setSelectedChannelNumbers(new Set()), []);
+
+  // Full-fidelity CSV export/import (all channel modes and fields) — distinct from the
+  // Smart Import wizard's CHIRP export (analog-only) and Add-style merges: this round-trips
+  // the whole channel list and importing REPLACES it, matching an OEM-CPS-style backup/edit
+  // workflow rather than an additive import.
+  const handleExportChannelsCsv = useCallback(() => {
+    downloadCSV(exportChannelsToCSV(channels), 'channels.csv');
+  }, [channels]);
+
+  const handleImportChannelsFile = useCallback((file: File) => {
+    file.text().then(content => {
+      const result = importChannelsFromCSV(content);
+      if (!result.success || !result.channels) {
+        showAlert(result.errors?.join('\n') || 'Failed to import channels CSV', 'Import failed');
+        return;
+      }
+      setPendingChannelsImport(result.channels);
+    }).catch(err => {
+      showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
+    });
+  }, [showAlert]);
+
+  const handleImportChannelsConfirm = useCallback(() => {
+    if (pendingChannelsImport) {
+      setChannels(pendingChannelsImport);
+    }
+    setPendingChannelsImport(null);
+  }, [pendingChannelsImport, setChannels]);
 
   // VFO A/B as channels 4001/4002 — DM-32 only; UV5R-Mini and other radios do not have these in the channel list
   const vfoChannels = useMemo(() => {
@@ -199,6 +233,14 @@ export const ChannelsTab: React.FC = () => {
               + Add
             </button>
           )}
+          {!isBroadcast && (
+            <CsvExportImportButtons
+              label="channels"
+              onExport={handleExportChannelsCsv}
+              onImportFile={handleImportChannelsFile}
+              exportDisabled={channels.length === 0}
+            />
+          )}
         </>}
       />
       <div className="mb-3 flex items-center gap-3 shrink-0">
@@ -280,6 +322,23 @@ export const ChannelsTab: React.FC = () => {
         message={`Delete ${pendingDeleteCount} selected ${formatPlural(pendingDeleteCount, 'channel')}?`}
         confirmLabel="Delete"
         variant="danger"
+      />
+      <ConfirmModal
+        isOpen={pendingChannelsImport !== null}
+        onClose={() => setPendingChannelsImport(null)}
+        onConfirm={handleImportChannelsConfirm}
+        title="Import Channels CSV"
+        message={`Replace all ${channels.length} existing ${formatPlural(channels.length, 'channel')} with ${pendingChannelsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
+        confirmLabel="Replace"
+        variant="danger"
+      />
+      <ConfirmModal
+        isOpen={alertOpen}
+        onClose={closeAlert}
+        title={alertTitle}
+        message={alertMessage}
+        confirmLabel="OK"
+        variant="alert"
       />
     </div>
   );

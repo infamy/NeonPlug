@@ -28,6 +28,11 @@ import {
 } from '../../utils/encryptionKeys';
 import { PageHeader } from '../ui/PageHeader';
 import { BUTTON, FIELD } from '../ui/controlStyles';
+import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
+import { exportRXGroupsToCSV, importRXGroupsFromCSV, exportDMRRadioIDsToCSV, importDMRRadioIDsFromCSV, downloadCSV } from '../../services/csv';
+import type { RXGroup } from '../../models/RXGroup';
+import type { DMRRadioID } from '../../models/DMRRadioID';
+import { formatPlural } from '../../utils/formatPlural';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
@@ -58,9 +63,9 @@ export const DigitalTab: React.FC = () => {
   const messageCharsMax = limits?.QUICK_MESSAGE_CHARS_MAX ?? 128;
   const messagesMax = limits?.QUICK_MESSAGES_MAX ?? 20;
   const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem, addSystem: addDigitalEmergency, deleteSystem: deleteDigitalEmergency } = useDigitalEmergencyStore();
-  const { radioIds, radioIdsLoaded, updateRadioId, addRadioId, deleteRadioId } = useDMRRadioIDsStore();
+  const { radioIds, radioIdsLoaded, updateRadioId, addRadioId, deleteRadioId, setRadioIds } = useDMRRadioIDsStore();
   const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact, setMaxTalkGroups } = useQuickContactsStore();
-  const { groupsLoaded: rxGroupsLoaded } = useRXGroupsStore();
+  const { groups: rxGroups, groupsLoaded: rxGroupsLoaded, setGroups: setRXGroups } = useRXGroupsStore();
   const { messages, messagesLoaded, updateMessage, addMessage, deleteMessage } = useQuickMessagesStore();
   const { channels } = useChannelsStore();
 
@@ -175,6 +180,44 @@ export const DigitalTab: React.FC = () => {
     { type: 'contact'; index: number } | { type: 'message'; index: number } | { type: 'radioId'; index: number } | null
   >(null);
 
+  const [pendingRadioIdsImport, setPendingRadioIdsImport] = useState<DMRRadioID[] | null>(null);
+  const handleExportRadioIdsCsv = () => downloadCSV(exportDMRRadioIDsToCSV(radioIds), 'dmr_radio_ids.csv');
+  const handleImportRadioIdsFile = (file: File) => {
+    file.text().then(content => {
+      const result = importDMRRadioIDsFromCSV(content);
+      if (!result.success || !result.dmrRadioIds) {
+        showAlert(result.errors?.join('\n') || 'Failed to import DMR Radio IDs CSV', 'Import failed');
+        return;
+      }
+      setPendingRadioIdsImport(result.dmrRadioIds);
+    }).catch(err => {
+      showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
+    });
+  };
+  const handleImportRadioIdsConfirm = () => {
+    if (pendingRadioIdsImport) setRadioIds(pendingRadioIdsImport);
+    setPendingRadioIdsImport(null);
+  };
+
+  const [pendingRXGroupsImport, setPendingRXGroupsImport] = useState<RXGroup[] | null>(null);
+  const handleExportRXGroupsCsv = () => downloadCSV(exportRXGroupsToCSV(rxGroups), 'rx_groups.csv');
+  const handleImportRXGroupsFile = (file: File) => {
+    file.text().then(content => {
+      const result = importRXGroupsFromCSV(content);
+      if (!result.success || !result.rxGroups) {
+        showAlert(result.errors?.join('\n') || 'Failed to import RX Groups CSV', 'Import failed');
+        return;
+      }
+      setPendingRXGroupsImport(result.rxGroups);
+    }).catch(err => {
+      showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
+    });
+  };
+  const handleImportRXGroupsConfirm = () => {
+    if (pendingRXGroupsImport) setRXGroups(pendingRXGroupsImport);
+    setPendingRXGroupsImport(null);
+  };
+
   const handleDeleteContactClick = (index: number) => {
     setDeleteConfirm({ type: 'contact', index });
   };
@@ -288,14 +331,22 @@ export const DigitalTab: React.FC = () => {
               Manage DMR Radio IDs. Up to {dmrRadioIdsMax} IDs can be configured.
             </p>
           </div>
-          {radioIdsLoaded && radioIds.length < dmrRadioIdsMax && (
-            <button
-              onClick={handleAddRadioId}
-              className={`${BUTTON.primary} px-3 py-1 rounded text-sm font-semibold`}
-            >
-              + Add ID
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {radioIdsLoaded && radioIds.length < dmrRadioIdsMax && (
+              <button
+                onClick={handleAddRadioId}
+                className={`${BUTTON.primary} px-3 py-1 rounded text-sm font-semibold`}
+              >
+                + Add ID
+              </button>
+            )}
+            <CsvExportImportButtons
+              label="DMR Radio IDs"
+              onExport={handleExportRadioIdsCsv}
+              onImportFile={handleImportRadioIdsFile}
+              exportDisabled={radioIds.length === 0}
+            />
+          </div>
         </div>
 
         {!radioIdsLoaded ? (
@@ -497,11 +548,19 @@ export const DigitalTab: React.FC = () => {
 
       {/* DMR RX Groups Section */}
       <div className="mb-8">
-        <div className="mb-4">
-          <SectionTitle as="h3" size="xl">DMR RX Groups</SectionTitle>
-          <p className="text-cool-gray text-sm">
-            Manage DMR RX Groups
-          </p>
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <SectionTitle as="h3" size="xl">DMR RX Groups</SectionTitle>
+            <p className="text-cool-gray text-sm">
+              Manage DMR RX Groups
+            </p>
+          </div>
+          <CsvExportImportButtons
+            label="RX Groups"
+            onExport={handleExportRXGroupsCsv}
+            onImportFile={handleImportRXGroupsFile}
+            exportDisabled={rxGroups.length === 0}
+          />
         </div>
 
         {!rxGroupsLoaded ? (
@@ -935,6 +994,24 @@ export const DigitalTab: React.FC = () => {
       message={alertMessage}
       confirmLabel="OK"
       variant="alert"
+    />
+    <ConfirmModal
+      isOpen={pendingRadioIdsImport !== null}
+      onClose={() => setPendingRadioIdsImport(null)}
+      onConfirm={handleImportRadioIdsConfirm}
+      title="Import DMR Radio IDs CSV"
+      message={`Replace all ${radioIds.length} existing DMR Radio ${formatPlural(radioIds.length, 'ID')} with ${pendingRadioIdsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
+      confirmLabel="Replace"
+      variant="danger"
+    />
+    <ConfirmModal
+      isOpen={pendingRXGroupsImport !== null}
+      onClose={() => setPendingRXGroupsImport(null)}
+      onConfirm={handleImportRXGroupsConfirm}
+      title="Import RX Groups CSV"
+      message={`Replace all ${rxGroups.length} existing RX ${formatPlural(rxGroups.length, 'Group')} with ${pendingRXGroupsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
+      confirmLabel="Replace"
+      variant="danger"
     />
     </>
   );

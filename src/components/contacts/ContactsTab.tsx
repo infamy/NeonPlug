@@ -8,6 +8,10 @@ import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { ProgressBar } from '../ui/ProgressBar';
 import { COUNTRIES_BY_REGION, type CountryRegion } from '../../constants/countries';
 import { US_STATES } from '../../constants/usStates';
+import { ConfirmModal } from '../ui/ConfirmModal';
+import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
+import { useAlert } from '../../hooks/useAlert';
+import { exportContactsToCSV, importContactsFromCSV, downloadCSV } from '../../services/csv';
 import type { Contact } from '../../models/Contact';
 import { PageHeader } from '../ui/PageHeader';
 import { resolveContactCapacity } from '../../utils/contactCapacity';
@@ -236,6 +240,35 @@ export const ContactsTab: React.FC = () => {
   
   const { caps } = useRadioCapabilities();
   const contactCapacity = resolveContactCapacity(caps, radioInfo);
+
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Full CSV Export/Import');
+  const [pendingContactsImport, setPendingContactsImport] = useState<Contact[] | null>(null);
+
+  // Full-fidelity CSV export/import (ID, DMR ID, call sign, city, province, country, remark) —
+  // distinct from the RadioID.net download above. Importing REPLACES all contacts.
+  const handleExportContactsCsv = useCallback(() => {
+    downloadCSV(exportContactsToCSV(contacts), 'contacts.csv');
+  }, [contacts]);
+
+  const handleImportContactsFile = useCallback((file: File) => {
+    file.text().then(content => {
+      const result = importContactsFromCSV(content);
+      if (!result.success || !result.contacts) {
+        showAlert(result.errors?.join('\n') || 'Failed to import contacts CSV', 'Import failed');
+        return;
+      }
+      setPendingContactsImport(result.contacts);
+    }).catch(err => {
+      showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
+    });
+  }, [showAlert]);
+
+  const handleImportContactsConfirm = useCallback(() => {
+    if (pendingContactsImport) {
+      setContacts(pendingContactsImport);
+    }
+    setPendingContactsImport(null);
+  }, [pendingContactsImport, setContacts]);
 
 
   const handleReadContacts = async () => {
@@ -756,15 +789,40 @@ export const ContactsTab: React.FC = () => {
           title="CSV Contacts"
           description="CSV contacts are primarily imported from CSV or read from the radio. Use Import to load contacts."
           actions={
-            <span>
-              {contacts.length} / {contactCapacity.toLocaleString()} {formatPlural(contacts.length, 'contact')}
-            </span>
+            <>
+              <span>
+                {contacts.length} / {contactCapacity.toLocaleString()} {formatPlural(contacts.length, 'contact')}
+              </span>
+              <CsvExportImportButtons
+                label="contacts"
+                onExport={handleExportContactsCsv}
+                onImportFile={handleImportContactsFile}
+                exportDisabled={contacts.length === 0}
+              />
+            </>
           }
         />
         <div className="flex-1 min-h-0">
           <ContactsTable />
         </div>
       </div>
+      <ConfirmModal
+        isOpen={pendingContactsImport !== null}
+        onClose={() => setPendingContactsImport(null)}
+        onConfirm={handleImportContactsConfirm}
+        title="Import Contacts CSV"
+        message={`Replace all ${contacts.length} existing ${formatPlural(contacts.length, 'contact')} with ${pendingContactsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
+        confirmLabel="Replace"
+        variant="danger"
+      />
+      <ConfirmModal
+        isOpen={alertOpen}
+        onClose={closeAlert}
+        title={alertTitle}
+        message={alertMessage}
+        confirmLabel="OK"
+        variant="alert"
+      />
     </div>
   );
 };
