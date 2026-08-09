@@ -8,7 +8,7 @@ import { generateZoneId } from '../../utils/zoneHelpers';
 import { OFFSET, BLOCK_SIZE, LIMITS, METADATA } from './constants';
 import { createDefaultChannel } from '../../utils/channelHelpers';
 import { log } from '../../utils/protocolLogger';
-import { NO_TX_FREQUENCY, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
+import { NO_TX_FREQUENCY, isNoTxChannel } from '../../services/validation/frequencyValidator';
 
 // --- BCD frequency and CTCSS/DCS encoding (inlined from encoding.ts) ---
 
@@ -572,8 +572,10 @@ export function encodeChannel(channel: Channel): Uint8Array {
   const rxFreqBytes = encodeBCDFrequency(channel.rxFrequency);
   data.set(rxFreqBytes, 0x10);
 
-  // TX Frequency (0x14-0x17). Use 0xFF only for RX in 87–136 MHz with Forbid TX; else encode actual TX.
-  if (isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx) {
+  // TX Frequency (0x14-0x17). Use 0xFF for any receive-only (Forbid TX) channel already
+  // carrying the no-TX sentinel; else encode actual TX. Not limited to the 87-136 MHz
+  // aviation band — see isNoTxChannel().
+  if (isNoTxChannel(channel)) {
     data[0x14] = data[0x15] = data[0x16] = data[0x17] = 0xFF;
   } else {
     const txFreqBytes = encodeBCDFrequency(channel.txFrequency);

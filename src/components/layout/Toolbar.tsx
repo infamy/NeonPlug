@@ -24,6 +24,7 @@ import { useAlert } from '../../hooks/useAlert';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { isWebSerialSupported } from '../../utils/browserSupport';
+import { compactChannelNumbers, remapChannelNumbers, remapChannelNumber } from '../../utils/channelHelpers';
 
 export const Toolbar: React.FC = () => {
   const { channels, setChannels } = useChannelsStore();
@@ -202,11 +203,27 @@ export const Toolbar: React.FC = () => {
       // Lazy load codeplug import when needed
       const { importCodeplug } = await import('../../services/codeplugExport');
       const codeplugData = await importCodeplug(file);
-      
+
+      // Loaded files can predate the read-time gap fix (or be hand-edited), so channel
+      // numbers may not be a contiguous 1..N matching array order. Compact here too and
+      // carry the mapping into zones/scan lists — see compactChannelNumbers for why this
+      // matters (the radio write path packs channels by array position, not .number).
+      const { channels, oldToNew, hadGaps } = compactChannelNumbers(codeplugData.channels);
+
       // Populate all stores with imported data
-      setChannels(codeplugData.channels);
-      setZones(codeplugData.zones);
-      setScanLists(codeplugData.scanLists);
+      setChannels(channels);
+      setZones(hadGaps
+        ? codeplugData.zones.map(z => ({ ...z, channels: remapChannelNumbers(z.channels, oldToNew) }))
+        : codeplugData.zones);
+      setScanLists(hadGaps
+        ? codeplugData.scanLists.map(sl => ({
+            ...sl,
+            channels: remapChannelNumbers(sl.channels, oldToNew),
+            priorityChannel1: remapChannelNumber(sl.priorityChannel1, oldToNew),
+            priorityChannel2: remapChannelNumber(sl.priorityChannel2, oldToNew),
+            designatedTxChannel: remapChannelNumber(sl.designatedTxChannel, oldToNew),
+          }))
+        : codeplugData.scanLists);
       setContacts(codeplugData.contacts);
       setDigitalEmergencies(codeplugData.digitalEmergencies);
       if (codeplugData.digitalEmergencyConfig) {

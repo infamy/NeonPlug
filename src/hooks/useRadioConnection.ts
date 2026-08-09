@@ -23,6 +23,8 @@ import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
 import { isValidChannelFrequency } from '../services/validation/frequencyValidator';
 import { parseBootImageHeader } from '../utils/bootImage';
+import { compactChannelNumbers, remapChannelNumbers, remapChannelNumber } from '../utils/channelHelpers';
+import { log } from '../utils/protocolLogger';
 
 /** Augment error message when tab was hidden during a serial operation (better reporting). */
 function withVisibilityContext(message: string, tabWentHidden: boolean): string {
@@ -143,7 +145,18 @@ export function useRadioConnection() {
       }
 
       onProgress?.(20, 'Parsing channels...', steps[4]);
-      const channels = await proto.readChannels();
+      const rawChannels = await proto.readChannels();
+
+      // Blank slots on the radio are skipped without reserving their number, so
+      // channel.number can come back with gaps relative to array order. The write
+      // path packs channels purely by array position (ignoring .number), and
+      // zones/scan lists reference channels by raw .number — so an uncompacted gap
+      // causes the next write to silently shift channels into the wrong physical
+      // slot. Compact to 1..N here and carry the mapping into zones/scan lists below.
+      const { channels, oldToNew, hadGaps } = compactChannelNumbers(rawChannels);
+      if (hadGaps) {
+        log.warn(`Channel numbers had gaps (likely blank slots on the radio) — renumbered ${rawChannels.length} channels to a contiguous 1..${channels.length} sequence`, 'Connection');
+      }
       setChannels(channels);
 
       // Enrich radioInfo with firmware from cached image (UV5R-Mini and DM-32UV)
@@ -154,7 +167,16 @@ export function useRadioConnection() {
       }
 
       if (dm32) {
-        setRawChannelData(dm32.rawChannelData);
+        let rawChannelData = dm32.rawChannelData;
+        if (hadGaps) {
+          const remapped: typeof dm32.rawChannelData = new Map();
+          for (const [oldNum, raw] of rawChannelData.entries()) {
+            const newNum = oldToNew.get(oldNum);
+            if (newNum !== undefined) remapped.set(newNum, raw);
+          }
+          rawChannelData = remapped;
+        }
+        setRawChannelData(rawChannelData);
         setBlockMetadata(new Map(dm32.blockMetadata));
         setBlockData(new Map(dm32.blockData));
       }
@@ -168,13 +190,25 @@ export function useRadioConnection() {
       onProgress?.(70, 'Parsing configuration from cache...', steps[5]);
 
       if (caps?.supportsZones) {
-        const zones = await proto.readZones();
+        let zones = await proto.readZones();
+        if (hadGaps) {
+          zones = zones.map(z => ({ ...z, channels: remapChannelNumbers(z.channels, oldToNew) }));
+        }
         setZones(zones);
         if (dm32) setRawZoneData(dm32.rawZoneData);
       }
 
       if (caps?.supportsScanLists) {
-        const scanLists = await proto.readScanLists();
+        let scanLists = await proto.readScanLists();
+        if (hadGaps) {
+          scanLists = scanLists.map(sl => ({
+            ...sl,
+            channels: remapChannelNumbers(sl.channels, oldToNew),
+            priorityChannel1: remapChannelNumber(sl.priorityChannel1, oldToNew),
+            priorityChannel2: remapChannelNumber(sl.priorityChannel2, oldToNew),
+            designatedTxChannel: remapChannelNumber(sl.designatedTxChannel, oldToNew),
+          }));
+        }
         setScanLists(scanLists);
         if (dm32) setRawScanListData(dm32.rawScanListData);
       }
@@ -557,32 +591,39 @@ export function useRadioConnection() {
       // Filter channels to only include those with valid frequencies (use effective model for capabilities)
       const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
       const bandLimits = getCapabilitiesForModel(effectiveModel)?.bandLimits;
-      const validChannels = channels.filter(ch => isValidChannelFrequency(ch, bandLimits));
-      const filteredCount = channels.length - validChannels.length;
-      
+      const rawValidChannels = channels.filter(ch => isValidChannelFrequency(ch, bandLimits));
+      const filteredCount = channels.length - rawValidChannels.length;
+
       if (filteredCount > 0) {
         console.warn(`Filtered out ${filteredCount} channel(s) with frequencies outside supported ranges`);
       }
-      
-      // Update zones to only include channel numbers that exist (never write zone refs to non-existent channels)
-      const validChannelNumbers = new Set(validChannels.map(ch => ch.number));
+
+      // Filtering can leave gaps in channel.number relative to array order (e.g. channel 51
+      // removed, 52+ unchanged). generateChannelBlocks() packs channels purely by array
+      // position and ignores .number, so an uncompacted gap here silently shifts every
+      // subsequent channel into the wrong physical slot while zone/scan-list references
+      // still point at the old numbers. Compact first, then remap references through the
+      // same mapping (this also drops refs to channels that were actually filtered out).
+      const { channels: validChannels, oldToNew } = compactChannelNumbers(rawValidChannels);
+
       const filteredZones = zones.map(zone => {
-        const invalidRefs = zone.channels.filter(chNum => !validChannelNumbers.has(chNum));
-        if (invalidRefs.length > 0) {
+        const remapped = remapChannelNumbers(zone.channels, oldToNew);
+        const droppedCount = zone.channels.length - remapped.length;
+        if (droppedCount > 0) {
           console.warn(
-            `[Zones] Zone "${zone.name}" referenced non-existent channel(s): ${invalidRefs.join(', ')}. Removed before write to prevent radio errors.`
+            `[Zones] Zone "${zone.name}" referenced ${droppedCount} filtered-out channel(s). Removed before write to prevent radio errors.`
           );
         }
-        return {
-          ...zone,
-          channels: zone.channels.filter(chNum => validChannelNumbers.has(chNum))
-        };
+        return { ...zone, channels: remapped };
       }).filter(zone => zone.channels.length > 0); // Remove empty zones
-      
+
       // Update scan lists to only include valid channel numbers
       const filteredScanLists = scanLists.map(scanList => ({
         ...scanList,
-        channels: scanList.channels.filter(chNum => validChannelNumbers.has(chNum))
+        channels: remapChannelNumbers(scanList.channels, oldToNew),
+        priorityChannel1: remapChannelNumber(scanList.priorityChannel1, oldToNew),
+        priorityChannel2: remapChannelNumber(scanList.priorityChannel2, oldToNew),
+        designatedTxChannel: remapChannelNumber(scanList.designatedTxChannel, oldToNew),
       })).filter(scanList => scanList.channels.length > 0); // Remove empty scan lists
       
       // Use protocol for connected radio (write path)
