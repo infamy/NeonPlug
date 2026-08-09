@@ -681,6 +681,22 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <p className="text-xs text-cool-gray">Prevent direct communication without repeater</p>
                 </div>
               </label>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editedChannel.unknown1A_3}
+                  onChange={(e) => handleChange('unknown1A_3', e.target.checked)}
+                  className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                />
+                <div>
+                  <span className="text-sm text-white font-medium">Talkaround Engaged</span>
+                  <p className="text-xs text-cool-gray">
+                    Live talkaround state — not shown in OEM CPS either. Can silently carry over from a
+                    channel's previous contents; check this is off before writing if you don't want it.
+                  </p>
+                </div>
+              </label>
             </div>
           </section>
 

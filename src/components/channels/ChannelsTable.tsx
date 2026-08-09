@@ -254,7 +254,8 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]" title="Transmit tone (CTCSS/DCS)">TX Tone</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Lone Worker">LW</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[50px]" title="Scan list assignment">Scan List</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Free to Air">FTA</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Forbid Talkaround (CPS permission — not the live state)">FTA</th>
+            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Talkaround engaged (live state) — not shown in OEM CPS either; can silently carry over from a channel's previous contents">TA</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Emergency">Emerg</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Emergency acknowledge">Emerg Ack</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[52px]" title="Emergency ID">Emerg ID</th>

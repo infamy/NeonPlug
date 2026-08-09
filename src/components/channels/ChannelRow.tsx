@@ -454,6 +454,14 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           className="checkbox-theme"
         />
       </td>
+      <td className="px-2 py-2 text-center" title="Live talkaround state — not shown in OEM CPS either">
+        <input
+          type="checkbox"
+          checked={channel.unknown1A_3}
+          onChange={(e) => handleCellChange(channel.number, 'unknown1A_3', e.target.checked)}
+          className="checkbox-theme"
+        />
+      </td>
       <td className="px-2 py-2 text-center">
         <input
           type="checkbox"

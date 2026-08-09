@@ -11,7 +11,7 @@ import type { Channel } from '../../models/Channel';
 const isVFOChannel = (n: number) => n === 4001 || n === 4002;
 
 export const ChannelsTab: React.FC = () => {
-  const { channels, addChannel, deleteChannels } = useChannelsStore();
+  const { channels, addChannel, deleteChannels, setChannels } = useChannelsStore();
   const { settings: radioSettings } = useRadioSettingsStore();
   const { caps } = useRadioCapabilities();
   const supportsVfoChannels = caps?.supportsVfoChannels === true;
@@ -67,6 +67,19 @@ export const ChannelsTab: React.FC = () => {
   }, [deleteChannels]);
 
   const handleClearSelection = useCallback(() => setSelectedChannelNumbers(new Set()), []);
+
+  // "Talkaround Engaged" (unknown1A_3) reflects live radio state and isn't shown by OEM CPS
+  // either — it can silently carry over from a channel's previous contents. This gives a
+  // one-click way to confirm it's off everywhere before writing.
+  const talkaroundEngagedCount = useMemo(
+    () => channels.filter(ch => ch.unknown1A_3).length,
+    [channels]
+  );
+  const [clearTalkaroundOpen, setClearTalkaroundOpen] = useState(false);
+  const handleClearTalkaroundConfirm = useCallback(() => {
+    setChannels(channels.map(ch => ch.unknown1A_3 ? { ...ch, unknown1A_3: false } : ch));
+    setClearTalkaroundOpen(false);
+  }, [channels, setChannels]);
 
   // VFO A/B as channels 4001/4002 — DM-32 only; UV5R-Mini and other radios do not have these in the channel list
   const vfoChannels = useMemo(() => {
@@ -137,6 +150,15 @@ export const ChannelsTab: React.FC = () => {
           >
             + Add
           </button>
+          {talkaroundEngagedCount > 0 && (
+            <button
+              onClick={() => setClearTalkaroundOpen(true)}
+              className="px-2 py-1 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-20 hover:border-opacity-50 rounded transition-colors focus:outline-none"
+              title="Clear the live talkaround-engaged state on every channel that has it set"
+            >
+              Clear Talkaround ({talkaroundEngagedCount})
+            </button>
+          )}
         </div>
       </div>
       <div className="mb-3 flex items-center gap-3 shrink-0">
@@ -202,6 +224,15 @@ export const ChannelsTab: React.FC = () => {
         message={`Delete ${pendingDeleteCount} selected ${formatPlural(pendingDeleteCount, 'channel')}?`}
         confirmLabel="Delete"
         variant="danger"
+      />
+      <ConfirmModal
+        isOpen={clearTalkaroundOpen}
+        onClose={() => setClearTalkaroundOpen(false)}
+        onConfirm={handleClearTalkaroundConfirm}
+        title="Clear Talkaround"
+        message={`Turn off the live talkaround-engaged state on ${talkaroundEngagedCount} ${formatPlural(talkaroundEngagedCount, 'channel')}?`}
+        confirmLabel="Clear"
+        variant="default"
       />
     </div>
   );
