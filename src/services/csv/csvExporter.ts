@@ -1,5 +1,12 @@
-import type { Channel, Contact } from '../../models';
+import type { Channel, Contact, Zone, ScanList, RXGroup, DMRRadioID } from '../../models';
 import { downloadFile } from '../../utils/download';
+
+function toCSV(headers: string[], rows: (string | number)[][]): string {
+  return [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+  ].join('\n');
+}
 
 export function exportChannelsToCSV(channels: Channel[]): string {
   const headers = [
@@ -78,30 +85,92 @@ export function exportChannelsToCSV(channels: Channel[]): string {
     channel.contactId.toString(),
   ]);
 
-  const csvContent = [
-    headers.join(','),
-    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-  ].join('\n');
-
-  return csvContent;
+  return toCSV(headers, rows);
 }
 
 export function exportContactsToCSV(contacts: Contact[]): string {
-  const headers = ['ID', 'Name', 'DMR ID', 'Call Sign'];
+  const headers = ['ID', 'Name', 'DMR ID', 'Call Sign', 'City', 'Province', 'Country', 'Remark'];
 
   const rows = contacts.map(contact => [
     contact.id.toString(),
     contact.name,
     contact.dmrId.toString(),
     contact.callSign || '',
+    contact.city || '',
+    contact.province || '',
+    contact.country || '',
+    contact.remark || '',
   ]);
 
-  const csvContent = [
-    headers.join(','),
-    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-  ].join('\n');
+  return toCSV(headers, rows);
+}
 
-  return csvContent;
+/** Channel numbers are joined with ';' within a single cell since Zone/ScanList each hold a list. */
+const CHANNEL_LIST_SEPARATOR = ';';
+
+export function exportZonesToCSV(zones: Zone[]): string {
+  const headers = ['Zone Name', 'Channels'];
+
+  const rows = zones.map(zone => [
+    zone.name,
+    zone.channels.join(CHANNEL_LIST_SEPARATOR),
+  ]);
+
+  return toCSV(headers, rows);
+}
+
+export function exportScanListsToCSV(scanLists: ScanList[]): string {
+  const headers = [
+    'Name',
+    'Channels',
+    'CTC Scan Mode',
+    'Scan TX Mode',
+    'Hang Time',
+    'Priority 1 Type',
+    'Priority 2 Type',
+    'Priority Channel 1',
+    'Priority Channel 2',
+    'Designated TX Channel',
+  ];
+
+  const rows = scanLists.map(scanList => [
+    scanList.name,
+    scanList.channels.join(CHANNEL_LIST_SEPARATOR),
+    scanList.ctcScanMode.toString(),
+    scanList.scanTxMode.toString(),
+    scanList.hangTime?.toString() ?? '',
+    scanList.priority1Type?.toString() ?? '',
+    scanList.priority2Type?.toString() ?? '',
+    scanList.priorityChannel1?.toString() ?? '',
+    scanList.priorityChannel2?.toString() ?? '',
+    scanList.designatedTxChannel?.toString() ?? '',
+  ]);
+
+  return toCSV(headers, rows);
+}
+
+export function exportRXGroupsToCSV(groups: RXGroup[]): string {
+  const headers = ['Index', 'Name', 'Talk Group DMR IDs'];
+
+  const rows = groups.map(group => [
+    group.index.toString(),
+    group.name,
+    group.talkGroupIndices.join(CHANNEL_LIST_SEPARATOR),
+  ]);
+
+  return toCSV(headers, rows);
+}
+
+export function exportDMRRadioIDsToCSV(radioIds: DMRRadioID[]): string {
+  const headers = ['Index', 'DMR ID', 'Name'];
+
+  const rows = radioIds.map(radioId => [
+    radioId.index.toString(),
+    radioId.dmrId,
+    radioId.name,
+  ]);
+
+  return toCSV(headers, rows);
 }
 
 export function downloadCSV(content: string, filename: string): void {

@@ -7,6 +7,10 @@ import { ContactsTable } from './ContactsTable';
 import { ProgressBar } from '../ui/ProgressBar';
 import { COUNTRIES_BY_REGION, type CountryRegion } from '../../constants/countries';
 import { US_STATES } from '../../constants/usStates';
+import { ConfirmModal } from '../ui/ConfirmModal';
+import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
+import { useAlert } from '../../hooks/useAlert';
+import { exportContactsToCSV, importContactsFromCSV, downloadCSV } from '../../services/csv';
 import type { Contact } from '../../models/Contact';
 
 // RadioID User interface
@@ -218,8 +222,36 @@ export const ContactsTab: React.FC = () => {
   const [truncationWarning, setTruncationWarning] = useState<string | null>(null);
   const [isReading, setIsReading] = useState(false);
   const [isWriting, setIsWriting] = useState(false);
-  
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Full CSV Export/Import');
+  const [pendingContactsImport, setPendingContactsImport] = useState<Contact[] | null>(null);
+
   const contactCapacity = radioInfo?.maxContacts ?? 50000;
+
+  // Full-fidelity CSV export/import (ID, DMR ID, call sign, city, province, country, remark) —
+  // distinct from the RadioID.net download above. Importing REPLACES all contacts.
+  const handleExportContactsCsv = useCallback(() => {
+    downloadCSV(exportContactsToCSV(contacts), 'contacts.csv');
+  }, [contacts]);
+
+  const handleImportContactsFile = useCallback((file: File) => {
+    file.text().then(content => {
+      const result = importContactsFromCSV(content);
+      if (!result.success || !result.contacts) {
+        showAlert(result.errors?.join('\n') || 'Failed to import contacts CSV', 'Import failed');
+        return;
+      }
+      setPendingContactsImport(result.contacts);
+    }).catch(err => {
+      showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
+    });
+  }, [showAlert]);
+
+  const handleImportContactsConfirm = useCallback(() => {
+    if (pendingContactsImport) {
+      setContacts(pendingContactsImport);
+    }
+    setPendingContactsImport(null);
+  }, [pendingContactsImport, setContacts]);
 
   // Estimate time based on 150k contacts = 6 minutes
   const estimateTime = (contactCount: number): string => {
@@ -699,8 +731,16 @@ export const ContactsTab: React.FC = () => {
       <div className="flex-1 flex flex-col min-h-0">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-2xl font-bold text-neon-cyan">CSV Contacts</h2>
-          <div className="text-cool-gray">
-            {contacts.length} / {contactCapacity.toLocaleString()} {formatPlural(contacts.length, 'contact')}
+          <div className="flex items-center gap-4">
+            <div className="text-cool-gray">
+              {contacts.length} / {contactCapacity.toLocaleString()} {formatPlural(contacts.length, 'contact')}
+            </div>
+            <CsvExportImportButtons
+              label="contacts"
+              onExport={handleExportContactsCsv}
+              onImportFile={handleImportContactsFile}
+              exportDisabled={contacts.length === 0}
+            />
           </div>
         </div>
         <div className="mb-4 text-cool-gray text-sm">
@@ -710,6 +750,23 @@ export const ContactsTab: React.FC = () => {
           <ContactsTable />
         </div>
       </div>
+      <ConfirmModal
+        isOpen={pendingContactsImport !== null}
+        onClose={() => setPendingContactsImport(null)}
+        onConfirm={handleImportContactsConfirm}
+        title="Import Contacts CSV"
+        message={`Replace all ${contacts.length} existing ${formatPlural(contacts.length, 'contact')} with ${pendingContactsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
+        confirmLabel="Replace"
+        variant="danger"
+      />
+      <ConfirmModal
+        isOpen={alertOpen}
+        onClose={closeAlert}
+        title={alertTitle}
+        message={alertMessage}
+        confirmLabel="OK"
+        variant="alert"
+      />
     </div>
   );
 };
