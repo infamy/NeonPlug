@@ -14,6 +14,8 @@ interface ZonesState {
   setZones: (zones: Zone[]) => void;
   setRawZoneData: (rawData: Map<string, RawZoneData>) => void;
   addZone: (zone: Omit<Zone, 'id'>) => void;
+  /** Append multiple zones atomically against the latest state (safe against concurrent/rapid add actions) */
+  addZones: (zones: Zone[]) => void;
   updateZone: (id: string, zone: Partial<Omit<Zone, 'id'>>) => void;
   renameZone: (id: string, newName: string) => boolean;
   deleteZone: (id: string) => void;
@@ -37,6 +39,13 @@ export const useZonesStore = create<ZonesState>((set, get) => ({
     set({ zones: zonesWithIds });
   },
   setRawZoneData: (rawData) => set({ rawZoneData: rawData }),
+  addZones: (zones) => set((state) => {
+    const zonesWithIds = zones.map((z, index) => ({
+      ...z,
+      id: z.id || `zone-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`
+    }));
+    return { zones: [...state.zones, ...zonesWithIds] };
+  }),
   addZone: (zone) => set((state) => {
     if (state.zones.length >= 250) {
       console.warn('Maximum of 250 zones allowed');

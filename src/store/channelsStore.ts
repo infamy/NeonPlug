@@ -16,6 +16,8 @@ interface ChannelsState {
   setChannels: (channels: Channel[]) => void;
   setRawChannelData: (rawData: Map<number, RawChannelData>) => void;
   addChannel: (channel: Channel) => void;
+  /** Append multiple channels atomically against the latest state (safe against concurrent/rapid add actions) */
+  addChannels: (channels: Channel[]) => void;
   updateChannel: (number: number, channel: Partial<Channel>) => void;
   deleteChannel: (number: number) => void;
   /** Remove multiple channels at once and renumber; use for bulk delete so renumbering doesn't invalidate later numbers */
@@ -31,6 +33,9 @@ export const useChannelsStore = create<ChannelsState>((set) => ({
   setRawChannelData: (rawData) => set({ rawChannelData: rawData }),
   addChannel: (channel) => set((state) => ({
     channels: [...state.channels, channel]
+  })),
+  addChannels: (newChannels) => set((state) => ({
+    channels: [...state.channels, ...newChannels]
   })),
   updateChannel: (number, updates) => set((state) => ({
     channels: state.channels.map(ch => 

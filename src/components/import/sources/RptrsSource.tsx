@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { formatPlural } from '../../../utils/formatPlural';
-import { useImportStores } from '../../../hooks/useImportStores';
+import { useChannelsStore } from '../../../store/channelsStore';
+import { useZonesStore } from '../../../store/zonesStore';
 import { getNextChannelNumber, selectionCardClass } from '../../../utils/importHelpers';
 import { generateRptrsChannels } from '../../../services/rptrsChannels';
 import { mergeChannelSetsWithExisting } from '../../../services/channelMerger';
@@ -27,8 +28,6 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
   onError,
   onGenerationResult,
 }) => {
-  const { channels, setChannels, zones, setZones } = useImportStores();
-
   const [rptrsSearchFilter, setRptrsSearchFilter] = useState('');
   const [selectedRptrs, setSelectedRptrs] = useState<Set<number>>(new Set());
   const [rptrsZoneGrouping, setRptrsZoneGrouping] = useState<'location' | 'single'>('location');
@@ -72,7 +71,12 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
         throw new Error('No DMR repeaters selected');
       }
 
-      const nextChannelNumber = getNextChannelNumber(channels);
+      // Read the live channel list at the moment of the click, not a value captured
+      // at render time — if another "Add channels" action ran since this component
+      // last rendered, a stale array here would pick colliding channel numbers and
+      // then blow away those newer channels entirely when committed below.
+      const currentChannels = useChannelsStore.getState().channels;
+      const nextChannelNumber = getNextChannelNumber(currentChannels);
 
       // Generate channels and zones for selected repeaters
       const result = generateRptrsChannels(
@@ -92,11 +96,13 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
       // Existing channels are never renumbered — renumbering them would break
       // every zone and scan list that references them.
       const { channelsToAdd, channelMapping } = mergeChannelSetsWithExisting(
-        channels,
+        currentChannels,
         [result.channels],
         nextChannelNumber
       );
-      setChannels([...channels, ...channelsToAdd]);
+      // Functional append: commits against whatever is in the store right now,
+      // instead of replacing it wholesale with a snapshot that may already be stale.
+      useChannelsStore.getState().addChannels(channelsToAdd);
 
       // Remap the generated zones through the merge mapping: a new channel that
       // collapsed into another (or matched an existing channel) changed number.
@@ -110,7 +116,7 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
           )].sort((a, b) => a - b),
         }))
         .filter(zone => zone.channels.length > 0);
-      setZones([...zones, ...remappedZones]);
+      useZonesStore.getState().addZones(remappedZones);
 
       onGenerationResult({
         channels: channelsToAdd.length,
