@@ -41,6 +41,8 @@ export interface MMDVMGenerateOptions {
   firstContactId: number; // Next available contact id (e.g. max(existing contact ids) + 1)
   dmrRadioIdIndex: number | undefined; // 0-based index into DMR Radio IDs; undefined = None
   zoneName?: string;
+  /** 1 = TS1, 2 = TS2. Defaults to TS2 (the usual MMDVM hotspot convention). */
+  timeslot?: 1 | 2;
 }
 
 export interface MMDVMGenerateResult {
@@ -72,7 +74,7 @@ export function isValidMMDVMDuplexFrequency(mhz: number): boolean {
  * Same RX/TX pair for all channels; Slot 2, Color Code 1; each channel gets its own talk group.
  */
 export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGenerateResult {
-  const { frequencyMhz, txFrequencyMhz, entries, firstChannelNumber, firstContactId, dmrRadioIdIndex, zoneName } = options;
+  const { frequencyMhz, txFrequencyMhz, entries, firstChannelNumber, firstContactId, dmrRadioIdIndex, zoneName, timeslot } = options;
 
   // The narrow 431-435 MHz range is a simplex-hotspot calling-frequency convention — it
   // doesn't apply to duplex, where RX mirrors the hotspot's own transmit-to-repeater
@@ -89,6 +91,7 @@ export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGener
     throw new Error(`Frequency must be between ${MMDVM_FREQ_MIN_MHZ} and ${MMDVM_FREQ_MAX_MHZ} MHz`);
   }
   const txFreq = txFrequencyMhz ?? frequencyMhz;
+  const slotOperation = timeslot === 1 ? 0 : 1; // Storage: 0 = TS1, 1 = TS2
   if (!entries.length) {
     throw new Error('At least one channel/talk group entry is required');
   }
@@ -119,7 +122,7 @@ export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGener
       scanAdd: true,
       colorCode: 1,
       contactId,
-      slotOperation: 1, // Slot 2 (TS2)
+      slotOperation,
       dmrRadioIdIndex,
     });
     channels.push(ch);
