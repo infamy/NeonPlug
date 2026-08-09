@@ -31,7 +31,8 @@ export interface Channel {
   unknown1A_6_4: number;      // Bits 6-4: Unknown Setting (0-3, values ≥4 reset to 0)
   unknown1A_3: boolean;       // Bit 3: Unknown
   aprsReceive: boolean;       // Bit 2: 0=Off, 1=On
-  
+  unknown1A_1_0: number;      // Bits 1-0: Unknown, but OEM CPS writes 3 on every channel - preserve, don't zero
+
   // Emergency Settings (0x1B)
   emergencyIndicator: boolean; // Bit 7: 0=Off, 1=On
   emergencyAck: boolean;       // Bit 6: 0=Off, 1=On

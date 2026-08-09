@@ -266,12 +266,13 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   // Bits 6-4 (mask 0x70): Unknown Setting (0-3, values ≥4 reset to 0)
   // Bit 3 (mask 0x08): Unknown
   // Bit 2 (mask 0x04): APRS Receive (0=Off, 1=On)
-  // Bits 1-0 (mask 0x03): Reserved/Unknown
+  // Bits 1-0 (mask 0x03): Unknown, but OEM CPS writes 3 here on every channel - preserve, don't zero
   const talkaroundAprs = data[0x1A];
   const forbidTalkaround = (talkaroundAprs & 0x80) !== 0;
   const unknown1A_6_4 = (talkaroundAprs >> 4) & 0x07;
   const unknown1A_3 = (talkaroundAprs & 0x08) !== 0;
   const aprsReceive = (talkaroundAprs & 0x04) !== 0;
+  const unknown1A_1_0 = talkaroundAprs & 0x03;
 
   // Emergency (0x1B)
   // Bit 7: Emergency Indicator (0=Off, 1=On)
@@ -502,6 +503,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     scanListId,
     forbidTalkaround,
     aprsReceive,
+    unknown1A_1_0,
     emergencyIndicator,
     emergencyAck,
     emergencySystemId,
@@ -614,7 +616,7 @@ export function encodeChannel(channel: Channel): Uint8Array {
   talkaroundAprs |= ((channel.unknown1A_6_4 & 0x07) << 4) & 0x70; // Bits 6-4
   if (channel.unknown1A_3) talkaroundAprs |= 0x08; // Bit 3
   if (channel.aprsReceive) talkaroundAprs |= 0x04; // Bit 2
-  // Bits 1-0: Reserved/Unknown (preserve original value if reading, otherwise leave as 0)
+  talkaroundAprs |= channel.unknown1A_1_0 & 0x03; // Bits 1-0: preserve (OEM CPS writes 3 here)
   data[0x1A] = talkaroundAprs;
 
   // Emergency (0x1B)

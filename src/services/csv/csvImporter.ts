@@ -94,6 +94,7 @@ export function importChannelsFromCSV(content: string): ImportResult {
           unknown1A_6_4: getFloat(headers, row, 'unknown1a_6_4', 0),
           unknown1A_3: getBool(headers, row, 'unknown1a_3'),
           aprsReceive: getBool(headers, row, 'aprs receive'),
+          unknown1A_1_0: getFloat(headers, row, 'unknown1a_1_0', 3),
           emergencyIndicator: getBool(headers, row, 'emergency'),
           emergencyAck: getBool(headers, row, 'emergency ack'),
           emergencySystemId: getFloat(headers, row, 'emergency id', 0),
