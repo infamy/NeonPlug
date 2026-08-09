@@ -7,11 +7,12 @@ import { getNextChannelNumber } from '../../../utils/importHelpers';
 import {
   generateMMDVMChannels,
   isValidMMDVMFrequency,
-  isValidMMDVMDuplexTxFrequency,
+  isValidMMDVMDuplexFrequency,
   MMDVM_FREQ_MIN_MHZ,
   MMDVM_FREQ_MAX_MHZ,
-  MMDVM_DUPLEX_TX_MIN_MHZ,
-  MMDVM_DUPLEX_TX_MAX_MHZ,
+  MMDVM_DUPLEX_VHF_MIN_MHZ,
+  MMDVM_DUPLEX_UHF_MAX_MHZ,
+  MMDVM_DUPLEX_RANGE_DESCRIPTION,
   type MMDVMChannelEntry,
 } from '../../../services/mmdvmChannels';
 import { Button } from '../../ui/Button';
@@ -48,17 +49,22 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
 
   const handleAddMmdvmChannels = () => {
     const freq = parseFloat(mmdvmFrequency);
-    if (!isValidMMDVMFrequency(freq)) {
-      onError(`RX frequency must be between ${MMDVM_FREQ_MIN_MHZ} and ${MMDVM_FREQ_MAX_MHZ} MHz`);
-      return;
-    }
     let txFreq: number | undefined;
     if (mmdvmDuplex) {
-      txFreq = parseFloat(mmdvmTxFrequency);
-      if (!isValidMMDVMDuplexTxFrequency(txFreq)) {
-        onError(`TX frequency must be between ${MMDVM_DUPLEX_TX_MIN_MHZ} and ${MMDVM_DUPLEX_TX_MAX_MHZ} MHz`);
+      // Duplex pairs with a real repeater — both sides use the broader 2m/70cm range, not
+      // the narrow simplex-hotspot calling range below.
+      if (!isValidMMDVMDuplexFrequency(freq)) {
+        onError(`RX frequency must be in ${MMDVM_DUPLEX_RANGE_DESCRIPTION}`);
         return;
       }
+      txFreq = parseFloat(mmdvmTxFrequency);
+      if (!isValidMMDVMDuplexFrequency(txFreq)) {
+        onError(`TX frequency must be in ${MMDVM_DUPLEX_RANGE_DESCRIPTION}`);
+        return;
+      }
+    } else if (!isValidMMDVMFrequency(freq)) {
+      onError(`Frequency must be between ${MMDVM_FREQ_MIN_MHZ} and ${MMDVM_FREQ_MAX_MHZ} MHz`);
+      return;
     }
     const validEntries = mmdvmEntries.filter(
       (e) => (e.talkGroupName?.trim() || e.channelName?.trim()) && !isNaN(e.talkGroupId) && e.talkGroupId >= 0
@@ -147,14 +153,16 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
               type="number"
               value={mmdvmFrequency}
               onChange={(e) => setMmdvmFrequency(e.target.value)}
-              min={MMDVM_FREQ_MIN_MHZ}
-              max={MMDVM_FREQ_MAX_MHZ}
+              min={mmdvmDuplex ? MMDVM_DUPLEX_VHF_MIN_MHZ : MMDVM_FREQ_MIN_MHZ}
+              max={mmdvmDuplex ? MMDVM_DUPLEX_UHF_MAX_MHZ : MMDVM_FREQ_MAX_MHZ}
               step="0.001"
               placeholder="431.150"
               className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
             />
             <p className="text-xs text-cool-gray mt-1">
-              {MMDVM_FREQ_MIN_MHZ}–{MMDVM_FREQ_MAX_MHZ} MHz
+              {mmdvmDuplex
+                ? `${MMDVM_DUPLEX_RANGE_DESCRIPTION} — the repeater's output frequency`
+                : `${MMDVM_FREQ_MIN_MHZ}–${MMDVM_FREQ_MAX_MHZ} MHz`}
             </p>
           </div>
           <div>
@@ -208,14 +216,14 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                 type="number"
                 value={mmdvmTxFrequency}
                 onChange={(e) => setMmdvmTxFrequency(e.target.value)}
-                min={MMDVM_DUPLEX_TX_MIN_MHZ}
-                max={MMDVM_DUPLEX_TX_MAX_MHZ}
+                min={MMDVM_DUPLEX_VHF_MIN_MHZ}
+                max={MMDVM_DUPLEX_UHF_MAX_MHZ}
                 step="0.001"
                 placeholder="e.g. 436.150"
                 className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
               />
               <p className="text-xs text-cool-gray mt-1">
-                {MMDVM_DUPLEX_TX_MIN_MHZ}–{MMDVM_DUPLEX_TX_MAX_MHZ} MHz — the repeater's input frequency
+                {MMDVM_DUPLEX_RANGE_DESCRIPTION} — the repeater's input frequency
               </p>
             </div>
           )}
