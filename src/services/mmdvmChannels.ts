@@ -1,7 +1,8 @@
 /**
- * MMDVM Simplex Channel Generator
- * Creates digital channels and talk groups for a simplex MMDVM hotspot
- * (single frequency, Slot 2, Color Code 1, user-defined talk groups).
+ * MMDVM Channel Generator
+ * Creates digital channels and talk groups for an MMDVM hotspot — either simplex
+ * (single frequency, the common case) or duplex (separate RX/TX, for a hotspot
+ * linked to a real UHF repeater pair). Slot 2, Color Code 1, user-defined talk groups.
  */
 
 import type { Channel, Contact, Zone } from '../models';
@@ -11,6 +12,13 @@ import { generateZoneId } from '../utils/zoneHelpers';
 export const MMDVM_FREQ_MIN_MHZ = 431;
 export const MMDVM_FREQ_MAX_MHZ = 435;
 
+/**
+ * A duplex hotspot's TX pairs with a real repeater, which can sit anywhere in the 70cm
+ * ham band — not just the narrow 431-435 MHz simplex-hotspot calling range above.
+ */
+export const MMDVM_DUPLEX_TX_MIN_MHZ = 400;
+export const MMDVM_DUPLEX_TX_MAX_MHZ = 480;
+
 export interface MMDVMChannelEntry {
   channelName: string;
   talkGroupName: string;
@@ -18,7 +26,9 @@ export interface MMDVMChannelEntry {
 }
 
 export interface MMDVMGenerateOptions {
-  frequencyMhz: number;
+  frequencyMhz: number; // RX frequency
+  /** TX frequency for a duplex hotspot; omit (or equal to frequencyMhz) for simplex. */
+  txFrequencyMhz?: number;
   entries: MMDVMChannelEntry[];
   firstChannelNumber: number;
   firstContactId: number; // Next available contact id (e.g. max(existing contact ids) + 1)
@@ -40,15 +50,28 @@ export function isValidMMDVMFrequency(mhz: number): boolean {
 }
 
 /**
- * Generate MMDVM simplex channels and talk group contacts.
- * Same frequency for all channels; Slot 2, Color Code 1; each channel gets its own talk group.
+ * Validate a duplex hotspot's TX frequency — the broader 70cm band, since it pairs
+ * with a real repeater rather than another hotspot.
+ */
+export function isValidMMDVMDuplexTxFrequency(mhz: number): boolean {
+  return mhz >= MMDVM_DUPLEX_TX_MIN_MHZ && mhz <= MMDVM_DUPLEX_TX_MAX_MHZ && !isNaN(mhz);
+}
+
+/**
+ * Generate MMDVM channels and talk group contacts, simplex or duplex.
+ * Same RX/TX pair for all channels; Slot 2, Color Code 1; each channel gets its own talk group.
  */
 export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGenerateResult {
-  const { frequencyMhz, entries, firstChannelNumber, firstContactId, dmrRadioIdIndex, zoneName } = options;
+  const { frequencyMhz, txFrequencyMhz, entries, firstChannelNumber, firstContactId, dmrRadioIdIndex, zoneName } = options;
 
   if (!isValidMMDVMFrequency(frequencyMhz)) {
-    throw new Error(`Frequency must be between ${MMDVM_FREQ_MIN_MHZ} and ${MMDVM_FREQ_MAX_MHZ} MHz`);
+    throw new Error(`RX frequency must be between ${MMDVM_FREQ_MIN_MHZ} and ${MMDVM_FREQ_MAX_MHZ} MHz`);
   }
+  const isDuplex = txFrequencyMhz !== undefined && txFrequencyMhz !== frequencyMhz;
+  if (isDuplex && !isValidMMDVMDuplexTxFrequency(txFrequencyMhz)) {
+    throw new Error(`TX frequency must be between ${MMDVM_DUPLEX_TX_MIN_MHZ} and ${MMDVM_DUPLEX_TX_MAX_MHZ} MHz`);
+  }
+  const txFreq = txFrequencyMhz ?? frequencyMhz;
   if (!entries.length) {
     throw new Error('At least one channel/talk group entry is required');
   }
@@ -72,7 +95,7 @@ export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGener
       number: firstChannelNumber + i,
       name: channelName,
       rxFrequency: frequencyMhz,
-      txFrequency: frequencyMhz, // Simplex: same as RX
+      txFrequency: txFreq,
       mode: 'Digital',
       bandwidth: '12.5kHz',
       power: 'Low',
