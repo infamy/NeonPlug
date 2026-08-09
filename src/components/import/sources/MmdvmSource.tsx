@@ -7,8 +7,11 @@ import { getNextChannelNumber } from '../../../utils/importHelpers';
 import {
   generateMMDVMChannels,
   isValidMMDVMFrequency,
+  isValidMMDVMDuplexTxFrequency,
   MMDVM_FREQ_MIN_MHZ,
   MMDVM_FREQ_MAX_MHZ,
+  MMDVM_DUPLEX_TX_MIN_MHZ,
+  MMDVM_DUPLEX_TX_MAX_MHZ,
   type MMDVMChannelEntry,
 } from '../../../services/mmdvmChannels';
 import { Button } from '../../ui/Button';
@@ -24,6 +27,8 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
   const { radioIds } = useDMRRadioIDsStore();
 
   const [mmdvmFrequency, setMmdvmFrequency] = useState('431.150');
+  const [mmdvmDuplex, setMmdvmDuplex] = useState(false);
+  const [mmdvmTxFrequency, setMmdvmTxFrequency] = useState('');
   const [mmdvmEntries, setMmdvmEntries] = useState<MMDVMChannelEntry[]>([
     { channelName: '', talkGroupName: 'Local', talkGroupId: 9 },
   ]);
@@ -43,8 +48,16 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
   const handleAddMmdvmChannels = () => {
     const freq = parseFloat(mmdvmFrequency);
     if (!isValidMMDVMFrequency(freq)) {
-      onError(`Frequency must be between ${MMDVM_FREQ_MIN_MHZ} and ${MMDVM_FREQ_MAX_MHZ} MHz`);
+      onError(`RX frequency must be between ${MMDVM_FREQ_MIN_MHZ} and ${MMDVM_FREQ_MAX_MHZ} MHz`);
       return;
+    }
+    let txFreq: number | undefined;
+    if (mmdvmDuplex) {
+      txFreq = parseFloat(mmdvmTxFrequency);
+      if (!isValidMMDVMDuplexTxFrequency(txFreq)) {
+        onError(`TX frequency must be between ${MMDVM_DUPLEX_TX_MIN_MHZ} and ${MMDVM_DUPLEX_TX_MAX_MHZ} MHz`);
+        return;
+      }
     }
     const validEntries = mmdvmEntries.filter(
       (e) => (e.talkGroupName?.trim() || e.channelName?.trim()) && !isNaN(e.talkGroupId) && e.talkGroupId >= 0
@@ -80,6 +93,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
 
       const result = generateMMDVMChannels({
         frequencyMhz: freq,
+        txFrequencyMhz: txFreq,
         entries: validEntries,
         firstChannelNumber: nextChannelNumber,
         firstContactId,
@@ -106,7 +120,10 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
     <Card padding="tight" className="mb-4">
       <SectionTitle as="h3" size="lg" className="mb-2">MMDVM</SectionTitle>
       <p className="text-sm text-cool-gray mb-4">
-        Add simplex MMDVM hotspot channels (one frequency, Slot 2, Color Code 1). You can create multiple channels on the same frequency with different talk groups—for example, one for local (TG 9) and one for a brandmeister talk group.
+        Add MMDVM hotspot channels (Slot 2, Color Code 1). Simplex uses one frequency for RX and TX;
+        duplex pairs a separate TX frequency for a hotspot linked to a real repeater. You can create
+        multiple channels on the same frequency pair with different talk groups—for example, one for
+        local (TG 9) and one for a brandmeister talk group.
       </p>
 
       <div className="grid grid-cols-1 gap-4 mb-4">
@@ -123,7 +140,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
             />
           </div>
           <div>
-            <label className="block text-sm text-cool-gray mb-2">Frequency (MHz)</label>
+            <label className="block text-sm text-cool-gray mb-2">{mmdvmDuplex ? 'RX Frequency (MHz)' : 'Frequency (MHz)'}</label>
             <input
               type="number"
               value={mmdvmFrequency}
@@ -156,6 +173,36 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
               For TX on all channels
             </p>
           </div>
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2 cursor-pointer w-fit">
+            <input
+              type="checkbox"
+              checked={mmdvmDuplex}
+              onChange={(e) => setMmdvmDuplex(e.target.checked)}
+              className="w-4 h-4 accent-neon-cyan"
+            />
+            <span className="text-sm text-cool-gray">Duplex (hotspot linked to a real repeater)</span>
+          </label>
+          {mmdvmDuplex && (
+            <div className="mt-2 max-w-xs">
+              <label className="block text-sm text-cool-gray mb-2">TX Frequency (MHz)</label>
+              <input
+                type="number"
+                value={mmdvmTxFrequency}
+                onChange={(e) => setMmdvmTxFrequency(e.target.value)}
+                min={MMDVM_DUPLEX_TX_MIN_MHZ}
+                max={MMDVM_DUPLEX_TX_MAX_MHZ}
+                step="0.001"
+                placeholder="e.g. 436.150"
+                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              />
+              <p className="text-xs text-cool-gray mt-1">
+                {MMDVM_DUPLEX_TX_MIN_MHZ}–{MMDVM_DUPLEX_TX_MAX_MHZ} MHz — the repeater's input frequency
+              </p>
+            </div>
+          )}
         </div>
 
         <div>
