@@ -29,6 +29,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
   const [mmdvmFrequency, setMmdvmFrequency] = useState('431.150');
   const [mmdvmDuplex, setMmdvmDuplex] = useState(false);
   const [mmdvmTxFrequency, setMmdvmTxFrequency] = useState('');
+  const [mmdvmTimeslot, setMmdvmTimeslot] = useState<'1' | '2'>('2');
   const [mmdvmEntries, setMmdvmEntries] = useState<MMDVMChannelEntry[]>([
     { channelName: '', talkGroupName: 'Local', talkGroupId: 9 },
   ]);
@@ -99,6 +100,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
         firstContactId,
         dmrRadioIdIndex: validDmrIndex,
         zoneName: mmdvmZoneName.trim() || undefined,
+        timeslot: mmdvmTimeslot === '1' ? 1 : 2,
       });
 
       useContactsStore.getState().addContacts(result.contacts);
@@ -120,14 +122,14 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
     <Card padding="tight" className="mb-4">
       <SectionTitle as="h3" size="lg" className="mb-2">MMDVM</SectionTitle>
       <p className="text-sm text-cool-gray mb-4">
-        Add MMDVM hotspot channels (Slot 2, Color Code 1). Simplex uses one frequency for RX and TX;
-        duplex pairs a separate TX frequency for a hotspot linked to a real repeater. You can create
-        multiple channels on the same frequency pair with different talk groups—for example, one for
-        local (TG 9) and one for a brandmeister talk group.
+        Add MMDVM hotspot channels (Color Code 1). Simplex uses one frequency for RX and TX; duplex
+        pairs a separate TX frequency for a hotspot linked to a real repeater. You can create multiple
+        channels on the same frequency pair with different talk groups—for example, one for local
+        (TG 9) and one for a brandmeister talk group.
       </p>
 
       <div className="grid grid-cols-1 gap-4 mb-4">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm text-cool-gray mb-2">Zone name</label>
             <input
@@ -171,6 +173,20 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
             </select>
             <p className="text-xs text-cool-gray mt-1">
               For TX on all channels
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm text-cool-gray mb-2">Timeslot</label>
+            <select
+              value={mmdvmTimeslot}
+              onChange={(e) => setMmdvmTimeslot(e.target.value === '1' ? '1' : '2')}
+              className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+            >
+              <option value="1">TS1</option>
+              <option value="2">TS2</option>
+            </select>
+            <p className="text-xs text-cool-gray mt-1">
+              Match your hotspot/repeater's slot
             </p>
           </div>
         </div>
@@ -300,7 +316,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
         )}
 
         <p className="text-xs text-cool-gray">
-          Settings: Digital, Slot 2, Color Code 1. Selected DMR Radio ID is used for TX on all channels.
+          Settings: Digital, Color Code 1. Selected DMR Radio ID is used for TX on all channels.
         </p>
       </div>
 

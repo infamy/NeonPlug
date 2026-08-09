@@ -34,6 +34,8 @@ export interface MMDVMGenerateOptions {
   firstContactId: number; // Next available contact id (e.g. max(existing contact ids) + 1)
   dmrRadioIdIndex: number | undefined; // 0-based index into DMR Radio IDs; undefined = None
   zoneName?: string;
+  /** 1 = TS1, 2 = TS2. Defaults to TS2 (the usual MMDVM hotspot convention). */
+  timeslot?: 1 | 2;
 }
 
 export interface MMDVMGenerateResult {
@@ -62,7 +64,7 @@ export function isValidMMDVMDuplexTxFrequency(mhz: number): boolean {
  * Same RX/TX pair for all channels; Slot 2, Color Code 1; each channel gets its own talk group.
  */
 export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGenerateResult {
-  const { frequencyMhz, txFrequencyMhz, entries, firstChannelNumber, firstContactId, dmrRadioIdIndex, zoneName } = options;
+  const { frequencyMhz, txFrequencyMhz, entries, firstChannelNumber, firstContactId, dmrRadioIdIndex, zoneName, timeslot } = options;
 
   if (!isValidMMDVMFrequency(frequencyMhz)) {
     throw new Error(`RX frequency must be between ${MMDVM_FREQ_MIN_MHZ} and ${MMDVM_FREQ_MAX_MHZ} MHz`);
@@ -72,6 +74,7 @@ export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGener
     throw new Error(`TX frequency must be between ${MMDVM_DUPLEX_TX_MIN_MHZ} and ${MMDVM_DUPLEX_TX_MAX_MHZ} MHz`);
   }
   const txFreq = txFrequencyMhz ?? frequencyMhz;
+  const slotOperation = timeslot === 1 ? 0 : 1; // Storage: 0 = TS1, 1 = TS2
   if (!entries.length) {
     throw new Error('At least one channel/talk group entry is required');
   }
@@ -102,7 +105,7 @@ export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGener
       scanAdd: true,
       colorCode: 1,
       contactId,
-      slotOperation: 1, // Slot 2 (TS2)
+      slotOperation,
       dmrRadioIdIndex,
     });
     channels.push(ch);
