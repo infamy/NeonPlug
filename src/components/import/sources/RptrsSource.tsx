@@ -1,11 +1,22 @@
 import React, { useState } from 'react';
 import { formatPlural } from '../../../utils/formatPlural';
+import type { Channel, Zone } from '../../../models';
+import type { QuickContact } from '../../../models/QuickContact';
 import { useChannelsStore } from '../../../store/channelsStore';
 import { useZonesStore } from '../../../store/zonesStore';
+import { useQuickContactsStore } from '../../../store/quickContactsStore';
 import { getNextChannelNumber, selectionCardClass } from '../../../utils/importHelpers';
+import { generateZoneId } from '../../../utils/zoneHelpers';
 import { generateRptrsChannels } from '../../../services/rptrsChannels';
+import { generateMMDVMChannels, type MMDVMChannelEntry } from '../../../services/mmdvmChannels';
+import { fetchBrandmeisterStaticTalkgroups, fetchBrandmeisterTalkgroupName } from '../../../services/brandmeisterApi';
 import { mergeChannelSetsWithExisting } from '../../../services/channelMerger';
-import { convertRptrFrequency, type RptrData } from '../../../data/rptrsData';
+import {
+  convertRptrFrequency,
+  convertRptrOffset,
+  groupRptrsByLocation,
+  type RptrData,
+} from '../../../data/rptrsData';
 import { SelectAllButtons } from '../SelectAllButtons';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
@@ -32,6 +43,7 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
   const [selectedRptrs, setSelectedRptrs] = useState<Set<number>>(new Set());
   const [rptrsZoneGrouping, setRptrsZoneGrouping] = useState<'location' | 'single'>('location');
   const [rptrsSeparateTimeslots, setRptrsSeparateTimeslots] = useState(true);
+  const [rptrsUseStaticTgs, setRptrsUseStaticTgs] = useState(false);
   const [isAddingRptrs, setIsAddingRptrs] = useState(false);
 
   const handleToggleRptr = (index: number) => {
@@ -50,6 +62,134 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
 
   const handleDeselectAllRptrs = () => {
     setSelectedRptrs(new Set());
+  };
+
+  /**
+   * Per-repeater, per-static-talk-group channel generation. BrandMeister only — that's the
+   * only network in rptrs.json whose static TG assignments are queryable via a public API.
+   * Repeaters on other networks (or BrandMeister repeaters with none configured) are skipped
+   * with a console warning rather than failing the whole batch.
+   */
+  const generateStaticTgChannels = async (
+    selectedRptrsList: (RptrData & { distance?: number })[],
+    startChannelNumber: number
+  ): Promise<{ channels: Channel[]; zones: Zone[]; newTalkGroups: Omit<QuickContact, 'index' | 'offset' | 'rawData' | 'hasHeader'>[] }> => {
+    const existingTalkGroups = useQuickContactsStore.getState().contacts;
+    const queuedNewTgs: { contactNumber: number; index: number; name: string; callType: number; flag: number }[] = [];
+    let nextTgIndex = existingTalkGroups.length + 1;
+
+    const rptrsToProcess = selectedRptrsList.map(({ distance: _distance, ...rptr }) => rptr);
+    const uniqueRptrs = new Map<string, RptrData>();
+    for (const rptr of rptrsToProcess) {
+      const freqMhz = convertRptrFrequency(rptr.frequency);
+      const key = `${rptr.callsign}|${freqMhz.toFixed(3)}|${rptr.color_code}`;
+      if (!uniqueRptrs.has(key)) uniqueRptrs.set(key, rptr);
+    }
+
+    const locationGroups = rptrsZoneGrouping === 'location'
+      ? groupRptrsByLocation(Array.from(uniqueRptrs.values()), 2)
+      : null;
+
+    const channels: Channel[] = [];
+    const zones: Zone[] = [];
+    const allZoneChannels: number[] = [];
+    let channelNumber = startChannelNumber;
+
+    for (const rptr of uniqueRptrs.values()) {
+      if ((rptr.ipsc_network || '').toLowerCase() !== 'brandmeister') {
+        console.warn(`Skipping static TG import for ${rptr.callsign} — not a BrandMeister repeater`);
+        continue;
+      }
+
+      let staticTgs;
+      try {
+        staticTgs = await fetchBrandmeisterStaticTalkgroups(rptr.id);
+      } catch (err) {
+        console.warn(`Skipping static TG import for ${rptr.callsign} — lookup failed`, err);
+        continue;
+      }
+      if (staticTgs.length === 0) {
+        console.warn(`Skipping static TG import for ${rptr.callsign} — no static talk groups configured`);
+        continue;
+      }
+
+      const rxFrequency = convertRptrFrequency(rptr.frequency);
+      const txFrequency = rxFrequency + convertRptrOffset(rptr.offset);
+
+      const entries: MMDVMChannelEntry[] = [];
+      for (const tg of staticTgs) {
+        const existing = existingTalkGroups.find(c => c.contactNumber === tg.talkgroup)
+          ?? queuedNewTgs.find(c => c.contactNumber === tg.talkgroup);
+        let contactId: number;
+        if (existing) {
+          contactId = existing.index;
+        } else {
+          const fetchedName = await fetchBrandmeisterTalkgroupName(tg.talkgroup);
+          const tgName = (fetchedName || `TG ${tg.talkgroup}`).substring(0, 16);
+          contactId = nextTgIndex++;
+          queuedNewTgs.push({ contactNumber: tg.talkgroup, index: contactId, name: tgName, callType: 0x04, flag: 0x00 });
+        }
+        entries.push({
+          channelName: `${rptr.callsign}-${tg.talkgroup}`.substring(0, 16),
+          contactId,
+          timeslot: tg.slot,
+        });
+      }
+      if (entries.length === 0) continue;
+
+      let result;
+      try {
+        result = generateMMDVMChannels({
+          frequencyMhz: rxFrequency,
+          txFrequencyMhz: txFrequency,
+          entries,
+          firstChannelNumber: channelNumber,
+          dmrRadioIdIndex: undefined,
+          colorCode: rptr.color_code,
+        });
+      } catch (err) {
+        console.warn(`Skipping static TG import for ${rptr.callsign} — ${err instanceof Error ? err.message : 'invalid frequency'}`);
+        continue;
+      }
+      channelNumber += result.channels.length;
+      channels.push(...result.channels);
+      const channelNumbers = result.channels.map(c => c.number);
+
+      if (rptrsZoneGrouping === 'single') {
+        for (const num of channelNumbers) {
+          if (!allZoneChannels.includes(num)) allZoneChannels.push(num);
+        }
+      } else if (locationGroups) {
+        for (const [locationName, locationRptrs] of locationGroups.entries()) {
+          if (locationRptrs.some(r =>
+            r.callsign === rptr.callsign &&
+            Math.abs(convertRptrFrequency(r.frequency) - rxFrequency) < 0.001 &&
+            r.color_code === rptr.color_code
+          )) {
+            const zoneName = `DMR-${locationName}`.substring(0, 10);
+            let zone = zones.find(z => z.name === zoneName);
+            if (!zone) {
+              zone = { id: generateZoneId(), name: zoneName, channels: [] };
+              zones.push(zone);
+            }
+            for (const num of channelNumbers) {
+              if (!zone.channels.includes(num)) zone.channels.push(num);
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    if (rptrsZoneGrouping === 'single' && allZoneChannels.length > 0) {
+      zones.push({ id: generateZoneId(), name: 'DMR Rptrs', channels: Array.from(new Set(allZoneChannels)) });
+    }
+
+    const newTalkGroups = queuedNewTgs
+      .sort((a, b) => a.index - b.index)
+      .map(({ contactNumber, name, callType, flag }) => ({ contactNumber, name, callType, flag }));
+
+    return { channels, zones, newTalkGroups };
   };
 
   const handleAddRptrsChannels = async () => {
@@ -78,18 +218,29 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
       const currentChannels = useChannelsStore.getState().channels;
       const nextChannelNumber = getNextChannelNumber(currentChannels);
 
-      // Generate channels and zones for selected repeaters
-      const result = generateRptrsChannels(
-        nextChannelNumber,
-        selectedRptrsList,
-        rptrsZoneGrouping === 'single',
-        rptrsZoneGrouping === 'location',
-        rptrsSeparateTimeslots
-      );
+      const result = rptrsUseStaticTgs
+        ? await generateStaticTgChannels(selectedRptrsList, nextChannelNumber)
+        : generateRptrsChannels(
+            nextChannelNumber,
+            selectedRptrsList,
+            rptrsZoneGrouping === 'single',
+            rptrsZoneGrouping === 'location',
+            rptrsSeparateTimeslots
+          );
 
       if (result.channels.length === 0) {
-        onError('No channels to add from selected DMR repeaters');
+        onError(
+          rptrsUseStaticTgs
+            ? 'No static talk group channels generated — selected repeaters may not be on BrandMeister, or have none configured'
+            : 'No channels to add from selected DMR repeaters'
+        );
         return;
+      }
+
+      // Commit any newly-created talk groups first, so the channels' contactId
+      // references resolve to real entries as soon as they land in the store.
+      if ('newTalkGroups' in result && result.newTalkGroups.length > 0) {
+        useQuickContactsStore.getState().addContacts(result.newTalkGroups);
       }
 
       // Merge overlaps within the new channels and dedupe against existing ones.
@@ -244,11 +395,26 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={rptrsSeparateTimeslots}
-                  onChange={(e) => setRptrsSeparateTimeslots(e.target.checked)}
+                  checked={rptrsUseStaticTgs}
+                  onChange={(e) => setRptrsUseStaticTgs(e.target.checked)}
                 />
-                <span className="text-cool-gray">Create separate channels for each timeslot (TS1, TS2)</span>
+                <span className="text-cool-gray">Generate one channel per static talk group instead</span>
               </label>
+              {rptrsUseStaticTgs ? (
+                <div className="text-xs text-cool-gray pl-6">
+                  Only works for BrandMeister repeaters — other networks will be skipped. Each
+                  channel's timeslot comes from the repeater's static talk group assignment.
+                </div>
+              ) : (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rptrsSeparateTimeslots}
+                    onChange={(e) => setRptrsSeparateTimeslots(e.target.checked)}
+                  />
+                  <span className="text-cool-gray">Create separate channels for each timeslot (TS1, TS2)</span>
+                </label>
+              )}
               <Button
                 onClick={handleAddRptrsChannels}
                 disabled={isAddingRptrs}
@@ -256,7 +422,9 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
               >
                 {isAddingRptrs
                   ? 'Adding DMR Repeater Channels...'
-                  : `Add ${selectedRptrs.size} ${formatPlural(selectedRptrs.size, 'DMR Repeater Channel')}`}
+                  : rptrsUseStaticTgs
+                    ? `Add Channels from ${selectedRptrs.size} ${formatPlural(selectedRptrs.size, 'Repeater')}'s Static Talk Groups`
+                    : `Add ${selectedRptrs.size} ${formatPlural(selectedRptrs.size, 'DMR Repeater Channel')}`}
               </Button>
             </div>
           )}
