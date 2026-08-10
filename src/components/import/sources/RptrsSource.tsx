@@ -15,6 +15,7 @@ import {
   convertRptrFrequency,
   convertRptrOffset,
   groupRptrsByLocation,
+  getStateAbbrev,
   type RptrData,
 } from '../../../data/rptrsData';
 import { SelectAllButtons } from '../SelectAllButtons';
@@ -34,6 +35,24 @@ interface RptrStaticTgPreview {
   rxFrequency: number;
   txFrequency: number;
   tgs: StaticTgPreviewEntry[];
+}
+
+const DEFAULT_STATIC_TG_NAME_FORMAT = '{call}-{tg}';
+
+/**
+ * Fill a channel-name template with per-channel tokens and truncate to the 16-char
+ * radio limit. Naming conventions vary a lot between operators (callsign vs. city vs.
+ * abbreviated talk group name), so this is user-configurable rather than fixed.
+ */
+function applyChannelNameFormat(
+  format: string,
+  tokens: { call: string; city: string; state: string; tg: string; tgname: string }
+): string {
+  let name = format || DEFAULT_STATIC_TG_NAME_FORMAT;
+  for (const [key, value] of Object.entries(tokens)) {
+    name = name.split(`{${key}}`).join(value);
+  }
+  return name.substring(0, 16);
 }
 
 interface RptrsSourceProps {
@@ -58,6 +77,7 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
   const [rptrsZoneGrouping, setRptrsZoneGrouping] = useState<'location' | 'single'>('location');
   const [rptrsSeparateTimeslots, setRptrsSeparateTimeslots] = useState(true);
   const [rptrsUseStaticTgs, setRptrsUseStaticTgs] = useState(false);
+  const [rptrsChannelNameFormat, setRptrsChannelNameFormat] = useState(DEFAULT_STATIC_TG_NAME_FORMAT);
   const [isAddingRptrs, setIsAddingRptrs] = useState(false);
   const [isLoadingStaticTgs, setIsLoadingStaticTgs] = useState(false);
   const [staticTgPreview, setStaticTgPreview] = useState<RptrStaticTgPreview[] | null>(null);
@@ -221,7 +241,13 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
           });
         }
         return {
-          channelName: `${rptr.callsign}-${tg.talkgroup}`.substring(0, 16),
+          channelName: applyChannelNameFormat(rptrsChannelNameFormat, {
+            call: rptr.callsign,
+            city: rptr.city,
+            state: getStateAbbrev(rptr.state || ''),
+            tg: String(tg.talkgroup),
+            tgname: tg.name,
+          }),
           contactId,
           timeslot: tg.slot,
         };
@@ -380,6 +406,23 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
 
   if (!supportsDigital || rptrs.length === 0) return null;
 
+  const namePreviewRptr = Array.from(selectedRptrs).map(i => rptrs[i]).filter(Boolean)[0];
+  const namePreviewExample = namePreviewRptr
+    ? applyChannelNameFormat(rptrsChannelNameFormat, {
+        call: namePreviewRptr.callsign,
+        city: namePreviewRptr.city,
+        state: getStateAbbrev(namePreviewRptr.state || ''),
+        tg: '3172',
+        tgname: 'Colorado',
+      })
+    : applyChannelNameFormat(rptrsChannelNameFormat, {
+        call: 'K0NXA',
+        city: 'Denver',
+        state: 'CO',
+        tg: '3172',
+        tgname: 'Colorado',
+      });
+
   return (
     <Card padding="tight" className="mb-4">
       <SectionTitle as="h3" size="lg" className="mb-4">DMR Repeaters</SectionTitle>
@@ -503,6 +546,22 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
                   <div className="text-xs text-cool-gray pl-6">
                     Only works for BrandMeister repeaters — other networks will be skipped. Each
                     channel's timeslot comes from the repeater's static talk group assignment.
+                  </div>
+
+                  <div className="pl-6 space-y-1">
+                    <label className="text-xs text-cool-gray block">
+                      Channel name format (tokens: {'{call}'} {'{city}'} {'{state}'} {'{tg}'} {'{tgname}'}, truncated to 16 chars):
+                    </label>
+                    <input
+                      type="text"
+                      value={rptrsChannelNameFormat}
+                      onChange={(e) => setRptrsChannelNameFormat(e.target.value)}
+                      placeholder={DEFAULT_STATIC_TG_NAME_FORMAT}
+                      className="w-full bg-black border border-neon-cyan rounded px-2 py-1 text-white text-sm"
+                    />
+                    <div className="text-xs text-cool-gray">
+                      Preview: <span className="text-neon-cyan">{namePreviewExample}</span>
+                    </div>
                   </div>
 
                   {!staticTgPreview ? (
