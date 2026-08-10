@@ -2699,34 +2699,32 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
                 0x40 // Default to Group Call
     }));
 
-    // STOPGAP: each table entry below stores the Talk Group's physical position (0x44-0x48
-    // index) in a single byte (0-255). With more than 255 Talk Groups, positions beyond
-    // 255 wrap via truncation (e.g. 607 -> 95) and silently alias onto whichever entry
-    // really sits at that lower position — the OEM CPS then displays wrong/blank data for
-    // both the aliased entry and whatever legitimately occupies position 95. The true
-    // format for representing positions >255 here isn't confirmed against real hardware
-    // yet, so those entries are left out of both sorted tables entirely rather than
-    // written with a corrupting wrapped index. NeonPlug's own Talk Groups list reads
-    // directly from 0x44-0x48 and is unaffected either way — this only impacts the OEM
-    // CPS's sorted/quick-lookup views for lists bigger than 255.
-    const oversizedCount = contactsWithIndices.filter(item => item.contactIndex > 255).length;
-    if (oversizedCount > 0) {
-      log.warn(`${oversizedCount} talk group(s) past physical position 255 omitted from the Quick Access Contact List (0x0B) sorted tables to avoid index wraparound corruption in the OEM CPS`, 'Protocol');
-    }
-
-    // Index Table 1 (@ 0x100): Sort entries alphabetically by Talk Group name (ASCII string comparison)
-    const sortedByName = [...contactsWithIndices]
-      .filter(item => item.contactIndex <= 255)
-      .sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
-      );
+    // Each table entry packs the Talk Group's physical position (0x44-0x48 index) across
+    // BOTH bytes, not just the first: byte0 is the index's low 8 bits, and byte1's low
+    // nibble is the index's next 4 bits (giving a 12-bit index, up to 4095 — well past
+    // LIMITS.TALK_GROUPS_MAX) while byte1's HIGH nibble carries the call type (0x30/0x40/0x50),
+    // the same 12-bit-index-plus-4-bit-type packing already used for the channel -> Talk
+    // Group link at metadata 0x42/0x43. A real OEM CPS write of 607 Talk Groups confirmed
+    // this: Index Table 2 (sorted by DMR ID) held "5F 42" for its 2nd entry, which decodes
+    // to index (0x42 & 0x0F) << 8 | 0x5F = 607 (physical position of "Local", a very
+    // low-DMR-ID entry) with type 0x42 & 0xF0 = 0x40 (Group Call) — matching exactly.
+    // Treating byte1 as a plain 1-byte type (the previous, pre-fix assumption) only
+    // happened to work for lists under 256 entries, where the index's high nibble is
+    // always 0.
+    // Plain codepoint/byte-order comparison, not locale-aware — hardware-confirmed against
+    // the same 607-entry write: the OEM CPS sorts "ALERT-K4NWS" before "Alabama" (uppercase
+    // 'E' < lowercase 'a' in byte order), which a case-insensitive/numeric-aware
+    // localeCompare gets backwards.
+    const sortedByName = [...contactsWithIndices].sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+    );
 
     sortedByName.forEach((item, displayIndex) => {
       const offset = 0x100 + (displayIndex * 2);
       if (offset < 0x700) {
-        quickAccessData[offset] = item.contactIndex;
-        quickAccessData[offset + 1] = item.typeByte;
-        
+        quickAccessData[offset] = item.contactIndex & 0xFF;
+        quickAccessData[offset + 1] = item.typeByte | ((item.contactIndex >> 8) & 0x0F);
+
         // Clear bit in bitmask (0 = used, 1 = free)
         // Use displayIndex for bitmask position, not contactIndex
         const byteIdx = Math.floor(displayIndex / 8);
@@ -2737,18 +2735,21 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       }
     });
 
-    // Index Table 2 (@ 0x740): Sort entries by DMR ID numerically (lowest ID first)
-    const sortedByDmrId = [...contactsWithIndices]
-      .filter(item => item.contactIndex <= 255)
-      .sort((a, b) =>
-        a.contactNumber - b.contactNumber
-      );
+    // Index Table 2 (@ 0x740): Sort entries by DMR ID numerically (lowest ID first).
+    // Entries with contactNumber 0 (no real DMR ID) still occupy a sorted slot (sorting
+    // first, as ID 0) but that slot is left blank rather than written — hardware-confirmed:
+    // a contactNumber-0 entry's slot in a real OEM CPS write was "FF FF" while the very
+    // next slot held the next-lowest real ID. Skipping the slot's displayIndex entirely
+    // (i.e. filtering it out before assigning positions) was tried first and shifted every
+    // other entry's position by one relative to real hardware output — wrong.
+    const sortedByDmrId = [...contactsWithIndices].sort((a, b) => a.contactNumber - b.contactNumber);
 
     sortedByDmrId.forEach((item, displayIndex) => {
+      if (item.contactNumber === 0) return;
       const offset = 0x740 + (displayIndex * 2);
       if (offset < 0xD00) {
-        quickAccessData[offset] = item.contactIndex;
-        quickAccessData[offset + 1] = item.typeByte;
+        quickAccessData[offset] = item.contactIndex & 0xFF;
+        quickAccessData[offset + 1] = item.typeByte | ((item.contactIndex >> 8) & 0x0F);
       }
     });
 
