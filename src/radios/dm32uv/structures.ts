@@ -3356,8 +3356,12 @@ export function parseQuickContacts(
     const entryStartOffset = offset;
     let hasHeader = false;
 
-    // Check if this is Contact 1 with 1-byte header (0x00)
-    if (contactIndex === 1 && offset + 1 <= data.length) {
+    // Check for a 1-byte header (0x00) at the start of THIS buffer — every Talk Groups
+    // block (0x44-0x48) has its own leading header before its first entry, not just the
+    // very first block. Checking offset===0 (rather than contactIndex===1) means this
+    // correctly re-triggers for each block when parseQuickContacts is called once per
+    // block with a fresh buffer, instead of only ever matching the global first entry.
+    if (offset === 0 && offset + 1 <= data.length) {
       const header = data[offset];
       if (header === 0x00) {
         hasHeader = true;
