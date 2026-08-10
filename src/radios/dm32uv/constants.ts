@@ -18,7 +18,9 @@ export const METADATA = {
   METADATA_0x0B: 0x0B,      // Metadata block 0x0B
   RX_GROUPS: 0x0F,          // DMR RX Groups (DMR Receive Groups) - separate from V-frame 0x0F
   CALIBRATION: 0x02,        // Frequency adjustment/calibration data
-  METADATA_0x44: 0x44,      // Metadata block 0x44 (Talk Groups)
+  METADATA_0x44: 0x44,      // Metadata block 0x44 (Talk Groups, first block)
+  TALK_GROUP_FIRST: 0x44,   // First Talk Groups block
+  TALK_GROUP_LAST: 0x48,    // Last Talk Groups block (5 blocks total — DM32-Protocol-Spec 05-DATA-STRUCTURES.md, confirmed by OEM CPS write capture walking 0x44-0x48 contiguously)
   METADATA_0x06: 0x06,      // Metadata block 0x06 (Config section 4 - contains Talk Groups counter at 0x1FF)
   TX_CONTACT_LOW: 0x42,     // TX Contact for channels 1-2048 (2 bytes per channel)
   TX_CONTACT_HIGH: 0x43,    // TX Contact for channels 2049+ and VFOs (2 bytes per channel)
