@@ -2699,11 +2699,28 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
                 0x40 // Default to Group Call
     }));
 
+    // STOPGAP: each table entry below stores the Talk Group's physical position (0x44-0x48
+    // index) in a single byte (0-255). With more than 255 Talk Groups, positions beyond
+    // 255 wrap via truncation (e.g. 607 -> 95) and silently alias onto whichever entry
+    // really sits at that lower position — the OEM CPS then displays wrong/blank data for
+    // both the aliased entry and whatever legitimately occupies position 95. The true
+    // format for representing positions >255 here isn't confirmed against real hardware
+    // yet, so those entries are left out of both sorted tables entirely rather than
+    // written with a corrupting wrapped index. NeonPlug's own Talk Groups list reads
+    // directly from 0x44-0x48 and is unaffected either way — this only impacts the OEM
+    // CPS's sorted/quick-lookup views for lists bigger than 255.
+    const oversizedCount = contactsWithIndices.filter(item => item.contactIndex > 255).length;
+    if (oversizedCount > 0) {
+      log.warn(`${oversizedCount} talk group(s) past physical position 255 omitted from the Quick Access Contact List (0x0B) sorted tables to avoid index wraparound corruption in the OEM CPS`, 'Protocol');
+    }
+
     // Index Table 1 (@ 0x100): Sort entries alphabetically by Talk Group name (ASCII string comparison)
-    const sortedByName = [...contactsWithIndices].sort((a, b) => 
-      a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
-    );
-    
+    const sortedByName = [...contactsWithIndices]
+      .filter(item => item.contactIndex <= 255)
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
+      );
+
     sortedByName.forEach((item, displayIndex) => {
       const offset = 0x100 + (displayIndex * 2);
       if (offset < 0x700) {
@@ -2721,10 +2738,12 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     });
 
     // Index Table 2 (@ 0x740): Sort entries by DMR ID numerically (lowest ID first)
-    const sortedByDmrId = [...contactsWithIndices].sort((a, b) => 
-      a.contactNumber - b.contactNumber
-    );
-    
+    const sortedByDmrId = [...contactsWithIndices]
+      .filter(item => item.contactIndex <= 255)
+      .sort((a, b) =>
+        a.contactNumber - b.contactNumber
+      );
+
     sortedByDmrId.forEach((item, displayIndex) => {
       const offset = 0x740 + (displayIndex * 2);
       if (offset < 0xD00) {
