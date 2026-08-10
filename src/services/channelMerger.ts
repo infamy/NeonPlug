@@ -62,7 +62,13 @@ export function mergeOverlappingChannels(
   // Process all channels from all sets
   for (const channelSet of channelSets) {
     for (const channel of channelSet) {
-      const freqKey = `${channel.rxFrequency.toFixed(4)}-${channel.txFrequency.toFixed(4)}`;
+      // Digital channels commonly share an RX/TX pair on purpose — multiple talk groups
+      // or timeslots on the same repeater/hotspot frequency are distinct channels, not
+      // duplicates. Only collapse them if color code, slot, and talk group also match;
+      // analog channels keep the plain frequency-only key (e.g. FRS/GMRS overlap merging).
+      const freqKey = channel.mode === 'Digital' || channel.mode === 'Fixed Digital'
+        ? `${channel.rxFrequency.toFixed(4)}-${channel.txFrequency.toFixed(4)}-${channel.colorCode}-${channel.slotOperation ?? 0}-${channel.contactId}`
+        : `${channel.rxFrequency.toFixed(4)}-${channel.txFrequency.toFixed(4)}`;
 
       if (frequencyMap.has(freqKey)) {
         // Channel with same frequencies exists - merge them
