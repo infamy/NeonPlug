@@ -238,7 +238,7 @@ export function groupRptrsByNetwork(
 /**
  * Get state abbreviation (simple mapping for common states)
  */
-function getStateAbbrev(state: string): string {
+export function getStateAbbrev(state: string): string {
   // Common state abbreviations - expand as needed
   const stateMap: Record<string, string> = {
     'California': 'CA',
