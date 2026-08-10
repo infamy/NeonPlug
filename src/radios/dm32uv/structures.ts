@@ -3335,13 +3335,22 @@ export function encodeRXGroups(
  * - Variable-length name (null-terminated)
  * - Remaining bytes: padding + 3-byte contact number + 1-byte call type + padding
  */
+export interface ParseQuickContactsResult {
+  contacts: QuickContact[];
+  /** Next 1-based index after this block — physical slot position continues across the
+   *  Talk Groups block range (0x44-0x48), so callers parsing multiple blocks must pass
+   *  this back in as the next block's startIndex. */
+  nextIndex: number;
+}
+
 export function parseQuickContacts(
   data: Uint8Array,
-  onRawContactParsed?: (contactIndex: number, rawData: Uint8Array, name: string) => void
-): QuickContact[] {
+  onRawContactParsed?: (contactIndex: number, rawData: Uint8Array, name: string) => void,
+  startIndex: number = 1
+): ParseQuickContactsResult {
   const contacts: QuickContact[] = [];
   let offset = 0;
-  let contactIndex = 1; // 1-based index
+  let contactIndex = startIndex; // 1-based physical slot position
 
   while (offset < data.length) {
     const entryStartOffset = offset;
@@ -3448,7 +3457,7 @@ export function parseQuickContacts(
     contactIndex++;
   }
 
-  return contacts;
+  return { contacts, nextIndex: contactIndex };
 }
 
 /**
