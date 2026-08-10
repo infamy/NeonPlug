@@ -6,7 +6,7 @@ import type { EncryptionKey } from '../../models/EncryptionKey';
 import type { QuickContact } from '../../models/QuickContact';
 import type { DMRRadioID } from '../../models/DMRRadioID';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
-import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
+import { isNoTxChannel } from '../../services/validation/frequencyValidator';
 
 export const isVFOChannel = (channelNumber: number): boolean =>
   channelNumber === 4001 || channelNumber === 4002;
@@ -162,20 +162,20 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            if (!(isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency))) {
+            if (!(isNoTxChannel(channel))) {
               handleCellChange(channel.number, 'txFrequency', channel.rxFrequency);
             }
           }}
-          disabled={isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency)}
+          disabled={isNoTxChannel(channel)}
           className="p-1 rounded border border-neon-cyan border-opacity-30 text-xs font-bold disabled:opacity-40 disabled:text-cool-gray disabled:border-opacity-20 disabled:cursor-not-allowed text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 disabled:hover:bg-transparent"
-          title={isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency) ? 'Receive-only (no TX)' : 'Copy RX to TX'}
+          title={isNoTxChannel(channel) ? 'Receive-only (no TX)' : 'Copy RX to TX'}
           aria-label="Copy RX to TX"
         >
           →
         </button>
       </td>
       <td className="px-2 py-2">
-        {isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency) ? (
+        {isNoTxChannel(channel) ? (
           <input
             type="text"
             readOnly
@@ -253,7 +253,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           checked={channel.forbidTx}
           onChange={(e) => {
             const next = e.target.checked;
-            if (!next && isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency)) return;
+            if (!next && isNoTxChannel(channel)) return;
             handleCellChange(channel.number, 'forbidTx', next);
           }}
           className="checkbox-theme"
