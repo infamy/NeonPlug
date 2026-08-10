@@ -337,6 +337,12 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                   {isImportingStaticTgs ? 'Importing...' : 'Import static TGs'}
                 </Button>
               )}
+              <Button
+                onClick={() => setMmdvmEntries([...mmdvmEntries, { ...emptyEntry(), useExisting: talkGroups.length > 0 }])}
+                className="bg-transparent border border-neon-cyan text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 text-xs px-2 py-1"
+              >
+                + Add talk group
+              </Button>
               <button
                 type="button"
                 onClick={() => { setSelectedRptr(null); setRptrSearch(''); }}
