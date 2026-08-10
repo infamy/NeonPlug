@@ -1,4 +1,4 @@
-import type { Channel, Contact, Zone, ScanList, RXGroup, DMRRadioID } from '../../models';
+import type { Channel, Contact, Zone, ScanList, RXGroup, DMRRadioID, QuickContact } from '../../models';
 import { generateZoneId } from '../../utils/zoneHelpers';
 
 export interface ImportResult {
@@ -9,6 +9,7 @@ export interface ImportResult {
   scanLists?: ScanList[];
   rxGroups?: RXGroup[];
   dmrRadioIds?: DMRRadioID[];
+  quickContacts?: QuickContact[];
   errors?: string[];
 }
 
@@ -387,6 +388,58 @@ export function importDMRRadioIDsFromCSV(content: string): ImportResult {
     return {
       success: errors.length === 0,
       dmrRadioIds,
+      errors: errors.length > 0 ? errors : undefined,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      errors: [error instanceof Error ? error.message : 'Failed to parse CSV'],
+    };
+  }
+}
+
+function callTypeFromLabel(value: string): number {
+  const v = value.trim().toLowerCase();
+  if (v === 'all' || v === '0x05' || v === '5') return 0x05;
+  if (v === 'private' || v === 'prv' || v === '0x03' || v === '3') return 0x03;
+  return 0x04; // Group (default)
+}
+
+export function importQuickContactsFromCSV(content: string): ImportResult {
+  try {
+    const rows = parseCSV(content);
+    if (rows.length < 2) {
+      return { success: false, errors: ['CSV file must have at least a header row and one data row'] };
+    }
+
+    const headers = rows[0].map(h => h.toLowerCase().trim());
+    const quickContacts: QuickContact[] = [];
+    const errors: string[] = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (row.length === 0 || row.every(cell => !cell.trim())) continue;
+
+      try {
+        const newIndex = quickContacts.length + 1;
+        quickContacts.push({
+          index: newIndex,
+          offset: 0,
+          name: getValue(headers, row, 'name') || `TG ${newIndex}`,
+          contactNumber: getInt(headers, row, 'contact number', 0),
+          callType: callTypeFromLabel(getValue(headers, row, 'call type')),
+          hasHeader: newIndex === 1,
+          flag: 0,
+          rawData: new Uint8Array(0),
+        });
+      } catch (error) {
+        errors.push(`Row ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      quickContacts,
       errors: errors.length > 0 ? errors : undefined,
     };
   } catch (error) {
