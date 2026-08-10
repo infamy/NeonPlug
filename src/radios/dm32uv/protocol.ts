@@ -15,7 +15,7 @@ import {
   storeRawData,
   type MemoryBlock,
 } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, encodeEncryptionKey, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, encodeEncryptionKey, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContactsBlocks, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
 import type { RadioInfo, DM32Protocol } from '../../types/radio';
 import { BaseDigitalProtocol } from '../shared/BaseProtocols';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact, EncryptionKey } from '../../models';
@@ -2530,27 +2530,6 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       throw new Error(`Maximum of ${LIMITS.TALK_GROUPS_MAX} talk groups allowed. Got ${contacts.length}`);
     }
 
-    // Talk Groups physically span metadata blocks 0x44-0x48 (5 blocks), but this function
-    // (and encodeQuickContacts) only ever writes block 0x44. Reading now correctly surfaces
-    // all 5 blocks' worth of entries (up to LIMITS.TALK_GROUPS_MAX), so a list read from a
-    // radio with more than one block's worth of talk groups can exceed what this write path
-    // can safely hold — encodeQuickContacts silently truncates past capacity, which would
-    // otherwise mean writing a shorter, truncated list back over the radio's real one.
-    // Block 0x44's real capacity: 1 header byte + N entries (25 bytes for entry 1, 24 each
-    // after) + a 24-byte sentinel must fit in 4095 usable bytes (byte 0xFFF is metadata) —
-    // ~169 real entries. Refuse rather than silently drop the rest until multi-block write
-    // support exists.
-    const SINGLE_BLOCK_TALK_GROUP_MAX = 169;
-    if (contacts.length > SINGLE_BLOCK_TALK_GROUP_MAX) {
-      throw new Error(
-        `Writing ${contacts.length} talk groups isn't supported yet — NeonPlug only writes to the ` +
-        `first Talk Groups block (metadata 0x44), which holds about ${SINGLE_BLOCK_TALK_GROUP_MAX} entries. ` +
-        `Talk Groups actually span 5 blocks (0x44-0x48) on the radio, but multi-block writing hasn't been ` +
-        `implemented yet. Writing now would silently drop everything past ${SINGLE_BLOCK_TALK_GROUP_MAX} ` +
-        `entries. Use the OEM CPS to manage Talk Groups until this is added.`
-      );
-    }
-
     this.onProgress?.(0, 'Preparing to write Talk Groups...');
 
     // Discover blocks if not already discovered
@@ -2571,9 +2550,12 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       this.discoveredBlocks = blocks;
     }
 
-    // Find metadata block 0x44 (Talk Groups data)
-    const quickContactBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x44);
-    if (!quickContactBlock) {
+    // Find Talk Groups blocks (metadata 0x44-0x48, 5 blocks) — sorted so entries are
+    // written in the same order as encodeQuickContactsBlocks() expects them.
+    const quickContactBlocks = this.discoveredBlocks
+      .filter(b => b.metadata >= METADATA.TALK_GROUP_FIRST && b.metadata <= METADATA.TALK_GROUP_LAST)
+      .sort((a, b) => a.metadata - b.metadata);
+    if (quickContactBlocks.length === 0) {
       throw new Error('Talk Groups block (metadata 0x44) not found');
     }
 
@@ -2591,8 +2573,10 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
 
     this.onProgress?.(10, 'Encoding Talk Groups...');
 
-    // Encode contacts to 4KB block
-    const blockData = encodeQuickContacts(contacts);
+    // Encode contacts across as many Talk Groups blocks as needed (overflow past one
+    // block spills into the next, matching the per-block layout confirmed against a real
+    // OEM CPS write capture).
+    const encodedBlocks = encodeQuickContactsBlocks(contacts, quickContactBlocks.map(b => b.metadata));
 
     // Get block 0x06 from cache or read it fresh
     this.onProgress?.(30, 'Preparing config block 0x06...');
@@ -2621,24 +2605,20 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     await this.connection!.writeMemory(counterBlock.address, counterBlockData, METADATA.METADATA_0x06);
     log.info(`Updated Talk Groups counter to ${contacts.length} at block 0x06 offset 0x1FF`, 'Protocol');
 
-    // Write the Talk Groups data block
-    this.onProgress?.(70, 'Writing Talk Groups data to radio...');
-    await this.connection!.writeMemory(quickContactBlock.address, blockData, METADATA.METADATA_0x44);
+    // Write the Talk Groups data blocks
+    this.onProgress?.(70, `Writing Talk Groups data to ${quickContactBlocks.length} block(s)...`);
+    for (let i = 0; i < quickContactBlocks.length; i++) {
+      const block = quickContactBlocks[i];
+      const data = encodedBlocks[i];
+      await this.connection!.writeMemory(block.address, data, block.metadata);
 
-    // Update cache (store the written data)
-    const cachedBlockIndex = this.cachedBlockData.findIndex(b => b.address === quickContactBlock.address);
-    if (cachedBlockIndex >= 0) {
-      this.cachedBlockData[cachedBlockIndex] = {
-        metadata: METADATA.METADATA_0x44,
-        address: quickContactBlock.address,
-        data: blockData,
-      };
-    } else {
-      this.cachedBlockData.push({
-        metadata: METADATA.METADATA_0x44,
-        address: quickContactBlock.address,
-        data: blockData,
-      });
+      // Update cache (store the written data)
+      const cachedBlockIndex = this.cachedBlockData.findIndex(b => b.address === block.address);
+      if (cachedBlockIndex >= 0) {
+        this.cachedBlockData[cachedBlockIndex] = { metadata: block.metadata, address: block.address, data };
+      } else {
+        this.cachedBlockData.push({ metadata: block.metadata, address: block.address, data });
+      }
     }
 
     // Update cache for counter block too
@@ -2779,7 +2759,7 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     // This allows users to download the original raw data from the radio
 
     this.onProgress?.(100, `Successfully wrote ${contacts.length} talk groups`);
-    log.info(`Successfully wrote ${contacts.length} talk groups to blocks 0x44, 0x06, and 0x0B`, 'Protocol');
+    log.info(`Successfully wrote ${contacts.length} talk groups across ${quickContactBlocks.length} block(s) (0x44-0x${quickContactBlocks[quickContactBlocks.length - 1].metadata.toString(16)}), plus 0x06 and 0x0B`, 'Protocol');
   }
 
   /**
