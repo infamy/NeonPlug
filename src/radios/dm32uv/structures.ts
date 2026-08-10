@@ -207,21 +207,8 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     rxFreq = 0;
   }
 
-  // TX Frequency (0x14-0x17, 4 bytes BCD). All 0xFF = no TX (aviation 87–136 MHz band).
-  let txFreq: number;
-  const txBytes = data.slice(0x14, 0x18);
-  if (txBytes.every(b => b === 0xFF)) {
-    txFreq = NO_TX_FREQUENCY;
-  } else {
-    try {
-      txFreq = decodeBCDFrequency(txBytes);
-    } catch (error) {
-      log.warn(`Failed to decode TX frequency for channel ${channelNumber}`, 'Structures', error);
-      txFreq = 0;
-    }
-  }
-
-  // Mode flags (0x18)
+  // Mode flags (0x18) — read before TX frequency below, since the TX sentinel handling
+  // needs forbidTx to decide what a blank TX field actually means.
   // Bits 7-4 (mask 0xF0): Channel Mode (0=Analog, 1=Digital, 2=Fixed Analog, 3=Fixed Digital)
   // Bit 3 (mask 0x08): Forbid TX (0=Allow, 1=Forbid)
   // Bits 2-1 (mask 0x06): Power Level (0=Low, 1=Medium, 2=High) - NOT Busy Lock!
@@ -233,7 +220,28 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
 
   // Forbid TX is stored at byte 0x18, bit 3 (mask 0x08)
   const forbidTx = (modeFlags & 0x08) !== 0;
-  
+
+  // TX Frequency (0x14-0x17, 4 bytes BCD). All 0xFF = blank/no TX ever written there.
+  // OEM CPS leaves this blank both for genuinely receive-only channels (Forbid TX checked)
+  // AND for ordinary channels it just never touched (Forbid TX left unchecked) — the two
+  // look identical on the wire. Only treat it as the "no TX" sentinel when Forbid TX is
+  // actually set; otherwise a blank field on a normal channel isn't receive-only, it's
+  // just unconfigured, so default TX to match RX (simplex) — a blank field defaulting to
+  // the literal sentinel value (1666.666 MHz) would fail frequency validation and get the
+  // whole channel silently dropped on the next write.
+  let txFreq: number;
+  const txBytes = data.slice(0x14, 0x18);
+  if (txBytes.every(b => b === 0xFF)) {
+    txFreq = forbidTx ? NO_TX_FREQUENCY : rxFreq;
+  } else {
+    try {
+      txFreq = decodeBCDFrequency(txBytes);
+    } catch (error) {
+      log.warn(`Failed to decode TX frequency for channel ${channelNumber}`, 'Structures', error);
+      txFreq = 0;
+    }
+  }
+
   // Power is stored at byte 0x18, bits 2-1 (mask 0x06)
   const powerValue = (modeFlags >> 1) & 0x03;
   const power: Channel['power'] = 
