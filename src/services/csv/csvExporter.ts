@@ -1,4 +1,4 @@
-import type { Channel, Contact, Zone, ScanList, RXGroup, DMRRadioID } from '../../models';
+import type { Channel, Contact, Zone, ScanList, RXGroup, DMRRadioID, QuickContact } from '../../models';
 import { downloadFile } from '../../utils/download';
 
 function toCSV(headers: string[], rows: (string | number)[][]): string {
@@ -168,6 +168,21 @@ export function exportDMRRadioIDsToCSV(radioIds: DMRRadioID[]): string {
     radioId.index.toString(),
     radioId.dmrId,
     radioId.name,
+  ]);
+
+  return toCSV(headers, rows);
+}
+
+const QUICK_CONTACT_CALL_TYPE_LABELS: Record<number, string> = { 0x03: 'Private', 0x04: 'Group', 0x05: 'All' };
+
+export function exportQuickContactsToCSV(contacts: QuickContact[]): string {
+  const headers = ['Index', 'Name', 'Contact Number', 'Call Type'];
+
+  const rows = contacts.map(contact => [
+    contact.index.toString(),
+    contact.name,
+    contact.contactNumber.toString(),
+    QUICK_CONTACT_CALL_TYPE_LABELS[contact.callType] ?? contact.callType.toString(),
   ]);
 
   return toCSV(headers, rows);

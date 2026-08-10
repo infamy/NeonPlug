@@ -29,7 +29,8 @@ import {
 import { PageHeader } from '../ui/PageHeader';
 import { BUTTON, FIELD } from '../ui/controlStyles';
 import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
-import { exportRXGroupsToCSV, importRXGroupsFromCSV, exportDMRRadioIDsToCSV, importDMRRadioIDsFromCSV, downloadCSV } from '../../services/csv';
+import { exportRXGroupsToCSV, importRXGroupsFromCSV, exportDMRRadioIDsToCSV, importDMRRadioIDsFromCSV, exportQuickContactsToCSV, importQuickContactsFromCSV, downloadCSV } from '../../services/csv';
+import type { QuickContact } from '../../models/QuickContact';
 import type { RXGroup } from '../../models/RXGroup';
 import type { DMRRadioID } from '../../models/DMRRadioID';
 import { formatPlural } from '../../utils/formatPlural';
@@ -64,7 +65,7 @@ export const DigitalTab: React.FC = () => {
   const messagesMax = limits?.QUICK_MESSAGES_MAX ?? 20;
   const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem, addSystem: addDigitalEmergency, deleteSystem: deleteDigitalEmergency } = useDigitalEmergencyStore();
   const { radioIds, radioIdsLoaded, updateRadioId, addRadioId, deleteRadioId, setRadioIds } = useDMRRadioIDsStore();
-  const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact, setMaxTalkGroups } = useQuickContactsStore();
+  const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact, setMaxTalkGroups, setContacts: setQuickContacts } = useQuickContactsStore();
   const { groups: rxGroups, groupsLoaded: rxGroupsLoaded, setGroups: setRXGroups } = useRXGroupsStore();
   const { messages, messagesLoaded, updateMessage, addMessage, deleteMessage } = useQuickMessagesStore();
   const { channels } = useChannelsStore();
@@ -216,6 +217,25 @@ export const DigitalTab: React.FC = () => {
   const handleImportRXGroupsConfirm = () => {
     if (pendingRXGroupsImport) setRXGroups(pendingRXGroupsImport);
     setPendingRXGroupsImport(null);
+  };
+
+  const [pendingTalkGroupsImport, setPendingTalkGroupsImport] = useState<QuickContact[] | null>(null);
+  const handleExportTalkGroupsCsv = () => downloadCSV(exportQuickContactsToCSV(quickContacts), 'talk_groups.csv');
+  const handleImportTalkGroupsFile = (file: File) => {
+    file.text().then(content => {
+      const result = importQuickContactsFromCSV(content);
+      if (!result.success || !result.quickContacts) {
+        showAlert(result.errors?.join('\n') || 'Failed to import Talk Groups CSV', 'Import failed');
+        return;
+      }
+      setPendingTalkGroupsImport(result.quickContacts);
+    }).catch(err => {
+      showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
+    });
+  };
+  const handleImportTalkGroupsConfirm = () => {
+    if (pendingTalkGroupsImport) setQuickContacts(pendingTalkGroupsImport);
+    setPendingTalkGroupsImport(null);
   };
 
   const handleDeleteContactClick = (index: number) => {
@@ -449,20 +469,28 @@ export const DigitalTab: React.FC = () => {
               Manage DMR talk groups (contacts) for group calls, private calls, and all calls.
             </p>
           </div>
-          {quickContactsLoaded && (
-            <div className="flex items-center gap-3">
-              <div className="text-cool-gray text-sm">
-                {quickContacts.length}/{talkGroupsMax} talk groups
-              </div>
-              <button
-                onClick={handleAddContact}
-                disabled={quickContacts.length >= talkGroupsMax}
-                className={`${BUTTON.primary} px-3 py-1 rounded text-sm font-semibold`}
-              >
-                + Add Group
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {quickContactsLoaded && (
+              <>
+                <div className="text-cool-gray text-sm">
+                  {quickContacts.length}/{talkGroupsMax} talk groups
+                </div>
+                <button
+                  onClick={handleAddContact}
+                  disabled={quickContacts.length >= talkGroupsMax}
+                  className={`${BUTTON.primary} px-3 py-1 rounded text-sm font-semibold`}
+                >
+                  + Add Group
+                </button>
+              </>
+            )}
+            <CsvExportImportButtons
+              label="Talk Groups"
+              onExport={handleExportTalkGroupsCsv}
+              onImportFile={handleImportTalkGroupsFile}
+              exportDisabled={quickContacts.length === 0}
+            />
+          </div>
         </div>
 
         {!quickContactsLoaded ? (
@@ -1010,6 +1038,15 @@ export const DigitalTab: React.FC = () => {
       onConfirm={handleImportRXGroupsConfirm}
       title="Import RX Groups CSV"
       message={`Replace all ${rxGroups.length} existing RX ${formatPlural(rxGroups.length, 'Group')} with ${pendingRXGroupsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
+      confirmLabel="Replace"
+      variant="danger"
+    />
+    <ConfirmModal
+      isOpen={pendingTalkGroupsImport !== null}
+      onClose={() => setPendingTalkGroupsImport(null)}
+      onConfirm={handleImportTalkGroupsConfirm}
+      title="Import Talk Groups CSV"
+      message={`Replace all ${quickContacts.length} existing talk ${formatPlural(quickContacts.length, 'group')} with ${pendingTalkGroupsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
       confirmLabel="Replace"
       variant="danger"
     />
