@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useImportStores } from '../../../hooks/useImportStores';
+import { useChannelsStore } from '../../../store/channelsStore';
+import { useZonesStore } from '../../../store/zonesStore';
 import { useContactsStore } from '../../../store/contactsStore';
 import { useDMRRadioIDsStore } from '../../../store/dmrRadioIdsStore';
 import { getNextChannelNumber } from '../../../utils/importHelpers';
@@ -20,8 +21,6 @@ interface MmdvmSourceProps {
 }
 
 export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationResult }) => {
-  const { channels, setChannels, zones, setZones } = useImportStores();
-  const { contacts, setContacts } = useContactsStore();
   const { radioIds } = useDMRRadioIDsStore();
 
   const [mmdvmFrequency, setMmdvmFrequency] = useState('431.150');
@@ -59,9 +58,13 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
     onError('');
 
     try {
-      const nextChannelNumber = getNextChannelNumber(channels);
+      // Fresh reads at click time — see RptrsSource.tsx for why these can't be
+      // values captured at render time.
+      const currentChannels = useChannelsStore.getState().channels;
+      const currentContacts = useContactsStore.getState().contacts;
+      const nextChannelNumber = getNextChannelNumber(currentChannels);
 
-      const maxContactId = contacts.length > 0 ? Math.max(...contacts.map((c) => c.id)) : 0;
+      const maxContactId = currentContacts.length > 0 ? Math.max(...currentContacts.map((c) => c.id)) : 0;
       const firstContactId = maxContactId + 1;
 
       const firstDmrRadioIdIndex =
@@ -84,9 +87,9 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
         zoneName: mmdvmZoneName.trim() || undefined,
       });
 
-      setContacts([...contacts, ...result.contacts]);
-      setChannels([...channels, ...result.channels]);
-      setZones([...zones, result.zone]);
+      useContactsStore.getState().addContacts(result.contacts);
+      useChannelsStore.getState().addChannels(result.channels);
+      useZonesStore.getState().addZones([result.zone]);
 
       onGenerationResult({
         channels: result.channels.length,
