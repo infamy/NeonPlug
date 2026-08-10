@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useChannelsStore } from '../../../store/channelsStore';
 import { useZonesStore } from '../../../store/zonesStore';
 import { useQuickContactsStore } from '../../../store/quickContactsStore';
@@ -16,6 +16,8 @@ import {
   MMDVM_DUPLEX_RANGE_DESCRIPTION,
   type MMDVMChannelEntry,
 } from '../../../services/mmdvmChannels';
+import { loadRptrsData, convertRptrFrequency, convertRptrOffset, type RptrData } from '../../../data/rptrsData';
+import { fetchBrandmeisterStaticTalkgroups, fetchBrandmeisterTalkgroupName } from '../../../services/brandmeisterApi';
 import type { QuickContact } from '../../../models/QuickContact';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
@@ -33,6 +35,10 @@ interface MmdvmUiEntry {
   existingIndex: string; // '' = none selected, else String(QuickContact.index)
   newTalkGroupName: string;
   newTalkGroupId: number;
+  /** Per-entry timeslot override; '' = use the top-level Timeslot setting. A repeater's
+   *  static talk groups commonly split across both slots, which a single hotspot-wide
+   *  timeslot can't represent. */
+  timeslot: '' | '1' | '2';
 }
 
 const emptyEntry = (): MmdvmUiEntry => ({
@@ -41,6 +47,7 @@ const emptyEntry = (): MmdvmUiEntry => ({
   existingIndex: '',
   newTalkGroupName: '',
   newTalkGroupId: 9,
+  timeslot: '',
 });
 
 const isEntryFilled = (e: MmdvmUiEntry): boolean =>
@@ -55,8 +62,9 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
   const [mmdvmDuplex, setMmdvmDuplex] = useState(false);
   const [mmdvmTxFrequency, setMmdvmTxFrequency] = useState('');
   const [mmdvmTimeslot, setMmdvmTimeslot] = useState<'1' | '2'>('2');
+  const [mmdvmColorCode, setMmdvmColorCode] = useState('1');
   const [mmdvmEntries, setMmdvmEntries] = useState<MmdvmUiEntry[]>([
-    { channelName: '', useExisting: false, existingIndex: '', newTalkGroupName: 'Local', newTalkGroupId: 9 },
+    { channelName: '', useExisting: false, existingIndex: '', newTalkGroupName: 'Local', newTalkGroupId: 9, timeslot: '' },
   ]);
   const [mmdvmZoneName, setMmdvmZoneName] = useState('MMDVM');
   const [mmdvmUseExistingZone, setMmdvmUseExistingZone] = useState(false);
@@ -64,6 +72,86 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
   const [mmdvmDmrRadioIdIndex, setMmdvmDmrRadioIdIndex] = useState<string>(''); // '' = None, or String(index)
   const [isAddingMmdvm, setIsAddingMmdvm] = useState(false);
   const mmdvmDmrIdDefaultSetRef = useRef(false);
+
+  // Repeater lookup — prefills RX/TX/color code from the bundled repeater database, and
+  // (for BrandMeister-network repeaters) can pull in the repeater's static talk groups.
+  const [rptrs, setRptrs] = useState<RptrData[]>([]);
+  const [rptrSearch, setRptrSearch] = useState('');
+  const [selectedRptr, setSelectedRptr] = useState<RptrData | null>(null);
+  const [isImportingStaticTgs, setIsImportingStaticTgs] = useState(false);
+
+  useEffect(() => {
+    loadRptrsData().then(setRptrs).catch(() => { /* Repeater lookup is a convenience; silently unavailable if the dataset fails to load */ });
+  }, []);
+
+  const rptrMatches = useMemo(() => {
+    const q = rptrSearch.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return rptrs
+      .filter((r) => r.status === 'ACTIVE' && (
+        r.callsign.toLowerCase().includes(q) ||
+        r.city.toLowerCase().includes(q) ||
+        r.state.toLowerCase().includes(q)
+      ))
+      .slice(0, 25);
+  }, [rptrs, rptrSearch]);
+
+  const handleSelectRptr = (rptr: RptrData) => {
+    const rx = convertRptrFrequency(rptr.frequency);
+    const tx = rx + convertRptrOffset(rptr.offset);
+    setSelectedRptr(rptr);
+    setRptrSearch(`${rptr.callsign} — ${rptr.city}, ${rptr.state}`);
+    setMmdvmDuplex(true);
+    setMmdvmFrequency(rx.toFixed(4));
+    setMmdvmTxFrequency(tx.toFixed(4));
+    setMmdvmColorCode(String(rptr.color_code));
+    if (!mmdvmZoneName.trim() || mmdvmZoneName === 'MMDVM') {
+      setMmdvmZoneName(rptr.callsign.substring(0, 16));
+    }
+  };
+
+  const handleImportStaticTalkgroups = async () => {
+    if (!selectedRptr) return;
+    setIsImportingStaticTgs(true);
+    onError('');
+    try {
+      const staticTgs = await fetchBrandmeisterStaticTalkgroups(selectedRptr.id);
+      if (staticTgs.length === 0) {
+        onError(`${selectedRptr.callsign} has no static talk groups configured on BrandMeister.`);
+        return;
+      }
+      const currentTalkGroups = useQuickContactsStore.getState().contacts;
+      const newEntries: MmdvmUiEntry[] = await Promise.all(staticTgs.map(async (tg) => {
+        // Match by numeric contact number, not name — an existing entry's name may have
+        // been shortened to fit the radio's 16-character limit.
+        const existing = currentTalkGroups.find((c) => c.contactNumber === tg.talkgroup);
+        if (existing) {
+          return {
+            channelName: existing.name,
+            useExisting: true,
+            existingIndex: String(existing.index),
+            newTalkGroupName: '',
+            newTalkGroupId: tg.talkgroup,
+            timeslot: String(tg.slot) as '1' | '2',
+          };
+        }
+        const name = (await fetchBrandmeisterTalkgroupName(tg.talkgroup)) || `TG ${tg.talkgroup}`;
+        return {
+          channelName: name,
+          useExisting: false,
+          existingIndex: '',
+          newTalkGroupName: name,
+          newTalkGroupId: tg.talkgroup,
+          timeslot: String(tg.slot) as '1' | '2',
+        };
+      }));
+      setMmdvmEntries(newEntries);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Failed to fetch static talk groups from BrandMeister');
+    } finally {
+      setIsImportingStaticTgs(false);
+    }
+  };
 
   // Preset MMDVM DMR Radio ID to first ID (slot 1) when list becomes available, once
   useEffect(() => {
@@ -142,8 +230,9 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
       let nextTalkGroupIndex = currentTalkGroups.length + 1;
       const newTalkGroups: Omit<QuickContact, 'index' | 'offset' | 'rawData' | 'hasHeader'>[] = [];
       const resolvedEntries: MMDVMChannelEntry[] = filledEntries.map((entry) => {
+        const entryTimeslot = entry.timeslot === '' ? undefined : (entry.timeslot === '1' ? 1 : 2);
         if (entry.useExisting) {
-          return { channelName: entry.channelName, contactId: parseInt(entry.existingIndex, 10) };
+          return { channelName: entry.channelName, contactId: parseInt(entry.existingIndex, 10), timeslot: entryTimeslot };
         }
         const contactId = nextTalkGroupIndex++;
         newTalkGroups.push({
@@ -152,7 +241,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
           callType: 0x04, // Group Call
           flag: 0, // PC-created
         });
-        return { channelName: entry.channelName, contactId };
+        return { channelName: entry.channelName, contactId, timeslot: entryTimeslot };
       });
 
       const result = generateMMDVMChannels({
@@ -162,6 +251,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
         firstChannelNumber: nextChannelNumber,
         dmrRadioIdIndex: validDmrIndex,
         timeslot: mmdvmTimeslot === '1' ? 1 : 2,
+        colorCode: parseInt(mmdvmColorCode, 10) || 1,
       });
 
       if (newTalkGroups.length > 0) {
@@ -197,16 +287,70 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
 
   return (
     <Card padding="tight" className="mb-4">
-      <SectionTitle as="h3" size="lg" className="mb-2">MMDVM</SectionTitle>
+      <SectionTitle as="h3" size="lg" className="mb-2">MMDVM / Repeater</SectionTitle>
       <p className="text-sm text-cool-gray mb-4">
-        Add MMDVM hotspot channels (Color Code 1). Simplex uses one frequency for RX and TX; duplex
-        pairs a separate TX frequency for a hotspot linked to a real repeater. You can create multiple
-        channels on the same frequency pair with different talk groups—for example, one for local
-        (TG 9) and one for a brandmeister talk group.
+        Add digital channels for an MMDVM hotspot or a real DMR repeater. Simplex uses one frequency
+        for RX and TX; duplex pairs a separate TX frequency for a hotspot or repeater. You can create
+        multiple channels on the same frequency pair with different talk groups—for example, one for
+        local (TG 9) and one for a brandmeister talk group.
       </p>
 
+      <div className="mb-4">
+        <label className="block text-sm text-cool-gray mb-2">Look up a repeater (optional)</label>
+        <input
+          type="text"
+          value={rptrSearch}
+          onChange={(e) => {
+            setRptrSearch(e.target.value);
+            setSelectedRptr(null);
+          }}
+          placeholder="Search by callsign, city, or state..."
+          className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+        />
+        {rptrMatches.length > 0 && !selectedRptr && (
+          <div className="mt-1 max-h-48 overflow-y-auto border border-neon-cyan border-opacity-30 rounded bg-black">
+            {rptrMatches.map((r) => (
+              <div
+                key={r.id}
+                onClick={() => handleSelectRptr(r)}
+                className="px-3 py-2 text-sm text-cool-gray hover:bg-neon-cyan hover:bg-opacity-10 hover:text-white cursor-pointer border-b border-neon-cyan border-opacity-10 last:border-0"
+              >
+                <span className="text-neon-cyan font-semibold">{r.callsign}</span> — {r.city}, {r.state}
+                {' · '}{convertRptrFrequency(r.frequency).toFixed(4)} MHz · CC{r.color_code} · {r.ipsc_network || 'Unknown network'}
+              </div>
+            ))}
+          </div>
+        )}
+        {selectedRptr && (
+          <div className="mt-2 flex items-center justify-between gap-2 p-2 rounded border border-neon-cyan border-opacity-30 bg-black bg-opacity-30">
+            <span className="text-sm text-cool-gray">
+              Prefilled RX/TX/color code from <span className="text-neon-cyan">{selectedRptr.callsign}</span>
+              {selectedRptr.ipsc_network?.toLowerCase() === 'brandmeister' ? ' (BrandMeister)' : ''}
+            </span>
+            <div className="flex items-center gap-2">
+              {selectedRptr.ipsc_network?.toLowerCase() === 'brandmeister' && (
+                <Button
+                  onClick={handleImportStaticTalkgroups}
+                  disabled={isImportingStaticTgs}
+                  className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright text-xs px-2 py-1"
+                >
+                  {isImportingStaticTgs ? 'Importing...' : 'Import static TGs'}
+                </Button>
+              )}
+              <button
+                type="button"
+                onClick={() => { setSelectedRptr(null); setRptrSearch(''); }}
+                className="text-sm text-cool-gray hover:text-white"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 gap-4 mb-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-start">
           <div>
             <label className="flex items-center gap-2 cursor-pointer w-fit mb-2">
               <input
@@ -291,6 +435,20 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
               Match your hotspot/repeater's slot
             </p>
           </div>
+          <div>
+            <label className="block text-sm text-cool-gray mb-2">Color Code</label>
+            <input
+              type="number"
+              value={mmdvmColorCode}
+              onChange={(e) => setMmdvmColorCode(e.target.value)}
+              min={0}
+              max={15}
+              className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+            />
+            <p className="text-xs text-cool-gray mt-1">
+              0–15 (hotspots are usually 1)
+            </p>
+          </div>
         </div>
 
         <div>
@@ -350,7 +508,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                       className="w-full bg-black border border-neon-cyan rounded px-2 py-1.5 text-white text-sm"
                     />
                   </div>
-                  <div className="col-span-5">
+                  <div className="col-span-3">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -364,6 +522,22 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                       />
                       <span className="text-xs text-cool-gray">Use existing talk group</span>
                     </label>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs text-cool-gray mb-1">Slot</label>
+                    <select
+                      value={entry.timeslot}
+                      onChange={(e) => {
+                        const next = [...mmdvmEntries];
+                        next[index] = { ...next[index], timeslot: e.target.value as '' | '1' | '2' };
+                        setMmdvmEntries(next);
+                      }}
+                      className="w-full bg-black border border-neon-cyan rounded px-2 py-1.5 text-white text-sm"
+                    >
+                      <option value="">Default</option>
+                      <option value="1">TS1</option>
+                      <option value="2">TS2</option>
+                    </select>
                   </div>
                   <div className="col-span-3 flex items-end gap-1 justify-end">
                     {mmdvmEntries.length > 1 ? (
@@ -457,8 +631,8 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
         )}
 
         <p className="text-xs text-cool-gray">
-          Settings: Digital, Color Code 1. Selected DMR Radio ID is used for TX on all channels. New talk
-          groups are added to the Talk Groups list in the Digital tab.
+          Settings: Digital. Selected DMR Radio ID is used for TX on all channels. New talk groups are
+          added to the Talk Groups list in the Digital tab.
         </p>
       </div>
 

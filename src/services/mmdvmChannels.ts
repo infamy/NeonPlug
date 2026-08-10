@@ -32,6 +32,10 @@ export interface MMDVMChannelEntry {
    *  for TX. Resolve this against an existing talk group or a newly-created one before
    *  calling generateMMDVMChannels(); 0 = None. */
   contactId: number;
+  /** Per-entry timeslot override (1 = TS1, 2 = TS2). Falls back to the top-level timeslot
+   *  option when unset — a real repeater commonly runs different static talk groups on
+   *  each slot, which a single hotspot-wide timeslot can't represent. */
+  timeslot?: 1 | 2;
 }
 
 export interface MMDVMGenerateOptions {
@@ -41,8 +45,11 @@ export interface MMDVMGenerateOptions {
   entries: MMDVMChannelEntry[];
   firstChannelNumber: number;
   dmrRadioIdIndex: number | undefined; // 0-based index into DMR Radio IDs; undefined = None
-  /** 1 = TS1, 2 = TS2. Defaults to TS2 (the usual MMDVM hotspot convention). */
+  /** 1 = TS1, 2 = TS2. Default for entries that don't specify their own timeslot. */
   timeslot?: 1 | 2;
+  /** DMR color code. Defaults to 1 (the usual MMDVM hotspot convention) — a real repeater
+   *  can use any value 0-15. */
+  colorCode?: number;
 }
 
 export interface MMDVMGenerateResult {
@@ -71,7 +78,7 @@ export function isValidMMDVMDuplexFrequency(mhz: number): boolean {
  * Generate MMDVM channels, simplex or duplex. Same RX/TX pair for all channels, Color Code 1.
  */
 export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGenerateResult {
-  const { frequencyMhz, txFrequencyMhz, entries, firstChannelNumber, dmrRadioIdIndex, timeslot } = options;
+  const { frequencyMhz, txFrequencyMhz, entries, firstChannelNumber, dmrRadioIdIndex, timeslot, colorCode } = options;
 
   // The narrow 431-435 MHz range is a simplex-hotspot calling-frequency convention — it
   // doesn't apply to duplex, where RX mirrors the hotspot's own transmit-to-repeater
@@ -88,7 +95,7 @@ export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGener
     throw new Error(`Frequency must be between ${MMDVM_FREQ_MIN_MHZ} and ${MMDVM_FREQ_MAX_MHZ} MHz`);
   }
   const txFreq = txFrequencyMhz ?? frequencyMhz;
-  const slotOperation = timeslot === 1 ? 0 : 1; // Storage: 0 = TS1, 1 = TS2
+  const defaultSlotOperation = timeslot === 1 ? 0 : 1; // Storage: 0 = TS1, 1 = TS2
   if (!entries.length) {
     throw new Error('At least one channel entry is required');
   }
@@ -102,9 +109,9 @@ export function generateMMDVMChannels(options: MMDVMGenerateOptions): MMDVMGener
     bandwidth: '12.5kHz',
     power: 'Low',
     scanAdd: true,
-    colorCode: 1,
+    colorCode: colorCode ?? 1,
     contactId: entry.contactId,
-    slotOperation,
+    slotOperation: entry.timeslot !== undefined ? (entry.timeslot === 1 ? 0 : 1) : defaultSlotOperation,
     dmrRadioIdIndex,
   }));
 
