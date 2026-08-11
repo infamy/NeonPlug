@@ -22,7 +22,12 @@ export const AboutTab: React.FC = () => {
     <>
     <div className="h-full overflow-y-auto">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-neon-cyan mb-2">About NeonPlug</h2>
+        <div className="flex items-center gap-3 mb-2">
+          <h2 className="text-2xl font-bold text-neon-cyan">About NeonPlug</h2>
+          <span className="text-sm font-mono px-2 py-0.5 rounded border border-neon-cyan border-opacity-40 text-neon-cyan">
+            v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'}
+          </span>
+        </div>
         <p className="text-cool-gray">
           Online Digital CPS — program your radio directly from your browser.
         </p>
