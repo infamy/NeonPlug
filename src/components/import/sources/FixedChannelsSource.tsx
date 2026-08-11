@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { formatPlural } from '../../../utils/formatPlural';
-import { useImportStores } from '../../../hooks/useImportStores';
+import { useChannelsStore } from '../../../store/channelsStore';
+import { useZonesStore } from '../../../store/zonesStore';
 import { getNextChannelNumber } from '../../../utils/importHelpers';
 import { getAvailableFixedChannelSets, getChannelsForSet } from '../../../services/fixedChannels';
 import { mergeChannelSetsWithExisting } from '../../../services/channelMerger';
@@ -20,8 +21,6 @@ export const FixedChannelsSource: React.FC<FixedChannelsSourceProps> = ({
   onError,
   onGenerationResult,
 }) => {
-  const { channels, setChannels, zones, setZones } = useImportStores();
-
   const [selectedFixedSets, setSelectedFixedSets] = useState<Set<string>>(new Set());
   const [isAddingFixed, setIsAddingFixed] = useState(false);
   const [expandedChannelSet, setExpandedChannelSet] = useState<string | null>(null);
@@ -38,7 +37,10 @@ export const FixedChannelsSource: React.FC<FixedChannelsSourceProps> = ({
     onError('');
 
     try {
-      const nextChannelNumber = getNextChannelNumber(channels);
+      // Fresh read at click time — see RptrsSource.tsx for why this can't be the
+      // value captured at render time.
+      const currentChannels = useChannelsStore.getState().channels;
+      const nextChannelNumber = getNextChannelNumber(currentChannels);
 
       // Generate channels for each selected set. Each set gets a distinct
       // temporary number range — the merge mapping is keyed by these numbers,
@@ -61,7 +63,7 @@ export const FixedChannelsSource: React.FC<FixedChannelsSourceProps> = ({
       // Merge overlaps within the new sets and dedupe against existing channels
       // (a new channel is reused only when ALL settings match an existing one).
       const { channelsToAdd, channelMapping } = mergeChannelSetsWithExisting(
-        channels,
+        currentChannels,
         channelSets,
         nextChannelNumber
       );
@@ -87,12 +89,11 @@ export const FixedChannelsSource: React.FC<FixedChannelsSourceProps> = ({
         }
       }
 
-      // Add only new channels (not duplicates)
-      const updatedChannels = [...channels, ...channelsToAdd];
-      setChannels(updatedChannels);
+      // Add only new channels (not duplicates) — functional append, safe against
+      // concurrent add actions
+      useChannelsStore.getState().addChannels(channelsToAdd);
 
-      const updatedZones = [...zones, ...newZones];
-      setZones(updatedZones);
+      useZonesStore.getState().addZones(newZones);
 
       onGenerationResult({
         channels: channelsToAdd.length,

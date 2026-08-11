@@ -12,7 +12,7 @@ interface ChirpSourceProps {
 }
 
 export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
-  const { channels, setChannels } = useChannelsStore();
+  const { channels } = useChannelsStore();
 
   const [isImportingChirp, setIsImportingChirp] = useState(false);
   const [chirpImportResult, setChirpImportResult] = useState<{
@@ -33,14 +33,15 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
     try {
       const content = await file.text();
 
-      const nextChannelNumber = getNextChannelNumber(channels);
+      // Fresh read at click time — see RptrsSource.tsx for why this can't be the
+      // value captured at render time.
+      const nextChannelNumber = getNextChannelNumber(useChannelsStore.getState().channels);
 
       const result = importChannelsFromChirpCSV(content, nextChannelNumber);
 
       if (result.success && result.channels) {
-        // Add imported channels
-        const newChannels = [...channels, ...result.channels];
-        setChannels(newChannels);
+        // Add imported channels — functional append, safe against concurrent add actions
+        useChannelsStore.getState().addChannels(result.channels);
 
         setChirpImportResult({
           operation: 'import',

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { formatPlural } from '../../../utils/formatPlural';
-import { useImportStores } from '../../../hooks/useImportStores';
+import { useChannelsStore } from '../../../store/channelsStore';
+import { useZonesStore } from '../../../store/zonesStore';
 import { getNextChannelNumber } from '../../../utils/importHelpers';
 import { generateTaflChannels } from '../../../services/taflChannels';
 import { groupTaflEntriesByName, type TaflData } from '../../../data/taflData';
@@ -24,8 +25,6 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
   onError,
   onGenerationResult,
 }) => {
-  const { channels, setChannels, zones, setZones } = useImportStores();
-
   const [taflSearchFilter, setTaflSearchFilter] = useState('');
   const [selectedTaflEntries, setSelectedTaflEntries] = useState<Set<number>>(new Set());
   const [expandedTaflGroups, setExpandedTaflGroups] = useState<Set<string>>(new Set());
@@ -92,7 +91,10 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
         throw new Error('No TAFL entries selected');
       }
 
-      const nextChannelNumber = getNextChannelNumber(channels);
+      // Fresh read at click time — see RptrsSource.tsx for why this can't be the
+      // value captured at render time.
+      const currentChannels = useChannelsStore.getState().channels;
+      const nextChannelNumber = getNextChannelNumber(currentChannels);
 
       // Generate channels and zones for selected entries
       // TAFL always uses individual zones grouped by name
@@ -108,13 +110,11 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
         return;
       }
 
-      // Add channels
-      const updatedChannels = [...channels, ...result.channels];
-      setChannels(updatedChannels);
+      // Add channels — functional append, safe against concurrent add actions
+      useChannelsStore.getState().addChannels(result.channels);
 
       // Add zones
-      const updatedZones = [...zones, ...result.zones];
-      setZones(updatedZones);
+      useZonesStore.getState().addZones(result.zones);
 
       onGenerationResult({
         channels: result.channels.length,

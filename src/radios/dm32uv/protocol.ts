@@ -15,7 +15,7 @@ import {
   storeRawData,
   type MemoryBlock,
 } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, encodeEncryptionKey, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, encodeEncryptionKey, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContactsBlocks, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
 import type { RadioInfo, DM32Protocol } from '../../types/radio';
 import { BaseDigitalProtocol } from '../shared/BaseProtocols';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact, EncryptionKey } from '../../models';
@@ -636,11 +636,16 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       log.error('Radio Settings block (metadata 0x04) is missing from blocks to read!', 'Protocol');
     }
 
-    // Step 2c: Add zone and scan list blocks
+    // Step 2c: Add zone, scan list, and talk group blocks
+    // Talk Groups span metadata 0x44-0x48 (5 blocks) — 0x44 alone is also in
+    // fixedMetadataBlocks above for the "critical/missing" warning; the dedup below
+    // handles the overlap.
     const zoneBlocks = blocks.filter(b => b.type === 'zone');
     const scanBlocks = blocks.filter(b => b.type === 'scan');
+    const talkGroupBlocks = blocks.filter(b => b.type === 'talkgroup');
     blocksToRead.push(...zoneBlocks);
     blocksToRead.push(...scanBlocks);
+    blocksToRead.push(...talkGroupBlocks);
 
     // Step 2d: Add other data type blocks
     const messageBlocks = blocks.filter(b => b.type === 'message');
@@ -2469,26 +2474,37 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
 
     this.onProgress?.(0, 'Parsing Talk Groups from cached blocks...');
 
-    // Find metadata block 0x44
-    const quickContactBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x44);
-    if (!quickContactBlock) {
+    // Talk Groups span metadata 0x44-0x48 (5 blocks, up to 800 entries) — reading only 0x44
+    // caps the list at whatever fits in one 4KB block (~170 entries).
+    const talkGroupBlocks = this.discoveredBlocks
+      .filter(b => b.metadata >= METADATA.TALK_GROUP_FIRST && b.metadata <= METADATA.TALK_GROUP_LAST)
+      .sort((a, b) => a.metadata - b.metadata);
+    if (talkGroupBlocks.length === 0) {
       // Talk Groups are optional - return empty array if not found
-      log.debug('Talk Groups block (metadata 0x44) not found', 'Protocol');
-      return [];
-    }
-
-    const cachedBlock = this.getCachedBlockByAddress(quickContactBlock.address);
-    if (!cachedBlock) {
-      log.warn(`Talk Groups block at 0x${quickContactBlock.address.toString(16)} not found in cache`, 'Protocol');
+      log.debug('Talk Groups block(s) (metadata 0x44-0x48) not found', 'Protocol');
       return [];
     }
 
     // Parse from cached data only - no radio access
     // Wrap in try-catch to ensure parsing errors don't propagate and affect other parsing
     try {
-      const contacts = parseQuickContacts(cachedBlock.data);
-      this.onProgress?.(100, `Successfully processed ${contacts.length} talk groups`);
-      return contacts;
+      const allContacts: QuickContact[] = [];
+      let nextIndex = 1;
+      for (const block of talkGroupBlocks) {
+        const cachedBlock = this.getCachedBlockByAddress(block.address);
+        if (!cachedBlock) {
+          log.warn(`Talk Groups block 0x${block.metadata.toString(16)} at 0x${block.address.toString(16)} not found in cache`, 'Protocol');
+          continue;
+        }
+        // Exclude the trailing metadata byte (offset 0xFFF) — entries never span it, so it
+        // must not be fed into the entry parser as if it were entry data.
+        const usableData = cachedBlock.data.slice(0, BLOCK_SIZE.STANDARD - 1);
+        const { contacts, nextIndex: blockNextIndex } = parseQuickContacts(usableData, undefined, nextIndex);
+        allContacts.push(...contacts);
+        nextIndex = blockNextIndex;
+      }
+      this.onProgress?.(100, `Successfully processed ${allContacts.length} talk groups`);
+      return allContacts;
     } catch (error) {
       log.error('Error parsing Talk Groups - returning empty array to prevent blocking other parsing', 'Protocol', error);
       // Return empty array instead of throwing - parsing errors should not block other operations
@@ -2534,9 +2550,12 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       this.discoveredBlocks = blocks;
     }
 
-    // Find metadata block 0x44 (Talk Groups data)
-    const quickContactBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x44);
-    if (!quickContactBlock) {
+    // Find Talk Groups blocks (metadata 0x44-0x48, 5 blocks) — sorted so entries are
+    // written in the same order as encodeQuickContactsBlocks() expects them.
+    const quickContactBlocks = this.discoveredBlocks
+      .filter(b => b.metadata >= METADATA.TALK_GROUP_FIRST && b.metadata <= METADATA.TALK_GROUP_LAST)
+      .sort((a, b) => a.metadata - b.metadata);
+    if (quickContactBlocks.length === 0) {
       throw new Error('Talk Groups block (metadata 0x44) not found');
     }
 
@@ -2554,8 +2573,10 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
 
     this.onProgress?.(10, 'Encoding Talk Groups...');
 
-    // Encode contacts to 4KB block
-    const blockData = encodeQuickContacts(contacts);
+    // Encode contacts across as many Talk Groups blocks as needed (overflow past one
+    // block spills into the next, matching the per-block layout confirmed against a real
+    // OEM CPS write capture).
+    const encodedBlocks = encodeQuickContactsBlocks(contacts, quickContactBlocks.map(b => b.metadata));
 
     // Get block 0x06 from cache or read it fresh
     this.onProgress?.(30, 'Preparing config block 0x06...');
@@ -2584,24 +2605,20 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     await this.connection!.writeMemory(counterBlock.address, counterBlockData, METADATA.METADATA_0x06);
     log.info(`Updated Talk Groups counter to ${contacts.length} at block 0x06 offset 0x1FF`, 'Protocol');
 
-    // Write the Talk Groups data block
-    this.onProgress?.(70, 'Writing Talk Groups data to radio...');
-    await this.connection!.writeMemory(quickContactBlock.address, blockData, METADATA.METADATA_0x44);
+    // Write the Talk Groups data blocks
+    this.onProgress?.(70, `Writing Talk Groups data to ${quickContactBlocks.length} block(s)...`);
+    for (let i = 0; i < quickContactBlocks.length; i++) {
+      const block = quickContactBlocks[i];
+      const data = encodedBlocks[i];
+      await this.connection!.writeMemory(block.address, data, block.metadata);
 
-    // Update cache (store the written data)
-    const cachedBlockIndex = this.cachedBlockData.findIndex(b => b.address === quickContactBlock.address);
-    if (cachedBlockIndex >= 0) {
-      this.cachedBlockData[cachedBlockIndex] = {
-        metadata: METADATA.METADATA_0x44,
-        address: quickContactBlock.address,
-        data: blockData,
-      };
-    } else {
-      this.cachedBlockData.push({
-        metadata: METADATA.METADATA_0x44,
-        address: quickContactBlock.address,
-        data: blockData,
-      });
+      // Update cache (store the written data)
+      const cachedBlockIndex = this.cachedBlockData.findIndex(b => b.address === block.address);
+      if (cachedBlockIndex >= 0) {
+        this.cachedBlockData[cachedBlockIndex] = { metadata: block.metadata, address: block.address, data };
+      } else {
+        this.cachedBlockData.push({ metadata: block.metadata, address: block.address, data });
+      }
     }
 
     // Update cache for counter block too
@@ -2682,17 +2699,32 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
                 0x40 // Default to Group Call
     }));
 
-    // Index Table 1 (@ 0x100): Sort entries alphabetically by Talk Group name (ASCII string comparison)
-    const sortedByName = [...contactsWithIndices].sort((a, b) => 
-      a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
+    // Each table entry packs the Talk Group's physical position (0x44-0x48 index) across
+    // BOTH bytes, not just the first: byte0 is the index's low 8 bits, and byte1's low
+    // nibble is the index's next 4 bits (giving a 12-bit index, up to 4095 — well past
+    // LIMITS.TALK_GROUPS_MAX) while byte1's HIGH nibble carries the call type (0x30/0x40/0x50),
+    // the same 12-bit-index-plus-4-bit-type packing already used for the channel -> Talk
+    // Group link at metadata 0x42/0x43. A real OEM CPS write of 607 Talk Groups confirmed
+    // this: Index Table 2 (sorted by DMR ID) held "5F 42" for its 2nd entry, which decodes
+    // to index (0x42 & 0x0F) << 8 | 0x5F = 607 (physical position of "Local", a very
+    // low-DMR-ID entry) with type 0x42 & 0xF0 = 0x40 (Group Call) — matching exactly.
+    // Treating byte1 as a plain 1-byte type (the previous, pre-fix assumption) only
+    // happened to work for lists under 256 entries, where the index's high nibble is
+    // always 0.
+    // Plain codepoint/byte-order comparison, not locale-aware — hardware-confirmed against
+    // the same 607-entry write: the OEM CPS sorts "ALERT-K4NWS" before "Alabama" (uppercase
+    // 'E' < lowercase 'a' in byte order), which a case-insensitive/numeric-aware
+    // localeCompare gets backwards.
+    const sortedByName = [...contactsWithIndices].sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0
     );
-    
+
     sortedByName.forEach((item, displayIndex) => {
       const offset = 0x100 + (displayIndex * 2);
       if (offset < 0x700) {
-        quickAccessData[offset] = item.contactIndex;
-        quickAccessData[offset + 1] = item.typeByte;
-        
+        quickAccessData[offset] = item.contactIndex & 0xFF;
+        quickAccessData[offset + 1] = item.typeByte | ((item.contactIndex >> 8) & 0x0F);
+
         // Clear bit in bitmask (0 = used, 1 = free)
         // Use displayIndex for bitmask position, not contactIndex
         const byteIdx = Math.floor(displayIndex / 8);
@@ -2703,16 +2735,21 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       }
     });
 
-    // Index Table 2 (@ 0x740): Sort entries by DMR ID numerically (lowest ID first)
-    const sortedByDmrId = [...contactsWithIndices].sort((a, b) => 
-      a.contactNumber - b.contactNumber
-    );
-    
+    // Index Table 2 (@ 0x740): Sort entries by DMR ID numerically (lowest ID first).
+    // Entries with contactNumber 0 (no real DMR ID) still occupy a sorted slot (sorting
+    // first, as ID 0) but that slot is left blank rather than written — hardware-confirmed:
+    // a contactNumber-0 entry's slot in a real OEM CPS write was "FF FF" while the very
+    // next slot held the next-lowest real ID. Skipping the slot's displayIndex entirely
+    // (i.e. filtering it out before assigning positions) was tried first and shifted every
+    // other entry's position by one relative to real hardware output — wrong.
+    const sortedByDmrId = [...contactsWithIndices].sort((a, b) => a.contactNumber - b.contactNumber);
+
     sortedByDmrId.forEach((item, displayIndex) => {
+      if (item.contactNumber === 0) return;
       const offset = 0x740 + (displayIndex * 2);
       if (offset < 0xD00) {
-        quickAccessData[offset] = item.contactIndex;
-        quickAccessData[offset + 1] = item.typeByte;
+        quickAccessData[offset] = item.contactIndex & 0xFF;
+        quickAccessData[offset + 1] = item.typeByte | ((item.contactIndex >> 8) & 0x0F);
       }
     });
 
@@ -2742,7 +2779,7 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     // This allows users to download the original raw data from the radio
 
     this.onProgress?.(100, `Successfully wrote ${contacts.length} talk groups`);
-    log.info(`Successfully wrote ${contacts.length} talk groups to blocks 0x44, 0x06, and 0x0B`, 'Protocol');
+    log.info(`Successfully wrote ${contacts.length} talk groups across ${quickContactBlocks.length} block(s) (0x44-0x${quickContactBlocks[quickContactBlocks.length - 1].metadata.toString(16)}), plus 0x06 and 0x0B`, 'Protocol');
   }
 
   /**

@@ -4,6 +4,47 @@
 
 import type { Channel } from '../models';
 
+export interface ChannelRenumberResult {
+  /** Channels renumbered to a contiguous 1..N sequence, sorted by their prior number */
+  channels: Channel[];
+  /** Prior channel.number -> new channel.number, for remapping zone/scan-list references */
+  oldToNew: Map<number, number>;
+  /** True if any renumbering actually happened (numbers weren't already 1..N matching array order) */
+  hadGaps: boolean;
+}
+
+/**
+ * Renumber channels to a contiguous 1..N sequence matching sorted order.
+ *
+ * The radio's write path (generateChannelBlocks) packs channels back-to-back purely by
+ * array position and ignores channel.number entirely; zones and scan lists then reference
+ * channels by the raw .number value. Reading skips blank slots on the radio without
+ * reserving their number, so channel.number can come back with gaps (e.g. ...50, 52, 53...
+ * if slot 51 was blank). Left uncompacted, the next write silently shifts every channel
+ * after a gap into the wrong physical slot and any zone/scan-list referencing the old
+ * numbers ends up pointing at the wrong channel. Call this right after reading channels,
+ * and remap zone/scan-list channel references with the returned oldToNew map.
+ */
+export function compactChannelNumbers(channels: Channel[]): ChannelRenumberResult {
+  const sorted = [...channels].sort((a, b) => a.number - b.number);
+  const hadGaps = sorted.some((ch, i) => ch.number !== i + 1);
+  const oldToNew = new Map(sorted.map((ch, i) => [ch.number, i + 1]));
+  const renumbered = hadGaps ? sorted.map((ch, i) => ({ ...ch, number: i + 1 })) : sorted;
+  return { channels: renumbered, oldToNew, hadGaps };
+}
+
+/** Remap a list of channel numbers (e.g. a zone's or scan list's .channels) through an oldToNew map, dropping any that no longer exist. */
+export function remapChannelNumbers(numbers: number[], oldToNew: Map<number, number>): number[] {
+  return numbers
+    .map(n => oldToNew.get(n))
+    .filter((n): n is number => n !== undefined);
+}
+
+/** Remap a single optional channel reference (e.g. a scan list's priority/designated-TX channel) through an oldToNew map. */
+export function remapChannelNumber(n: number | undefined, oldToNew: Map<number, number>): number | undefined {
+  return n === undefined ? undefined : oldToNew.get(n);
+}
+
 /**
  * Create a new channel with sensible defaults
  * All unknown fields are set to 0/false to match typical radio defaults
@@ -27,6 +68,7 @@ export function createDefaultChannel(overrides: Partial<Channel> = {}): Channel 
     unknown1A_6_4: 0,
     unknown1A_3: false,
     aprsReceive: false,
+    unknown1A_1_0: 3, // OEM CPS writes 3 here on every channel
     emergencyIndicator: false,
     emergencyAck: false,
     emergencySystemId: 0,

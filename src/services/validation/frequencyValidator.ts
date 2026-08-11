@@ -20,6 +20,20 @@ export function isRxInNoTxBand(rxFrequency: number): boolean {
 }
 
 /**
+ * True if this channel is receive-only with TX stored as the 0xFF sentinel.
+ *
+ * Not limited to the 87–136 MHz aviation band: real codeplugs (confirmed against OEM CPS
+ * output) use Forbid TX + the 0xFF sentinel for receive-only channels anywhere in the band
+ * (e.g. a paging monitor channel at 159 MHz), not just aviation receive. Gating this on
+ * isRxInNoTxBand() caused isValidChannelFrequency() to reject such channels outright
+ * (their leftover/sentinel TX value fails the normal band-range check), silently dropping
+ * them from writes.
+ */
+export function isNoTxChannel(channel: Channel): boolean {
+  return channel.forbidTx && isNoTxFrequency(channel.txFrequency);
+}
+
+/**
  * Check if a frequency is in the supported ranges.
  * When limits is provided (e.g. from getCapabilitiesForModel), uses those; otherwise uses default ranges.
  */
@@ -39,7 +53,7 @@ export function isValidFrequencyRange(frequency: number, limits?: RadioBandLimit
  */
 export function isValidChannelFrequency(channel: Channel, limits?: RadioBandLimits | null): boolean {
   if (channel.rxFrequency <= 0) return false;
-  if (isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx && isNoTxFrequency(channel.txFrequency)) {
+  if (isNoTxChannel(channel)) {
     return isValidFrequencyRange(channel.rxFrequency, limits);
   }
   if (channel.txFrequency <= 0) return false;

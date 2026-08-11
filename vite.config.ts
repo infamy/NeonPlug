@@ -2,7 +2,16 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 import { execSync } from 'child_process'
+import { readFileSync } from 'fs'
 import { inlineFavicon } from './vite-plugin-inline-favicon'
+
+// package.json's version — the same number electron-builder ships in its NSIS/portable
+// installers and electron-updater compares against latest.yml, so this is the one figure
+// that actually confirms which build (web or desktop) you're running.
+function getAppVersion(): string {
+  const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
+  return pkg.version;
+}
 
 // Get commit hash from environment or git
 function getCommitHash(): string {
@@ -23,11 +32,13 @@ export default defineConfig(({ mode }) => {
   const isSingleFile = mode === 'singlefile'
   const commitHash = getCommitHash();
   const buildTime = new Date().toISOString();
-  
+  const appVersion = getAppVersion();
+
   return {
     define: {
       __COMMIT_HASH__: JSON.stringify(commitHash),
       __BUILD_TIME__: JSON.stringify(buildTime),
+      __APP_VERSION__: JSON.stringify(appVersion),
     },
     plugins: [
       react(),

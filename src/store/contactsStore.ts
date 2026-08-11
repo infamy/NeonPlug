@@ -7,6 +7,8 @@ interface ContactsState {
   contactsLoaded: boolean; // Track if contacts have been read from radio
   setContacts: (contacts: Contact[]) => void;
   addContact: (contact: Contact) => void;
+  /** Append multiple contacts atomically against the latest state (safe against concurrent/rapid add actions) */
+  addContacts: (contacts: Contact[]) => void;
   updateContact: (id: number, contact: Partial<Contact>) => void;
   deleteContact: (id: number) => void;
   setSelectedContact: (id: number | null) => void;
@@ -23,6 +25,9 @@ export const useContactsStore = create<ContactsState>((set) => ({
   },
   addContact: (contact) => set((state) => ({
     contacts: [...state.contacts, contact]
+  })),
+  addContacts: (newContacts) => set((state) => ({
+    contacts: [...state.contacts, ...newContacts]
   })),
   updateContact: (id, updates) => set((state) => ({
     contacts: state.contacts.map(c => 

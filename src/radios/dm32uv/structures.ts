@@ -5,10 +5,10 @@
 
 import type { Channel, Contact, Zone, ScanList, RadioSettings, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, CalibrationData, RXGroup, EncryptionKey, QuickContact } from '../../models';
 import { generateZoneId } from '../../utils/zoneHelpers';
-import { OFFSET, BLOCK_SIZE, LIMITS, METADATA } from './constants';
+import { OFFSET, BLOCK_SIZE, LIMITS } from './constants';
 import { createDefaultChannel } from '../../utils/channelHelpers';
 import { log } from '../../utils/protocolLogger';
-import { NO_TX_FREQUENCY, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
+import { NO_TX_FREQUENCY, isNoTxChannel } from '../../services/validation/frequencyValidator';
 
 // --- BCD frequency and CTCSS/DCS encoding (inlined from encoding.ts) ---
 
@@ -207,21 +207,8 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     rxFreq = 0;
   }
 
-  // TX Frequency (0x14-0x17, 4 bytes BCD). All 0xFF = no TX (aviation 87–136 MHz band).
-  let txFreq: number;
-  const txBytes = data.slice(0x14, 0x18);
-  if (txBytes.every(b => b === 0xFF)) {
-    txFreq = NO_TX_FREQUENCY;
-  } else {
-    try {
-      txFreq = decodeBCDFrequency(txBytes);
-    } catch (error) {
-      log.warn(`Failed to decode TX frequency for channel ${channelNumber}`, 'Structures', error);
-      txFreq = 0;
-    }
-  }
-
-  // Mode flags (0x18)
+  // Mode flags (0x18) — read before TX frequency below, since the TX sentinel handling
+  // needs forbidTx to decide what a blank TX field actually means.
   // Bits 7-4 (mask 0xF0): Channel Mode (0=Analog, 1=Digital, 2=Fixed Analog, 3=Fixed Digital)
   // Bit 3 (mask 0x08): Forbid TX (0=Allow, 1=Forbid)
   // Bits 2-1 (mask 0x06): Power Level (0=Low, 1=Medium, 2=High) - NOT Busy Lock!
@@ -233,7 +220,28 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
 
   // Forbid TX is stored at byte 0x18, bit 3 (mask 0x08)
   const forbidTx = (modeFlags & 0x08) !== 0;
-  
+
+  // TX Frequency (0x14-0x17, 4 bytes BCD). All 0xFF = blank/no TX ever written there.
+  // OEM CPS leaves this blank both for genuinely receive-only channels (Forbid TX checked)
+  // AND for ordinary channels it just never touched (Forbid TX left unchecked) — the two
+  // look identical on the wire. Only treat it as the "no TX" sentinel when Forbid TX is
+  // actually set; otherwise a blank field on a normal channel isn't receive-only, it's
+  // just unconfigured, so default TX to match RX (simplex) — a blank field defaulting to
+  // the literal sentinel value (1666.666 MHz) would fail frequency validation and get the
+  // whole channel silently dropped on the next write.
+  let txFreq: number;
+  const txBytes = data.slice(0x14, 0x18);
+  if (txBytes.every(b => b === 0xFF)) {
+    txFreq = forbidTx ? NO_TX_FREQUENCY : rxFreq;
+  } else {
+    try {
+      txFreq = decodeBCDFrequency(txBytes);
+    } catch (error) {
+      log.warn(`Failed to decode TX frequency for channel ${channelNumber}`, 'Structures', error);
+      txFreq = 0;
+    }
+  }
+
   // Power is stored at byte 0x18, bits 2-1 (mask 0x06)
   const powerValue = (modeFlags >> 1) & 0x03;
   const power: Channel['power'] = 
@@ -266,12 +274,13 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   // Bits 6-4 (mask 0x70): Unknown Setting (0-3, values ≥4 reset to 0)
   // Bit 3 (mask 0x08): Unknown
   // Bit 2 (mask 0x04): APRS Receive (0=Off, 1=On)
-  // Bits 1-0 (mask 0x03): Reserved/Unknown
+  // Bits 1-0 (mask 0x03): Unknown, but OEM CPS writes 3 here on every channel - preserve, don't zero
   const talkaroundAprs = data[0x1A];
   const forbidTalkaround = (talkaroundAprs & 0x80) !== 0;
   const unknown1A_6_4 = (talkaroundAprs >> 4) & 0x07;
   const unknown1A_3 = (talkaroundAprs & 0x08) !== 0;
   const aprsReceive = (talkaroundAprs & 0x04) !== 0;
+  const unknown1A_1_0 = talkaroundAprs & 0x03;
 
   // Emergency (0x1B)
   // Bit 7: Emergency Indicator (0=Off, 1=On)
@@ -502,6 +511,7 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     scanListId,
     forbidTalkaround,
     aprsReceive,
+    unknown1A_1_0,
     emergencyIndicator,
     emergencyAck,
     emergencySystemId,
@@ -572,8 +582,10 @@ export function encodeChannel(channel: Channel): Uint8Array {
   const rxFreqBytes = encodeBCDFrequency(channel.rxFrequency);
   data.set(rxFreqBytes, 0x10);
 
-  // TX Frequency (0x14-0x17). Use 0xFF only for RX in 87–136 MHz with Forbid TX; else encode actual TX.
-  if (isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx) {
+  // TX Frequency (0x14-0x17). Use 0xFF for any receive-only (Forbid TX) channel already
+  // carrying the no-TX sentinel; else encode actual TX. Not limited to the 87-136 MHz
+  // aviation band — see isNoTxChannel().
+  if (isNoTxChannel(channel)) {
     data[0x14] = data[0x15] = data[0x16] = data[0x17] = 0xFF;
   } else {
     const txFreqBytes = encodeBCDFrequency(channel.txFrequency);
@@ -614,7 +626,7 @@ export function encodeChannel(channel: Channel): Uint8Array {
   talkaroundAprs |= ((channel.unknown1A_6_4 & 0x07) << 4) & 0x70; // Bits 6-4
   if (channel.unknown1A_3) talkaroundAprs |= 0x08; // Bit 3
   if (channel.aprsReceive) talkaroundAprs |= 0x04; // Bit 2
-  // Bits 1-0: Reserved/Unknown (preserve original value if reading, otherwise leave as 0)
+  talkaroundAprs |= channel.unknown1A_1_0 & 0x03; // Bits 1-0: preserve (OEM CPS writes 3 here)
   data[0x1A] = talkaroundAprs;
 
   // Emergency (0x1B)
@@ -3335,20 +3347,33 @@ export function encodeRXGroups(
  * - Variable-length name (null-terminated)
  * - Remaining bytes: padding + 3-byte contact number + 1-byte call type + padding
  */
+export interface ParseQuickContactsResult {
+  contacts: QuickContact[];
+  /** Next 1-based index after this block — physical slot position continues across the
+   *  Talk Groups block range (0x44-0x48), so callers parsing multiple blocks must pass
+   *  this back in as the next block's startIndex. */
+  nextIndex: number;
+}
+
 export function parseQuickContacts(
   data: Uint8Array,
-  onRawContactParsed?: (contactIndex: number, rawData: Uint8Array, name: string) => void
-): QuickContact[] {
+  onRawContactParsed?: (contactIndex: number, rawData: Uint8Array, name: string) => void,
+  startIndex: number = 1
+): ParseQuickContactsResult {
   const contacts: QuickContact[] = [];
   let offset = 0;
-  let contactIndex = 1; // 1-based index
+  let contactIndex = startIndex; // 1-based physical slot position
 
   while (offset < data.length) {
     const entryStartOffset = offset;
     let hasHeader = false;
 
-    // Check if this is Contact 1 with 1-byte header (0x00)
-    if (contactIndex === 1 && offset + 1 <= data.length) {
+    // Check for a 1-byte header (0x00) at the start of THIS buffer — every Talk Groups
+    // block (0x44-0x48) has its own leading header before its first entry, not just the
+    // very first block. Checking offset===0 (rather than contactIndex===1) means this
+    // correctly re-triggers for each block when parseQuickContacts is called once per
+    // block with a fresh buffer, instead of only ever matching the global first entry.
+    if (offset === 0 && offset + 1 <= data.length) {
       const header = data[offset];
       if (header === 0x00) {
         hasHeader = true;
@@ -3448,84 +3473,72 @@ export function parseQuickContacts(
     contactIndex++;
   }
 
-  return contacts;
+  return { contacts, nextIndex: contactIndex };
+}
+
+export interface EncodeQuickContactsBlockResult {
+  data: Uint8Array;
+  /** How many of the given contacts were actually written to this block; the rest overflow to the next block. */
+  consumed: number;
 }
 
 /**
- * Encode Talk Groups to binary format for metadata block 0x44
- * This is the reverse of parseQuickContacts()
- * 
- * @param contacts - Array of Talk Groups to encode
- * @returns Encoded data (4KB block)
+ * Encode as many Talk Groups as fit into a single 4KB block. This is the reverse of
+ * parseQuickContacts() for one block.
+ *
+ * Every Talk Groups block (0x44-0x48) gets its own 1-byte 0x00 header before its first
+ * entry — confirmed against a real OEM CPS write capture (previously this was only ever
+ * applied to block 0x44's first entry, matching how encodeQuickContacts() used to write
+ * a single block; but continuation blocks 0x45-0x48 need the same header).
+ *
+ * @param contacts - Talk Groups to encode, starting from wherever this block should begin
+ * @param metadata - This block's logical ID (0x44-0x48)
  */
-export function encodeQuickContacts(contacts: QuickContact[]): Uint8Array {
+export function encodeQuickContactsBlock(contacts: QuickContact[], metadata: number): EncodeQuickContactsBlockResult {
   const data = new Uint8Array(BLOCK_SIZE.STANDARD);
   data.fill(0x00); // Initialize entire block to 0x00
-
-  // Set metadata byte at 0xFFF to 0x44 (metadata for Talk Groups block)
-  data[OFFSET.METADATA_BYTE] = METADATA.METADATA_0x44;
-
-  // Radio requires at least one contact - if none provided, create default "All" contact
-  // This prevents the radio from crashing when the block is empty
-  const contactsToEncode = contacts.length === 0 ? [{
-    index: 1,
-    offset: 0,
-    name: 'All',
-    contactNumber: 16777215, // All Call contact number
-    callType: 0x05, // All Call (0x05)
-    hasHeader: true,
-    rawData: new Uint8Array(0),
-  }] : contacts;
-  
-  if (contacts.length === 0) {
-    log.warn('No contacts provided - creating default "All" contact to prevent radio crash', 'Structures');
-  }
+  data[OFFSET.METADATA_BYTE] = metadata;
 
   let offset = 0;
 
-  for (let i = 0; i < contactsToEncode.length; i++) {
-    const contact = contactsToEncode[i];
-    const isFirstContact = i === 0;
+  // Every block's first entry is preceded by a 1-byte 0x00 header.
+  data[offset] = 0x00;
+  offset += 1;
 
-    // Contact 1 ALWAYS has 1-byte header (0x00) - this is critical for the radio to recognize the block
-    if (isFirstContact) {
-      if (offset + 1 > data.length) {
-        log.warn(`Not enough space for contact ${contact.index} header, truncating`, 'Structures');
-        break;
-      }
-      data[offset] = 0x00;
-      offset += 1;
-    }
+  let consumed = 0;
+  const metadataOffset = OFFSET.METADATA_BYTE;
 
-    // Structure: [header?] [flag] [16 name] [1 null] [3 contact] [1 call] [2 pad]
-    // Entry 1: 1 (header) + 1 (flag) + 16 (name) + 1 (null) + 3 (contact) + 1 (call) + 2 (pad) = 25 bytes
-    // Entry 2+: 1 (flag) + 16 (name) + 1 (null) + 3 (contact) + 1 (call) + 2 (pad) = 24 bytes
-    const requiredSpace = isFirstContact ? 25 : 24; // Entry 1 includes 1-byte header + flag
-    
-    if (offset + requiredSpace > data.length) {
-      log.warn(`Not enough space for contact ${contact.index}, truncating at offset ${offset}`, 'Structures');
+  for (const contact of contacts) {
+    const requiredSpace = 24; // flag(1) + name(16) + null(1) + contact(3) + call(1) + pad(2)
+
+    // Leave room for the block metadata byte at the very end (0xFFF) — entries must
+    // never spill into it.
+    if (offset + requiredSpace > metadataOffset) {
       break;
     }
 
     // Write flag byte (0x00 for PC-created contacts)
-    // Note: Radio-created contacts may have 0x01, but we write 0x00
     data[offset] = 0x00;
     offset++;
 
-    // Write name (16 bytes, null-padded)
-    // Clean the name: remove any non-ASCII printable characters (including ÿ from old parsing)
+    // Write name (16 bytes, null-padded). Names are windows-1252/Latin-1, not strict
+    // ASCII — the radio's own OEM CPS writes accented characters (e.g. "Perú", "Türkiye")
+    // as single high bytes (0xFA, 0xFC, ...), and the read side already decodes them
+    // correctly via TextDecoder('ascii'), which WHATWG aliases to windows-1252. Filtering
+    // to 0x20-0x7E and UTF-8-encoding with TextEncoder (both as this used to do) would
+    // silently drop those characters and multi-byte-encode any that survived — verified
+    // against a real OEM CPS write capture, which round-trips them as single bytes.
     const cleanName = contact.name
       .split('')
       .filter(char => {
         const code = char.charCodeAt(0);
-        return code >= 0x20 && code <= 0x7E; // Only ASCII printable characters
+        return code >= 0x20 && code <= 0xFE && code !== 0x7F; // Printable, excluding DEL and the 0xFF terminator/padding marker
       })
       .join('')
       .substring(0, 16); // Limit to 16 bytes
-    
-    const nameBytes = new TextEncoder().encode(cleanName);
+
     for (let j = 0; j < 16; j++) {
-      data[offset] = j < nameBytes.length ? nameBytes[j] : 0x00;
+      data[offset] = j < cleanName.length ? (cleanName.charCodeAt(j) & 0xFF) : 0x00;
       offset++;
     }
 
@@ -3534,12 +3547,10 @@ export function encodeQuickContacts(contacts: QuickContact[]): Uint8Array {
     offset++;
 
     // Write contact number (3 bytes, little-endian)
-    // Example: 3023401 (0x002E2229) should be written as: 29 22 2E
-    // Example: 1 (0x00000001) should be written as: 01 00 00
     const contactNumber = contact.contactNumber;
-    data[offset] = (contactNumber & 0xFF);                    // Low byte (bits 0-7)
-    data[offset + 1] = ((contactNumber >> 8) & 0xFF);         // Mid byte (bits 8-15)
-    data[offset + 2] = ((contactNumber >> 16) & 0xFF);        // High byte (bits 16-23)
+    data[offset] = (contactNumber & 0xFF);
+    data[offset + 1] = ((contactNumber >> 8) & 0xFF);
+    data[offset + 2] = ((contactNumber >> 16) & 0xFF);
     offset += 3;
 
     // Write call type (1 byte) - immediately after contact number (no padding)
@@ -3550,52 +3561,59 @@ export function encodeQuickContacts(contacts: QuickContact[]): Uint8Array {
     data[offset] = 0x00;
     data[offset + 1] = 0x00;
     offset += 2;
+
+    consumed++;
   }
 
-  // Add sentinel entry after the last contact to mark the end
-  // Sentinel: [1 flag (0x00)] [16 name (all 0x00)] [1 null] [3 contact (all 0x00)] [1 call (0x00)] [2 pad (all 0x00)]
-  if (offset + 24 <= data.length) {
-    // Flag byte
-    data[offset] = 0x00;
-    offset++;
-    
-    // 16-byte name field (all zeros)
-    for (let j = 0; j < 16; j++) {
-      data[offset] = 0x00;
-      offset++;
-    }
-    
-    // Null terminator
-    data[offset] = 0x00;
-    offset++;
-    
-    // 3 bytes contact number (all 0x00)
-    for (let j = 0; j < 3; j++) {
-      data[offset] = 0x00;
-      offset++;
-    }
-    
-    // 1 byte call type (0x00)
-    data[offset] = 0x00;
-    offset++;
-    
-    // 2 bytes padding
-    data[offset] = 0x00;
-    data[offset + 1] = 0x00;
-    offset += 2;
+  // Everything from here to the metadata byte is already 0x00 from the initial fill.
+
+  return { data, consumed };
+}
+
+/**
+ * Encode Talk Groups across as many 4KB blocks as needed (metadata 0x44, then 0x45-0x48
+ * for overflow). Mirrors parseQuickContacts()'s multi-block reading.
+ *
+ * @param contacts - Full list of Talk Groups to encode
+ * @param metadataIds - Block metadata IDs to fill, in order (e.g. [0x44, 0x45, 0x46, 0x47, 0x48])
+ * @throws if contacts don't fit in the given number of blocks
+ */
+export function encodeQuickContactsBlocks(contacts: QuickContact[], metadataIds: number[]): Uint8Array[] {
+  // Radio requires at least one contact - if none provided, create default "All" contact
+  // to prevent the radio from crashing when the block is empty.
+  const contactsToEncode = contacts.length === 0 ? [{
+    index: 1,
+    offset: 0,
+    name: 'All',
+    contactNumber: 16777215, // All Call contact number
+    callType: 0x05, // All Call (0x05)
+    hasHeader: true,
+    flag: 0,
+    rawData: new Uint8Array(0),
+  }] : contacts;
+
+  if (contacts.length === 0) {
+    log.warn('No contacts provided - creating default "All" contact to prevent radio crash', 'Structures');
   }
 
-  // Fill all remaining bytes from after termination to 0xFFF with 0x00
-  // (0xFFF is the metadata byte, which we already set to 0x44)
-  const metadataOffset = OFFSET.METADATA_BYTE;
-  for (let j = offset; j < metadataOffset; j++) {
-    data[j] = 0x00;
+  const blocks: Uint8Array[] = [];
+  let remaining = contactsToEncode;
+
+  // Always produce one block per metadata ID, even after remaining runs out — a shorter
+  // list than last time must still overwrite whatever blocks it no longer needs (matching
+  // OEM CPS, which writes an empty-but-still-headered block 0x48 when unused), otherwise
+  // stale entries from a previous, longer write would linger in the unwritten blocks.
+  for (const metadata of metadataIds) {
+    const { data, consumed } = encodeQuickContactsBlock(remaining, metadata);
+    blocks.push(data);
+    remaining = remaining.slice(consumed);
   }
 
-  // Ensure metadata byte at 0xFFF is set to 0x44
-  data[metadataOffset] = METADATA.METADATA_0x44;
+  if (remaining.length > 0) {
+    throw new Error(`${remaining.length} talk group(s) don't fit in the available ${metadataIds.length} Talk Groups block(s)`);
+  }
 
-  return data;
+  return blocks;
 }
 
 /**

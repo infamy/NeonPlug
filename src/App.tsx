@@ -33,6 +33,7 @@ import type { CodeplugData } from './services/codeplugExport';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
 import { setLogStore, logger, LogLevel } from './utils/protocolLogger';
 import { useLogStore } from './store/logStore';
+import { compactChannelNumbers, remapChannelNumbers, remapChannelNumber } from './utils/channelHelpers';
 
 function App() {
   const [activeTab, setActiveTab] = useState('channels');
@@ -140,9 +141,24 @@ function App() {
   };
 
   const applyCodeplugToStores = (codeplugData: CodeplugData) => {
-    setChannels(codeplugData.channels);
-    setZones(codeplugData.zones);
-    setScanLists(codeplugData.scanLists);
+    // Loaded files can predate the read-time gap fix (or be hand-edited), so channel
+    // numbers may not be a contiguous 1..N matching array order. Compact here too and
+    // carry the mapping into zones/scan lists — see compactChannelNumbers for why this
+    // matters (the radio write path packs channels by array position, not .number).
+    const { channels, oldToNew, hadGaps } = compactChannelNumbers(codeplugData.channels);
+    setChannels(channels);
+    setZones(hadGaps
+      ? codeplugData.zones.map(z => ({ ...z, channels: remapChannelNumbers(z.channels, oldToNew) }))
+      : codeplugData.zones);
+    setScanLists(hadGaps
+      ? codeplugData.scanLists.map(sl => ({
+          ...sl,
+          channels: remapChannelNumbers(sl.channels, oldToNew),
+          priorityChannel1: remapChannelNumber(sl.priorityChannel1, oldToNew),
+          priorityChannel2: remapChannelNumber(sl.priorityChannel2, oldToNew),
+          designatedTxChannel: remapChannelNumber(sl.designatedTxChannel, oldToNew),
+        }))
+      : codeplugData.scanLists);
     setContacts(codeplugData.contacts);
     setDigitalEmergencies(codeplugData.digitalEmergencies);
     if (codeplugData.digitalEmergencyConfig) {

@@ -6,7 +6,7 @@ import type { EncryptionKey } from '../../models/EncryptionKey';
 import type { QuickContact } from '../../models/QuickContact';
 import type { AnalogEmergency } from '../../models/AnalogEmergency';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
-import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
+import { isNoTxChannel } from '../../services/validation/frequencyValidator';
 import { validateChannel, type ValidationError } from '../../services/validation/channelValidator';
 import type { RadioBandLimits } from '../../types/radioCapabilities';
 
@@ -194,13 +194,13 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      if (!(isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency))) {
+                      if (!(isNoTxChannel(editedChannel))) {
                         handleChange('txFrequency', editedChannel.rxFrequency);
                       }
                     }}
-                    disabled={isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency)}
+                    disabled={isNoTxChannel(editedChannel)}
                     className="p-1.5 rounded border border-neon-cyan border-opacity-30 text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan disabled:opacity-40 disabled:text-cool-gray disabled:border-opacity-20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                    title={isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency) ? 'Receive-only (no TX)' : 'Copy RX to TX'}
+                    title={isNoTxChannel(editedChannel) ? 'Receive-only (no TX)' : 'Copy RX to TX'}
                     aria-label="Copy RX to TX"
                   >
                     <span className="text-sm font-bold">→</span>
@@ -210,7 +210,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <label className="block text-xs font-medium text-cool-gray mb-1">
                     Transmit Frequency (MHz)
                   </label>
-                  {isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency) ? (
+                  {isNoTxChannel(editedChannel) ? (
                     <>
                       <input
                         type="text"
@@ -221,7 +221,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                         aria-label="No transmit"
                         className="w-full bg-deep-gray border border-neon-cyan border-opacity-20 rounded px-2 py-1 text-sm text-cool-gray opacity-60 cursor-not-allowed"
                       />
-                      <p className="text-xs text-cool-gray mt-0.5">Receive-only (87–136 MHz); TX disabled</p>
+                      <p className="text-xs text-cool-gray mt-0.5">Receive-only; TX disabled</p>
                     </>
                   ) : (
                     <>
@@ -630,7 +630,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   checked={editedChannel.forbidTx}
                   onChange={(e) => {
                     const next = e.target.checked;
-                    if (!next && isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency)) return;
+                    if (!next && isNoTxChannel(editedChannel)) return;
                     handleChange('forbidTx', next);
                   }}
                   className="w-4 h-4 accent-neon-cyan flex-shrink-0"
@@ -679,6 +679,22 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 <div>
                   <span className="text-sm text-white font-medium">Forbid Talkaround</span>
                   <p className="text-xs text-cool-gray">Prevent direct communication without repeater</p>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editedChannel.unknown1A_3}
+                  onChange={(e) => handleChange('unknown1A_3', e.target.checked)}
+                  className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                />
+                <div>
+                  <span className="text-sm text-white font-medium">Talkaround Engaged</span>
+                  <p className="text-xs text-cool-gray">
+                    Live talkaround state — not shown in OEM CPS either. Can silently carry over from a
+                    channel's previous contents; check this is off before writing if you don't want it.
+                  </p>
                 </div>
               </label>
             </div>

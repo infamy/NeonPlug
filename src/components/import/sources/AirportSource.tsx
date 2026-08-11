@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { formatPlural } from '../../../utils/formatPlural';
-import { useImportStores } from '../../../hooks/useImportStores';
+import { useChannelsStore } from '../../../store/channelsStore';
+import { useZonesStore } from '../../../store/zonesStore';
 import { getNextChannelNumber, selectionCardClass } from '../../../utils/importHelpers';
 import { generateAirportChannels, COMMON_AIRCRAFT_FREQUENCIES } from '../../../services/airportChannels';
 import { getAirportFrequenciesWithTypes, type AirportData } from '../../../data/airportsData';
@@ -22,8 +23,6 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
   onError,
   onGenerationResult,
 }) => {
-  const { channels, setChannels, zones, setZones } = useImportStores();
-
   const [selectedAirports, setSelectedAirports] = useState<Set<number>>(new Set());
   const [airportZoneGrouping, setAirportZoneGrouping] = useState<'individual' | 'single'>('individual');
   const [includeCommonFrequencies, setIncludeCommonFrequencies] = useState(false);
@@ -79,7 +78,10 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
         throw new Error('No airports selected');
       }
 
-      const nextChannelNumber = getNextChannelNumber(channels);
+      // Fresh read at click time — see RptrsSource.tsx for why this can't be the
+      // value captured at render time.
+      const currentChannels = useChannelsStore.getState().channels;
+      const nextChannelNumber = getNextChannelNumber(currentChannels);
 
       // Build the selected subset of common aircraft frequencies (if enabled)
       const commonFreqs = includeCommonFrequencies
@@ -99,13 +101,11 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
         return;
       }
 
-      // Add channels
-      const updatedChannels = [...channels, ...result.channels];
-      setChannels(updatedChannels);
+      // Add channels — functional append, safe against concurrent add actions
+      useChannelsStore.getState().addChannels(result.channels);
 
       // Add zones (one per airport)
-      const updatedZones = [...zones, ...result.zones];
-      setZones(updatedZones);
+      useZonesStore.getState().addZones(result.zones);
 
       onGenerationResult({
         channels: result.channels.length,
