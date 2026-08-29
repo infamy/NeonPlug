@@ -1,0 +1,216 @@
+/**
+ * Web Serial connection for the AT-D890UV family (BTECH DA-7X2 / DA-7XR).
+ *
+ * ⚠️ Transcribed from documentation, not verified on hardware.
+ *
+ * Unlike the Yaesu SCU-35 cable, this is a full-duplex USB serial bridge — there
+ * is no TX/RX echo to strip, so a command's reply is the radio's own response.
+ *
+ * Session lifecycle:
+ *   open()                 — open port at 921600
+ *   enterProgramMode()     — PROGRAM -> "QX" + ACK
+ *   identify()             — 0x02 -> model/version, rejects the wrong radio
+ *   negotiateReadLength()  — probe the largest consistent read size
+ *   readMemory(...)        — sparse, addressed reads
+ *   sendEnd()              — END, ONLY after a fully successful session
+ *   close()                — release the port
+ *
+ * `sendEnd()` is deliberately not called on failure: the reference states a
+ * failed upload must omit END so the radio does not commit a partial write.
+ */
+
+import {
+  D890_BAUD_RATE,
+  D890_CMD,
+  D890_HANDSHAKE,
+  D890_ID_PREFIXES,
+  D890_ID_RESPONSE,
+  D890_BLOCK,
+  D890_ADDR,
+} from './constants';
+import {
+  buildReadCommand,
+  parseReadResponse,
+  readResponseSize,
+} from './framing';
+import { BaseSerialConnection, type SerialLikePort } from '../shared/BaseSerialConnection';
+import { requestSerialPort } from '../shared/serialPort';
+
+const PROGRAM_CMD = new TextEncoder().encode(D890_HANDSHAKE.ENTER);
+const END_CMD = new TextEncoder().encode(D890_HANDSHAKE.EXIT);
+
+const HANDSHAKE_TIMEOUT_MS = 8000;
+const READ_TIMEOUT_MS = 5000;
+
+export type D890SerialPort = SerialLikePort;
+
+/** Request / reuse a Web Serial port and open it at 921600 baud. */
+export async function openD890Port(forceSelection = false): Promise<D890SerialPort> {
+  return requestSerialPort(D890_BAUD_RATE, forceSelection);
+}
+
+export interface D890Identity {
+  /** Model string from bytes 0-7 of the identify response, NULs stripped. */
+  model: string;
+  /** Version string from bytes 9-12. */
+  version: string;
+  /** Raw response, kept for the hardware-verification capture. */
+  raw: Uint8Array;
+}
+
+export class D890Connection extends BaseSerialConnection {
+  /**
+   * Largest read size confirmed to return consistent data. Starts at the
+   * conservative minimum and is raised by negotiateReadLength().
+   */
+  private readLength: number = D890_BLOCK.MIN_READ_LEN;
+
+  async open(port: D890SerialPort): Promise<void> {
+    await super.openPort(port);
+    await this.delay(300);
+    this.buf = new Uint8Array(0);
+    this.readLength = D890_BLOCK.MIN_READ_LEN;
+  }
+
+  /** Close streams. Does NOT send END — call sendEnd() first on success. */
+  async close(): Promise<void> {
+    await super.closeStreams();
+  }
+
+  /** The negotiated read chunk size. */
+  getReadLength(): number {
+    return this.readLength;
+  }
+
+  /** PROGRAM -> "QX" + ACK. */
+  async enterProgramMode(): Promise<void> {
+    await this.write(PROGRAM_CMD);
+    const reply = await this.readExact(3, HANDSHAKE_TIMEOUT_MS);
+    const text = new TextDecoder().decode(reply.slice(0, 2));
+    if (text !== D890_HANDSHAKE.ENTER_REPLY || reply[2] !== D890_CMD.ACK) {
+      throw new Error(
+        'Could not enter programming mode. Check the cable, that the radio is on, ' +
+          'and that no other CPS has the port open.'
+      );
+    }
+  }
+
+  /**
+   * Identify the radio. Returns the parsed identity *and* the raw bytes — the
+   * raw response is what the hardware checklist needs captured, because the
+   * BTECH-branded variants may not report the Anytone string.
+   */
+  async identify(): Promise<D890Identity> {
+    await this.write(new Uint8Array([D890_CMD.IDENTIFY]));
+    const raw = await this.readExact(16, HANDSHAKE_TIMEOUT_MS);
+    const strip = (bytes: Uint8Array) =>
+      new TextDecoder().decode(bytes.filter((b) => b !== 0)).trim();
+    return {
+      model: strip(raw.slice(D890_ID_RESPONSE.MODEL_START, D890_ID_RESPONSE.MODEL_END)),
+      version: strip(raw.slice(D890_ID_RESPONSE.VERSION_START, D890_ID_RESPONSE.VERSION_END)),
+      raw,
+    };
+  }
+
+  /**
+   * Reject a radio this driver does not understand.
+   *
+   * Prefix matching, per ADDING_A_RADIO.md — ID strings routinely carry region
+   * or variant suffixes, and an exact match locks out valid hardware.
+   */
+  assertKnownModel(identity: D890Identity): void {
+    const matches = D890_ID_PREFIXES.some((prefix) => identity.model.startsWith(prefix));
+    if (!matches) {
+      throw new Error(
+        `Connected radio reports "${identity.model}" (version "${identity.version}"), ` +
+          `which this driver does not recognise. Expected one of: ` +
+          `${D890_ID_PREFIXES.join(', ')}. If this is a DA-7X2 or DA-7XR, please ` +
+          `report the reported string — the BTECH variants' IDs are not yet known.`
+      );
+    }
+  }
+
+  /**
+   * Find the largest read size the radio answers consistently.
+   *
+   * Reads LocalInfo at the 16-byte baseline, then at each larger candidate, and
+   * keeps the largest whose first 16 bytes match the baseline. Any mismatch
+   * falls back to 0x10, which the reference says is always safe.
+   */
+  async negotiateReadLength(): Promise<number> {
+    const baseline = await this.readChunk(D890_ADDR.LOCAL_INFO, D890_BLOCK.MIN_READ_LEN);
+
+    for (const candidate of D890_BLOCK.READ_LEN_CANDIDATES) {
+      if (candidate === D890_BLOCK.MIN_READ_LEN) break;
+      try {
+        const probe = await this.readChunk(D890_ADDR.LOCAL_INFO, candidate);
+        const consistent = baseline.every((byte, i) => probe[i] === byte);
+        if (consistent) {
+          this.readLength = candidate;
+          return candidate;
+        }
+      } catch {
+        // A candidate the radio refuses is simply not usable; try a smaller one.
+      }
+    }
+
+    this.readLength = D890_BLOCK.MIN_READ_LEN;
+    return this.readLength;
+  }
+
+  /** One framed read at exactly `length` bytes. */
+  private async readChunk(address: number, length: number): Promise<Uint8Array> {
+    // Drop anything stale so a previous timeout can't shift this frame.
+    this.buf = new Uint8Array(0);
+    await this.write(buildReadCommand(address, length));
+    const frame = await this.readExact(readResponseSize(length), READ_TIMEOUT_MS);
+    return parseReadResponse(frame, address, length);
+  }
+
+  /**
+   * Read an arbitrary span, chunked at the negotiated size.
+   *
+   * `length` must be 16-byte aligned — the reference requires it for both
+   * directions, and silently rounding would mean returning bytes the caller did
+   * not ask for.
+   */
+  async readMemory(
+    address: number,
+    length: number,
+    onProgress?: (bytesRead: number, total: number) => void
+  ): Promise<Uint8Array> {
+    if (length % D890_BLOCK.ALIGNMENT !== 0) {
+      throw new Error(
+        `D890 read span ${length} must be a multiple of ${D890_BLOCK.ALIGNMENT} bytes`
+      );
+    }
+    const out = new Uint8Array(length);
+    let offset = 0;
+    while (offset < length) {
+      const chunk = Math.min(this.readLength, length - offset);
+      // The tail of a span may be shorter than the negotiated size; it still has
+      // to be a legal, aligned read length.
+      const aligned = Math.max(
+        D890_BLOCK.MIN_READ_LEN,
+        chunk - (chunk % D890_BLOCK.ALIGNMENT)
+      );
+      const data = await this.readChunk(address + offset, aligned);
+      out.set(data.subarray(0, Math.min(aligned, length - offset)), offset);
+      offset += aligned;
+      onProgress?.(Math.min(offset, length), length);
+    }
+    return out;
+  }
+
+  /**
+   * END + ACK. Call ONLY after a fully successful session — omitting it after a
+   * failure is what stops the radio committing a partial write.
+   */
+  async sendEnd(): Promise<void> {
+    await this.write(END_CMD);
+    const ack = await this.readExact(1, HANDSHAKE_TIMEOUT_MS);
+    if (ack[0] !== D890_CMD.ACK) {
+      throw new Error(`Radio did not acknowledge END (got 0x${(ack[0] ?? 0).toString(16)})`);
+    }
+  }
+}

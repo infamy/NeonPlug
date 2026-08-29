@@ -596,6 +596,8 @@ export function encodeChannel(channel: Channel): Uint8Array {
     modeFlags &= 0xF7;  // Clear bit 3 (0xF7 = ~0x08)
   }
   // Power is stored at bits 2-1 (NOT busy lock!)
+  // This radio has three levels. 'Turbo' only ever arrives from a D890-family
+  // codeplug (via Convert) and clamps to High — the closest this radio can do.
   const powerValue = channel.power === 'Low' ? 0 : channel.power === 'Medium' ? 1 : 2;
   modeFlags |= (powerValue << 1) & 0x06;
   if (channel.loneWorker) modeFlags |= 0x01;

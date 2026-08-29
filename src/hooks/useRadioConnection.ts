@@ -134,6 +134,20 @@ export function useRadioConnection() {
       // on first connect, which would cause bulk read to be skipped if we used it here.
       const caps = getCapabilitiesForModel(info.model ?? effectiveModel);
 
+      // A miss here disables every capability flag at once — zones, scan lists,
+      // channel-read support, band limits — and does it silently, because each
+      // site reads `caps?.x`. That is exactly how a D890 read looked like a
+      // channel-parser failure when the real cause was getRadioInfo() returning
+      // the radio's wire ID ("ID890UV") instead of a descriptor model ID.
+      // getRadioInfo() must return a registered model ID, not the wire string.
+      if (!caps) {
+        console.warn(
+          `[Connection] No capabilities registered for model "${info.model ?? effectiveModel}" — ` +
+            'every capability flag will be treated as unset. getRadioInfo() should return a ' +
+            'model ID registered in RADIO_DESCRIPTORS, not the identity string the radio reports.'
+        );
+      }
+
       // Narrow to DM32UVProtocol once; all DM32-specific calls go through this variable.
       const dm32 = proto instanceof DM32UVProtocol ? proto : null;
 
@@ -142,9 +156,24 @@ export function useRadioConnection() {
         await dm32.bulkReadRequiredBlocks();
       }
 
+      // Sections that fail to read are collected here and surfaced in the
+      // completion message — a silent failure would leave the UI showing an
+      // empty section while the radio still holds data.
+      const sectionReadWarnings: string[] = [];
+
       onProgress?.(20, 'Parsing channels...', steps[4]);
-      const channels = await proto.readChannels();
-      setChannels(channels);
+      // A driver still being brought up can declare channels unreadable instead
+      // of throwing. Without this the throw escapes the per-section handling
+      // below, aborting the whole read — so the user loses zones, scan lists and
+      // talkgroups that read perfectly well.
+      if (caps?.supportsChannelRead === false) {
+        console.warn('[Connection] Channel read not implemented for this radio yet');
+        setChannels([]);
+        sectionReadWarnings.push('Channels');
+      } else {
+        const channels = await proto.readChannels();
+        setChannels(channels);
+      }
 
       // Enrich radioInfo with firmware from cached image (UV5R-Mini and DM-32UV)
       const fw = proto.getFirmwareFromCache?.();
@@ -179,10 +208,6 @@ export function useRadioConnection() {
         if (dm32) setRawScanListData(dm32.rawScanListData);
       }
 
-      // Sections that fail to read are collected here and surfaced in the
-      // completion message — a silent failure would leave the UI showing an
-      // empty section while the radio still holds data.
-      const sectionReadWarnings: string[] = [];
 
       if (dm32) {
         try {

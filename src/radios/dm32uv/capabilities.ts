@@ -31,6 +31,7 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   },
   bandLimits: DEFAULT_BAND_LIMITS,
   isFirmware049OrNewer,
+  expectedFirmware: 'DM32.01.L01.048',
   writeValidations: {
     channelsMustBeInZones: true,
   },
@@ -41,7 +42,10 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   analogOnly: false,
   supportsBulkRead: true,
   maxZones: LIMITS.ZONES_MAX,
+  maxZoneChannels: LIMITS.ZONE_CHANNELS_MAX,
+  maxRxGroupMembers: LIMITS.RX_GROUPS_MAX,
   maxScanLists: LIMITS.SCAN_LISTS_MAX,
+  maxScanListChannels: LIMITS.SCAN_LIST_CHANNELS_MAX,
   supportsBootImage: true,
   supportsQuickMessages: true,
   supportsAnalogEmergency: true,

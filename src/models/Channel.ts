@@ -1,6 +1,15 @@
 export type ChannelMode = 'Analog' | 'Digital' | 'Fixed Analog' | 'Fixed Digital';
 export type Bandwidth = '12.5kHz' | '25kHz';
-export type PowerLevel = 'Low' | 'Medium' | 'High';
+/**
+ * Transmit power. 'Turbo' is a genuine fourth level above High, not an alias:
+ * the D890UV family exposes all four in its menu and encodes them in a 2-bit
+ * field (0=Low, 1=Mid, 2=High, 3=Turbo), confirmed on hardware 2026-08-25.
+ *
+ * Radios with only three levels clamp Turbo to High when encoding — see each
+ * radio's structures.ts. Decoding never produces 'Turbo' on those radios, so
+ * nothing changes for them.
+ */
+export type PowerLevel = 'Low' | 'Medium' | 'High' | 'Turbo';
 
 export interface CTCSSDCS {
   type: 'CTCSS' | 'DCS' | 'None';
@@ -41,7 +50,7 @@ export interface Channel {
   digitalEmergencySystemId: number; // 0=None, 1-77=Index into Digital Emergency Systems list (1-based)
   
   // Power & APRS (0x1C)
-  power: PowerLevel;           // Bits 7-4: 0=Low, 1=Medium, 2=High
+  power: PowerLevel;           // Bits 7-4: 0=Low, 1=Medium, 2=High (DM-32); D890 adds 3=Turbo
   aprsReportMode: 'Off' | 'Digital' | 'Analog'; // Bits 3-2: 0=Off, 1=Digital, 2=Analog
   unknown1C_1_0: number;       // Bits 1-0: Unknown
   

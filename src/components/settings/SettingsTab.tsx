@@ -92,10 +92,13 @@ export const SettingsTab: React.FC = () => {
   const { caps, model: effectiveModel } = useRadioCapabilities();
   const settingsProfile = getSettingsProfileForModel(effectiveModel);
 
-  const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
   const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
   const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));
-  const needsFirmwareUpdate = hasRealFirmware && radioInfo!.firmware !== EXPECTED_FIRMWARE && !isNewerFirmware;
+  // Only warn when the radio declares a known-good firmware. No declaration
+  // means no opinion — not 'wrong firmware'.
+  const expectedFirmware = caps?.expectedFirmware;
+  const needsFirmwareUpdate = !!expectedFirmware && hasRealFirmware &&
+    radioInfo!.firmware !== expectedFirmware && !isNewerFirmware;
 
   /** Display value for device info fields; show "-" when unknown (e.g. after convert). */
   const deviceValue = (v: string | undefined) => (v && v.trim() && v !== '-' ? v : '-');
@@ -1229,7 +1232,7 @@ export const SettingsTab: React.FC = () => {
                 <>
                   <p className="text-white mb-2">
                     Your radio firmware version is <span className="font-mono text-neon-cyan">{radioInfo?.firmware}</span>, 
-                    but the recommended version is <span className="font-mono text-neon-cyan">{EXPECTED_FIRMWARE}</span>.
+                    but the recommended version is <span className="font-mono text-neon-cyan">{expectedFirmware}</span>.
                   </p>
                   <p className="text-cool-gray">
                     We recommend updating your firmware to ensure compatibility with all features and bug fixes. 

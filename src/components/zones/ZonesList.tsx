@@ -1,3 +1,4 @@
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import React, { useState } from 'react';
 import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
@@ -228,6 +229,8 @@ interface ZoneEditorProps {
 }
 
 const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone, onAlert }) => {
+  // Per-radio limit, not a hardcoded DM-32 value.
+  const { caps } = useRadioCapabilities();
   const { updateZone } = useZonesStore();
   const { channels } = useChannelsStore();
 
@@ -245,7 +248,7 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone, onAlert }) => {
         return ch ? channelPickerItem(ch) : undefined;
       }}
       onChange={(ids) => updateZone(zone.id, { channels: ids })}
-      maxItems={64}
+      maxItems={caps?.maxZoneChannels ?? 64}
       itemNoun="channel"
       containerNoun="zone"
       onAlert={onAlert}
