@@ -701,13 +701,16 @@ export function encodeChannel(channel: Channel): Uint8Array {
   data[0x25] = additionalFlags;
 
   // RX Squelch & PTT ID (0x26)
-  const rxSquelchModeMap: Record<Channel['rxSquelchMode'], number> = {
+  // Partial on purpose: 'CTCSS/DCS' is a DA-7X2 option with no DM-32 equivalent.
+  // A channel converted from that radio falls back to Carrier rather than being
+  // silently encoded as some other mode.
+  const rxSquelchModeMap: Partial<Record<Channel['rxSquelchMode'], number>> = {
     'Carrier/CTC': 0,
     'Optional': 1,
     'CTC&Opt': 2,
     'CTC|Opt': 3,
   };
-  const rxSquelchValue = rxSquelchModeMap[channel.rxSquelchMode] || 0;
+  const rxSquelchValue = rxSquelchModeMap[channel.rxSquelchMode] ?? 0;
   let rxSquelchPtt = (rxSquelchValue << 4) & 0x70; // Bits 6-4
   if (channel.pttIdDisplay2) rxSquelchPtt |= 0x80; // Bit 7
   rxSquelchPtt |= ((channel.unknown26_3_1 & 0x07) << 1) & 0x0E; // Bits 3-1

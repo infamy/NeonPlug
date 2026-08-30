@@ -35,6 +35,15 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   writeValidations: {
     channelsMustBeInZones: true,
   },
+  /**
+   * The DM-32 is the radio this grid was originally built around, so it declares
+   * every optional column. Anything absent here would vanish from its UI.
+   */
+  channelColumns: [
+    'loneWorker', 'freeToAir', 'emergency', 'aprs', 'vox',
+    'audioProcessing', 'squelch', 'pttId', 'stepFrequency', 'signalType',
+    'encryption', 'tdma', 'confirmations',
+  ],
   maxChannels: 4000,
   supportsVfoChannels: true,
   supportsZones: true,

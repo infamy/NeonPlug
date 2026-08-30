@@ -1,3 +1,4 @@
+import type { PowerLevel } from '../models/Channel';
 /**
  * Per-radio capabilities for diagnostics, digital tab, and limits.
  * Resolved by getCapabilitiesForModel(model); UI uses these instead of importing from a specific radio.
@@ -54,6 +55,35 @@ export interface MemoryRegionSpec {
   /** Optional note shown beside the region. */
   notes?: string;
 }
+
+/**
+ * Optional channel column groups.
+ *
+ * The channel grid has three tiers. A common core every radio gets, a DMR block
+ * shown when `analogOnly` is false, and these — features one radio family has
+ * and others simply do not.
+ *
+ * A radio shows a group only if it declares it. The default is to hide, because
+ * rendering an unchecked box for a field the driver never decodes tells the user
+ * the radio has that feature switched off, which is a stronger and more wrong
+ * claim than saying nothing.
+ */
+export type ChannelColumnGroup =
+  | 'loneWorker'
+  | 'freeToAir'
+  | 'emergency'
+  | 'aprs'
+  | 'vox'
+  | 'audioProcessing'
+  | 'squelch'
+  | 'pttId'
+  | 'stepFrequency'
+  | 'signalType'
+  // These three sit inside the DMR block but are not universal to DMR - they
+  // are DM-32 features. A radio that speaks DMR does not necessarily have them.
+  | 'encryption'
+  | 'tdma'
+  | 'confirmations';
 
 export interface RadioCapabilitiesDiagnostics {
   parseRadioSettings: (data: Uint8Array) => RadioSettings;
@@ -119,6 +149,20 @@ export interface RadioCapabilities {
   /** Validations to run before writing codeplug to this radio. Only run when model is known. */
   writeValidations?: WriteValidations;
   /** Max channel count (e.g. 999 for UV5R-Mini, 4000 for DM32). */
+  /**
+   * Transmit power levels this radio offers, weakest first.
+   *
+   * Defaults to Low/Medium/High. The DA-7X2 adds Turbo, and a UI that assumes
+   * three levels does not merely mislabel it — cycling through a hardcoded list
+   * cannot find "Turbo", so it wraps to the first entry and silently downgrades
+   * the channel to Low. Capability-driven per golden rule #3.
+   */
+  powerLevels?: readonly PowerLevel[];
+  /**
+   * Extra channel columns this radio supports, beyond the common core and the
+   * DMR block. Omitted means none — see ChannelColumnGroup.
+   */
+  channelColumns?: readonly ChannelColumnGroup[];
   maxChannels?: number;
   /** If false, radio has no zones (e.g. UV5R-Mini). */
   supportsZones?: boolean;

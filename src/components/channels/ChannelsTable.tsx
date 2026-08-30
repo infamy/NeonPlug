@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChannelsStore } from '../../store/channelsStore';
+import type { ChannelColumnGroup } from '../../types/radioCapabilities';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useScanListsStore } from '../../store/scanListsStore';
@@ -37,6 +38,9 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const bandLimits = caps?.bandLimits ?? null;
   const maxChannels = caps?.maxChannels ?? 4000;
   const analogOnly = caps?.analogOnly === true;
+  // Optional column groups: a radio shows one only if it declares it.
+  const declared = new Set(caps?.channelColumns ?? []);
+  const hasColumn = (g: ChannelColumnGroup) => declared.has(g);
   const { scanLists } = useScanListsStore();
   const { groups: rxGroups } = useRXGroupsStore();
   const { keys: encryptionKeys } = useEncryptionKeysStore();
@@ -252,38 +256,38 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Forbid transmit">Forbid TX</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]" title="Receive tone (CTCSS/DCS)">RX Tone</th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[75px]" title="Transmit tone (CTCSS/DCS)">TX Tone</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Lone Worker">LW</th>
+            {hasColumn('loneWorker') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Lone Worker">LW</th>)}
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[50px]" title="Scan list assignment">Scan List</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Free to Air">FTA</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Emergency">Emerg</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Emergency acknowledge">Emerg Ack</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[52px]" title="Emergency ID">Emerg ID</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="APRS receive">APRS RX</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="APRS transmit">APRS TX</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Voice operated transmit">VOX</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Scramble">SCR</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Compander">CMP</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Talkback">TB</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Compander Dup">CMP DUP</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[52px]" title="Squelch">SQL</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="PTT ID display">PTT ID Display</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[48px]" title="PTT ID">PTT ID</th>
-            <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="VOX related">VOX Related</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="Receive squelch mode">RX Squelch Mode</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]" title="Step frequency">Step Freq</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[65px]" title="Signal type">Sig Type</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[65px]" title="PTT ID type">PTT ID Type</th>
+            {hasColumn('freeToAir') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Free to Air">FTA</th>)}
+            {hasColumn('emergency') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Emergency">Emerg</th>)}
+            {hasColumn('emergency') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Emergency acknowledge">Emerg Ack</th>)}
+            {hasColumn('emergency') && (<th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[52px]" title="Emergency ID">Emerg ID</th>)}
+            {hasColumn('aprs') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="APRS receive">APRS RX</th>)}
+            {hasColumn('aprs') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="APRS transmit">APRS TX</th>)}
+            {hasColumn('vox') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Voice operated transmit">VOX</th>)}
+            {hasColumn('audioProcessing') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Scramble">SCR</th>)}
+            {hasColumn('audioProcessing') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Compander">CMP</th>)}
+            {hasColumn('audioProcessing') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Talkback">TB</th>)}
+            {hasColumn('audioProcessing') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[30px]" title="Compander Dup">CMP DUP</th>)}
+            {hasColumn('squelch') && (<th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[52px]" title="Squelch">SQL</th>)}
+            {hasColumn('pttId') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="PTT ID display">PTT ID Display</th>)}
+            {hasColumn('pttId') && (<th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[48px]" title="PTT ID">PTT ID</th>)}
+            {hasColumn('vox') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="VOX related">VOX Related</th>)}
+            {hasColumn('squelch') && (<th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="Receive squelch mode">RX Squelch Mode</th>)}
+            {hasColumn('stepFrequency') && (<th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[70px]" title="Step frequency">Step Freq</th>)}
+            {hasColumn('signalType') && (<th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[65px]" title="Signal type">Sig Type</th>)}
+            {hasColumn('pttId') && (<th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[65px]" title="PTT ID type">PTT ID Type</th>)}
             {/* Digital-only fields - hidden for analog-only radios */}
             {!analogOnly && (
               <>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[48px]" title="DMR color code">Color Code</th>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]" title="RX Group List">RX Group</th>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]" title="Slot Operation">Slot</th>
-                <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Encryption">Enc</th>
-                <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]" title="Encryption ID">Enc ID</th>
-                <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="TDMA Direct Mode">TDMA</th>
-                <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Short Data Confirm">SDC</th>
-                <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Private Confirm">Priv</th>
+                {hasColumn('encryption') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Encryption">Enc</th>)}
+                {hasColumn('encryption') && (<th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[60px]" title="Encryption ID">Enc ID</th>)}
+                {hasColumn('tdma') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="TDMA Direct Mode">TDMA</th>)}
+                {hasColumn('confirmations') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Short Data Confirm">SDC</th>)}
+                {hasColumn('confirmations') && (<th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[35px]" title="Private Confirm">Priv</th>)}
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="DMR Radio ID Index for TX (0=None, 1-255=Index into DMR Radio IDs list)">TX DMR ID</th>
               </>
             )}

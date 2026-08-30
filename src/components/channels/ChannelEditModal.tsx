@@ -9,6 +9,8 @@ import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } fro
 import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
 import { validateChannel, type ValidationError } from '../../services/validation/channelValidator';
 import type { RadioBandLimits } from '../../types/radioCapabilities';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { powerLevelsFor } from '../../utils/powerLevels';
 
 // Frequency input component that only updates parent on blur
 interface FrequencyInputProps {
@@ -79,6 +81,8 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   analogEmergencySystems = [],
 }) => {
   const [editedChannel, setEditedChannel] = React.useState<Channel>(channel);
+  const { caps } = useRadioCapabilities();
+  const powerLevels = powerLevelsFor(caps);
   const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
 
   React.useEffect(() => {
@@ -278,9 +282,11 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   onChange={(e) => handleChange('power', e.target.value)}
                   className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
                 >
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
+                  {powerLevels.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
                 </select>
                 <p className="text-xs text-cool-gray mt-0.5">Transmit power level</p>
               </div>

@@ -6,6 +6,7 @@
 
 import type { CodeplugData } from './codeplugExport';
 import { getCapabilitiesForModel } from '../radios/capabilities';
+import { clampPowerLevel, powerLevelsFor } from '../utils/powerLevels';
 
 /** Placeholder when device version info is unknown (e.g. after convert from another radio). */
 const UNKNOWN_VERSION = '-';
@@ -23,6 +24,13 @@ export interface MigrationLoss {
   rxGroupsLost: number;
   encryptionKeysLost: number;
   settingsCleared: boolean;
+  /**
+   * Channels whose transmit power the target radio cannot reach, and which were
+   * stepped down to its strongest supported level. Turbo is DA-7X2 only, so a
+   * codeplug moved off that radio hits this; the count is surfaced rather than
+   * changed quietly.
+   */
+  powerLevelsDowngraded: number;
 }
 
 export interface MigrationResult {
@@ -41,6 +49,7 @@ export function migrateCodeplug(source: CodeplugData, targetModel: string): Migr
   const supportsZones = caps?.supportsZones ?? true;
   const supportsScanLists = caps?.supportsScanLists ?? true;
   const analogOnly = caps?.analogOnly ?? false;
+  const powerLevels = powerLevelsFor(caps);
 
   // 1) Channels: drop digital if analogOnly, then truncate to maxChannels (keep by number, no renumbering)
   let channels = source.channels;
@@ -55,6 +64,15 @@ export function migrateCodeplug(source: CodeplugData, targetModel: string): Migr
       .map((ch) => ch.number)
   );
   channels = channels.filter((ch) => validChannelNumbers.has(ch.number));
+
+  // Step any unreachable power level down to the strongest the target supports.
+  let powerLevelsDowngraded = 0;
+  channels = channels.map((ch) => {
+    const clamped = clampPowerLevel(ch.power, powerLevels);
+    if (!clamped) return ch;
+    powerLevelsDowngraded += 1;
+    return { ...ch, power: clamped };
+  });
 
   const maxZones = caps?.maxZones;
   const maxScanLists = caps?.maxScanLists;
@@ -115,6 +133,7 @@ export function migrateCodeplug(source: CodeplugData, targetModel: string): Migr
     rxGroupsLost: analogOnly ? (source.rxGroups?.length ?? 0) : 0,
     encryptionKeysLost: analogOnly ? (source.encryptionKeys?.length ?? 0) : 0,
     settingsCleared: !!source.radioSettings,
+    powerLevelsDowngraded,
   };
 
   const migrated: CodeplugData = {

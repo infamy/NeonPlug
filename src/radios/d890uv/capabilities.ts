@@ -48,6 +48,28 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
     uhfMin: 400,
     uhfMax: 480,
   },
+  /**
+   * Channel columns this radio HAS — not what this driver currently decodes.
+   *
+   * Sourced from the vendor CPS's own 77-column channel export, which is the
+   * authority on what the hardware supports. An earlier revision listed only
+   * what `parseChannel` populated, which was a mistake: it hid NeonPlug's own
+   * decoding gaps behind an empty grid and made the driver look complete.
+   *
+   * `emergency`, `stepFrequency` and `signalType` are absent because the vendor
+   * schema has no equivalent — those are genuinely DM-32 features.
+   *
+   * ⚠️ Several of these are declared but not yet decoded (see the channel field
+   * coverage note in D890UV-HARDWARE-CHECKLIST.md). They render as defaults
+   * until their byte offsets are found, and finding them needs a codeplug that
+   * varies them — the current diverse codeplug leaves them all at one value.
+   */
+  channelColumns: [
+    'freeToAir', 'loneWorker', 'aprs', 'squelch', 'pttId',
+    'audioProcessing', 'encryption', 'confirmations',
+  ],
+  /** Four levels, confirmed on hardware against the vendor CPS export. */
+  powerLevels: ['Low', 'Medium', 'High', 'Turbo'],
   maxChannels: D890_LIMITS.CHANNELS_MAX,
   maxZones: D890_LIMITS.ZONES_MAX,
   maxZoneChannels: D890_LIMITS.ZONE_MEMBERS_MAX,

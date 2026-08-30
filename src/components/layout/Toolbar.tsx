@@ -18,6 +18,7 @@ import { getRadioPickerOptions, getMigrationTargetModels } from '../../radios';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 import { migrateCodeplug, type MigrationLoss } from '../../services/codeplugMigration';
 import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
+import { formatPlural } from '../../utils/formatPlural';
 // Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { useAlert } from '../../hooks/useAlert';
@@ -154,6 +155,10 @@ export const Toolbar: React.FC = () => {
     if (loss.quickContactsLost > 0) parts.push(`${loss.quickContactsLost} quick contact(s) removed`);
     if (loss.rxGroupsLost > 0) parts.push(`${loss.rxGroupsLost} RX group(s) removed`);
     if (loss.encryptionKeysLost > 0) parts.push(`${loss.encryptionKeysLost} encryption key(s) removed`);
+    if (loss.powerLevelsDowngraded > 0)
+      parts.push(
+        `${formatPlural(loss.powerLevelsDowngraded, 'channel')} stepped down to the strongest power this radio supports`,
+      );
     if (loss.settingsCleared) parts.push('Radio settings cleared (do not map between radios)');
     return parts.length > 0 ? parts.join('. ') : 'No data removed.';
   };

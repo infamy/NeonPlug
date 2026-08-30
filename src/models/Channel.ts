@@ -83,7 +83,9 @@ export interface Channel {
   
   // RX Squelch & PTT ID (0x26)
   pttIdDisplay2: boolean;      // Bit 7: PTT ID Display (duplicate of 0x1F bit 6?)
-  rxSquelchMode: 'Carrier/CTC' | 'Optional' | 'CTC&Opt' | 'CTC|Opt'; // Bits 6-4
+  // 'CTCSS/DCS' is the DA-7X2's own second option, read off the radio and
+  // confirmed against the vendor CSV export. The other members are DM-32 names.
+  rxSquelchMode: 'Carrier/CTC' | 'CTCSS/DCS' | 'Optional' | 'CTC&Opt' | 'CTC|Opt'; // Bits 6-4
   unknown26_3_1: number;       // Bits 3-1: Unknown (0-7)
   unknown26_0: boolean;        // Bit 0: Unknown
   
@@ -118,6 +120,36 @@ export interface Channel {
   // These fields reuse bytes 0x1D, 0x1E, 0x1F which are used for analog features in analog mode
   rxGroupListId?: number;      // Byte 0x1F, bits 5-0 (mask 0x3F): RX Group List ID (0-63, 0=None)
   slotOperation?: number;      // Byte 0x1D, bits 3-0: Slot Operation (0-15)
+  // ---- DA-7X2 channel fields -------------------------------------------
+  // All optional: radios that do not decode them leave them undefined, which is
+  // distinguishable from a decoded false. Offsets confirmed against the vendor
+  // CPS's own export of a 118-channel codeplug built to vary each one.
+  /** Vendor "Reverse" — swap RX and TX. Byte 0x09 bit 4. */
+  reverse?: boolean;
+  /** Vendor "Call Confirmation". Byte 0x09 bit 6. */
+  callConfirmation?: boolean;
+  /** Vendor "Slot Suit". Byte 0x21 bit 4. */
+  slotSuit?: boolean;
+  /** Vendor "Ranging". Byte 0x34 bit 0. */
+  ranging?: boolean;
+  /** Vendor "Custom CTCSS" in Hz. Stored as a u16 of tenths at byte 0x10. */
+  customCtcssHz?: number;
+  /** Vendor "2TONE Decode" index, 1-based. Byte 0x12, stored zero-based. */
+  twoToneDecode?: number;
+  /** Vendor "2Tone ID", 1-based. Byte 0x1d, stored zero-based. */
+  twoToneId?: number;
+  /** Vendor "5Tone ID", 1-based. Byte 0x1e, stored zero-based. */
+  fiveToneId?: number;
+  /** Vendor "DTMF ID", 1-based. Byte 0x1f, stored zero-based. */
+  dtmfId?: number;
+  /**
+   * Signed extension to the TX offset, byte 0x39 ("Offset_Fre_Ex").
+   *
+   * Decoded but NOT yet folded into the TX frequency: it read 0 on every one of
+   * the 118 channels captured, so how it combines with Offset_Fre is unverified
+   * and guessing would be worse than exposing the raw value.
+   */
+  offsetFrequencyEx?: number;
   encryption?: boolean;        // Byte 0x1D, bit 7 (0x80): Encryption enabled
   encryptionId?: number;       // Byte 0x1E: Encryption ID (0-8, 0=None)
   tdmaDirectMode?: boolean;    // Byte 0x1D, bit 5 (0x20): TDMA Direct Mode

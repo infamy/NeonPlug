@@ -18,7 +18,10 @@ import type { Channel } from '../../models/Channel';
 import type { Zone } from '../../models/Zone';
 import type { Contact } from '../../models/Contact';
 import type { RXGroup } from '../../models/RXGroup';
+import type { DMRRadioID } from '../../models/DMRRadioID';
 import type { RadioInfo } from '../../types/radio';
+import type { RadioSettings } from '../../models/RadioSettings';
+import { parseD890Settings } from './settingsFormat';
 import { D890Connection, openD890Port, type D890Identity } from './connection';
 import {
   D890_ADDR,
@@ -43,6 +46,8 @@ import {
   scanListAddress,
   type ScanListDecoded,
   type D890ChannelDecode,
+  parseRadioId,
+  radioIdAddress,
 } from './structures';
 
 /**
@@ -344,6 +349,49 @@ export class D890UVProtocol extends BaseDigitalProtocol {
       groups.push(parseRxGroup(record, index));
     }
     return groups;
+  }
+
+  /**
+   * Reads the DMR radio IDs.
+   *
+   * Occupancy comes from the same style of bitmap as every other list on this
+   * radio, so an ID whose bit is clear is absent no matter what its record
+   * contains — the gotcha called out in ADDING_A_RADIO.md, which applies to
+   * every entity type here rather than just channels.
+   */
+  override async readDMRRadioIDs(): Promise<DMRRadioID[]> {
+    const conn = this.requireConnection();
+    const set = await conn.readMemory(D890_ADDR.RADIO_ID_SET, D890_ADDR.RADIO_ID_SET_SIZE);
+    const occupied = decodeOccupancyBitmap(set, D890_LIMITS.DMR_RADIO_IDS_MAX);
+    const out: DMRRadioID[] = [];
+    for (let index = 0; index < occupied.length; index += 1) {
+      if (!occupied[index]) continue;
+      const record = await conn.readMemory(radioIdAddress(index), D890_ADDR.RADIO_ID_STRIDE);
+      out.push(parseRadioId(record, index));
+    }
+    return out;
+  }
+
+  /**
+   * Reads the general settings region.
+   *
+   * Read-only: `writeRadioSettings` is deliberately not implemented, so the
+   * Settings tab shows the radio's state but cannot push it back. The offsets
+   * are hardware-derived (DA7X2-RDT-TO-RADIO.md) but nothing has been written
+   * back to a radio through this path, and a settings write on this family is a
+   * read-modify-write inside a 256 KB erase unit — see D890_ERASE_UNIT.
+   *
+   * Returns null on a short or failed read rather than a zeroed object, so the
+   * UI cannot mistake a truncated read for a radio with everything switched off.
+   */
+  override async readRadioSettings(): Promise<RadioSettings | null> {
+    const bytes = await this.requireConnection().readMemory(
+      D890_ADDR.SETTINGS,
+      D890_ADDR.SETTINGS_SIZE
+    );
+    const radioSpecific = parseD890Settings(bytes);
+    if (!radioSpecific) return null;
+    return { radioSpecific } as unknown as RadioSettings;
   }
 
   /**

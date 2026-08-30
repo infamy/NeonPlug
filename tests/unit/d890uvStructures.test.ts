@@ -19,6 +19,9 @@ import {
   parseChannel,
   isVacantChannel,
   planChannelReads,
+  talkgroupAddress,
+  D890_TALKGROUPS_PER_BANK,
+  decodeWideCharString,
 } from '../../src/radios/d890uv/structures';
 import {
   D890_ADDR,
@@ -140,12 +143,11 @@ describe('occupancy bitmaps', () => {
   });
 
   it('the talkgroup bitmap is big enough for the documented 10,000 limit', () => {
-    // This is the arithmetic that resolved the docs contradicting each other:
-    // 0x4f0 bytes * 8 = 10,112 bits, so 10,000 fits and "~4000" was wrong.
+    // The vendor CPS reads this bitmap with length 0x4e2 = 1250 bytes = exactly
+    // 10,000 bits, matching the documented limit precisely. The reference doc's
+    // 0x4f0 was rounded up; an exact fit is strong evidence the limit is real.
     expect(D890_ADDR.TALKGROUP_SET_SIZE * 8).toBe(D890_LIMITS.TALK_GROUPS_BITMAP_CAPACITY);
-    expect(D890_LIMITS.TALK_GROUPS_BITMAP_CAPACITY).toBeGreaterThanOrEqual(
-      D890_LIMITS.TALK_GROUPS_MAX
-    );
+    expect(D890_LIMITS.TALK_GROUPS_BITMAP_CAPACITY).toBe(D890_LIMITS.TALK_GROUPS_MAX);
   });
 
   it('the zone bitmap holds the documented 250 zones', () => {
@@ -571,5 +573,57 @@ describe('record parsing', () => {
     expect(sl.lookBackTimeA).toBe(20); // deciseconds
     expect(sl.dwellTime).toBe(50);
     expect(sl.revertChannel).toBe(2);
+  });
+});
+
+describe('talkgroup banking', () => {
+  it('matches flat addressing inside the first bank', () => {
+    for (const i of [0, 1, 200, 1249]) {
+      expect(talkgroupAddress(i)).toBe(D890_ADDR.TALKGROUP_DATA + i * D890_ADDR.TALKGROUP_STRIDE);
+    }
+  });
+
+  it('starts a new bank rather than running past the bank stride', () => {
+    // Flat addressing would put index 1250 at 0x3a3d090, inside bank 0. The
+    // vendor CPS puts it at the base of bank 1.
+    expect(talkgroupAddress(D890_TALKGROUPS_PER_BANK)).toBe(
+      D890_ADDR.TALKGROUP_DATA + D890_ADDR.TALKGROUP_BANK_STRIDE,
+    );
+    expect(talkgroupAddress(D890_TALKGROUPS_PER_BANK)).not.toBe(
+      D890_ADDR.TALKGROUP_DATA + D890_TALKGROUPS_PER_BANK * D890_ADDR.TALKGROUP_STRIDE,
+    );
+  });
+
+  it('never places a record across a bank boundary', () => {
+    for (let i = 0; i < 10000; i += 1) {
+      const off = talkgroupAddress(i) - D890_ADDR.TALKGROUP_DATA;
+      const within = off % D890_ADDR.TALKGROUP_BANK_STRIDE;
+      expect(within + D890_ADDR.TALKGROUP_STRIDE).toBeLessThanOrEqual(
+        D890_ADDR.TALKGROUP_BANK_STRIDE,
+      );
+    }
+  });
+});
+
+describe('wide-string termination', () => {
+  const w = (...codes: number[]) => {
+    const b = new Uint8Array(codes.length * 2);
+    codes.forEach((c, i) => { b[i * 2] = c & 0xff; b[i * 2 + 1] = c >> 8; });
+    return b;
+  };
+
+  it('stops at the radio 0xFFFF terminator, not just NUL', () => {
+    // The radio pads names with 0xFF. Stopping only on NUL appends U+FFFF
+    // characters that render as replacement glyphs.
+    expect(decodeWideCharString(w(0x41, 0x42, 0xffff, 0xffff, 0xffff))).toBe('AB');
+  });
+
+  it('still stops at NUL', () => {
+    expect(decodeWideCharString(w(0x41, 0x42, 0x0000, 0x43))).toBe('AB');
+  });
+
+  it('returns the whole field when it is full with no terminator', () => {
+    const full = Array.from({ length: 16 }, (_, i) => 0x41 + i);
+    expect(decodeWideCharString(w(...full), 16)).toHaveLength(16);
   });
 });

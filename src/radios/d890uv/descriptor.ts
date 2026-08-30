@@ -13,6 +13,7 @@ import type { RadioDescriptor } from '../types';
 import { D890UVProtocol } from './protocol';
 import { D890UV_CAPABILITIES } from './capabilities';
 import { D890_MODEL_IDS } from './constants';
+import { D890UV_SETTINGS_PROFILE } from './settingsProfile';
 
 export { D890_MODEL_IDS };
 
@@ -24,6 +25,5 @@ export const D890UV_DESCRIPTOR: RadioDescriptor = {
   supportsBle: false,
   protocolFactory: () => new D890UVProtocol(),
   capabilities: D890UV_CAPABILITIES,
-  // No settings profile yet — the settings region is not mapped.
-  settingsProfile: null,
+  settingsProfile: D890UV_SETTINGS_PROFILE,
 };

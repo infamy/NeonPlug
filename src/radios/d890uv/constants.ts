@@ -139,13 +139,18 @@ export const D890_BLOCK = {
 export const D890_FORBIDDEN_WRITE_ADDRESS = 0x2fa0010;
 
 /**
- * Flash erase unit. Confirmed by an address sweep of the real radio: every
- * 0x40000 boundary from 0x01000000 upward holds live data, matching the
- * documented 256 KB erase geometry.
+ * Assumed flash erase unit, 256 KB.
  *
- * This is the single most important fact about writing to this radio: writing
- * ONE 16-byte block erases the whole 256 KB unit containing it. Any write path
- * must read the entire unit first and re-stage every co-resident byte.
+ * ⚠️ PROVENANCE CORRECTED. This is NOT derived from the vendor CPS. A full
+ * decompilation of `DA_7X2.exe` shows the only `0x40000` in that binary is the
+ * **talkgroup bank stride** — `talkgroupAddr = 0x3a00000 + bank * 0x40000 +
+ * index * 0xC8`, at three identical sites. Nothing in the CPS declares, checks
+ * or works around an erase granularity, and the size match is coincidence.
+ *
+ * The value rests on radio-family knowledge and on the address sweep in
+ * D890UV-HARDWARE-CHECKLIST.md, not on the vendor software. A null result in the
+ * CPS is not evidence the hazard is absent from the hardware, so the guard
+ * stays — do not relax it on the strength of the decompilation.
  */
 export const D890_ERASE_UNIT = 0x40000;
 
@@ -157,6 +162,10 @@ export const D890_ERASE_UNIT = 0x40000;
  * Unlike D890_FORBIDDEN_WRITE_ADDRESS (a single address), these repeat in EVERY
  * erase unit, so the check is `address % D890_ERASE_UNIT` against each entry.
  */
+// ⚠️ Neither 0x3fbf0 nor 0x3fff0 appears as an immediate anywhere in the vendor
+// CPS's code section. Whatever protects them, it is not a literal comparison in
+// that binary — so the decompilation neither confirms nor contradicts this rule.
+// Keep it.
 export const D890_FORBIDDEN_UNIT_OFFSETS = [0x3fbf0, 0x3fff0] as const;
 
 /**
@@ -170,6 +179,15 @@ export const D890_ADDR = {
   /** Device info block; also the probe target for read-size negotiation. */
   LOCAL_INFO: 0x4f80000,
   LOCAL_INFO_SIZE: 0x100,
+
+  /**
+   * General settings. Located on hardware 2026-08-29 by writing six purpose-built
+   * `.rdt` codeplugs through the vendor CPS and diffing read-only dumps — see
+   * DA7X2-RDT-TO-RADIO.md. 0x160 is the observed extent: the highest confirmed
+   * field sits at +0x15c, and the region reads as a contiguous block from +0x00.
+   */
+  SETTINGS: 0x3500000,
+  SETTINGS_SIZE: 0x160,
 
   /** Channels: occupancy bitmap, then bodies split across 0x80000 blocks. */
   CHANNEL_SET: 0x3482a00,
@@ -214,9 +232,21 @@ export const D890_ADDR = {
 
   /** Talkgroups (digital contacts). NOTE the inverted bitmap — see below. */
   TALKGROUP_SET: 0x3980000,
-  TALKGROUP_SET_SIZE: 0x4f0,
+  /**
+   * 0x4e2 = 1250 bytes = exactly 10,000 bits, matching the documented 10,000
+   * talkgroup limit precisely. Extracted from the vendor CPS binary, which
+   * pushes this length alongside the address at its read call site. The
+   * reference doc's 0x4f0 (10,112 bits) was rounded up.
+   */
+  TALKGROUP_SET_SIZE: 0x4e2,
   TALKGROUP_DATA: 0x3a00000,
   TALKGROUP_STRIDE: 0xc8,
+  /**
+   * Talkgroups are stored in BANKS, not as one flat array — the vendor CPS
+   * computes `0x3a00000 + bank * 0x40000 + index * 0xc8` at three identical
+   * sites. Flat addressing is correct only inside the first bank.
+   */
+  TALKGROUP_BANK_STRIDE: 0x40000,
 
   /** Receive group lists. */
   RX_GROUP_SET: 0x3701510,
@@ -277,7 +307,8 @@ export const D890_LIMITS = {
   SCAN_LIST_MEMBERS_MAX: 50,
 
   TALK_GROUPS_MAX: 10000,
-  TALK_GROUPS_BITMAP_CAPACITY: 10112,
+  /** Exactly equal to the max — the bitmap is sized to the limit, not padded. */
+  TALK_GROUPS_BITMAP_CAPACITY: 10000,
 
   RX_GROUPS_MAX: 250,
   RX_GROUP_MEMBERS_MAX: 64,

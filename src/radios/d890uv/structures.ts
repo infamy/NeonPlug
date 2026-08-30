@@ -16,6 +16,7 @@
 
 import type { Zone } from '../../models/Zone';
 import type { Contact } from '../../models/Contact';
+import type { DMRRadioID } from '../../models/DMRRadioID';
 import type { RXGroup } from '../../models/RXGroup';
 import type { Channel, ChannelMode, PowerLevel, Bandwidth } from '../../models/Channel';
 import { generateZoneId } from '../../utils/zoneHelpers';
@@ -31,6 +32,39 @@ import {
   D890_DCS_INVERTED_BIT,
   D890_DCS_CODE_MASK,
 } from './constants';
+
+/**
+ * Byte 0x1a, BITS 5-4 — the vendor's "Optional Signal" column. The stored values
+ * are 0x00/0x10/0x20/0x30, so this is a shifted field rather than the low bits;
+ * read straight off a codeplug carrying all four values.
+ */
+const D890_OPTIONAL_SIGNAL = ['None', 'DTMF', 'Two Tone', 'Five Tone'] as const;
+
+/** Byte 0x35, low two bits — the vendor's "APRS Report Type" column. */
+const D890_APRS_REPORT = ['Off', 'Analog', 'Digital'] as const;
+
+/**
+ * Squelch mode, byte 0x19 high nibble.
+ *
+ * Indices 0 and 1 are confirmed against hardware. 2 and 3 are the vendor's own
+ * option names for the same list and are included so a radio set to one of them
+ * does not fall back to "Carrier".
+ */
+const D890_SQUELCH_MODE = ['Carrier/CTC', 'CTCSS/DCS', 'Optional', 'CTC&Opt'] as const;
+
+/**
+ * Fields the radio stores zero-based and the vendor CPS displays one-based.
+ * Values above the vendor's limit mean "none" and surface as 0.
+ */
+function oneBased(raw: number | undefined, limit = 0x0f): number {
+  const v = raw ?? 0;
+  return v > limit ? 0 : v + 1;
+}
+
+/** Byte 0x39 is a signed offset extension. */
+function signedByte(v: number): number {
+  return v > 0x7f ? v - 0x100 : v;
+}
 
 // ---------------------------------------------------------------------------
 // Addressing
@@ -62,14 +96,70 @@ export function zoneChannelsAddress(index: number): number {
   return D890_ADDR.ZONE_CHANNELS + index * D890_ADDR.ZONE_CHANNELS_STRIDE;
 }
 
+/** Address of one DMR radio-ID record. */
+export function radioIdAddress(index: number): number {
+  return D890_ADDR.RADIO_ID_DATA + index * D890_ADDR.RADIO_ID_STRIDE;
+}
+
+/**
+ * Decodes one DMR radio-ID record.
+ *
+ * Layout confirmed against hardware: BCD-as-hex ID in bytes 0x00-0x03, then a
+ * UTF-16LE name from 0x04. Same BCD convention as channel frequencies and
+ * talkgroup IDs, so it reuses decodeBcdAsHexU32 rather than re-deriving it.
+ */
+export function parseRadioId(bytes: Uint8Array, index: number): DMRRadioID {
+  const dmrIdValue = decodeBcdAsHexU32(bytes.subarray(0x00, 0x04));
+  return {
+    index,
+    dmrId: String(dmrIdValue),
+    dmrIdValue,
+    dmrIdBytes: bytes.slice(0x00, 0x04),
+    name: decodeWideCharString(bytes.subarray(0x04, 0x24), D890_LIMITS.NAME_MAX_CHARS),
+  };
+}
+
+/**
+ * Scan-list timers (look-back A/B, dropout delay, dwell) are stored in tenths of
+ * a second. Multiply the raw u16 by this to get seconds.
+ */
+export const D890_SCAN_TIME_STEP_S = 0.1;
+
 /** Address of one scan-list record. */
 export function scanListAddress(index: number): number {
   return D890_ADDR.SCAN_LIST_DATA + index * D890_ADDR.SCAN_LIST_STRIDE;
 }
 
 /** Address of one talkgroup record. */
+/**
+ * Talkgroups per bank.
+ *
+ * ⚠️ INFERRED, and untested — the only codeplug ever loaded onto a radio here
+ * held six talkgroups, so nothing past bank 0 has been observed.
+ *
+ * 1250 is chosen because 8 banks x 1250 is exactly the documented 10,000
+ * capacity, and 1250 * 0xc8 = 0x3d090 fits inside the 0x40000 bank. The bank
+ * would physically hold 1310 records, so if the radio packs them tightly this
+ * is wrong for indices 1250-1309. Both candidates agree below 1250.
+ */
+export const D890_TALKGROUPS_PER_BANK = 1250;
+
+/**
+ * Address of one talkgroup record.
+ *
+ * Banked, not flat: the vendor CPS computes
+ * `0x3a00000 + bank * 0x40000 + index * 0xc8` at three identical call sites.
+ * This read flat until 2026-08-29, which is correct inside bank 0 and silently
+ * wrong beyond it.
+ */
 export function talkgroupAddress(index: number): number {
-  return D890_ADDR.TALKGROUP_DATA + index * D890_ADDR.TALKGROUP_STRIDE;
+  const bank = Math.floor(index / D890_TALKGROUPS_PER_BANK);
+  const inBank = index % D890_TALKGROUPS_PER_BANK;
+  return (
+    D890_ADDR.TALKGROUP_DATA +
+    bank * D890_ADDR.TALKGROUP_BANK_STRIDE +
+    inBank * D890_ADDR.TALKGROUP_STRIDE
+  );
 }
 
 /** Address of one receive-group record. */
@@ -125,7 +215,11 @@ export function decodeWideCharString(bytes: Uint8Array, maxChars?: number): stri
   let out = '';
   for (let i = 0; i < limit; i++) {
     const code = (bytes[i * 2] ?? 0) | ((bytes[i * 2 + 1] ?? 0) << 8);
-    if (code === 0) break;
+    // The radio terminates names with 0xFFFF and pads with 0xFF, not with NUL —
+    // the vendor's own decoder stops on 0xFFFF. Stopping only on 0x0000 leaks
+    // the terminator and the padding into the string as U+FFFF characters, which
+    // no test with a short name would ever show.
+    if (code === 0 || code === 0xffff) break;
     out += String.fromCharCode(code);
   }
   return out.trim();
@@ -322,6 +416,11 @@ export function parseScanList(bytes: Uint8Array, index: number): ScanListDecoded
     prioritySelect: bytes[0x01] ?? 0,
     priorityChannel1Raw: readU16LE(bytes, 0x02),
     priorityChannel2Raw: readU16LE(bytes, 0x04),
+    // Timers are stored in units of 0.1 s. Confirmed against a codeplug whose
+    // two scan lists carry eight distinct timer values: the radio held
+    // 5/26/31/32 and 20/31/37/38 where the vendor CPS showed 0.5/2.6/3.1/3.2 and
+    // 2.0/3.1/3.7/3.8 seconds. These stay RAW here; use D890_SCAN_TIME_STEP_S to
+    // present them.
     lookBackTimeA: readU16LE(bytes, 0x06),
     lookBackTimeB: readU16LE(bytes, 0x08),
     dropoutDelay: readU16LE(bytes, 0x0a),
@@ -486,8 +585,22 @@ export function parseChannel(
 
   // Wire contact/scan-list refs are 0-based with 0xff meaning none; NeonPlug is
   // 1-based with 0 meaning none.
-  const contactWire = readU16BE(bytes, 0x13);
+  // Contact reference: u32 LE at 0x14, holding a ZERO-BASED index into the
+  // talkgroup list — 0,1,2,3,4,5 for the six talkgroups of a codeplug built to
+  // vary them. 0x13 is unused and reads 0.
+  //
+  // The vendor-CPS decompilation claims this field holds the DMR contact ID
+  // itself rather than an index. On this radio and firmware it does not: a
+  // talkgroup whose DMR ID is 16,776,415 stores 2. Hardware wins.
+  //
+  // It was previously read as a big-endian u16 at 0x13, which happens to return
+  // the same number while 0x13 is zero and the index is under 256 — and would
+  // silently return the low byte only beyond that.
+  const contactWire = readU32LE(bytes, 0x14);
   const scanListWire = bytes[0x1b] ?? D890_SENTINEL.NO_REF_U8;
+  // RX group is stored zero-based with 0xff for none, exactly like the scan-list
+  // reference beside it. This was previously passed through raw, so the first
+  // RX group in the list read back as 0 (= none) instead of 1.
   const rxGroupWire = bytes[0x1c] ?? D890_SENTINEL.NO_REF_U8;
 
   // Byte 0x08 bits 1-0, confirmed against the CPS export:
@@ -516,7 +629,7 @@ export function parseChannel(
     txCtcssDcs: resolveTone(D890_TONE_FLAG.CTCSS_TX, D890_TONE_FLAG.DCS_TX, txToneIndex, txDcsRaw),
     contactId: contactWire === 0xffff ? 0 : contactWire + 1,
     scanListId: scanListWire === D890_SENTINEL.NO_REF_U8 ? 0 : scanListWire + 1,
-    rxGroupListId: rxGroupWire === D890_SENTINEL.NO_REF_U8 ? 0 : rxGroupWire,
+    rxGroupListId: rxGroupWire === D890_SENTINEL.NO_REF_U8 ? 0 : rxGroupWire + 1,
     dmrRadioIdIndex: bytes[0x18],
     // DMR time slot, as `slotOperation` — the field the DM-32 already uses for
     // exactly this (0 = TS1, 1 = TS2). Deliberately NOT a new `timeSlot` field:
@@ -526,8 +639,45 @@ export function parseChannel(
     // Bit 0 of 0x21, hardware-confirmed 2026-08-25: the only TS2 channel read
     // 0x01 while every TS1 channel read 0x00. The reference's "bits 3-2" is wrong.
     slotOperation: (bytes[0x21] ?? 0) & 0x01,
-    // 0x09 bit 5 is documented as "PTT prohibit" without an explicit bit number;
-    // treated as bit 5 here and listed for confirmation.
+    // Byte 0x09 carries four independent flags, all confirmed against the
+    // vendor CSV export of a 118-channel codeplug built to vary them:
+    //   bit 4 Reverse, bit 5 PTT Prohibit, bit 6 Call Confirmation,
+    //   bit 7 Talk Around (inverted - set means talkaround is ALLOWED).
+    // Byte 0x21 is a second flag field, resolved the same way:
+    //   bit 0 time slot, bit 4 Slot Suit, bit 5 APRS RX,
+    //   bit 6 AES encryption, bit 7 Work Alone (our loneWorker).
+    loneWorker: ((bytes[0x21] ?? 0) & 0x80) !== 0,
+    aprsReceive: ((bytes[0x21] ?? 0) & 0x20) !== 0,
+    encryption: ((bytes[0x21] ?? 0) & 0x40) !== 0,
+    // Byte 0x19 packs the squelch mode into bit 4 and the PTT ID mode into
+    // bits 1-0 (0 Off, 1 Start, 2 End, 3 Both). Both partition all 118 channels
+    // of the feature-flag codeplug exactly.
+    // Byte 0x19 packs two 4-bit fields: squelch mode in the HIGH nibble, PTT ID
+    // in the LOW nibble. Both widths come from the vendor writer
+    // (`byte = SQLCON * 0x10 + Ptt_ID`); the codeplug only ever exercised two
+    // squelch values and four PTT values, so masking to 2 bits happened to work
+    // and would have truncated anything wider.
+    rxSquelchMode: D890_SQUELCH_MODE[((bytes[0x19] ?? 0) >> 4) & 0x0f] ?? 'Carrier/CTC',
+    // 0 Off, 1 Start, 2 End, 3 Start&End. The vendor calls index 3 "Start&End";
+    // "Both" belongs to a different (microphone) list entirely.
+    pttId: (bytes[0x19] ?? 0) & 0x0f,
+    signalingType: D890_OPTIONAL_SIGNAL[((bytes[0x1a] ?? 0) >> 4) & 0x03] ?? 'None',
+    aprsReportMode: D890_APRS_REPORT[(bytes[0x35] ?? 0) & 0x03] ?? 'Off',
+    reverse: ((bytes[0x09] ?? 0) & 0x10) !== 0,
+    callConfirmation: ((bytes[0x09] ?? 0) & 0x40) !== 0,
+    slotSuit: ((bytes[0x21] ?? 0) & 0x10) !== 0,
+    ranging: ((bytes[0x34] ?? 0) & 0x01) !== 0,
+    // u16 of tenths of a Hz: 1318 -> 131.8, 1000 -> 100.0.
+    customCtcssHz: readU16LE(bytes, 0x10) / 10,
+    // These four are stored zero-based and displayed one-based by the vendor
+    // CPS. 0x1d/0x1e/0x1f could never be reached by correlation — the CPS
+    // silently discards them on CSV import, so they held one value on every
+    // channel. The decompiled marshaller gives them directly.
+    twoToneDecode: oneBased(bytes[0x12]),
+    twoToneId: oneBased(bytes[0x1d]),
+    fiveToneId: oneBased(bytes[0x1e]),
+    dtmfId: oneBased(bytes[0x1f]),
+    offsetFrequencyEx: signedByte(bytes[0x39] ?? 0),
     forbidTx: ((bytes[0x09] ?? 0) & 0x20) !== 0,
     forbidTalkaround: ((bytes[0x09] ?? 0) & 0x80) === 0,
   });
