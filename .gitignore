@@ -52,3 +52,12 @@ colours.png
 #Ignore bug data folder
 bugs/*
 coverage/*
+# DA-7X2 / D890UV reverse-engineering working notes — local only.
+# These are a running lab record (hardware sessions, refuted hypotheses, byte
+# maps mid-derivation), not documentation the project ships. What is settled
+# lives in code and in its comments; keeping the notes untracked stops the repo
+# carrying half-verified claims.
+D890UV-HARDWARE-CHECKLIST.md
+DA7X2-RDT-TO-RADIO.md
+DA7X2-WHATS-UNKNOWN.md
+DA7X2-NEEDS-CONFIRMING.md

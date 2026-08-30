@@ -16,6 +16,7 @@
 
 import type { Zone } from '../../models/Zone';
 import type { Contact } from '../../models/Contact';
+import type { QuickContact } from '../../models/QuickContact';
 import type { DMRRadioID } from '../../models/DMRRadioID';
 import type { RXGroup } from '../../models/RXGroup';
 import type { Channel, ChannelMode, PowerLevel, Bandwidth } from '../../models/Channel';
@@ -31,6 +32,8 @@ import {
   D890_TONE_FLAG,
   D890_DCS_INVERTED_BIT,
   D890_DCS_CODE_MASK,
+  D890_SCAN_REVERT_CHANNEL,
+  D890_SCAN_MODE,
 } from './constants';
 
 /**
@@ -125,9 +128,23 @@ export function parseRadioId(bytes: Uint8Array, index: number): DMRRadioID {
  */
 export const D890_SCAN_TIME_STEP_S = 0.1;
 
-/** Address of one scan-list record. */
+/**
+ * Address of one scan-list record.
+ *
+ * Blocked exactly like channels: 32 lists per 0x80000 block. This was flat
+ * until 2026-08-30, which is right for lists 0-31 and silently reads the wrong
+ * memory for every list above that (list 32 is at 0x2180000, not 0x2104000).
+ * The split comes from the vendor scan-list marshaller, not from hardware —
+ * only two lists have ever been read back.
+ */
 export function scanListAddress(index: number): number {
-  return D890_ADDR.SCAN_LIST_DATA + index * D890_ADDR.SCAN_LIST_STRIDE;
+  const blockIndex = Math.floor(index / D890_ADDR.SCAN_LISTS_PER_BLOCK);
+  const indexInBlock = index % D890_ADDR.SCAN_LISTS_PER_BLOCK;
+  return (
+    D890_ADDR.SCAN_LIST_DATA +
+    blockIndex * D890_ADDR.SCAN_LIST_BLOCK_STRIDE +
+    indexInBlock * D890_ADDR.SCAN_LIST_STRIDE
+  );
 }
 
 /** Address of one talkgroup record. */
@@ -344,7 +361,10 @@ export function parseZone(
   index: number
 ): Zone {
   const name = decodeWideCharString(nameBytes, D890_LIMITS.NAME_MAX_CHARS);
-  const members = decodeU16Members(memberBytes, D890_LIMITS.ZONE_MEMBERS_MAX);
+  // Structural, not the enforced cap: reading is where truncation is silent and
+  // unrecoverable, so a zone larger than the CPS could have built is still read
+  // whole. The 160-channel limit is applied where zones are edited.
+  const members = decodeU16Members(memberBytes, D890_LIMITS.ZONE_MEMBERS_STRUCTURAL);
   return {
     id: generateZoneId(),
     name: name || `Zone ${index + 1}`,
@@ -365,6 +385,33 @@ export function parseTalkgroup(bytes: Uint8Array, index: number): Contact {
     // rather than dropped, so a read round-trips visibly in the UI until the
     // model grows a proper field. See D890UV-HARDWARE-CHECKLIST.md.
     remark: D890_CALL_TYPES[callTypeRaw] ?? `Unknown(${callTypeRaw})`,
+  };
+}
+
+/**
+ * The same talkgroup record, as the `QuickContact` the Digital tab and the
+ * channel grid's TX-contact dropdown are built around.
+ *
+ * Two models for one record is not ideal, but `Contact` (which `parseTalkgroup`
+ * returns) has no call-type field and carries it in `remark` as a label, and the
+ * grid needs the numeric type to render Grp/Prv/All. Rather than widen the
+ * shared model for one radio, this maps to the shape those components already
+ * consume.
+ *
+ * Call type is renumbered: the D890 stores 0/1/2 for Private/Group/All while the
+ * shared model uses the DM-32's 3/4/5. Same order, different origin.
+ */
+export function parseTalkgroupQuick(bytes: Uint8Array, index: number): QuickContact {
+  const contact = parseTalkgroup(bytes, index);
+  return {
+    index: index + 1,
+    offset: 0,
+    name: contact.name,
+    contactNumber: contact.dmrId,
+    callType: ((bytes[0x00] ?? 0) & 0x03) + 0x03,
+    hasHeader: false,
+    flag: 0,
+    rawData: bytes.slice(0, D890_ADDR.TALKGROUP_STRIDE),
   };
 }
 
@@ -425,7 +472,18 @@ export function parseScanList(bytes: Uint8Array, index: number): ScanListDecoded
     lookBackTimeB: readU16LE(bytes, 0x08),
     dropoutDelay: readU16LE(bytes, 0x0a),
     dwellTime: readU16LE(bytes, 0x0c),
-    revertChannel: bytes[0xf8] ?? 0,
+    // 0x94, not 0xf8. The four trailing settings sit immediately after the
+    // 50-entry member array (0x30..0x93); 0xf8 is inside the zero fill and
+    // returned 0 (or 0xff) on every list ever read. Offsets from the vendor
+    // marshaller pair and confirmed against two captured lists whose CPS export
+    // shows distinct revert-channel values (0x04 and 0x06).
+    revertChannel: bytes[0x94] ?? 0,
+    scanMode: bytes[0x00] ?? 0,
+    revertChannelLabel: D890_SCAN_REVERT_CHANNEL[bytes[0x94] ?? 0],
+    scanModeLabel: D890_SCAN_MODE[bytes[0x00] ?? 0],
+    digitalGroupHold: bytes[0x95] ?? 0,
+    digitalPriorityHold: bytes[0x96] ?? 0,
+    analogHold: bytes[0x97] ?? 0,
   };
 }
 
@@ -449,8 +507,25 @@ export interface ScanListDecoded {
   lookBackTimeB: number;
   dropoutDelay: number;
   dwellTime: number;
-  /** 0=Selected, 1=+TalkBack, 2=Priority 1, 3=Priority 2, 4=Last Called, 5=Last Used. */
+  /** Byte 0x94, the vendor's `Scn_RevertCh`. Raw index into D890_SCAN_REVERT_CHANNEL. */
   revertChannel: number;
+  /** Byte 0x00, the vendor's `Scn_Mode`. Raw index into D890_SCAN_MODE. */
+  scanMode: number;
+  /**
+   * The vendor's label for `revertChannel`, or undefined for an index outside
+   * the eight-entry list. Undefined rather than a fallback on purpose: the CPS
+   * silently clamps an out-of-range index to 0, so a value it cannot name means
+   * the record did not come from the CPS and guessing would hide that.
+   */
+  revertChannelLabel?: string;
+  /** The vendor's label for `scanMode`, or undefined outside the list. */
+  scanModeLabel?: string;
+  /** Byte 0x95, `ScanDigiGroupHold`. */
+  digitalGroupHold: number;
+  /** Byte 0x96, `ScanDigiPriHold`. */
+  digitalPriorityHold: number;
+  /** Byte 0x97, `ScanAnaHold`. */
+  analogHold: number;
 }
 
 /**
@@ -618,7 +693,7 @@ export function parseChannel(
 
   const channel = createDefaultChannel({
     number: index + 1,
-    name: decodeWideCharString(bytes.subarray(0x44, 0x64), D890_LIMITS.NAME_MAX_CHARS),
+    name: decodeWideCharString(bytes.subarray(0x44, 0x66), D890_LIMITS.NAME_MAX_CHARS),
     rxFrequency,
     txFrequency,
     mode,
@@ -627,7 +702,7 @@ export function parseChannel(
     colorCode: bytes[0x20] ?? 0,
     rxCtcssDcs: resolveTone(D890_TONE_FLAG.CTCSS_RX, D890_TONE_FLAG.DCS_RX, rxToneIndex, rxDcsRaw),
     txCtcssDcs: resolveTone(D890_TONE_FLAG.CTCSS_TX, D890_TONE_FLAG.DCS_TX, txToneIndex, txDcsRaw),
-    contactId: contactWire === 0xffff ? 0 : contactWire + 1,
+    contactId: contactWire >= 0xffff ? 0 : contactWire + 1,
     scanListId: scanListWire === D890_SENTINEL.NO_REF_U8 ? 0 : scanListWire + 1,
     rxGroupListId: rxGroupWire === D890_SENTINEL.NO_REF_U8 ? 0 : rxGroupWire + 1,
     dmrRadioIdIndex: bytes[0x18],
@@ -661,8 +736,8 @@ export function parseChannel(
     // 0 Off, 1 Start, 2 End, 3 Start&End. The vendor calls index 3 "Start&End";
     // "Both" belongs to a different (microphone) list entirely.
     pttId: (bytes[0x19] ?? 0) & 0x0f,
-    signalingType: D890_OPTIONAL_SIGNAL[((bytes[0x1a] ?? 0) >> 4) & 0x03] ?? 'None',
-    aprsReportMode: D890_APRS_REPORT[(bytes[0x35] ?? 0) & 0x03] ?? 'Off',
+    signalingType: D890_OPTIONAL_SIGNAL[((bytes[0x1a] ?? 0) >> 4) & 0x0f] ?? 'None',
+    aprsReportMode: D890_APRS_REPORT[bytes[0x35] ?? 0] ?? 'Off',
     reverse: ((bytes[0x09] ?? 0) & 0x10) !== 0,
     callConfirmation: ((bytes[0x09] ?? 0) & 0x40) !== 0,
     slotSuit: ((bytes[0x21] ?? 0) & 0x10) !== 0,
@@ -680,6 +755,87 @@ export function parseChannel(
     offsetFrequencyEx: signedByte(bytes[0x39] ?? 0),
     forbidTx: ((bytes[0x09] ?? 0) & 0x20) !== 0,
     forbidTalkaround: ((bytes[0x09] ?? 0) & 0x80) === 0,
+
+    // ---- from the vendor channel marshaller pair -------------------------
+    // Everything below comes from `sub_005af490` (write) / `sub_005b1750`
+    // (read), which touch exactly the same 54 record offsets — the strongest
+    // cross-check available without hardware. Each of these bytes read the same
+    // value on all 102 captured channels, so the OFFSET is decompilation-derived
+    // and the VALUE RANGE is unobserved. Named rather than left as unmapped
+    // bytes because a name plus a known-constant reading is more useful than
+    // silence, but none of them is hardware-verified.
+    //
+    // Two have since been settled by a purpose-built codeplug run through the
+    // vendor CPS (2026-08-30), and one of those corrected an earlier conclusion.
+    /**
+     * Vendor "txcc" — TX colour code, a distinct field from the RX colour code
+     * at 0x20.
+     *
+     * CONFIRMED: the two are separate bytes in the `.rdt` as well, and a
+     * codeplug that set them apart exported RX from one and txcc from the other,
+     * 118/118 each way with no crossover.
+     */
+    txColorCode: bytes[0x43] ?? 0,
+    /**
+     * Vendor "Busy Lock/TX Permit" (`RepLock`).
+     *
+     * This was previously recorded here as a column the CPS DERIVES from the
+     * channel type rather than stores. That was wrong. It IS stored — a codeplug
+     * that set the field directly exported "Different CDT" and "Channel Free"
+     * for values 1 and 2. What misled the correlation is narrower and stranger:
+     * a stored 0 renders as "Off" on an analog channel and "Always" on a digital
+     * one, so with every channel at 0 the column tracked channel type exactly.
+     * See D890_BUSY_LOCK.
+     */
+    busyLock: (bytes[0x1a] ?? 0) & 0x0f,
+    /** Vendor "Emergency System" (`EMG_Key`). Byte 0x22. */
+    emergencySystemIndex: bytes[0x22] ?? 0,
+    /** Vendor "DMR MODE" (`TDMA`). Byte 0x21 bits 3-2. */
+    dmrMode: ((bytes[0x21] ?? 0) >> 2) & 0x03,
+    /** Vendor "DataACK Disable" (`Response`). Byte 0x21 bit 1. */
+    dataAckDisable: ((bytes[0x21] ?? 0) & 0x02) !== 0,
+    /** Vendor "Digital Duplex" (`simplex`). Byte 0x34 bit 1, inverted. */
+    digitalDuplex: ((bytes[0x34] ?? 0) & 0x02) === 0,
+    /** Vendor "Exclude channel from roaming" (`roam_forbid`). Byte 0x34 bit 2. */
+    excludeFromRoaming: ((bytes[0x34] ?? 0) & 0x04) !== 0,
+    /** Vendor `rec_only`. Byte 0x34 bit 3. */
+    receiveOnly: ((bytes[0x34] ?? 0) & 0x08) !== 0,
+    /** Vendor "Auto Scan" (`auto_scan`). Byte 0x34 bit 4. */
+    autoScan: ((bytes[0x34] ?? 0) & 0x10) !== 0,
+    /** Vendor "Idle TX" (`idle_tx`). Byte 0x34 bit 5. */
+    idleTx: ((bytes[0x34] ?? 0) & 0x20) !== 0,
+    /** Vendor `compand`. Byte 0x34 bit 6 — the shared model's `compander`. */
+    compander: ((bytes[0x34] ?? 0) & 0x40) !== 0,
+    /** Vendor `dmr_crc_ignore`. Byte 0x34 bit 7. */
+    dmrCrcIgnore: ((bytes[0x34] ?? 0) & 0x80) !== 0,
+    /**
+     * Vendor "Analog APRS PTT Mode" (`AprsUpDate`). Byte 0x36.
+     * 0 Off, 1 Start Of Transmission, 2 End Of Transmission — see
+     * D890_ANALOG_APRS_PTT_MODE.
+     */
+    analogAprsPttMode: bytes[0x36] ?? 0,
+    /**
+     * Vendor "Digital APRS PTT Mode" (`DigiAprsUpDate`). Byte 0x37.
+     * A plain Off/On: a value of 2 exported as "On", so the CPS clamps.
+     */
+    digitalAprsPttMode: bytes[0x37] ?? 0,
+    /**
+     * Vendor "Digital APRS Report Channel" (`DigiAprsUpNum`). Byte 0x38.
+     * Stored zero-based and displayed one-based, like the tone IDs beside it.
+     */
+    digitalAprsReportChannel: (bytes[0x38] ?? 0) + 1,
+    /** Vendor `NormalEmgCode`. Byte 0x3a. */
+    normalEmergencyCode: bytes[0x3a] ?? 0,
+    /** Vendor "SMS Confirmation" (`sms_rec`). Byte 0x3b bit 2. */
+    smsConfirmation: ((bytes[0x3b] ?? 0) & 0x04) !== 0,
+    /** Vendor "Ana APRS Mute" (`ana_aprs_mute`). Byte 0x3b bit 3. */
+    analogAprsMute: ((bytes[0x3b] ?? 0) & 0x08) !== 0,
+    /** Vendor "Send Talker Alias DMR/NX" (`tx_talkalaes`). Byte 0x3b bit 4. */
+    sendTalkerAlias: ((bytes[0x3b] ?? 0) & 0x10) !== 0,
+    /** Vendor `AnaAprsTxPath`. Byte 0x3c. */
+    analogAprsTxPath: bytes[0x3c] ?? 0,
+    /** Vendor "ARC4" (`Arc4EmgCode`). Byte 0x3d. */
+    arc4Code: bytes[0x3d] ?? 0,
   });
 
   return { channel, rxToneIndex, txToneIndex, rxDcsRaw, txDcsRaw, hasUnresolvedTone };

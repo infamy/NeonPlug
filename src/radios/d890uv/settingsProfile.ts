@@ -25,18 +25,23 @@ import {
   D890_UNMAPPED_BYTES,
 } from './settingsMap';
 
-/** The nine PF/P controls all render the same 67-entry vocabulary. */
+/** The ten PF/P controls all render the same 67-entry vocabulary. */
 const KEY_FUNCTION_FIELDS = new Set<string>(D890_KEY_FUNCTION_FIELDS);
 
 /** CPS tab order, so the UI matches the vendor software tab for tab. */
 const SECTION_ORDER: readonly string[] = [
   'Other',
+  // The CPS has 18 tabs and this list covered 16. 'Work Mode' had no NeonPlug
+  // coverage at all until its eight controls were placed; without it here, every
+  // one of them would be decoded and then silently dropped from the UI.
+  'Work Mode',
   'Display',
   'Key Function',
   'Volume/Audio',
   'Digital Func',
   'Auto repeater',
   'Alert Tone',
+  'Alert Tone1',
   'Power Save',
   'Power-on',
   'GPS/Ranging',
@@ -48,6 +53,18 @@ const SECTION_ORDER: readonly string[] = [
   'Record'
 ];
 
+/**
+ * Fields whose identity came from the vendor CPS rather than from a radio get a
+ * trailing marker, the same convention the channel grid uses.
+ *
+ * Without it the Settings tab would present a byte the marshaller merely NAMES
+ * exactly like one that six fingerprint codeplugs pinned — and a user comparing
+ * NeonPlug against the OEM software has no other way to tell them apart.
+ */
+function labelFor(f: (typeof D890_SETTINGS_FIELDS)[number]): string {
+  return f.confidence ? `${f.label} *` : f.label;
+}
+
 function fieldFor(f: (typeof D890_SETTINGS_FIELDS)[number]): SettingsFieldDescriptor {
   const key = `radioSpecific.${f.key}`;
   // A confirmed two-item list becomes a real select. This matters beyond
@@ -56,7 +73,7 @@ function fieldFor(f: (typeof D890_SETTINGS_FIELDS)[number]): SettingsFieldDescri
   if (f.options) {
     return {
       key,
-      label: f.label,
+      label: labelFor(f),
       type: 'select',
       options: f.options.map((label, value) => ({ value, label })),
     };
@@ -67,7 +84,7 @@ function fieldFor(f: (typeof D890_SETTINGS_FIELDS)[number]): SettingsFieldDescri
   if (KEY_FUNCTION_FIELDS.has(f.key)) {
     return {
       key,
-      label: f.label,
+      label: labelFor(f),
       type: 'select',
       options: D890_KEY_FUNCTIONS.map((label, value) => ({ value, label })),
     };
@@ -78,7 +95,7 @@ function fieldFor(f: (typeof D890_SETTINGS_FIELDS)[number]): SettingsFieldDescri
     const { scale, offset, unit, zeroLabel } = f.valueRule;
     return {
       key,
-      label: unit ? `${f.label} [${unit}]` : f.label,
+      label: unit ? `${labelFor(f)} [${unit}]` : labelFor(f),
       type: 'select',
       options: Array.from({ length: f.listLength }, (_, value) => {
         if (value === 0 && zeroLabel) return { value, label: zeroLabel };
@@ -89,13 +106,13 @@ function fieldFor(f: (typeof D890_SETTINGS_FIELDS)[number]): SettingsFieldDescri
       }),
     };
   }
-  if (f.max <= 1) return { key, label: f.label, type: 'checkbox' };
+  if (f.max <= 1) return { key, label: labelFor(f), type: 'checkbox' };
   // listLength is measured, not assumed: {END} lands on the dropdown's last
   // item, so the byte it produced is exactly N-1. Bounding the input to that
   // beats offering 0-255 and letting someone type a value the radio has no
   // meaning for.
   const max = f.listLength !== undefined ? f.listLength - 1 : 255;
-  return { key, label: f.label, type: 'number', min: 0, max, step: 1 };
+  return { key, label: labelFor(f), type: 'number', min: 0, max, step: 1 };
 }
 
 export const D890UV_SETTINGS_PROFILE: SettingsProfile = {
@@ -132,11 +149,14 @@ export const D890UV_SETTINGS_PROFILE: SettingsProfile = {
         // Named so nobody mistakes it for a feature. These bytes come off the
         // radio and are shown because concealing them would overstate how much
         // of this radio we understand.
-        title: 'Unmapped bytes (not yet identified)',
+        title: 'Unmapped bytes (vendor name only)',
         fields: D890_UNMAPPED_BYTES.map(
           (u): SettingsFieldDescriptor => ({
             key: `radioSpecific.unmapped.0x${u.offset.toString(16).padStart(3, '0')}`,
-            label: `0x${(0x3500000 + u.offset).toString(16)}${u.observedChanging ? ' — seen changing' : ''}`,
+            label:
+              `0x${(0x3500000 + u.offset).toString(16)}` +
+              (u.vendorName ? ` — ${u.vendorName}` : '') +
+              (u.observedChanging ? ' — seen changing' : ''),
             type: 'number',
             min: 0,
             max: 255,

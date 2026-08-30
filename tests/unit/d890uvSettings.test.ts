@@ -220,6 +220,113 @@ describe('measured list lengths', () => {
   });
 });
 
+describe('the settings region is fully accounted for', () => {
+  it('covers every byte of 0x000-0x15f exactly once', () => {
+    // The Diagnostics tab renders these five tables as ONE map of the region, so
+    // a byte claimed twice inflates the "placed" count and a byte claimed by
+    // nothing disappears from the map entirely. Neither is visible by reading
+    // the tables; both are obvious here.
+    const owner = new Map<number, string[]>();
+    const claim = (name: string, offset: number, span = 1) => {
+      for (let i = 0; i < span; i++) {
+        owner.set(offset + i, [...(owner.get(offset + i) ?? []), name]);
+      }
+    };
+    for (const f of D890_SETTINGS_FIELDS) claim(`field:${f.key}`, f.offset);
+    for (const f of D890_SETTINGS_FREQUENCIES) claim(`freq:${f.key}`, f.offset, 4);
+    for (const b of D890_SETTINGS_BITFIELDS) claim(`bitfield:${b.key}`, b.offset);
+    for (const g of D890_ALERT_TONE_GROUPS) {
+      claim(`alert:${g.id}:freq`, g.frequencies, 10);
+      claim(`alert:${g.id}:dur`, g.durations, 10);
+    }
+    for (const u of D890_UNMAPPED_BYTES) claim(`unmapped:0x${u.offset.toString(16)}`, u.offset);
+
+    const doubleClaimed = [...owner.entries()]
+      .filter(([, names]) => names.length > 1)
+      .map(([offset, names]) => `0x${offset.toString(16)}: ${names.join(' + ')}`);
+    expect(doubleClaimed).toEqual([]);
+
+    const unclaimed: string[] = [];
+    for (let o = 0; o < D890_ADDR.SETTINGS_SIZE; o++) {
+      if (!owner.has(o)) unclaimed.push(`0x${o.toString(16)}`);
+    }
+    expect(unclaimed).toEqual([]);
+
+    // And nothing may claim a byte past the region the driver reads.
+    const past = [...owner.keys()].filter((o) => o >= D890_ADDR.SETTINGS_SIZE);
+    expect(past.map((o) => `0x${o.toString(16)}`)).toEqual([]);
+  });
+});
+
+describe('vendor names from the settings marshaller', () => {
+  const byOffset = new Map(D890_UNMAPPED_BYTES.map((u) => [u.offset, u] as const));
+
+  it('turned most of the named bytes into real fields', () => {
+    // The marshaller named 78 bytes the fingerprint passes could not place. An
+    // adversarial audit then rejected 35 of 118 candidates, and what survived
+    // became fields carrying a `confidence` tag.
+    const derived = D890_SETTINGS_FIELDS.filter((f) => f.confidence);
+    expect(derived.length).toBeGreaterThanOrEqual(80);
+    // A byte cannot be both a field and an unattributed byte.
+    const fieldOffsets = new Set(D890_SETTINGS_FIELDS.map((f) => f.offset));
+    for (const u of D890_UNMAPPED_BYTES) expect(fieldOffsets.has(u.offset)).toBe(false);
+  });
+
+  it('marks every derived field in the UI', () => {
+    // The whole point of keeping `confidence` is that the Settings tab can say
+    // which fields were watched moving on a radio and which were read out of the
+    // vendor's software. An unmarked derived field is worse than no field.
+    const derivedLabels = new Set(
+      D890_SETTINGS_FIELDS.filter((f) => f.confidence).map((f) => f.label),
+    );
+    const rendered = D890UV_SETTINGS_PROFILE.sections.flatMap((s) => s.fields);
+    for (const d of rendered) {
+      const bare = d.label.replace(/ \[[^\]]+\]$/, '');
+      if (bare.endsWith(' *')) continue;
+      expect(derivedLabels.has(bare), `${bare} is derived but rendered unmarked`).toBe(false);
+    }
+    // And the hardware-placed ones must NOT be marked.
+    for (const f of D890_SETTINGS_FIELDS.filter((x) => !x.confidence)) {
+      expect(f.label.endsWith('*'), `${f.label} carries a marker it has not earned`).toBe(false);
+    }
+  });
+
+  it('gives every option list a matching listLength', () => {
+    // A select renders one entry per option, so a listLength that disagrees with
+    // the list is a claim about the radio that the UI then contradicts.
+    for (const f of D890_SETTINGS_FIELDS) {
+      if (!f.options) continue;
+      expect(f.listLength ?? f.options.length, `${f.key}`).toBe(f.options.length);
+      expect(f.max, `${f.key} max should be the last index`).toBe(f.options.length - 1);
+    }
+  });
+
+  it('places the two frequency runs where the marshaller loops sit', () => {
+    // The whole alignment between this table and the marshaller's turns on
+    // these two runs: `for i = 0 to 3` loops over four u32s, which the static
+    // trace counted as four single bytes. If either run moves, every vendorName
+    // after it is off by 12.
+    const freq = new Map(D890_SETTINGS_FREQUENCIES.map((f) => [f.vendorField, f.offset] as const));
+    expect(freq.get('VfoScanFreq0')).toBe(0x058);
+    expect(freq.get('VfoScanFreq3')).toBe(0x064);
+    expect(freq.get('AutoRepFreq0')).toBe(0x0c4);
+    expect(freq.get('AutoRepFreq3')).toBe(0x0d0);
+    // Nothing else may claim the 16 bytes each run covers.
+    for (const base of [0x058, 0x0c4]) {
+      for (let i = 0; i < 16; i++) expect(byOffset.has(base + i)).toBe(false);
+    }
+  });
+
+  it('puts PF3 Long Key between PF2 Long Key and P1 Long Key', () => {
+    const byKey = new Map(D890_SETTINGS_FIELDS.map((f) => [f.key, f] as const));
+    expect(byKey.get('pf2LongKey')?.offset).toBe(0x042);
+    expect(byKey.get('pf3LongKey')?.offset).toBe(0x043);
+    expect(byKey.get('p1LongKey')?.offset).toBe(0x044);
+    // It used to be an unmapped byte, and must not be listed as both.
+    expect(byOffset.has(0x043)).toBe(false);
+  });
+});
+
 describe('key-function vocabulary', () => {
   it('holds all 67 entries with no gaps', () => {
     expect(D890_KEY_FUNCTIONS).toHaveLength(67);
@@ -237,9 +344,12 @@ describe('key-function vocabulary', () => {
     for (const [i, label] of anchors) expect(D890_KEY_FUNCTIONS[i]).toBe(label);
   });
 
-  it('covers all nine controls that share it', () => {
+  it('covers all ten controls that share it', () => {
     const byKey = new Map(D890_SETTINGS_FIELDS.map((f) => [f.key, f] as const));
-    expect(D890_KEY_FUNCTION_FIELDS).toHaveLength(9);
+    // Ten, not nine: PF3 Long Key (0x043) was invisible to the CPS sweep and
+    // only surfaced when the vendor settings marshaller named it PF3_L.
+    expect(D890_KEY_FUNCTION_FIELDS).toHaveLength(10);
+    expect(D890_KEY_FUNCTION_FIELDS).toContain('pf3LongKey');
     for (const k of D890_KEY_FUNCTION_FIELDS) {
       const f = byKey.get(k);
       expect(f, `unknown field ${k}`).toBeDefined();

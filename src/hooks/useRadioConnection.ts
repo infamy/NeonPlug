@@ -2,8 +2,11 @@ import { useState, useCallback } from 'react';
 import type { RadioProtocol } from '../types/radio';
 import { createDefaultProtocol, createProtocolForModel } from '../radios';
 import { DM32UVProtocol } from '../radios/dm32uv/protocol';
+import { BaseDigitalProtocol } from '../radios/shared/BaseProtocols';
 import { getCapabilitiesForModel } from '../radios/capabilities';
 import type { Contact } from '../models/Contact';
+import type { QuickContact } from '../models/QuickContact';
+import type { RXGroup } from '../models/RXGroup';
 import { useRadioStore } from '../store/radioStore';
 import { useChannelsStore } from '../store/channelsStore';
 import { useZonesStore } from '../store/zonesStore';
@@ -150,6 +153,12 @@ export function useRadioConnection() {
 
       // Narrow to DM32UVProtocol once; all DM32-specific calls go through this variable.
       const dm32 = proto instanceof DM32UVProtocol ? proto : null;
+      // Any DMR radio, DM-32 included. `readRXGroups` and `readQuickContacts`
+      // are optional on the base, so they are called defensively below.
+      const digital = proto instanceof BaseDigitalProtocol ? (proto as BaseDigitalProtocol & {
+        readRXGroups?: () => Promise<RXGroup[]>;
+        readQuickContacts?: () => Promise<QuickContact[]>;
+      }) : null;
 
       if (caps?.supportsBulkRead && dm32) {
         onProgress?.(15, 'Reading all memory blocks...', steps[3]);
@@ -208,6 +217,31 @@ export function useRadioConnection() {
         if (dm32) setRawScanListData(dm32.rawScanListData);
       }
 
+
+      // Generic DMR content — radio IDs, receive groups and talkgroups — is
+      // common to every digital radio, so it is gated on the DIGITAL base class
+      // and not on the DM-32. It used to sit inside the `if (dm32)` block below,
+      // which meant the DA-7X2 read its channels, zones and scan lists and then
+      // silently skipped everything the Digital tab renders: the tab came up
+      // empty on a radio whose driver could read all three.
+      //
+      // The raw block captures stay DM-32-only. Those are its clone-image
+      // debugging aids and have no meaning for an address-addressed radio.
+      if (digital && !dm32) {
+        try {
+          setRadioIds(await digital.readDMRRadioIDs());
+        } catch (err) { console.warn('Could not read DMR Radio IDs:', err); sectionReadWarnings.push('DMR Radio IDs'); }
+
+        try {
+          const groups = await digital.readRXGroups?.();
+          if (groups) setRXGroups(groups);
+        } catch (err) { console.warn('Could not read RX Groups:', err); sectionReadWarnings.push('RX Groups'); }
+
+        try {
+          const quick = await digital.readQuickContacts?.();
+          if (quick) setQuickContacts(quick);
+        } catch (err) { console.warn('Could not read Talk Groups:', err); sectionReadWarnings.push('Talk Groups'); }
+      }
 
       if (dm32) {
         try {

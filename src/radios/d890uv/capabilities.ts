@@ -67,6 +67,13 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   channelColumns: [
     'freeToAir', 'loneWorker', 'aprs', 'squelch', 'pttId',
     'audioProcessing', 'encryption', 'confirmations',
+    // Declarative extras (EXTRA_CHANNEL_COLUMNS). Every one of these is a real
+    // column in the vendor's 77-column export and a real byte in the channel
+    // record; several are marked in the UI because only the OFFSET is confirmed
+    // and the value range is not. DA7X2-NEEDS-CONFIRMING.md tracks which.
+    'customCtcss', 'toneSignalling', 'reverse', 'busyLock', 'frequencyCorrection',
+    'txColorCode', 'slotSuit', 'dmrAdvanced', 'scanRoaming', 'ranging',
+    'callConfirmation', 'messaging', 'aprsAdvanced', 'emergencyCodes',
   ],
   /** Four levels, confirmed on hardware against the vendor CPS export. */
   powerLevels: ['Low', 'Medium', 'High', 'Turbo'],

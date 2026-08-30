@@ -13,6 +13,7 @@ import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import type { Channel } from '../../models/Channel';
 import { ChannelEditModal } from './ChannelEditModal';
 import { ChannelRow, isVFOChannel, type CellChangeHandler } from './ChannelRow';
+import { extraColumnsFor, extraColumnTitle, extraColumnMarker } from './extraChannelColumns';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { Card } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
@@ -291,6 +292,22 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="DMR Radio ID Index for TX (0=None, 1-255=Index into DMR Radio IDs list)">TX DMR ID</th>
               </>
             )}
+            {/* Radio-specific extras, rendered from EXTRA_CHANNEL_COLUMNS so the
+                header and the cell cannot get out of step. A trailing * marks a
+                field whose byte offset is known but whose value range has not
+                been confirmed on hardware — hover for the detail. */}
+            {extraColumnsFor(declared).map((c) => (
+              <th
+                key={c.field}
+                className={`px-2 py-2 text-neon-cyan font-bold ${
+                  c.editor.kind === 'boolean' ? 'text-center min-w-[45px]' : 'text-left min-w-[70px]'
+                }`}
+                title={extraColumnTitle(c)}
+              >
+                {c.header}
+                {extraColumnMarker(c)}
+              </th>
+            ))}
             {/* Common fields - work for both */}
             <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]" title="TX Contact (Group/Private/All Call - index into Contacts list)">TG</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px] sticky right-0 bg-dark-charcoal z-30">Actions</th>

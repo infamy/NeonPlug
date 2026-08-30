@@ -559,10 +559,11 @@ describe('record parsing', () => {
     rec.set([0x14, 0x00], 0x06); // look back A = 2.0s
     rec.set([0x32, 0x00], 0x0c); // dwell = 5.0s
     wideInto(rec, 0x0e, 'ALL');
-    rec.fill(0xff, 0x30, 0xf8);
+    rec.fill(0xff, 0x30, 0x94);
     rec.set([0x00, 0x00], 0x30); // member -> channel 1
     rec.set([0x02, 0x00], 0x32); // member -> channel 3
-    rec[0xf8] = 2;
+    rec[0x94] = 2; // revert channel — immediately after the 50-slot member array
+    rec[0x97] = 5; // analog hold
 
     const sl = parseScanList(rec, 0);
     expect(sl.name).toBe('ALL');
@@ -573,6 +574,7 @@ describe('record parsing', () => {
     expect(sl.lookBackTimeA).toBe(20); // deciseconds
     expect(sl.dwellTime).toBe(50);
     expect(sl.revertChannel).toBe(2);
+    expect(sl.analogHold).toBe(5);
   });
 });
 

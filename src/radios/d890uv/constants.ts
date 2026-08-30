@@ -120,6 +120,18 @@ export const D890_ID_RESPONSE = {
  * data consistent with a 0x10 baseline, then cache it. Writes are NOT negotiable
  * — oversized writes desynchronise the radio.
  */
+/**
+ * Round a span up to the radio's 16-byte read granularity.
+ *
+ * Structure sizes and READ spans are not the same number, and conflating them
+ * cost a working read: a zone name is 34 bytes, `readMemory` rejects any span
+ * that is not a multiple of 16, and the whole codeplug read folded at the first
+ * zone. Reading a few bytes past a record is harmless — the decoder takes what
+ * it needs — so every read length below is derived through this rather than
+ * hand-written, which is why the mistake cannot come back.
+ */
+const alignRead = (bytes: number): number => Math.ceil(bytes / 0x10) * 0x10;
+
 export const D890_BLOCK = {
   /** Largest read the protocol allows (240 bytes). */
   MAX_READ_LEN: 0xf0,
@@ -207,14 +219,44 @@ export const D890_ADDR = {
   ZONE_HIDE_SIZE: 0x20,
   ZONE_NAMES: 0x3600000,
   ZONE_NAME_STRIDE: 0x40,
-  ZONE_NAME_LEN: 0x20,
+  /**
+   * 34 bytes = 17 UTF-16LE units, 0xFFFF-terminated — the vendor marshaller
+   * writes the terminator after a full 16-character name, so a 32-byte read
+   * stops one unit short of it. 0x22..0x3F of the stride is untouched.
+   */
+  ZONE_NAME_LEN: 0x22,
+  /** Read span for a zone name — 0x22 rounded up to the 16-byte granularity. */
+  ZONE_NAME_READ: alignRead(0x22),
   ZONE_CHANNELS: 0x2000000,
   ZONE_CHANNELS_STRIDE: 0x200,
-  /** Per-zone A/B channel selection, as zone-local member positions. */
+  /**
+   * Per-zone A/B channel selection.
+   *
+   * These live inside the settings region's address range but belong to the
+   * ZONE record — the vendor zone marshaller writes them, the settings
+   * marshaller does not touch them. Each is a u16 holding the zero-based
+   * POSITION within that zone's own member list, not a channel number, so
+   * resolving one needs the zone's membership array.
+   */
   ZONE_A_CHANNEL: 0x3500400,
   ZONE_B_CHANNEL: 0x3500600,
+  /**
+   * Per-zone roaming bitmap, 32 bytes (256 bits) per zone: bit k set means the
+   * zone's k-th member is a roam channel. The vendor writer clears all 0x20
+   * bytes before setting any bit. Not read by this driver yet.
+   */
+  ZONE_ROAM: 0x4c00000,
+  ZONE_ROAM_STRIDE: 0x20,
 
-  /** Radio (DMR) IDs. */
+  /**
+   * Radio (DMR) IDs.
+   *
+   * 0x3482c40 is the 32-byte gap between the zone-hidden bitmap (0x3482c20) and
+   * the scan-list bitmap (0x3482c60). None of the six record marshallers in the
+   * vendor CPS touches it, so the decompilation cannot name its owner; this
+   * driver reads it as the radio-ID occupancy bitmap on the strength of a live
+   * read alone. Treat the ownership as observed, not proven.
+   */
   RADIO_ID_SET: 0x3482c40,
   RADIO_ID_SET_SIZE: 0x20,
   RADIO_ID_DATA: 0x3680000,
@@ -227,6 +269,17 @@ export const D890_ADDR = {
   SCAN_LIST_SET_SIZE: 0x20,
   SCAN_LIST_DATA: 0x2100000,
   SCAN_LIST_STRIDE: 0x200,
+  /**
+   * Scan lists are BLOCKED like channels, not flat: the vendor marshaller pair
+   * (`sub_005da370` write / `sub_005daeb0` read) computes
+   * `0x2100000 + (i / 32) * 0x80000 + (i % 32) * 0x200`.
+   *
+   * Flat addressing is correct for lists 0-31 and wrong for every list above
+   * that — list 32 sits at 0x2180000, not 0x2104000. Only lists 0-1 have ever
+   * been read from hardware, so the split itself is from the decompilation.
+   */
+  SCAN_LISTS_PER_BLOCK: 32,
+  SCAN_LIST_BLOCK_STRIDE: 0x80000,
   /** Only 0x00..0xf9 of each stride is meaningful; the rest is zero fill. */
   SCAN_LIST_USED: 0xfa,
 
@@ -239,8 +292,12 @@ export const D890_ADDR = {
    * reference doc's 0x4f0 (10,112 bits) was rounded up.
    */
   TALKGROUP_SET_SIZE: 0x4e2,
+  /** Read span for the talkgroup bitmap — 1250 bytes rounded up to 1264. */
+  TALKGROUP_SET_READ: alignRead(0x4e2),
   TALKGROUP_DATA: 0x3a00000,
   TALKGROUP_STRIDE: 0xc8,
+  /** Read span for one talkgroup record — 200 bytes rounded up to 208. */
+  TALKGROUP_READ: alignRead(0xc8),
   /**
    * Talkgroups are stored in BANKS, not as one flat array — the vendor CPS
    * computes `0x3a00000 + bank * 0x40000 + index * 0xc8` at three identical
@@ -292,11 +349,23 @@ export const D890_LIMITS = {
   /** Bitmap capacity, i.e. the hard structural ceiling above the CPS cap. */
   ZONES_BITMAP_CAPACITY: 256,
   /**
-   * Radio spec: up to 160 channels per zone. The 0x200-byte stride would hold
-   * 256 u16 entries, but the radio caps it at 160 — structural capacity is not
-   * the same as the limit the radio enforces.
+   * 160 channels per zone — what the vendor CPS lets a user build, and so what
+   * NeonPlug offers.
+   *
+   * This is deliberately NOT the structural capacity. The zone marshaller
+   * (`sub_005b4360` write / `sub_005b50b0` read) copies a fixed 500-byte run —
+   * 250 u16 entries — and the CPS zone record reserves +0x06..+0x1F9 for all
+   * 250. The radio and the file format hold 250; the CPS UI stops at 160. Since
+   * a codeplug NeonPlug builds has to load in the vendor software too, the
+   * lower number is the one to enforce.
    */
   ZONE_MEMBERS_MAX: 160,
+  /**
+   * Structural capacity of the membership array, used when PARSING so a zone
+   * the vendor CPS could not have built (hand-edited, or a future firmware) is
+   * read whole instead of silently truncated. Enforcement uses the 160 above.
+   */
+  ZONE_MEMBERS_STRUCTURAL: 250,
 
   SCAN_LISTS_MAX: 100,
   /**
@@ -318,6 +387,86 @@ export const D890_LIMITS = {
   /** Names are wide-char (2 bytes/char) everywhere on this radio. */
   NAME_MAX_CHARS: 16,
 } as const;
+
+/**
+ * Scan-list Revert Channel, byte 0x94 — the complete 8-entry list.
+ *
+ * Enumerated 2026-08-30 by writing a codeplug with ten scan lists whose revert
+ * index walked 0-9 and reading the vendor CPS's own export back. Indices 8 and 9
+ * came back as `Selected`: **the CPS silently clamps an out-of-range index
+ * rather than rejecting it**, which is why the list is 8 long and not 10.
+ *
+ * This also settles the earlier puzzle. Two lists captured from hardware stored
+ * 4 and 6 and displayed "Last Called" and "Priority Channel Select1 + TalkBack",
+ * which fitted no sensible ordering — because the ordering was assumed to be
+ * pairs. It is not; the four plain modes come first and the TalkBack variants of
+ * the two priority modes are appended at the end.
+ */
+export const D890_SCAN_REVERT_CHANNEL = [
+  'Selected',
+  'Selected + TalkBack',
+  'Priority Channel Select1',
+  'Priority Channel Select2',
+  'Last Called',
+  'Last Used',
+  'Priority Channel Select1 + TalkBack',
+  'Priority Channel Select2 + TalkBack',
+] as const;
+
+/**
+ * Scan-list Scan Mode, byte 0x00 — a boolean, not the multi-entry list the name
+ * suggests. Indices 2 and 3 both read back as `Off`, same clamping behaviour.
+ */
+export const D890_SCAN_MODE = ['Off', 'On'] as const;
+
+/**
+ * Channel "Analog APRS PTT Mode", byte 0x36.
+ *
+ * From the vendor CPS's own export of a codeplug built to vary it. The equivalent
+ * digital field at 0x37 is a plain Off/On — index 2 clamps back to On.
+ */
+export const D890_ANALOG_APRS_PTT_MODE = [
+  'Off',
+  'Start Of Transmission',
+  'End Of Transmission',
+] as const;
+
+/**
+ * Channel "Busy Lock/TX Permit", byte 0x1a bits 3-0 (the vendor's `RepLock`).
+ *
+ * ⚠️ Index 0 is NOT a fixed label. The CPS renders a stored 0 as "Off" on an
+ * analog channel and "Always" on a digital one, which is exactly why this column
+ * looked perfectly confounded with channel type on every codeplug captured
+ * before one was built to vary the byte itself. It is a real stored field.
+ *
+ * Indices above 2 have never been observed.
+ */
+export const D890_BUSY_LOCK = ['Off / Always', 'Different CDT', 'Channel Free'] as const;
+
+/**
+ * Group / Private Call Hold Time — the vocabulary, in order.
+ *
+ * Both controls share one list. Recovered 2026-08-30 from five screenshots of
+ * the dropdown open, scrolled head to tail: 1s through 30s in one-second steps,
+ * then 30min, then Infinite. Thirty-two entries by direct count.
+ *
+ * ⚠️ The INDEX ORIGIN is not settled, and the two available signals disagree.
+ * Direct count says index 0 is "1s". An earlier sweep pressed {END} on this
+ * control and read back 32, which would make the list 33 long with "Infinite" at
+ * 32. The screenshots support 32 entries — and the same pass established that
+ * the CPS silently CLAMPS an out-of-range index rather than rejecting it, which
+ * would produce exactly that spurious 33.
+ *
+ * Presented rather than withheld, because a named list a user can check against
+ * their radio beats a bare index. The settling test is one line: set the control
+ * to "5s" in the vendor CPS, save, and read `.rdt` 0x087 — 4 confirms this list,
+ * 5 means something precedes "1s".
+ */
+export const D890_CALL_HOLD_TIME: readonly string[] = [
+  ...Array.from({ length: 30 }, (_, i) => `${i + 1}s`),
+  '30min',
+  'Infinite',
+];
 
 /** Sentinel values used across the record formats. */
 export const D890_SENTINEL = {

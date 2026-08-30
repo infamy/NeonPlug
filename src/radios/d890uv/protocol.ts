@@ -17,6 +17,7 @@ import { BaseDigitalProtocol } from '../shared/BaseProtocols';
 import type { Channel } from '../../models/Channel';
 import type { Zone } from '../../models/Zone';
 import type { Contact } from '../../models/Contact';
+import type { QuickContact } from '../../models/QuickContact';
 import type { RXGroup } from '../../models/RXGroup';
 import type { DMRRadioID } from '../../models/DMRRadioID';
 import type { RadioInfo } from '../../types/radio';
@@ -34,6 +35,7 @@ import {
   occupiedIndices,
   parseZone,
   parseTalkgroup,
+  parseTalkgroupQuick,
   parseRxGroup,
   parseScanList,
   parseChannel,
@@ -242,7 +244,7 @@ export class D890UVProtocol extends BaseDigitalProtocol {
     for (const index of present) {
       const nameBytes = await conn.readMemory(
         zoneNameAddress(index),
-        D890_ADDR.ZONE_NAME_LEN
+        D890_ADDR.ZONE_NAME_READ
       );
       const memberBytes = await conn.readMemory(
         zoneChannelsAddress(index),
@@ -265,7 +267,7 @@ export class D890UVProtocol extends BaseDigitalProtocol {
     const conn = this.requireConnection();
     const bitmap = await conn.readMemory(
       D890_ADDR.TALKGROUP_SET,
-      D890_ADDR.TALKGROUP_SET_SIZE
+      D890_ADDR.TALKGROUP_SET_READ
     );
     const present = occupiedIndices(
       decodeOccupancyBitmap(
@@ -279,11 +281,42 @@ export class D890UVProtocol extends BaseDigitalProtocol {
     for (const index of present) {
       const record = await conn.readMemory(
         talkgroupAddress(index),
-        D890_ADDR.TALKGROUP_STRIDE
+        D890_ADDR.TALKGROUP_READ
       );
       contacts.push(parseTalkgroup(record, index));
     }
     return contacts;
+  }
+
+  /**
+   * Talkgroups as `QuickContact`s — what the Digital tab and the channel grid's
+   * TX-contact dropdown actually read.
+   *
+   * Separate from `readContacts()` rather than derived from it: the two land in
+   * different stores and the codeplug read only wants this one, so deriving would
+   * mean either a second pass over the radio or a coupling between two flows that
+   * have no other reason to know about each other.
+   */
+  async readQuickContacts(): Promise<QuickContact[]> {
+    const conn = this.requireConnection();
+    const bitmap = await conn.readMemory(
+      D890_ADDR.TALKGROUP_SET,
+      D890_ADDR.TALKGROUP_SET_READ
+    );
+    const present = occupiedIndices(
+      decodeOccupancyBitmap(
+        bitmap,
+        D890_LIMITS.TALK_GROUPS_MAX,
+        D890_TALKGROUP_BITMAP_INVERTED
+      )
+    );
+
+    const out: QuickContact[] = [];
+    for (const index of present) {
+      const record = await conn.readMemory(talkgroupAddress(index), D890_ADDR.TALKGROUP_READ);
+      out.push(parseTalkgroupQuick(record, index));
+    }
+    return out;
   }
 
   /**

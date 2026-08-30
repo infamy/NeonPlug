@@ -150,6 +150,59 @@ export interface Channel {
    * and guessing would be worse than exposing the raw value.
    */
   offsetFrequencyEx?: number;
+  // ---- DA-7X2 fields recovered from the vendor channel marshaller ------
+  // Offsets and bit weights from `sub_005af490` / `sub_005b1750`, whose writer
+  // and reader touch exactly the same 54 record offsets. Every one of these
+  // read a single constant value across the 102-channel hardware capture, so
+  // the offsets are decompilation-derived and the value ranges are unobserved —
+  // except `txColorCode`, which varies across all 16 values.
+  /** Vendor "txcc" — TX colour code, separate from the RX colour code. */
+  txColorCode?: number;
+  /**
+   * Vendor "Busy Lock/TX Permit" (`RepLock`), raw index.
+   *
+   * The CPS's exported column is DERIVED from the channel type (analog shows
+   * Off, digital shows Always) — the stored byte read 0 on every channel of a
+   * codeplug built specifically to vary it. The vocabulary is not established.
+   */
+  busyLock?: number;
+  /** Vendor "Emergency System" index (`EMG_Key`). */
+  emergencySystemIndex?: number;
+  /** Vendor "DMR MODE" (`TDMA`), 2 bits. */
+  dmrMode?: number;
+  /** Vendor "DataACK Disable" (`Response`). */
+  dataAckDisable?: boolean;
+  /** Vendor "Digital Duplex" — stored as `simplex`, so this is its inverse. */
+  digitalDuplex?: boolean;
+  /** Vendor "Exclude channel from roaming" (`roam_forbid`). */
+  excludeFromRoaming?: boolean;
+  /** Vendor `rec_only` — receive-only channel. */
+  receiveOnly?: boolean;
+  /** Vendor "Auto Scan" (`auto_scan`). */
+  autoScan?: boolean;
+  /** Vendor "Idle TX" (`idle_tx`). */
+  idleTx?: boolean;
+  /** Vendor `dmr_crc_ignore`. */
+  dmrCrcIgnore?: boolean;
+  /** Vendor "Analog APRS PTT Mode" (`AprsUpDate`), raw index. */
+  analogAprsPttMode?: number;
+  /** Vendor "Digital APRS PTT Mode" (`DigiAprsUpDate`), raw index. */
+  digitalAprsPttMode?: number;
+  /** Vendor "Digital APRS Report Channel" (`DigiAprsUpNum`). */
+  digitalAprsReportChannel?: number;
+  /** Vendor `NormalEmgCode`. */
+  normalEmergencyCode?: number;
+  /** Vendor "SMS Confirmation" (`sms_rec`). */
+  smsConfirmation?: boolean;
+  /** Vendor "Ana APRS Mute" (`ana_aprs_mute`). */
+  analogAprsMute?: boolean;
+  /** Vendor "Send Talker Alias DMR/NX" (`tx_talkalaes`). */
+  sendTalkerAlias?: boolean;
+  /** Vendor `AnaAprsTxPath`. */
+  analogAprsTxPath?: number;
+  /** Vendor "ARC4" (`Arc4EmgCode`). */
+  arc4Code?: number;
+
   encryption?: boolean;        // Byte 0x1D, bit 7 (0x80): Encryption enabled
   encryptionId?: number;       // Byte 0x1E: Encryption ID (0-8, 0=None)
   tdmaDirectMode?: boolean;    // Byte 0x1D, bit 5 (0x20): TDMA Direct Mode

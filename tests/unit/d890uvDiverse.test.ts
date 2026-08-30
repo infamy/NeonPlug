@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseChannel, channelAddresses } from '../../src/radios/d890uv/structures';
-import { D890_ADDR } from '../../src/radios/d890uv/constants';
+import {
+  D890_ADDR,
+  D890_LIMITS,
+  D890_SCAN_REVERT_CHANNEL,
+  D890_SCAN_MODE,
+} from '../../src/radios/d890uv/constants';
 
 /**
  * End-to-end read-path check against a deliberately varied codeplug.
@@ -142,6 +147,7 @@ describe('DA-7X2 diverse codeplug — read path', () => {
 import {
   parseZone,
   parseScanList,
+  scanListAddress,
   D890_SCAN_TIME_STEP_S,
 } from '../../src/radios/d890uv/structures';
 
@@ -380,6 +386,74 @@ describe('DA-7X2 scan-list timers and priorities', () => {
     expect(b.priorityChannel2Raw).toBe(0xffff); // CPS: 'Off'
     expect(b.prioritySelect).toBe(1); // Select1 only
   });
+
+  it('reads the revert channel from 0x94, immediately after the member array', () => {
+    // Was read from 0xf8, which is inside the zero fill: both lists returned 0.
+    // 0x94 is where the vendor marshaller puts Scn_RevertCh, and it is the only
+    // byte in the record that separates these two lists - the CPS shows them as
+    // 'Last Called' and 'Priority Channel Select1 + TalkBack'.
+    expect(list(0).revertChannel).toBe(4);
+    expect(list(1).revertChannel).toBe(6);
+    // Those two indices now have names. The list was enumerated by writing a
+    // codeplug with ten scan lists whose revert index walked 0-9 and reading the
+    // vendor CPS's export back; 8 and 9 came back as "Selected", so the list is
+    // eight long and the CPS silently clamps rather than rejecting.
+    expect(list(0).revertChannelLabel).toBe('Last Called');
+    expect(list(1).revertChannelLabel).toBe('Priority Channel Select1 + TalkBack');
+    expect(D890_SCAN_REVERT_CHANNEL).toHaveLength(8);
+    // The pairing only looked wrong because the ordering was assumed to alternate
+    // plain/TalkBack. It does not: the four plain modes come first and the two
+    // TalkBack variants of the priority modes are appended at the end.
+    expect(D890_SCAN_REVERT_CHANNEL[2]).toBe('Priority Channel Select1');
+    expect(D890_SCAN_REVERT_CHANNEL[6]).toBe('Priority Channel Select1 + TalkBack');
+  });
+
+  it('treats Scan Mode as the boolean it turned out to be', () => {
+    // Named "mode", but only index 1 reads On — 2 and 3 both clamp back to Off.
+    expect(D890_SCAN_MODE).toEqual(['Off', 'On']);
+    for (const i of [0, 1]) expect(list(i).scanModeLabel).toBe('Off');
+  });
+
+  it('reads the scan mode and the three hold timers around the member array', () => {
+    for (const i of [0, 1]) {
+      const sl = list(i);
+      expect(sl.scanMode).toBe(0); // CPS: 'Off'
+      expect(sl.digitalGroupHold).toBe(0);
+      expect(sl.digitalPriorityHold).toBe(0);
+      expect(sl.analogHold).toBe(0);
+    }
+  });
+
+  it('parses a zone past the 160-channel UI cap without truncating it', () => {
+    // Two different numbers, on purpose. The vendor CPS refuses to build a zone
+    // above 160 and NeonPlug enforces the same, because a codeplug we produce
+    // has to load in the OEM software. But the marshaller copies 250 u16 slots
+    // and the region holds them, so READING clamps at the structural figure —
+    // truncating on read loses data with no way to notice.
+    expect(D890_LIMITS.ZONE_MEMBERS_MAX).toBe(160);
+    expect(D890_LIMITS.ZONE_MEMBERS_STRUCTURAL).toBe(250);
+
+    const members = new Uint8Array(D890_ADDR.ZONE_CHANNELS_STRIDE).fill(0xff);
+    for (let i = 0; i < 250; i++) {
+      members[i * 2] = i & 0xff;
+      members[i * 2 + 1] = (i >> 8) & 0xff;
+    }
+    const name = new Uint8Array(D890_ADDR.ZONE_NAME_LEN);
+    const zone = parseZone(name, members, 0);
+    expect(zone.channels).toHaveLength(250);
+    expect(zone.channels[249]).toBe(250);
+  });
+
+  it('blocks scan lists 32 at a time, like channels', () => {
+    expect(scanListAddress(0)).toBe(D890_ADDR.SCAN_LIST_DATA);
+    expect(scanListAddress(31)).toBe(D890_ADDR.SCAN_LIST_DATA + 31 * D890_ADDR.SCAN_LIST_STRIDE);
+    // The bug this guards: flat addressing puts list 32 at 0x2104000, which is
+    // inside list 32's own block only by accident - the record is at 0x2180000.
+    expect(scanListAddress(32)).toBe(D890_ADDR.SCAN_LIST_DATA + D890_ADDR.SCAN_LIST_BLOCK_STRIDE);
+    expect(scanListAddress(64)).toBe(
+      D890_ADDR.SCAN_LIST_DATA + 2 * D890_ADDR.SCAN_LIST_BLOCK_STRIDE,
+    );
+  });
 });
 
 describe('DA-7X2 remaining channel fields', () => {
@@ -496,5 +570,89 @@ describe('DA-7X2 fields taken from the decompiled marshaller', () => {
       if (i + 1 >= 4000) return;
       expect(parse2(slot).offsetFrequencyEx).toBe(0);
     });
+  });
+
+  it('reads the TX colour code from its own byte, not the RX one', () => {
+    // 0x20 is CC and 0x43 is TXCC. Hardware cannot separate them on this
+    // codeplug - every channel was programmed with both equal, across all 16
+    // values - so the two-byte split comes from the marshaller. What the
+    // fixture CAN prove is that the decode reads 0x43 and not 0x20 again.
+    const seen = new Set<number>();
+    IDX2.forEach((i, slot) => {
+      if (i + 1 >= 4000) return;
+      const g = parse2(slot);
+      expect(g.txColorCode).toBe(g.colorCode);
+      seen.add(g.txColorCode!);
+    });
+    expect(seen.size).toBe(16);
+
+    const rec = Uint8Array.from(B2.subarray(0, 0x80));
+    rec[0x43] = (rec[0x20] + 1) & 0x0f;
+    const split = parseChannel(rec, 0).channel;
+    expect(split.txColorCode).toBe(rec[0x43]);
+    expect(split.colorCode).toBe(rec[0x20]);
+  });
+
+  it('reads Busy Lock/TX Permit as the stored 0, not the CPS display value', () => {
+    // The CPS export shows Off for analog channels and Always for digital ones,
+    // which made this column look perfectly confounded with channel type. It is
+    // NOT a derived column, as this test once claimed: a codeplug built to set
+    // the byte directly exported "Different CDT" and "Channel Free" for 1 and 2.
+    // What is true is narrower — a stored 0 renders as Off on analog and Always
+    // on digital, so a codeplug that leaves every channel at 0 cannot separate
+    // the two. Which is exactly what the captured one does.
+    IDX2.forEach((i, slot) => {
+      if (i + 1 >= 4000) return;
+      expect(parse2(slot).busyLock).toBe(0);
+    });
+    const rec = Uint8Array.from(B2.subarray(0, 0x80));
+    rec[0x1a] = 0x35; // RPGA=3 (Optional Signal), RepLock=5
+    const g = parseChannel(rec, 0).channel;
+    expect(g.busyLock).toBe(5);
+    expect(g.signalingType).toBe('Five Tone');
+  });
+
+  it('decodes the marshaller flag bytes that the captured codeplug leaves at one value', () => {
+    // 0x22 / 0x34 / 0x36-0x3d hold a single value on all 102 channels, so this
+    // asserts the reading rather than the semantics. It exists so that a future
+    // codeplug which does vary them fails here loudly instead of silently
+    // changing meaning.
+    IDX2.forEach((i, slot) => {
+      if (i + 1 >= 4000) return;
+      const g = parse2(slot);
+      expect(g.emergencySystemIndex).toBe(0);
+      expect(g.dmrMode).toBe(0);
+      expect(g.dataAckDisable).toBe(false);
+      // 0x34 reads 0x02 on every channel: bit 1 (`simplex`) set, everything
+      // else clear. The CPS shows Digital Duplex = Off, which is what makes
+      // this field the inverse of the stored bit.
+      expect(g.digitalDuplex).toBe(false);
+      expect(g.excludeFromRoaming).toBe(false);
+      expect(g.receiveOnly).toBe(false);
+      expect(g.autoScan).toBe(false);
+      expect(g.idleTx).toBe(false);
+      expect(g.compander).toBe(false);
+      expect(g.dmrCrcIgnore).toBe(false);
+      expect(g.analogAprsPttMode).toBe(0);
+      expect(g.digitalAprsPttMode).toBe(0);
+      expect(g.digitalAprsReportChannel).toBe(1); // stored 0, displayed one-based
+      expect(g.normalEmergencyCode).toBe(0);
+      expect(g.smsConfirmation).toBe(false);
+      expect(g.analogAprsMute).toBe(false);
+      expect(g.sendTalkerAlias).toBe(false);
+      expect(g.analogAprsTxPath).toBe(0);
+      expect(g.arc4Code).toBe(0);
+    });
+  });
+
+  it('keeps the contact reference an index, against the decompilation', () => {
+    // The vendor writer stores `Call_ID` as a clean 32-bit little-endian value
+    // and the RE notes read that as "the DMR contact ID itself, not an index".
+    // On this radio it is an index: channel 3 uses talkgroup "TG Max", whose
+    // DMR ID is 16,776,415, and its 0x14 word reads 2 - the zero-based position
+    // of that talkgroup in the six-entry list.
+    const rec = B2.subarray(2 * 0x80, 3 * 0x80);
+    expect(rec[0x14] | (rec[0x15] << 8) | (rec[0x16] << 16) | (rec[0x17] << 24)).toBe(2);
+    expect(parseChannel(rec, 2).channel.contactId).toBe(3);
   });
 });

@@ -1,7 +1,20 @@
 /**
  * AT-D890UV / DA-7X2 wire framing — pure functions, no I/O.
  *
- * ⚠️ Transcribed from documentation, not verified on hardware.
+ * Provenance, best to worst:
+ *   - The READ path is exercised end to end against a real radio, and the frame
+ *     layout, the 8-bit additive checksum and its bounds are also confirmed
+ *     against the vendor CPS's own routine (`sub_0062b760`, disassembled: a
+ *     byte-add loop ending in `and ecx, 0x800000ff` — no CRC, no table).
+ *   - The read reply and the write request are THE SAME FRAME, so validating a
+ *     read reply's checksum validates the write checksum by construction.
+ *   - The WRITE path has never been executed, here or by the analysis this is
+ *     built on. It is inference.
+ *
+ * One deliberate divergence from the vendor CPS: it only ever reads 16 bytes at
+ * a time. Longer reads are negotiated here and work on hardware, so the 16-byte
+ * figure is the CPS's habit, not a protocol limit. Writes get no such benefit —
+ * no long-write form exists in the binary at all.
  *
  * Split out of connection.ts so the checksum and frame layout can be unit
  * tested without a serial port. A checksum that is off by one byte of range

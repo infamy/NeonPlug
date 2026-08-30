@@ -83,7 +83,26 @@ export type ChannelColumnGroup =
   // are DM-32 features. A radio that speaks DMR does not necessarily have them.
   | 'encryption'
   | 'tdma'
-  | 'confirmations';
+  | 'confirmations'
+  // Groups below are rendered from EXTRA_CHANNEL_COLUMNS rather than written
+  // out longhand in the table, so a header can no longer drift from its cell.
+  // They are deliberately fine-grained: a group is the unit a radio opts into,
+  // so bundling unrelated fields would force a radio to take columns it has no
+  // equivalent for.
+  | 'customCtcss'
+  | 'toneSignalling'
+  | 'reverse'
+  | 'busyLock'
+  | 'frequencyCorrection'
+  | 'txColorCode'
+  | 'slotSuit'
+  | 'dmrAdvanced'
+  | 'scanRoaming'
+  | 'ranging'
+  | 'callConfirmation'
+  | 'messaging'
+  | 'aprsAdvanced'
+  | 'emergencyCodes';
 
 export interface RadioCapabilitiesDiagnostics {
   parseRadioSettings: (data: Uint8Array) => RadioSettings;

@@ -1,0 +1,362 @@
+/**
+ * DA-7X2 / AT-D890UV byte maps, for the Diagnostics tab.
+ *
+ * This is documentation as data. It exists because the Diagnostics tab for this
+ * radio was almost empty: the clone-block panels the DM-32 uses have nothing to
+ * show for a sparse address-addressed radio, so the tab offered a region dump
+ * and little else. Everything here renders with no radio connected, which is
+ * where the reference value is — a user comparing NeonPlug against the OEM CPS
+ * needs to see what NeonPlug thinks each byte is, and how sure it is.
+ *
+ * Provenance is the point, not decoration:
+ *
+ *   hardware   — watched change on a real radio, or matched byte-for-byte
+ *                against the vendor CPS's own export of the same codeplug.
+ *   marshaller — read out of the vendor CPS's channel/zone/scan-list
+ *                marshallers (`sub_005af490` / `sub_005b1750` and their zone
+ *                and scan-list counterparts), whose writer and reader touch
+ *                exactly the same offsets. The offset is solid; the captured
+ *                codeplug held one value, so the range is unobserved.
+ *   inferred    — the offset is from the marshaller and the ENCODING is
+ *                reasoned rather than read.
+ *   unknown     — the byte is read off the radio and nothing claims it.
+ *
+ * Keep this in step with structures.ts. `tests/unit/d890uvLayout.test.ts`
+ * asserts that every offset the parser touches appears here, so a field added
+ * to the parser without a row fails the build rather than quietly going
+ * undocumented.
+ */
+
+import { D890_ADDR, D890_LIMITS } from './constants';
+
+export type D890Provenance = 'hardware' | 'marshaller' | 'inferred' | 'unknown';
+
+export interface D890LayoutRow {
+  /** Byte offset within the record, or the first byte of a multi-byte field. */
+  offset: number;
+  /** Number of bytes the field spans. */
+  length: number;
+  /** Bit range within the byte, when the field is narrower than a byte. */
+  bits?: string;
+  /** The vendor CPS's own name for the field. */
+  vendorName: string;
+  /** The vendor's user-facing column, where its export has one. */
+  cpsColumn?: string;
+  /** The Channel/ScanList model field NeonPlug decodes it into, if any. */
+  field?: string;
+  /** How the bytes encode the value. */
+  encoding: string;
+  provenance: D890Provenance;
+  note?: string;
+}
+
+/**
+ * The 0x80-byte channel record.
+ *
+ * The writer makes 55 accesses and the reader 88, and the two touch exactly the
+ * same 54 offsets — the strongest single cross-check available without hardware.
+ * Offsets 0x13, 0x2b-0x33 and 0x6f-0x7f are stepped over by both.
+ */
+export const D890_CHANNEL_LAYOUT: readonly D890LayoutRow[] = [
+  { offset: 0x00, length: 4, vendorName: 'RX_Fre', cpsColumn: 'Receive Frequency', field: 'rxFrequency',
+    encoding: 'BCD-as-hex, MSB first, /100000 → MHz', provenance: 'hardware' },
+  { offset: 0x04, length: 4, vendorName: 'Offset_Fre', cpsColumn: 'Transmit Frequency', field: 'txFrequency',
+    encoding: 'Same codec as RX_Fre. Simplex stores the TX frequency outright; the duplex modes store a delta.',
+    provenance: 'hardware',
+    note: 'Which of the two it is depends on the duplex bits at 0x08. That branch is a documented guess and it matters for every repeater channel.' },
+  { offset: 0x08, length: 1, bits: '1-0', vendorName: 'Type', cpsColumn: 'Channel Type', field: 'mode',
+    encoding: '0 A-Analog, 1 D-Digital, 2 A+D TX A, 3 D+A TX D', provenance: 'hardware',
+    note: 'The shared model has no mixed mode, so the channel is classified by what it TRANSMITS.' },
+  { offset: 0x08, length: 1, bits: '3-2', vendorName: 'Power', cpsColumn: 'Transmit Power', field: 'power',
+    encoding: '0 Low, 1 Mid, 2 High, 3 Turbo', provenance: 'hardware' },
+  { offset: 0x08, length: 1, bits: '5-4', vendorName: 'WN', cpsColumn: 'Band Width', field: 'bandwidth',
+    encoding: '0 = 12.5 kHz, 1 = 25 kHz', provenance: 'hardware' },
+  { offset: 0x08, length: 1, bits: '7-6', vendorName: 'Dup', encoding: '0 simplex, 1 +offset, 2 -offset',
+    provenance: 'hardware' },
+  { offset: 0x09, length: 1, bits: '1-0', vendorName: 'Dec_Type', cpsColumn: 'CTCSS/DCS Decode', field: 'rxCtcssDcs',
+    encoding: 'Tone kind for RX: none / CTCSS / DCS', provenance: 'hardware' },
+  { offset: 0x09, length: 1, bits: '3-2', vendorName: 'Enc_Type', cpsColumn: 'CTCSS/DCS Encode', field: 'txCtcssDcs',
+    encoding: 'Tone kind for TX', provenance: 'hardware' },
+  { offset: 0x09, length: 1, bits: '4', vendorName: 'Invert', cpsColumn: 'Reverse', field: 'reverse',
+    encoding: 'boolean', provenance: 'hardware' },
+  { offset: 0x09, length: 1, bits: '5', vendorName: 'OVIE', cpsColumn: 'PTT Prohibit', field: 'forbidTx',
+    encoding: 'boolean', provenance: 'hardware' },
+  { offset: 0x09, length: 1, bits: '6', vendorName: 'OacsuSet', cpsColumn: 'Call Confirmation', field: 'callConfirmation',
+    encoding: 'boolean', provenance: 'hardware' },
+  { offset: 0x09, length: 1, bits: '7', vendorName: 'TalkAround', cpsColumn: 'Talk Around(Simplex)', field: 'forbidTalkaround',
+    encoding: 'boolean, INVERTED — set means talkaround is allowed', provenance: 'hardware' },
+  { offset: 0x0a, length: 1, vendorName: 'Enc_CTCSS', field: 'txCtcssDcs',
+    encoding: 'CTCSS table index for TX', provenance: 'hardware',
+    note: 'Encode is TX and decode is RX — the opposite of the obvious reading, and they were swapped until a TX-only probe channel caught it.' },
+  { offset: 0x0b, length: 1, vendorName: 'Dec_CTCSS', field: 'rxCtcssDcs',
+    encoding: 'CTCSS table index for RX', provenance: 'hardware' },
+  { offset: 0x0c, length: 2, vendorName: 'Enc_DCS', field: 'txCtcssDcs',
+    encoding: 'u16 LE, octal-as-decimal, bit 9 = inverted', provenance: 'hardware' },
+  { offset: 0x0e, length: 2, vendorName: 'Dec_DCS', field: 'rxCtcssDcs',
+    encoding: 'u16 LE, same codec', provenance: 'hardware' },
+  { offset: 0x10, length: 2, vendorName: 'Define_CTCSS', cpsColumn: 'Custom CTCSS', field: 'customCtcssHz',
+    encoding: 'u16 LE, tenths of a Hz (1318 → 131.8)', provenance: 'hardware' },
+  { offset: 0x12, length: 1, vendorName: 'R2ToneDecGroup', cpsColumn: '2TONE Decode', field: 'twoToneDecode',
+    encoding: 'stored zero-based, displayed one-based', provenance: 'hardware',
+    note: 'Does not round-trip at 0: the writer maps v>0 → v-1 else 0, the reader v>15 → 0 else v+1.' },
+  { offset: 0x13, length: 1, vendorName: '(not used)', encoding: '—', provenance: 'marshaller',
+    note: 'Both the writer and the reader step from 0x12 straight to 0x14.' },
+  { offset: 0x14, length: 4, vendorName: 'Call_ID', cpsColumn: 'Contact/Talk Group', field: 'contactId',
+    encoding: 'u32 LE, zero-based INDEX into the talkgroup list', provenance: 'hardware',
+    note: 'The RE notes call this "the DMR contact ID itself, not an index". Hardware says otherwise: a channel using a talkgroup whose DMR ID is 16,776,415 stores 2.' },
+  { offset: 0x18, length: 1, vendorName: 'Own_ID', cpsColumn: 'Radio ID', field: 'dmrRadioIdIndex',
+    encoding: 'zero-based index into the radio-ID list', provenance: 'hardware' },
+  { offset: 0x19, length: 1, bits: '3-0', vendorName: 'Ptt_ID', cpsColumn: 'PTT ID', field: 'pttId',
+    encoding: '0 Off, 1 Start, 2 End, 3 Start&End', provenance: 'hardware' },
+  { offset: 0x19, length: 1, bits: '7-4', vendorName: 'SQLCON', cpsColumn: 'Squelch Mode', field: 'rxSquelchMode',
+    encoding: '0 Carrier, 1 CTCSS/DCS', provenance: 'hardware',
+    note: 'A full nibble — the writer packs SQLCON*0x10 + Ptt_ID. Reading it as one bit truncated any value above 1.' },
+  { offset: 0x1a, length: 1, bits: '3-0', vendorName: 'RepLock', cpsColumn: 'Busy Lock/TX Permit', field: 'busyLock',
+    encoding: 'raw index', provenance: 'marshaller',
+    note: 'The CPS DERIVES its displayed column from the channel type. This byte read 0 on every channel of a codeplug built to vary it, so the vocabulary is unknown.' },
+  { offset: 0x1a, length: 1, bits: '7-4', vendorName: 'RPGA', cpsColumn: 'Optional Signal', field: 'signalingType',
+    encoding: '0 None, 1 DTMF, 2 2Tone, 3 5Tone', provenance: 'hardware' },
+  { offset: 0x1b, length: 1, vendorName: 'ScanList', cpsColumn: 'Scan List', field: 'scanListId',
+    encoding: 'zero-based, 0xff = none', provenance: 'hardware' },
+  { offset: 0x1c, length: 1, vendorName: 'GroupID', cpsColumn: 'Receive Group List', field: 'rxGroupListId',
+    encoding: 'zero-based, 0xff = none', provenance: 'hardware' },
+  { offset: 0x1d, length: 1, vendorName: 'RPGRCODE_2T', cpsColumn: '2Tone ID', field: 'twoToneId',
+    encoding: 'stored zero-based', provenance: 'marshaller',
+    note: 'The CPS silently drops this column on CSV import, so correlation could never reach it however many codeplugs were written.' },
+  { offset: 0x1e, length: 1, vendorName: 'RPGRCODE_5T', cpsColumn: '5Tone ID', field: 'fiveToneId',
+    encoding: 'stored zero-based', provenance: 'marshaller' },
+  { offset: 0x1f, length: 1, vendorName: 'DTMFCode', cpsColumn: 'DTMF ID', field: 'dtmfId',
+    encoding: 'stored zero-based', provenance: 'marshaller' },
+  { offset: 0x20, length: 1, vendorName: 'CC', cpsColumn: 'RX Color Code', field: 'colorCode',
+    encoding: '0-15', provenance: 'hardware' },
+  { offset: 0x21, length: 1, bits: '0', vendorName: 'Slot', cpsColumn: 'Slot', field: 'slotOperation',
+    encoding: '0 = TS1, 1 = TS2', provenance: 'hardware' },
+  { offset: 0x21, length: 1, bits: '1', vendorName: 'Response', cpsColumn: 'DataACK Disable', field: 'dataAckDisable',
+    encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x21, length: 1, bits: '3-2', vendorName: 'TDMA', cpsColumn: 'DMR MODE', field: 'dmrMode',
+    encoding: 'raw 2-bit index', provenance: 'marshaller' },
+  { offset: 0x21, length: 1, bits: '4', vendorName: 'TRUNK', cpsColumn: 'Slot Suit', field: 'slotSuit',
+    encoding: 'boolean', provenance: 'hardware' },
+  { offset: 0x21, length: 1, bits: '5', vendorName: 'BS_Mode', cpsColumn: 'APRS RX', field: 'aprsReceive',
+    encoding: 'boolean', provenance: 'hardware' },
+  { offset: 0x21, length: 1, bits: '6', vendorName: 'EMG_Kind', cpsColumn: 'AES Digital Encryption', field: 'encryption',
+    encoding: 'boolean', provenance: 'hardware' },
+  { offset: 0x21, length: 1, bits: '7', vendorName: 'Alone', cpsColumn: 'Work Alone', field: 'loneWorker',
+    encoding: 'boolean', provenance: 'hardware' },
+  { offset: 0x22, length: 1, vendorName: 'EMG_Key', field: 'emergencySystemIndex',
+    encoding: 'raw index', provenance: 'marshaller' },
+  { offset: 0x23, length: 8, vendorName: '(Standard 0xC0-0xC7)', encoding: '8 bytes copied verbatim from the CPS record',
+    provenance: 'unknown',
+    note: 'Read 0xff on all 102 captured channels. No SQL column and no other reader — the CPS itself does not say what they mean.' },
+  { offset: 0x2b, length: 9, vendorName: '(not used)', encoding: '—', provenance: 'marshaller',
+    note: 'The writer jumps 0x23 → 0x34.' },
+  { offset: 0x34, length: 1, bits: '0', vendorName: 'link_measure', cpsColumn: 'Ranging', field: 'ranging',
+    encoding: 'boolean', provenance: 'hardware' },
+  { offset: 0x34, length: 1, bits: '1', vendorName: 'simplex', cpsColumn: 'Digital Duplex', field: 'digitalDuplex',
+    encoding: 'boolean, INVERTED into digitalDuplex', provenance: 'inferred',
+    note: 'Set on every captured channel while the CPS showed Digital Duplex = Off, which is what the inversion rests on.' },
+  { offset: 0x34, length: 1, bits: '2', vendorName: 'roam_forbid', cpsColumn: 'Exclude channel from roaming',
+    field: 'excludeFromRoaming', encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x34, length: 1, bits: '3', vendorName: 'rec_only', field: 'receiveOnly',
+    encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x34, length: 1, bits: '4', vendorName: 'auto_scan', cpsColumn: 'Auto Scan', field: 'autoScan',
+    encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x34, length: 1, bits: '5', vendorName: 'idle_tx', cpsColumn: 'Idle TX', field: 'idleTx',
+    encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x34, length: 1, bits: '6', vendorName: 'compand', cpsColumn: 'compand', field: 'compander',
+    encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x34, length: 1, bits: '7', vendorName: 'dmr_crc_ignore', cpsColumn: 'dmr_crc_ignore', field: 'dmrCrcIgnore',
+    encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x35, length: 1, vendorName: 'AprsUpKind', cpsColumn: 'APRS Report Type', field: 'aprsReportMode',
+    encoding: '0 Off, 1 Analog, 2 Digital', provenance: 'hardware' },
+  { offset: 0x36, length: 1, vendorName: 'AprsUpDate', cpsColumn: 'Analog APRS PTT Mode', field: 'analogAprsPttMode',
+    encoding: 'raw index', provenance: 'marshaller' },
+  { offset: 0x37, length: 1, vendorName: 'DigiAprsUpDate', cpsColumn: 'Digital APRS PTT Mode', field: 'digitalAprsPttMode',
+    encoding: 'raw index (the vendor reader clamps it to ≤1)', provenance: 'marshaller' },
+  { offset: 0x38, length: 1, vendorName: 'DigiAprsUpNum', cpsColumn: 'Digital APRS Report Channel',
+    field: 'digitalAprsReportChannel', encoding: 'raw index', provenance: 'marshaller' },
+  { offset: 0x39, length: 1, vendorName: 'Offset_Fre_Ex', cpsColumn: 'Correct Frequency[Hz]', field: 'offsetFrequencyEx',
+    encoding: 'signed byte', provenance: 'marshaller',
+    note: 'Read 0 on every captured channel, so it is exposed raw rather than folded into the TX frequency.' },
+  { offset: 0x3a, length: 1, vendorName: 'NormalEmgCode', field: 'normalEmergencyCode',
+    encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x3b, length: 1, bits: '0', vendorName: 'mul_emg', encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x3b, length: 1, bits: '1', vendorName: 'random_emg', encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x3b, length: 1, bits: '2', vendorName: 'sms_rec', cpsColumn: 'SMS Confirmation', field: 'smsConfirmation',
+    encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x3b, length: 1, bits: '3', vendorName: 'ana_aprs_mute', cpsColumn: 'Ana APRS Mute', field: 'analogAprsMute',
+    encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x3b, length: 1, bits: '4', vendorName: 'tx_talkalaes', cpsColumn: 'Send Talker Alias DMR/NX',
+    field: 'sendTalkerAlias', encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x3b, length: 1, bits: '5', vendorName: 'ex_emg_kind', encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x3b, length: 1, bits: '6', vendorName: 'dup_call', encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x3b, length: 1, bits: '7', vendorName: 'tx_int', encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x3c, length: 1, vendorName: 'AnaAprsTxPath', cpsColumn: 'AnaAprsTxPath', field: 'analogAprsTxPath',
+    encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x3d, length: 1, vendorName: 'Arc4EmgCode', cpsColumn: 'ARC4', field: 'arc4Code',
+    encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x3e, length: 1, vendorName: 'DisturEn', cpsColumn: 'DisturEn', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x3f, length: 1, vendorName: 'DisturFreq', cpsColumn: 'DisturFreq', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x40, length: 1, vendorName: 'R5toneBot', cpsColumn: 'R5toneBot', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x41, length: 1, vendorName: 'R5ToneEot', cpsColumn: 'R5ToneEot', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x42, length: 1, vendorName: 'Rpga_Mdc', cpsColumn: 'Rpga_Mdc', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x43, length: 1, vendorName: 'TXCC', cpsColumn: 'txcc', field: 'txColorCode',
+    encoding: '0-15', provenance: 'marshaller',
+    note: 'A distinct field from CC at 0x20. Every captured channel had the two equal, so hardware alone cannot separate them.' },
+  { offset: 0x44, length: 34, vendorName: 'Name', cpsColumn: 'Channel Name', field: 'name',
+    encoding: '17 UTF-16LE units, 0xffff-terminated, 16 characters max', provenance: 'hardware' },
+  { offset: 0x66, length: 1, bits: '0', vendorName: 'nxdn_wn', cpsColumn: 'nxdn_wn', encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x66, length: 1, bits: '1', vendorName: 'NxdnRpga', cpsColumn: 'NxdnRpga', encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x66, length: 1, bits: '4', vendorName: 'nxdnSqCon', cpsColumn: 'nxdnSqCon', encoding: 'boolean', provenance: 'marshaller' },
+  { offset: 0x67, length: 1, bits: '3-0', vendorName: 'NxdnTxBusy', cpsColumn: 'NxdnTxBusy', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x67, length: 1, bits: '7-4', vendorName: 'NxDnPttId', cpsColumn: 'NxDnPttId', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x68, length: 1, vendorName: 'EnRan', cpsColumn: 'EnRan', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x69, length: 1, vendorName: 'DeRan', cpsColumn: 'DeRan', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x6a, length: 1, vendorName: 'NxdnEncry', cpsColumn: 'NxdnEncry', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x6b, length: 1, vendorName: 'NxdnGroupId', cpsColumn: 'NxdnGroupId', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x6c, length: 2, vendorName: 'NxdnIdNum', cpsColumn: 'NxdnIdNum', encoding: 'u16 LE', provenance: 'marshaller' },
+  { offset: 0x6e, length: 1, vendorName: 'NxdnStateNum', cpsColumn: 'NxdnStateNum', encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x6f, length: 17, vendorName: '(not used)', encoding: '—', provenance: 'marshaller',
+    note: 'The last access either routine makes is 0x6e.' },
+];
+
+/** The 0x200-byte scan-list record; 0x98 onward is unused. */
+export const D890_SCAN_LIST_LAYOUT: readonly D890LayoutRow[] = [
+  { offset: 0x00, length: 1, vendorName: 'Scn_Mode', cpsColumn: 'Scan Mode', field: 'scanMode',
+    encoding: 'raw', provenance: 'marshaller', note: 'Read 0 ("Off") on both captured lists.' },
+  { offset: 0x01, length: 1, vendorName: 'Scn_PriorityCh', cpsColumn: 'Priority Channel Select',
+    field: 'prioritySelect', encoding: '0 Off, 1 Select1, 2 Select2, 3 both', provenance: 'hardware' },
+  { offset: 0x02, length: 2, vendorName: 'Scn_PriorityCH1', cpsColumn: 'Priority Channel 1',
+    field: 'priorityChannel1Raw', encoding: 'u16 LE channel NUMBER; 0xffff = Off', provenance: 'hardware',
+    note: 'The marshaller encodes v-1, but hardware stores the channel number directly: a list whose priority is "Blk 128" (channel 128) reads 128.' },
+  { offset: 0x04, length: 2, vendorName: 'Scn_PriorityCH2', cpsColumn: 'Priority Channel 2',
+    field: 'priorityChannel2Raw', encoding: 'u16 LE, same', provenance: 'hardware' },
+  { offset: 0x06, length: 2, vendorName: 'Scn_LookBackTimeA', cpsColumn: 'Look Back Time A[s]',
+    field: 'lookBackTimeA', encoding: 'tenths of a second; only the low byte is ever written', provenance: 'hardware' },
+  { offset: 0x08, length: 2, vendorName: 'Scn_LookBackTimeB', cpsColumn: 'Look Back Time B[s]',
+    field: 'lookBackTimeB', encoding: 'tenths of a second', provenance: 'hardware' },
+  { offset: 0x0a, length: 2, vendorName: 'Scn_DropoutDelay', cpsColumn: 'Dropout Delay Time[s]',
+    field: 'dropoutDelay', encoding: 'tenths of a second', provenance: 'hardware' },
+  { offset: 0x0c, length: 2, vendorName: 'Scn_DwellTime', cpsColumn: 'Dwell Time[s]',
+    field: 'dwellTime', encoding: 'tenths of a second', provenance: 'hardware' },
+  { offset: 0x0e, length: 34, vendorName: 'Name', cpsColumn: 'Scan List Name', field: 'name',
+    encoding: '17 UTF-16LE units, 0xffff-terminated', provenance: 'hardware' },
+  { offset: 0x30, length: 100, vendorName: 'Members', cpsColumn: 'Scan Channel Member', field: 'channels',
+    encoding: '50 × u16 LE, zero-based channel index, 0xffff = empty', provenance: 'hardware' },
+  { offset: 0x94, length: 1, vendorName: 'Scn_RevertCh', cpsColumn: 'Revert Channel', field: 'revertChannel',
+    encoding: 'raw index', provenance: 'hardware',
+    note: 'Was read from 0xf8, inside the zero fill. The two captured lists store 4 and 6 where the CPS shows "Last Called" and "Priority Channel Select1 + TalkBack" — which fits no obvious ordering, so the vocabulary is unresolved.' },
+  { offset: 0x95, length: 1, vendorName: 'ScanDigiGroupHold', field: 'digitalGroupHold',
+    encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x96, length: 1, vendorName: 'ScanDigiPriHold', field: 'digitalPriorityHold',
+    encoding: 'raw', provenance: 'marshaller' },
+  { offset: 0x97, length: 1, vendorName: 'ScanAnaHold', field: 'analogHold',
+    encoding: 'raw', provenance: 'marshaller' },
+];
+
+export interface D890Region {
+  name: string;
+  address: number;
+  /** Bytes per record, or the size of a one-off region. */
+  stride?: number;
+  size?: number;
+  contents: string;
+  /** True when this driver reads the region during a normal codeplug read. */
+  read: boolean;
+  provenance: D890Provenance;
+  note?: string;
+}
+
+/**
+ * Every region of the radio's address space this project has a name for.
+ *
+ * Deliberately includes regions NeonPlug does not read: a map with the gaps
+ * marked is what makes the gaps actionable, and the Diagnostics region dump can
+ * capture any of them by address.
+ */
+export const D890_MEMORY_MAP: readonly D890Region[] = [
+  { name: 'Device identity', address: 0x07000000, size: 16, contents: 'Model string returned by the 0x02 probe',
+    read: true, provenance: 'hardware', note: 'Never write here.' },
+  { name: 'Local info', address: D890_ADDR.LOCAL_INFO, size: D890_ADDR.LOCAL_INFO_SIZE,
+    contents: 'Firmware / region identity', read: true, provenance: 'hardware' },
+  { name: 'Channel bitmap', address: D890_ADDR.CHANNEL_SET, size: D890_ADDR.CHANNEL_SET_SIZE,
+    contents: 'One bit per channel; SET = present', read: true, provenance: 'hardware' },
+  { name: 'Channels', address: D890_ADDR.CHANNEL_DATA, stride: D890_ADDR.CHANNEL_STRIDE,
+    contents: `${D890_LIMITS.CHANNELS_MAX} records, ${D890_ADDR.CHANNELS_PER_BLOCK} per 0x${D890_ADDR.CHANNEL_BLOCK_STRIDE.toString(16)} block`,
+    read: true, provenance: 'hardware',
+    note: 'Each record is two 0x40 halves read back to back. Blocks are far further apart than 128 × 0x80, so flat addressing is wrong past channel 127.' },
+  { name: 'Zone membership', address: D890_ADDR.ZONE_CHANNELS, stride: D890_ADDR.ZONE_CHANNELS_STRIDE,
+    contents: `250 × u16 zero-based channel indices, 0xffff-terminated`, read: true, provenance: 'hardware',
+    note: 'The vendor CPS caps a zone at 160 channels even though the region holds 250.' },
+  { name: 'Zone present bitmap', address: D890_ADDR.ZONE_SET, size: D890_ADDR.ZONE_SET_SIZE,
+    contents: 'One bit per zone; SET = present', read: true, provenance: 'hardware' },
+  { name: 'Zone hidden bitmap', address: D890_ADDR.ZONE_HIDE, size: D890_ADDR.ZONE_HIDE_SIZE,
+    contents: 'One bit per zone; SET = hidden from the menu', read: false, provenance: 'marshaller' },
+  { name: 'Unclaimed bitmap', address: D890_ADDR.RADIO_ID_SET, size: D890_ADDR.RADIO_ID_SET_SIZE,
+    contents: 'Read here as the radio-ID occupancy bitmap', read: true, provenance: 'inferred',
+    note: 'The 32-byte gap between the zone-hidden and scan-list bitmaps. No vendor marshaller touches it, so its owner is unconfirmed — this driver names it from a live read alone.' },
+  { name: 'Scan-list bitmap', address: D890_ADDR.SCAN_LIST_SET, size: D890_ADDR.SCAN_LIST_SET_SIZE,
+    contents: 'One bit per scan list; SET = present', read: true, provenance: 'hardware' },
+  { name: 'Scan lists', address: D890_ADDR.SCAN_LIST_DATA, stride: D890_ADDR.SCAN_LIST_STRIDE,
+    contents: `${D890_LIMITS.SCAN_LISTS_MAX} records, ${D890_ADDR.SCAN_LISTS_PER_BLOCK} per 0x${D890_ADDR.SCAN_LIST_BLOCK_STRIDE.toString(16)} block`,
+    read: true, provenance: 'marshaller',
+    note: 'The block split is from the vendor marshaller — only lists 0 and 1 have ever been read from a radio.' },
+  { name: 'Settings', address: D890_ADDR.SETTINGS, size: D890_ADDR.SETTINGS_SIZE,
+    contents: 'General settings', read: true, provenance: 'hardware' },
+  { name: 'Zone current channel A', address: D890_ADDR.ZONE_A_CHANNEL, stride: 2,
+    contents: 'u16 per zone: the POSITION in that zone’s member list, not a channel number',
+    read: false, provenance: 'marshaller',
+    note: 'Inside the settings address range but written by the ZONE marshaller.' },
+  { name: 'Zone current channel B', address: D890_ADDR.ZONE_B_CHANNEL, stride: 2,
+    contents: 'u16 per zone, same encoding', read: false, provenance: 'marshaller' },
+  { name: 'Power-on display', address: 0x3500900, contents: 'Power-on message', read: false, provenance: 'marshaller' },
+  { name: 'APRS settings', address: 0x3501000, size: 205, contents: '27 named fields of the APRS block',
+    read: false, provenance: 'marshaller', note: 'Mapped by the vendor marshaller; never read off a radio here.' },
+  { name: 'Zone names', address: D890_ADDR.ZONE_NAMES, stride: D890_ADDR.ZONE_NAME_STRIDE,
+    contents: '17 UTF-16LE units, 0xffff-terminated', read: true, provenance: 'hardware' },
+  { name: 'Radio (DMR) IDs', address: D890_ADDR.RADIO_ID_DATA, stride: D890_ADDR.RADIO_ID_STRIDE,
+    contents: 'BCD-as-hex ID at +0x00, UTF-16LE name at +0x04', read: true, provenance: 'hardware' },
+  { name: 'Master radio ID', address: D890_ADDR.MASTER_ID_DATA, size: D890_ADDR.MASTER_ID_SIZE,
+    contents: 'The radio’s own ID record', read: true, provenance: 'hardware' },
+  { name: 'RX group lists', address: D890_ADDR.RX_GROUP_DATA, stride: D890_ADDR.RX_GROUP_STRIDE,
+    contents: 'u32 members from +0x00, name at +0x100', read: true, provenance: 'hardware' },
+  { name: 'Talkgroup bitmap', address: D890_ADDR.TALKGROUP_SET, size: D890_ADDR.TALKGROUP_SET_SIZE,
+    contents: 'INVERTED — a set bit means the slot is EMPTY', read: true, provenance: 'hardware',
+    note: 'Getting the sense backwards yields either no contacts at all or ten thousand phantom ones.' },
+  { name: 'Talkgroups', address: D890_ADDR.TALKGROUP_DATA, stride: D890_ADDR.TALKGROUP_STRIDE,
+    contents: `Banked: bank × 0x${D890_ADDR.TALKGROUP_BANK_STRIDE.toString(16)} + index × 0x${D890_ADDR.TALKGROUP_STRIDE.toString(16)}`,
+    read: true, provenance: 'marshaller',
+    note: 'Only six talkgroups have ever been loaded, so nothing past bank 0 is tested and the per-bank count is inferred.' },
+  { name: 'VFO', address: 0x3884000, contents: 'VFO A/B pseudo-channels', read: false, provenance: 'marshaller' },
+  { name: 'Boot image', address: 0x03f80000, size: 40960,
+    contents: '160×128 RGB565, big-endian, column-major, no header', read: false, provenance: 'marshaller' },
+  { name: 'Background image 1', address: 0x04000000, size: 40960, contents: 'Same format as the boot image',
+    read: false, provenance: 'marshaller' },
+  { name: 'Background image 2', address: 0x04080000, size: 40960, contents: 'Same format as the boot image',
+    read: false, provenance: 'marshaller' },
+  { name: 'Satellite table', address: 0x04a80000, size: 12800, contents: '25 slots × 512 bytes, ASCII zero-padded',
+    read: false, provenance: 'marshaller',
+    note: 'The CPS zero-fills all 25 slots on every write, so writing a short table wipes slots that previously held data.' },
+  { name: 'Zone roam bitmap', address: D890_ADDR.ZONE_ROAM, stride: D890_ADDR.ZONE_ROAM_STRIDE,
+    contents: '32 bytes per zone: bit k = the zone’s k-th member is a roam channel',
+    read: false, provenance: 'marshaller' },
+];
+
+/** Frames and session sequence, for the Diagnostics protocol reference. */
+export const D890_PROTOCOL_NOTES = {
+  baud: 921600,
+  session: [
+    { step: 'PROGRAM', detail: 'Seven ASCII bytes, then a three-byte reply. The family convention is QX\\x06.' },
+    { step: '0x02', detail: 'One byte out, sixteen back: an 0xff-terminated identity string. The cheapest safe way to confirm the radio.' },
+    { step: 'R / W', detail: 'Read and write frames, 32-bit big-endian byte addresses, always 16-byte aligned.' },
+    { step: 'END', detail: 'Session teardown.' },
+  ],
+  frames: [
+    { name: 'Read request', bytes: "52 <addr:4 BE> <len>", note: 'No checksum. The vendor CPS only ever asks for 0x10; longer reads are negotiated here and work.' },
+    { name: 'Read reply', bytes: '57 <addr:4 BE> <len> <data> <cksum> 06', note: 'Identical in shape to a write request.' },
+    { name: 'Write request', bytes: '57 <addr:4 BE> 10 <16 data> <cksum> 06', note: 'Always exactly 16 bytes — no long-write form exists in the vendor binary.' },
+  ],
+  checksum: 'Plain 8-bit additive sum over frame[1..21] — address, length and all 16 data bytes. Not a CRC.',
+  checksumNote:
+    'Because a read reply and a write request are the same frame, checking a live read reply’s checksum validates the write checksum by construction, at zero risk.',
+} as const;

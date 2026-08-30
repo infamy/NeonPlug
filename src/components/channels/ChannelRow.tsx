@@ -10,6 +10,11 @@ import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequ
 import type { ChannelColumnGroup } from '../../types/radioCapabilities';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { powerLevelsFor, powerAbbrev, nextPowerLevel } from '../../utils/powerLevels';
+import {
+  extraColumnsFor,
+  extraColumnTitle,
+  type ExtraChannelColumn,
+} from './extraChannelColumns';
 
 export const isVFOChannel = (channelNumber: number): boolean =>
   channelNumber === 4001 || channelNumber === 4002;
@@ -88,6 +93,104 @@ interface ChannelRowProps {
   /** Virtualizer measureElement — rows vary in height (stacked tone selects). */
   measureRef: (el: HTMLTableRowElement | null) => void;
 }
+
+const NUMBER_INPUT_CLASS =
+  'bg-transparent border border-neon-cyan border-opacity-30 rounded px-1 py-1 text-white ' +
+  'focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center';
+
+const SELECT_CLASS =
+  'bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white ' +
+  'focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[130px]';
+
+/**
+ * One cell of a declarative extra column.
+ *
+ * Split out so the editor kinds live in one place: the grid already had four
+ * near-identical hand-written variants of each, and every new field copied one
+ * of them again.
+ */
+export const ExtraColumnCell: React.FC<{
+  column: ExtraChannelColumn;
+  channel: Channel;
+  onCellChange: CellChangeHandler;
+}> = ({ column, channel, onCellChange }) => {
+  const title = extraColumnTitle(column);
+  // Same convention the DMR block uses: a field with no meaning on this channel
+  // shows a dash rather than a control that would write a value the radio
+  // ignores.
+  if (column.digitalOnly && !isDigitalMode(channel.mode)) {
+    return (
+      <td className="px-2 py-2 text-center" title={title}>
+        <span className="text-cool-gray text-xs">-</span>
+      </td>
+    );
+  }
+  const raw = channel[column.field];
+
+  if (column.editor.kind === 'boolean') {
+    return (
+      <td className="px-2 py-2 text-center" title={title}>
+        <input
+          type="checkbox"
+          checked={raw === true}
+          onChange={(e) => onCellChange(channel.number, column.field, e.target.checked)}
+          className="checkbox-theme"
+          title={title}
+        />
+      </td>
+    );
+  }
+
+  if (column.editor.kind === 'select') {
+    const options = column.editor.options;
+    const index = typeof raw === 'number' ? raw : 0;
+    return (
+      <td className="px-2 py-2" title={title}>
+        <select
+          value={String(index)}
+          onChange={(e) => onCellChange(channel.number, column.field, parseInt(e.target.value) || 0)}
+          className={SELECT_CLASS}
+          title={title}
+        >
+          {options.map((label, i) => (
+            <option key={label} value={String(i)}>
+              {label}
+            </option>
+          ))}
+          {/* A value outside the known list is shown rather than silently
+              snapped to option 0 — on this radio an unexpected index means the
+              vocabulary is incomplete, which is worth seeing. */}
+          {index >= options.length && (
+            <option value={String(index)} disabled>
+              {index} (unknown)
+            </option>
+          )}
+        </select>
+      </td>
+    );
+  }
+
+  const { min, max, suffix } = column.editor;
+  return (
+    <td className="px-2 py-2" title={title}>
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          min={min}
+          max={max}
+          value={typeof raw === 'number' ? raw : 0}
+          onChange={(e) => {
+            const parsed = parseInt(e.target.value);
+            onCellChange(channel.number, column.field, Number.isNaN(parsed) ? 0 : parsed);
+          }}
+          className={NUMBER_INPUT_CLASS}
+          title={title}
+        />
+        {suffix && <span className="text-cool-gray text-[10px]">{suffix}</span>}
+      </div>
+    </td>
+  );
+};
 
 /**
  * One channel row. Memoized so that a single-cell edit re-renders only the
@@ -872,6 +975,16 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           </td>
         </>
       )}
+      {/* Radio-specific extras. Same source array as the headers in
+          ChannelsTable, so the two cannot drift apart. */}
+      {extraColumnsFor(declaredColumns).map((c) => (
+        <ExtraColumnCell
+          key={c.field}
+          column={c}
+          channel={channel}
+          onCellChange={handleCellChange}
+        />
+      ))}
       {/* Common fields - work for both */}
       <td className="px-2 py-2">
         {showColorCode ? (

@@ -20,15 +20,52 @@
  * lands, those render as raw numbers. Do not guess the enums.
  *
  * ⚠️ Read-only. Nothing here has been written back to a radio by NeonPlug.
+ *
+ * ---------------------------------------------------------------------------
+ * Cross-check against the vendor settings marshaller (2026-08-30)
+ * ---------------------------------------------------------------------------
+ * `sub_005c10e0` is the routine that copies the CPS settings struct into the
+ * radio image, and a static trace of it produced an independent name->address
+ * map for this same region. It agrees with every one of the 97 fields below
+ * that it also names — no offset conflicts, no reordering — which is a full
+ * second source for six passes of fingerprint correlation. A separate audit of
+ * the CPS-tab assignment agreed on all 100 of them too.
+ *
+ * It does NOT agree byte-for-byte on the raw addresses, and the reason is worth
+ * recording because it is a property of the tool and not of the radio. The
+ * marshaller writes two runs of four u32 frequencies as `for i = 0 to 3` loops;
+ * the trace modelled each iteration as advancing one byte instead of four, so
+ * its cursor loses 12 bytes at each loop and everything after it is reported
+ * low. Aligning the two maps:
+ *
+ *   marshaller 0x000-0x057  ->  here +0      (45 exact name matches)
+ *   marshaller 0x058-0x05b  ->  here 0x058-0x067   VfoScanFreq0-3, 4 x u32
+ *   marshaller 0x05c-0x0b7  ->  here +12
+ *   marshaller 0x0b8-0x0bb  ->  here 0x0c4-0x0d3   AutoRepFreq0-3, 4 x u32
+ *   marshaller 0x0bc-0x146  ->  here +24     (36 exact name matches)
+ *
+ * The two loop runs land exactly on the frequency fields this table already
+ * placed from hardware, and the corrected end of the marshaller's range
+ * (0x146 + 24 = 0x15e) lands exactly on the last byte this table uses. The
+ * offsets here are the hardware ones and stay authoritative; the marshaller
+ * contributes the NAMES, which is what `vendorName` on the unmapped bytes
+ * carries.
  */
+
+import { D890_CALL_HOLD_TIME } from './constants';
 
 export interface D890SettingsField {
   /** Key under RadioSettings.radioSpecific. */
   key: string;
   /** Human-facing label; cleaned up from cpsLabel. */
   label: string;
-  /** Verbatim OCR of the vendor CPS label, for provenance. */
-  cpsLabel: string;
+  /**
+   * Verbatim OCR of the vendor CPS control label, for provenance.
+   *
+   * Absent where no CPS control label was ever observed — the field's name comes
+   * from the settings marshaller instead. See `confidence`.
+   */
+  cpsLabel?: string;
   /** Tab the control lives on in the vendor CPS, used to group the UI. */
   group: string;
   /**
@@ -43,6 +80,24 @@ export interface D890SettingsField {
    * screenshot — and because it has already caught several mislabellings.
    */
   vendorField?: string;
+  /**
+   * How the field's identity was established. Absent means the strongest case:
+   * located by writing fingerprint codeplugs to a radio and diffing read-only
+   * dumps, then independently confirmed by the vendor settings marshaller.
+   *
+   *   'swept'       the vendor CPS's own before/after capture names this exact
+   *                 .rdt offset, so the label and tab are the CPS's own words.
+   *   'vendor-name' the settings marshaller names the byte and nothing more —
+   *                 the label is that name cleaned up, and the value range is
+   *                 unobserved.
+   *   'inferred'    neither; the identity is reasoned from neighbouring fields,
+   *                 the disassembly and the CPS help file.
+   *
+   * Anything other than absent is marked in the Settings tab. Do not promote an
+   * entry without an actual capture — DA7X2-NEEDS-CONFIRMING.md lists what would
+   * settle each one.
+   */
+  confidence?: 'swept' | 'vendor-name' | 'inferred';
   /** Byte offset from D890_ADDR.SETTINGS. */
   offset: number;
   /** Highest value ever observed from the CPS. A lower bound on the range. */
@@ -126,8 +181,8 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'p1ShortKey',                      label: 'P1 Short Key',                        cpsLabel: 'Pl Short Key',                        group: 'Key Function',    offset: 0x013, max: 66, listLength: 67 },
   { key: 'p2ShortKey',                      label: 'P2 Short Key',                        cpsLabel: 'P2 Short Key',                        group: 'Key Function',    offset: 0x014, max: 66, listLength: 67 },
   { key: 'steTypeOfCtcss',                  label: 'STE Type Of CTCSS',                   cpsLabel: 'STE Type Of CTCSS',                   group: 'STE',             offset: 0x017, max: 4, listLength: 5, options: ['On', 'Silent', '120 Degree', '180 Degree', '240 Degree'], vendorField: 'STE_Type' },
-  { key: 'groupCallHoldTime',               label: 'Group Call Hold Time',                cpsLabel: 'Group Call Hold Tme',                 group: 'Digital Func',    offset: 0x019, max: 32, listLength: 33, vendorField: 'GroupTalkHold' },
-  { key: 'privateCallHoldTime',             label: 'Private Call Hold Time',              cpsLabel: 'Private Call Hold Tme',               group: 'Digital Func',    offset: 0x01a, max: 32, listLength: 33, vendorField: 'PersonTalkHold' },
+  { key: 'groupCallHoldTime',               label: 'Group Call Hold Time',                cpsLabel: 'Group Call Hold Tme',                 group: 'Digital Func',    offset: 0x019, max: 31, listLength: 32, options: D890_CALL_HOLD_TIME, confidence: 'inferred', vendorField: 'GroupTalkHold' },
+  { key: 'privateCallHoldTime',             label: 'Private Call Hold Time',              cpsLabel: 'Private Call Hold Tme',               group: 'Digital Func',    offset: 0x01a, max: 31, listLength: 32, options: D890_CALL_HOLD_TIME, confidence: 'inferred', vendorField: 'PersonTalkHold' },
   { key: 'txPreambleDuration',              label: 'TX preamble duration',                cpsLabel: 'TX preamble duration',                group: 'Digital Func',    offset: 0x01c, max: 40, listLength: 41, vendorField: 'Preamble', valueRule: { scale: 60, offset: 0, unit: 'ms', basis: 'two-point' } },
   { key: 'amFmFunction',                    label: 'AM/FM Function',                      cpsLabel: 'AM/FM Function',                      group: 'AM/FM',           offset: 0x021, max: 3, listLength: 4, vendorField: 'FM_En' },
   { key: 'autoBacklightDuration',           label: 'Auto Backlight Duration',             cpsLabel: 'Auto Backlight Duration',             group: 'Display',         offset: 0x027, max: 15, listLength: 16, vendorField: 'AutoBKLightTime' },
@@ -147,6 +202,11 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'getGpsPositioning',               label: 'Get GPS Positioning',                 cpsLabel: 'Get GPS Positioning',                 group: 'GPS/Ranging',     offset: 0x03f, max: 1, listLength: 2, options: ['Off', 'On'], vendorField: 'GpsReplyEn' },
   { key: 'pf1LongKey',                      label: 'PF1 Long Key',                        cpsLabel: 'PFI Long Key',                        group: 'Key Function',    offset: 0x041, max: 66, listLength: 67 },
   { key: 'pf2LongKey',                      label: 'PF2 Long Key',                        cpsLabel: 'PF2 Long Key',                        group: 'Key Function',    offset: 0x042, max: 66, listLength: 67 },
+  // PF3 Long Key never appeared in the CPS sweep — the automation could not
+  // reach that control — so 0x043 sat in the unmapped table until the vendor
+  // settings marshaller named it PF3_L, between PF2_L (0x042) and P1_L (0x044).
+  // It shares the same 67-entry vocabulary as the other nine key controls.
+  { key: 'pf3LongKey',                      label: 'PF3 Long Key',                        cpsLabel: 'PF3 Long Key',                        group: 'Key Function',    offset: 0x043, max: 66, listLength: 67 },
   { key: 'p1LongKey',                       label: 'P1 Long Key',                         cpsLabel: 'Pl Long Key',                         group: 'Key Function',    offset: 0x044, max: 66, listLength: 67 },
   { key: 'p2LongKey',                       label: 'P2 Long Key',                         cpsLabel: 'P2 Long Key',                         group: 'Key Function',    offset: 0x045, max: 66, listLength: 67 },
   { key: 'longKeyTimeS',                    label: 'Long Key Time[s]',                    cpsLabel: 'Long Key Tme[s]',                     group: 'Key Function',    offset: 0x046, max: 4, listLength: 5, vendorField: 'PfLongTime', valueRule: { scale: 1, offset: 1, unit: 's', basis: 'range-forced' } },
@@ -208,6 +268,108 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'powerOnVolume',                   label: 'Power On Volume',                     cpsLabel: 'Power On Volume',                     group: 'Volume/Audio',    offset: 0x156, max: 15, listLength: 16, vendorField: 'MinVolData' },
   { key: 'subSpklntx',                      label: 'sub SpklnTx',                         cpsLabel: 'sub SpklnTx',                         group: 'Volume/Audio',    offset: 0x15b, max: 1, listLength: 2, options: ['Off', 'On'] },
   { key: 'simpRepeater',                    label: 'Simp Repeater',                       cpsLabel: 'Simp Repearter',                      group: 'Auto repeater',   offset: 0x15c, max: 1, listLength: 2, options: ['Off', 'On'] },
+
+  // ---------------------------------------------------------------------------
+  // Recovered from the vendor CPS rather than from a radio (2026-08-30)
+  // ---------------------------------------------------------------------------
+  // Everything above was located by writing fingerprint codeplugs and diffing
+  // dumps. Everything below was derived from the vendor's own artefacts — the
+  // settings marshaller's name->address map, the CPS's captured before/after
+  // sweep, its help file and its string table — and then put through an
+  // adversarial audit whose default was to reject.
+  //
+  // That audit killed 35 of 118 candidates, including sixteen bytes that had
+  // been presented as four "Auto Repeater 2" frequency fields: the u32 boundaries
+  // are real, but the min/max and VHF/UHF assignment was not evidenced, and
+  // twelve continuation bytes had been surfaced as standalone settings. Those
+  // four now live in D890_SETTINGS_FREQUENCIES under neutral names.
+  //
+  // `confidence` on each entry says which artefact carried it. An option list is
+  // present ONLY where the audit could not break it — a label is cheap to be
+  // wrong about, an option list states what a value MEANS.
+
+  { key: 'displayMode', label: 'Display Mode', cpsLabel: 'Display Mode', group: 'Work Mode', offset: 0x001, max: 1, options: ['Channel', 'Frequency'], listLength: 2, vendorField: 'DSP', confidence: 'swept' },
+  { key: 'language', label: 'Language', cpsLabel: 'Language', group: 'Other', offset: 0x005, max: 255, vendorField: 'Language', confidence: 'swept' },
+  { key: 'powerOnInterface', label: 'Power-on Interface', cpsLabel: 'Power-on Interface', group: 'Power-on', offset: 0x006, max: 2, options: ['Default Interface', 'Custom Char', 'Custom Picture'], listLength: 3, vendorField: 'StartDspSet', confidence: 'swept' },
+  { key: 'powerOnPassword', label: 'Power-on Password', cpsLabel: 'Power-on Password', group: 'Power-on', offset: 0x007, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'Password', confidence: 'swept' },
+  { key: 'voxOnOff', label: 'VOX On/Off', cpsLabel: 'VOX On/Off', group: 'Vox/BT', offset: 0x00c, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'VOX', confidence: 'swept' },
+  { key: 'vfMrA', label: 'VF/MR(A)', cpsLabel: 'VF/MR(A)', group: 'Work Mode', offset: 0x015, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'RMV1', confidence: 'swept' },
+  { key: 'vfMrB', label: 'VF/MR(B)', cpsLabel: 'VF/MR(B)', group: 'Work Mode', offset: 0x016, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'RMV2', confidence: 'swept' },
+  { key: 'steWhenNoSignal', label: 'STE When No Signal', group: 'STE', offset: 0x018, max: 255, vendorField: 'STE_Freq', confidence: 'vendor-name' },
+  { key: 'voiceHeaderRepetitions', label: 'Voice header repetitions', group: 'Digital Func', offset: 0x01b, max: 255, confidence: 'inferred' },
+  { key: 'fmWorkChannel', label: 'FM Work Channel', group: 'AM/FM', offset: 0x01d, max: 255, vendorField: 'Work_FMCH', confidence: 'vendor-name' },
+  { key: 'fmVfoMem', label: 'FM VFO/MEM', group: 'AM/FM', offset: 0x01e, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'FM_VFO', confidence: 'vendor-name' },
+  { key: 'memZoneA', label: 'MEM Zone(A)', group: 'Work Mode', offset: 0x01f, max: 255, vendorField: 'Work_Zone1', confidence: 'vendor-name' },
+  { key: 'memZoneB', label: 'MEM Zone(B)', group: 'Work Mode', offset: 0x020, max: 255, vendorField: 'Work_Zone2', confidence: 'vendor-name' },
+  { key: 'recordFunction', label: 'Record Function', cpsLabel: 'Record Function', group: 'Record', offset: 0x022, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'Record_En', confidence: 'swept' },
+  { key: 'manDown', label: 'Man Down', group: 'Other', offset: 0x024, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'FailAlarm', confidence: 'vendor-name' },
+  { key: 'monKeyFunction', label: 'MON Key Function', group: 'Key Function', offset: 0x025, max: 255, vendorField: 'MonType', confidence: 'vendor-name' },
+  { key: 'brightness', label: 'Brightness', group: 'Display', offset: 0x026, max: 255, vendorField: 'Lightness', confidence: 'vendor-name' },
+  { key: 'gps', label: 'GPS', group: 'GPS/Ranging', offset: 0x028, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'Gps', confidence: 'vendor-name' },
+  { key: 'frequencyDisplay', label: 'Frequency Display', group: 'Display', offset: 0x02a, max: 255, vendorField: 'FreqDis', confidence: 'vendor-name' },
+  { key: 'fmMonitor', label: 'FM Monitor', group: 'AM/FM', offset: 0x02b, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'FmMon', confidence: 'vendor-name' },
+  { key: 'mainChannelSet', label: 'Main Channel Set', cpsLabel: 'Main Channel Set', group: 'Work Mode', offset: 0x02c, max: 1, options: ['A', 'B'], listLength: 2, vendorField: 'MainState', confidence: 'swept' },
+  { key: 'subChannelMode', label: 'Sub-Channel Mode', cpsLabel: 'Sub-Channel Mode', group: 'Work Mode', offset: 0x02d, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'SubMode', confidence: 'swept' },
+  { key: 'digiCallResetTone', label: 'Digi Call Reset Tone', cpsLabel: 'Digi Call Reset Tone', group: 'Alert Tone', offset: 0x032, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'OverVoice', confidence: 'swept' },
+  { key: 'voiceBroadcast', label: 'Voice Broadcast', group: 'Alert Tone', offset: 0x035, max: 255, vendorField: 'Voice_Note', confidence: 'vendor-name' },
+  { key: 'maximumVolume', label: 'Maximum Volume', group: 'Volume/Audio', offset: 0x03b, max: 255, vendorField: 'MaxVol', confidence: 'vendor-name' },
+  { key: 'selectTxContact', label: 'Select TX Contact', group: 'Other', offset: 0x040, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'ContactOutSetEn', confidence: 'vendor-name' },
+  { key: 'manDownDelayS', label: 'Man Down Delay[s]', group: 'Other', offset: 0x04f, max: 255, vendorField: 'ManDownWait', confidence: 'vendor-name' },
+  { key: 'gpsTemplateInformation', label: 'GPS Template Information', group: 'GPS/Ranging', offset: 0x053, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'GpsTextUsed', confidence: 'vendor-name' },
+  { key: 'autoRepeater1Uhf', label: 'Auto Repeater1(UHF)', group: 'Auto repeater', offset: 0x068, max: 255, vendorField: 'UhfAutoRep', confidence: 'inferred' },
+  { key: 'autoRepeater1Vhf', label: 'Auto Repeater1(VHF)', group: 'Auto repeater', offset: 0x069, max: 255, vendorField: 'VhfAutoRep', confidence: 'inferred' },
+  { key: 'priorityZoneA', label: 'Priority Zone A', group: 'Other', offset: 0x06f, max: 255, vendorField: 'PriZoneA', confidence: 'vendor-name' },
+  { key: 'priorityZoneB', label: 'Priority Zone B', group: 'Other', offset: 0x070, max: 255, vendorField: 'PriZoneB', confidence: 'vendor-name' },
+  { key: 'smsConfirmation', label: 'SMS Confirmation', group: 'Digital Func', offset: 0x071, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'MsgOacsuSet', confidence: 'vendor-name' },
+  { key: 'callDisplayMode', label: 'Call Display Mode', cpsLabel: 'Call Display Mode', group: 'Display', offset: 0x0af, max: 2, options: ['Turn off Talker Alias', 'Call Sign Based', 'Name Based'], listLength: 3, vendorField: 'CallModeDisKind', confidence: 'swept' },
+  { key: 'btOnOff', label: 'BT On/Off', group: 'Vox/BT', offset: 0x0b1, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'BlueToothOn', confidence: 'vendor-name' },
+  { key: 'btInternalSpeaker', label: 'BT + int spk', group: 'Vox/BT', offset: 0x0b3, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'SpkInBlueTooth', confidence: 'vendor-name' },
+  { key: 'plugInRecordingTone', label: 'Plug-in Recording Tone', group: 'Record', offset: 0x0b4, max: 255, vendorField: 'WtRecordNote', confidence: 'vendor-name' },
+  { key: 'rangingIntervalS', label: 'Ranging Interval[s]', group: 'GPS/Ranging', offset: 0x0b5, max: 255, vendorField: 'MeasurePeriod', confidence: 'vendor-name' },
+  { key: 'btMicGain', label: 'BT MIC Gain', group: 'Vox/BT', offset: 0x0b6, max: 255, vendorField: 'BhtMicGain', confidence: 'vendor-name' },
+  { key: 'btSpkGain', label: 'BT Spk Gain', group: 'Vox/BT', offset: 0x0b7, max: 255, vendorField: 'BhtSpkGain', confidence: 'vendor-name' },
+  { key: 'displayChannelNumber', label: 'Display Channel Number', cpsLabel: 'Display Channel Number', group: 'Display', offset: 0x0b8, max: 1, options: ['Actual Channel Number', 'Sequence Number In Zone'], listLength: 2, vendorField: 'ChanNumDisKind', confidence: 'swept' },
+  { key: 'distanceUnit', label: 'Distance Unit', group: 'GPS/Ranging', offset: 0x0bd, max: 255, vendorField: 'DisUnitSet', confidence: 'inferred' },
+  { key: 'startupZoneA', label: 'Startup Zone A', group: 'Power-on', offset: 0x0d7, max: 255, vendorField: 'StartZone1', confidence: 'vendor-name' },
+  { key: 'startupZoneB', label: 'Startup Zone B', group: 'Power-on', offset: 0x0d8, max: 255, vendorField: 'StartZone2', confidence: 'vendor-name' },
+  { key: 'startupChannelA', label: 'Startup Channel A', group: 'Power-on', offset: 0x0d9, max: 255, vendorField: 'StartCurChan1', confidence: 'inferred' },
+  { key: 'startupChannelB', label: 'Startup Channel B', group: 'Power-on', offset: 0x0da, max: 255, vendorField: 'StartCurChan2', confidence: 'inferred' },
+  { key: 'roamingZone', label: 'Roaming Zone', group: 'Auto repeater', offset: 0x0db, max: 255, vendorField: 'CurRoamZone', confidence: 'vendor-name' },
+  { key: 'repeaterCheckReconnections', label: 'Repeater Check Reconnections', cpsLabel: 'Repeater Check Reconnections', group: 'Auto repeater', offset: 0x0de, max: 255, vendorField: 'BsCheckTimes', confidence: 'swept' },
+  { key: 'autoRoamingStartCondition', label: 'Auto Roaming start condition', cpsLabel: 'Auto Roaming start condition', group: 'Auto repeater', offset: 0x0df, max: 1, options: ['Fixed time', 'Out Of Range'], listLength: 2, vendorField: 'FixRomanStartOp', confidence: 'swept' },
+  { key: 'repeaterOutOfRangeNotify', label: 'Repeater Out of Range Notify', cpsLabel: 'Repeater Out of Range Notify', group: 'Auto repeater', offset: 0x0e4, max: 2, options: ['Off', 'Bell', 'Voice'], listLength: 3, vendorField: 'OutRepNote', confidence: 'swept' },
+  { key: 'autoRoaming', label: 'Auto Roaming', cpsLabel: 'Auto Roaming', group: 'Auto repeater', offset: 0x0e6, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'TimeRoamOn', confidence: 'swept' },
+  { key: 'startupReset', label: 'Startup Reset', cpsLabel: 'Startup Reset', group: 'Power-on', offset: 0x0ea, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'StartResetEn', confidence: 'swept' },
+  { key: 'btHoldTime', label: 'BT Hold Time', group: 'Vox/BT', offset: 0x0eb, max: 255, vendorField: 'BhtHoldTime', confidence: 'vendor-name' },
+  { key: 'btRxDelay', label: 'BT RX Delay', group: 'Vox/BT', offset: 0x0ec, max: 255, vendorField: 'BhtHoldDelay', confidence: 'vendor-name' },
+  { key: 'aliasDisplayPriority', label: 'Alias Display Priority', group: 'Digital Func', offset: 0x0ed, max: 2, options: ['Off', 'Contact Alias', 'Air Alias DMR/NX'], listLength: 3, vendorField: 'SctRxTalkAliasDis', confidence: 'vendor-name' },
+  { key: 'aliasDataFormat', label: 'Alias Data Format', group: 'Digital Func', offset: 0x0ee, max: 2, options: ['ISO 8', 'ISO 7', 'Unicode'], listLength: 3, vendorField: 'SctTalkAliasForm', confidence: 'vendor-name' },
+  { key: 'btPttHold', label: 'BT PTT Hold', group: 'Vox/BT', offset: 0x0f0, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'BhtPttHold', confidence: 'vendor-name' },
+  { key: 'btSleepTime', label: 'Ptt Sleep Time', group: 'Vox/BT', offset: 0x104, max: 255, vendorField: 'PttSleepTime', confidence: 'vendor-name' },
+  { key: 'manualDialGroupHoldTime', label: 'Manual Dial - Group TG Hold Time', group: 'Digital Func', offset: 0x107, max: 255, vendorField: 'DialGroupHold', confidence: 'vendor-name' },
+  { key: 'manualDialPrivateHoldTime', label: 'Manual Dial - Private TG Hold Time', group: 'Digital Func', offset: 0x108, max: 255, vendorField: 'DialPrivateHold', confidence: 'vendor-name' },
+  { key: 'digitalEmergencyKind', label: 'Digital Emergency Kind', group: 'Digital Func', offset: 0x10a, max: 255, vendorField: 'DigiEmgKind', confidence: 'vendor-name' },
+  { key: 'zoneBarsEnable', label: 'Zone Bars', group: 'GPS/Ranging', offset: 0x114, max: 255, vendorField: 'ZoneBarsEn', confidence: 'vendor-name' },
+  { key: 'amVfoMem', label: 'AM VFO/MEM', group: 'AM/FM', offset: 0x13f, max: 255, vendorField: 'AmChanVfo', confidence: 'vendor-name' },
+  { key: 'amWorkZone', label: 'AM Work Zone', group: 'AM/FM', offset: 0x140, max: 255, vendorField: 'CurAmChan', confidence: 'vendor-name' },
+  { key: 'amOffset', label: 'AM Offset', group: 'AM/FM', offset: 0x141, max: 255, vendorField: 'AmOffset', confidence: 'vendor-name' },
+  { key: 'amSquelchLevel', label: 'AM Squelch Level', group: 'AM/FM', offset: 0x142, max: 255, vendorField: 'AmSqLevel', confidence: 'vendor-name' },
+  { key: 'repeaterSlotPathA', label: 'Repeater Slot Path A', cpsLabel: 'Repeater Slot Path A', group: 'Auto repeater', offset: 0x145, max: 2, options: ['Off', 'Channel A Fixed Time Slot1', 'Channel A Fixed Time Slot2'], listLength: 3, vendorField: 'RepSlotPathA', confidence: 'swept' },
+  { key: 'repeaterSlotPathB', label: 'Repeater Slot Path B', cpsLabel: 'Repeater Slot Path B', group: 'Auto repeater', offset: 0x146, max: 2, options: ['Off', 'Channel B Fixed Time Slot1', 'Channel B Fixed Time Slot2'], listLength: 3, vendorField: 'RepSlotPathB', confidence: 'swept' },
+  { key: 'dcsSte', label: 'DCS STE', group: 'STE', offset: 0x14a, max: 255, vendorField: 'DcsSte', confidence: 'vendor-name' },
+  { key: 'btNoiseReductionBefore', label: 'Bt Nr Before', group: 'Vox/BT', offset: 0x14b, max: 255, vendorField: 'BtNrBefore', confidence: 'vendor-name' },
+  { key: 'btNoiseReductionAfter', label: 'Bt Nr After', group: 'Vox/BT', offset: 0x14c, max: 255, vendorField: 'BtNrAfter', confidence: 'vendor-name' },
+  { key: 'satelliteTxPower', label: 'Satellite TX Power', cpsLabel: 'Satellite TX Power', group: 'Satellite', offset: 0x14f, max: 3, options: ['Low', 'Mid', 'High', 'Turbo'], listLength: 4, vendorField: 'SateTxPower', confidence: 'swept' },
+  { key: 'satelliteAnalogSquelch', label: 'Satellite Analog Squelch', cpsLabel: 'Satellite Analog Squelch', group: 'Satellite', offset: 0x150, max: 255, vendorField: 'SateAnaSql', confidence: 'swept' },
+  { key: 'digitalProtocol', label: 'Digital Protocol', group: 'Digital Func', offset: 0x152, max: 255, vendorField: 'DigiProtocal', confidence: 'vendor-name' },
+  { key: 'nxdnMicGain', label: 'NXDN Mic Gain', cpsLabel: 'NXDN Mic Gain', group: 'Volume/Audio', offset: 0x153, max: 5, options: ['1', '2', '3', '4', '5', 'Auto'], listLength: 6, vendorField: 'NxdnMic', confidence: 'swept' },
+  { key: 'resetDigitalProtocol', label: 'Reset Digital Protocol', cpsLabel: 'Reset Digital Protocol', group: 'Digital Func', offset: 0x154, max: 1, options: ['Off', 'DMR'], listLength: 2, vendorField: 'ResetDigiProtocal', confidence: 'swept' },
+  { key: 'noaaMonitor', label: 'NOAA Monitor', cpsLabel: 'NOAA Monitor', group: 'Other', offset: 0x157, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'WxMoni', confidence: 'swept' },
+  { key: 'noaaScan', label: 'NOAA Scan', cpsLabel: 'NOAA Scan', group: 'Other', offset: 0x158, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'WxScan', confidence: 'swept' },
+  { key: 'amFrequencyStep', label: 'AM Frequency Step', group: 'AM/FM', offset: 0x159, max: 9, options: ['2.5K', '5K', '6.25K', '8.33K', '10K', '12.5K', '20K', '25K', '30K', '50K'], listLength: 10, vendorField: 'AmFreqStep', confidence: 'vendor-name' },
+  { key: 'repeaterWhitelist', label: 'Repeater Whitelist', cpsLabel: 'Repeater Whitelist', group: 'Auto repeater', offset: 0x15a, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'RepIdLimit', confidence: 'swept' },
+  { key: 'simpRepeaterVoiceEnable', label: 'Simplex Repeater Voice Enable', group: 'Auto repeater', offset: 0x15d, max: 1, confidence: 'inferred' },
+  { key: 'simpRepeaterSlot', label: 'Simplex Repeater Slot', group: 'Auto repeater', offset: 0x15e, max: 2, options: ['Slot 1', 'Slot 2', 'Current Slot'], listLength: 3, vendorField: 'SimpRepterSlot', confidence: 'vendor-name' },
 ] as const;
 
 /**
@@ -235,6 +397,17 @@ export const D890_SETTINGS_FREQUENCIES: readonly D890FrequencyField[] = [
   { key: 'autoRepMaxVhf',   label: 'Auto Repeater Max (VHF)', group: 'Auto repeater', offset: 0x0c8, vendorField: 'AutoRepFreq1' },
   { key: 'autoRepMinUhf',   label: 'Auto Repeater Min (UHF)', group: 'Auto repeater', offset: 0x0cc, vendorField: 'AutoRepFreq2' },
   { key: 'autoRepMaxUhf',   label: 'Auto Repeater Max (UHF)', group: 'Auto repeater', offset: 0x0d0, vendorField: 'AutoRepFreq3' },
+  // A second four-u32 run at 0x0f4-0x103, found by the same `for i = 0 to 3`
+  // loop signature as the two above. Deliberately named by position and not by
+  // meaning: the store sites are verified, but which is min and which is max,
+  // and which band each belongs to, is NOT evidenced — an audit rejected the
+  // Auto-Repeater-2 reading for exactly that reason. Naming them here rather
+  // than leaving sixteen loose bytes keeps them out of the unmapped table
+  // without claiming to know what they do.
+  { key: 'autoRep2Freq0',   label: 'Auto Repeater 2 frequency 0', group: 'Auto repeater', offset: 0x0f4, vendorField: 'AutoRepFreq2_0' },
+  { key: 'autoRep2Freq1',   label: 'Auto Repeater 2 frequency 1', group: 'Auto repeater', offset: 0x0f8, vendorField: 'AutoRepFreq2_1' },
+  { key: 'autoRep2Freq2',   label: 'Auto Repeater 2 frequency 2', group: 'Auto repeater', offset: 0x0fc, vendorField: 'AutoRepFreq2_2' },
+  { key: 'autoRep2Freq3',   label: 'Auto Repeater 2 frequency 3', group: 'Auto repeater', offset: 0x100, vendorField: 'AutoRepFreq2_3' },
 ] as const;
 
 /** Frequency fields are stored as MHz x this factor. */
@@ -259,127 +432,38 @@ export const D890_FREQUENCY_SCALE = 100000;
 export interface D890UnmappedByte {
   offset: number;
   observedChanging: boolean;
+  /**
+   * The vendor CPS's own internal name for this byte, where the settings
+   * marshaller (`sub_005c10e0`) supplies one.
+   *
+   * A name is NOT a decode: the value range, the option list and the units are
+   * all still unknown, which is why these stay in this table rather than
+   * becoming fields. It is enough to look the setting up in the vendor CPS and
+   * watch which control moves — the same loop that produced the mapped fields.
+   */
+  vendorName?: string;
 }
 
 export const D890_UNMAPPED_BYTES: readonly D890UnmappedByte[] = [
-  { offset: 0x001, observedChanging: false },
-  { offset: 0x005, observedChanging: false },
-  { offset: 0x006, observedChanging: false },
-  { offset: 0x007, observedChanging: false },
-  { offset: 0x00c, observedChanging: false },
-  { offset: 0x015, observedChanging: true },
-  { offset: 0x016, observedChanging: false },
-  { offset: 0x018, observedChanging: false },
-  { offset: 0x01b, observedChanging: true },
-  { offset: 0x01d, observedChanging: false },
-  { offset: 0x01e, observedChanging: false },
-  { offset: 0x01f, observedChanging: false },
-  { offset: 0x020, observedChanging: false },
-  { offset: 0x022, observedChanging: false },
-  { offset: 0x023, observedChanging: false },
-  { offset: 0x024, observedChanging: false },
-  { offset: 0x025, observedChanging: false },
-  { offset: 0x026, observedChanging: false },
-  { offset: 0x028, observedChanging: false },
-  { offset: 0x02a, observedChanging: false },
-  { offset: 0x02b, observedChanging: false },
-  { offset: 0x02c, observedChanging: true },
-  { offset: 0x02d, observedChanging: true },
-  { offset: 0x032, observedChanging: true },
-  { offset: 0x034, observedChanging: false },
-  { offset: 0x035, observedChanging: false },
-  { offset: 0x03b, observedChanging: false },
-  { offset: 0x03d, observedChanging: false },
-  { offset: 0x040, observedChanging: false },
-  { offset: 0x043, observedChanging: false },
+  { offset: 0x023, observedChanging: false, vendorName: 'DTMFSpeed' },
+  { offset: 0x034, observedChanging: false, vendorName: 'comVersion' },
+  { offset: 0x03d, observedChanging: false, vendorName: 'Reserved_DigiKillEn' },
   { offset: 0x04e, observedChanging: false },
-  { offset: 0x04f, observedChanging: false },
-  { offset: 0x053, observedChanging: false },
   { offset: 0x054, observedChanging: false },
   { offset: 0x055, observedChanging: false },
   { offset: 0x056, observedChanging: false },
-  { offset: 0x068, observedChanging: false },
-  { offset: 0x069, observedChanging: false },
   { offset: 0x06a, observedChanging: false },
   { offset: 0x06b, observedChanging: false },
   { offset: 0x06c, observedChanging: false },
   { offset: 0x06d, observedChanging: false },
-  { offset: 0x06f, observedChanging: false },
-  { offset: 0x070, observedChanging: false },
-  { offset: 0x071, observedChanging: false },
-  { offset: 0x0af, observedChanging: true },
   { offset: 0x0b0, observedChanging: false },
-  { offset: 0x0b1, observedChanging: true },
   { offset: 0x0b2, observedChanging: false },
-  { offset: 0x0b3, observedChanging: false },
-  { offset: 0x0b4, observedChanging: false },
-  { offset: 0x0b5, observedChanging: false },
-  { offset: 0x0b6, observedChanging: false },
-  { offset: 0x0b7, observedChanging: false },
-  { offset: 0x0b8, observedChanging: true },
   { offset: 0x0bb, observedChanging: false },
-  { offset: 0x0bd, observedChanging: false },
-  { offset: 0x0d7, observedChanging: false },
-  { offset: 0x0d8, observedChanging: false },
-  { offset: 0x0d9, observedChanging: false },
-  { offset: 0x0da, observedChanging: false },
-  { offset: 0x0db, observedChanging: false },
-  { offset: 0x0de, observedChanging: true },
-  { offset: 0x0df, observedChanging: true },
-  { offset: 0x0e4, observedChanging: true },
-  { offset: 0x0e6, observedChanging: true },
-  { offset: 0x0e7, observedChanging: false },
-  { offset: 0x0ea, observedChanging: false },
-  { offset: 0x0eb, observedChanging: false },
-  { offset: 0x0ec, observedChanging: false },
-  { offset: 0x0ed, observedChanging: false },
-  { offset: 0x0ee, observedChanging: false },
-  { offset: 0x0f0, observedChanging: false },
+  { offset: 0x0e7, observedChanging: false, vendorName: 'RoamEffectChanDis' },
   { offset: 0x0f1, observedChanging: false },
   { offset: 0x0f2, observedChanging: false },
   { offset: 0x0f3, observedChanging: false },
-  { offset: 0x0f4, observedChanging: false },
-  { offset: 0x0f5, observedChanging: true },
-  { offset: 0x0f6, observedChanging: true },
-  { offset: 0x0f7, observedChanging: false },
-  { offset: 0x0f8, observedChanging: true },
-  { offset: 0x0f9, observedChanging: true },
-  { offset: 0x0fa, observedChanging: true },
-  { offset: 0x0fb, observedChanging: true },
-  { offset: 0x0fc, observedChanging: false },
-  { offset: 0x0fd, observedChanging: true },
-  { offset: 0x0fe, observedChanging: true },
-  { offset: 0x0ff, observedChanging: true },
-  { offset: 0x100, observedChanging: false },
-  { offset: 0x101, observedChanging: true },
-  { offset: 0x102, observedChanging: true },
-  { offset: 0x103, observedChanging: true },
-  { offset: 0x104, observedChanging: false },
-  { offset: 0x107, observedChanging: true },
-  { offset: 0x108, observedChanging: true },
-  { offset: 0x10a, observedChanging: false },
-  { offset: 0x114, observedChanging: false },
   { offset: 0x115, observedChanging: false },
-  { offset: 0x13f, observedChanging: true },
-  { offset: 0x140, observedChanging: false },
-  { offset: 0x141, observedChanging: false },
-  { offset: 0x142, observedChanging: false },
-  { offset: 0x145, observedChanging: true },
-  { offset: 0x146, observedChanging: true },
-  { offset: 0x14a, observedChanging: false },
-  { offset: 0x14b, observedChanging: false },
-  { offset: 0x14c, observedChanging: false },
-  { offset: 0x14f, observedChanging: true },
-  { offset: 0x150, observedChanging: true },
-  { offset: 0x152, observedChanging: false },
-  { offset: 0x153, observedChanging: true },
-  { offset: 0x154, observedChanging: true },
-  { offset: 0x157, observedChanging: true },
-  { offset: 0x158, observedChanging: true },
-  { offset: 0x159, observedChanging: false },
-  { offset: 0x15a, observedChanging: true },
-  { offset: 0x15d, observedChanging: false },
-  { offset: 0x15e, observedChanging: false },
   { offset: 0x15f, observedChanging: false },
 ] as const;
 
@@ -506,7 +590,7 @@ export const D890_KEY_FUNCTIONS: readonly string[] = [
 /** The nine controls that share D890_KEY_FUNCTIONS. */
 export const D890_KEY_FUNCTION_FIELDS: readonly string[] = [
   'pf1ShortKey', 'pf2ShortKey', 'pf3ShortKey', 'p1ShortKey', 'p2ShortKey',
-  'pf1LongKey', 'pf2LongKey', 'p1LongKey', 'p2LongKey',
+  'pf1LongKey', 'pf2LongKey', 'pf3LongKey', 'p1LongKey', 'p2LongKey',
 ] as const;
 
 /**
@@ -577,12 +661,18 @@ export const D890_SETTINGS_BOOLEAN = new Set<string>(
  * stores milliseconds, the radio stores units of 10 ms. All 25 steps were
  * confirmed on hardware.
  */
+/**
+ * `tab` is which of the vendor CPS's two alert-tone tabs owns each melody: the
+ * Alert Tone tab carries three blocks and Alert Tone1 carries two, and the five
+ * fall in that order. Recorded rather than rendered — nothing in NeonPlug edits
+ * these yet.
+ */
 export const D890_ALERT_TONE_GROUPS = [
-  { id: 'group0', frequencies: 0x072, durations: 0x07c },
-  { id: 'group1', frequencies: 0x086, durations: 0x090 },
-  { id: 'group2', frequencies: 0x09a, durations: 0x0a4 },
-  { id: 'group3', frequencies: 0x116, durations: 0x120 },
-  { id: 'group4', frequencies: 0x12a, durations: 0x134 },
+  { id: 'group0', frequencies: 0x072, durations: 0x07c, tab: 'Alert Tone' },
+  { id: 'group1', frequencies: 0x086, durations: 0x090, tab: 'Alert Tone' },
+  { id: 'group2', frequencies: 0x09a, durations: 0x0a4, tab: 'Alert Tone' },
+  { id: 'group3', frequencies: 0x116, durations: 0x120, tab: 'Alert Tone1' },
+  { id: 'group4', frequencies: 0x12a, durations: 0x134, tab: 'Alert Tone1' },
 ] as const;
 
 /** Steps per alert-tone group. */

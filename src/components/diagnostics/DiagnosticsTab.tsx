@@ -19,6 +19,7 @@ import { TxContactStructureReference } from './TxContactStructureReference';
 import { QuickContactsBlockDetails } from './QuickContactsBlockDetails';
 import { TalkGroupsBlockDetails } from './TalkGroupsBlockDetails';
 import { RegionDumpPanel } from './RegionDumpPanel';
+import { RecordLayoutPanel } from './RecordLayoutPanel';
 import { MemoryImagePanel } from './MemoryImagePanel';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
@@ -103,6 +104,12 @@ export const DiagnosticsTab: React.FC = () => {
               image viewer, sparse address-addressed radios get the region dump. */}
           <MemoryImagePanel showAlert={showAlert} />
           <RegionDumpPanel showAlert={showAlert} />
+          {/* Byte maps and the protocol reference for sparse address-addressed
+              radios. Renders with no radio connected, which is when it is most
+              useful — the clone-block panels below have nothing to show for a
+              radio with no contiguous image, which is what left this tab nearly
+              empty for the DA-7X2. */}
+          <RecordLayoutPanel />
 
           {!hasGenericTools && (
             <Card className="!border-yellow-600/30">
