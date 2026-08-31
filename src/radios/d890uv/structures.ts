@@ -41,7 +41,7 @@ import {
  * are 0x00/0x10/0x20/0x30, so this is a shifted field rather than the low bits;
  * read straight off a codeplug carrying all four values.
  */
-const D890_OPTIONAL_SIGNAL = ['None', 'DTMF', 'Two Tone', 'Five Tone'] as const;
+export const D890_OPTIONAL_SIGNAL = ['None', 'DTMF', 'Two Tone', 'Five Tone'] as const;
 
 /** Byte 0x35, low two bits — the vendor's "APRS Report Type" column. */
 const D890_APRS_REPORT = ['Off', 'Analog', 'Digital'] as const;
@@ -53,7 +53,7 @@ const D890_APRS_REPORT = ['Off', 'Analog', 'Digital'] as const;
  * option names for the same list and are included so a radio set to one of them
  * does not fall back to "Carrier".
  */
-const D890_SQUELCH_MODE = ['Carrier/CTC', 'CTCSS/DCS', 'Optional', 'CTC&Opt'] as const;
+export const D890_SQUELCH_MODE = ['Carrier/CTC', 'CTCSS/DCS', 'Optional', 'CTC&Opt'] as const;
 
 /**
  * Fields the radio stores zero-based and the vendor CPS displays one-based.
@@ -735,11 +735,27 @@ export function parseChannel(
   // RX group in the list read back as 0 (= none) instead of 1.
   const rxGroupWire = bytes[0x1c] ?? D890_SENTINEL.NO_REF_U8;
 
-  // Byte 0x08 bits 1-0, confirmed against the CPS export:
-  //   0 = A-Analog, 1 = D-Digital, 2 = A+D TX A, 3 = D+A TX D
-  // The shared model has no mixed mode, so classify by what the channel
-  // TRANSMITS: types 1 and 3 transmit digital, 0 and 2 transmit analog.
-  const mode: ChannelMode = typeBits === 1 || typeBits === 3 ? 'Digital' : 'Analog';
+  // Byte 0x08 bits 1-0, confirmed against the CPS export, which carries all
+  // four values (87 A-Analog, 29 D-Digital, 2 A+D TX A, 2 D+A TX D):
+  //   0 = A-Analog   1 = D-Digital   2 = A+D TX A   3 = D+A TX D
+  //
+  // All four are preserved. An earlier version collapsed this to Analog/Digital
+  // "because the shared model has no mixed mode" — but the model DOES have four
+  // values in the same numeric order, and the channel grid already cycles all
+  // four. Collapsing silently turned every mixed channel into a plain one, and
+  // on a write path it would have flattened them permanently.
+  //
+  // The model's labels are the DM-32's, and the DM-32 has the same mixed-mode
+  // channels — so this is one feature under two vendors' names, not a numeric
+  // coincidence. Slots 2 and 3 mean "receive both, transmit the named one" on
+  // both radios. Showing each radio's own wording would be a nicety, not a fix.
+  //
+  // The Analog/Digital split that `isDigitalMode` derives from these still comes
+  // out right, because it keys on what the channel TRANSMITS: 1 and 3 digital,
+  // 0 and 2 analog. That is also why Busy Lock — permitted on Analog and A-D
+  // only — gates correctly off it.
+  const MODE_BY_TYPE: readonly ChannelMode[] = ['Analog', 'Digital', 'Fixed Analog', 'Fixed Digital'];
+  const mode: ChannelMode = MODE_BY_TYPE[typeBits] ?? 'Analog';
   // Four levels on this radio, confirmed against the CPS export and the radio's
   // own menu: 0=Low, 1=Mid, 2=High, 3=Turbo. Turbo is a real level above High,
   // so it is preserved rather than folded — radios with only three levels clamp
@@ -856,12 +872,21 @@ export function parseChannel(
      */
     busyLock: (bytes[0x1a] ?? 0) & 0x0f,
     /** Vendor "Emergency System" (`EMG_Key`). Byte 0x22. */
-    // ⚠️ MISLABELLED. Byte 0x22 is the vendor's `EMG_Key`, exported as CSV column
-    // 30 "Digital Encryption" — the encryption KEY SLOT index, 0 meaning Off.
-    // It is not an emergency system reference. Both `EMG_*` names on this radio
-    // are vestigial, exactly like `rec_only`: `EMG_Kind` at 0x21 bit 6 is the AES
-    // algorithm selector and this is the key slot. The emergency-system field is
-    // `ex_emg_kind` at 0x3b bit 5, a different byte entirely.
+    // ⚠️ MISLABELLED FIELD NAME — this is the ENCRYPTION KEY SLOT, 1-based,
+    // 0 = Off. CONFIRMED ON HARDWARE 2026-08-31 with two distinct values:
+    // channel 56 assigned key index 1 read back 0x01, channel 57 assigned index 2
+    // read back 0x02, and their unencrypted neighbours read 0x00. Two points, so
+    // this is the index the user picks and not a flag that happens to be 1.
+    //
+    // The vendor calls it `EMG_Key` and exports it as CSV column 30 "Digital
+    // Encryption". Both `EMG_*` names on this radio are vestigial, exactly like
+    // `rec_only`: `EMG_Kind` at 0x21 bit 6 is the AES algorithm selector, and
+    // this is the key slot. The actual emergency-system field is `ex_emg_kind`
+    // at 0x3b bit 5 — a different byte entirely.
+    //
+    // The MODEL field keeps its old name because renaming it touches the shared
+    // Channel type used by every radio. The UI label is corrected instead. It is
+    // a slot INDEX, not a free-form id — the CPS offers a dropdown.
     // Traced: write 0x005b0424->0x005b043c, read 0x005b2a56, no mask.
     emergencySystemIndex: bytes[0x22] ?? 0,
     /** Vendor "DMR MODE" (`TDMA`). Byte 0x21 bits 3-2. */
@@ -952,6 +977,24 @@ export function parseChannel(
     /** Vendor `AnaAprsTxPath`. Byte 0x3c. */
     analogAprsTxPath: bytes[0x3c] ?? 0,
     /** Vendor "ARC4" (`Arc4EmgCode`). Byte 0x3d. */
+    // CONFIRMED ON HARDWARE 2026-08-31. Two channels were given encryption keys
+    // in the vendor CPS — channel 56 an ARC4 key at index 1, channel 57 an AES
+    // key at index 2. Only the ARC4 channel came back with 0x3d set, and it holds
+    // the same index as 0x22:
+    //
+    //   ch 56  ARC4 idx 1   0x22 = 01   0x3d = 01
+    //   ch 57  AES  idx 2   0x22 = 02   0x3d = 00
+    //
+    // So 0x3d is the ARC4 key slot, matching the vendor's `Arc4EmgCode` and its
+    // CSV column "ARC4". It is ALSO the only byte seen so far that distinguishes
+    // an ARC4 assignment from an AES one — 0x21 bit 6 is set on all four channels
+    // in that dump, including the two with no encryption at all, so it is not the
+    // type selector it was once assumed to be.
+    //
+    // INFERRED, not confirmed: that `0x3d != 0` means "the key in 0x22 is ARC4".
+    // It fits both observations but rests on one channel of each type. A basic
+    // Encryption Code assignment has not been captured at all, so AES and basic
+    // are not yet distinguishable from each other.
     arc4Code: bytes[0x3d] ?? 0,
   });
 

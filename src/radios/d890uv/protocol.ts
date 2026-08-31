@@ -28,6 +28,16 @@ import { log } from '../../utils/protocolLogger';
 import { D890_IMAGE, D890_IMAGE_ADDRESS, D890_IMAGE_LABEL, type D890ImageKind } from './bootImage';
 import { D890_ENCRYPTION_TYPE } from './constants';
 import { predefinedSmsAddress, parsePredefinedSms } from './predefinedSms';
+import { D890_EMERGENCY, parseEmergencySettings, parseEmergencyContact } from './emergency';
+import {
+  D890_BROADCAST,
+  broadcastChannelAddress,
+  parseBroadcastChannel,
+  isVacantBroadcastChannel,
+  type D890BroadcastBand,
+  type D890BroadcastChannel,
+} from './broadcastChannels';
+import { D890_GPS_ROAMING, parseGpsRoamingTable } from './gpsRoaming';
 import type { QuickTextMessage } from '../../models/QuickTextMessage';
 import { D890_SATELLITE, decodeSatelliteTable, type D890SatelliteRecord } from './satellite';
 import { D890Connection, openD890Port, type D890Identity } from './connection';
@@ -217,11 +227,33 @@ export class D890UVProtocol extends BaseDigitalProtocol {
    *
    * Not wired into the normal read path on purpose — see readChannels().
    */
+  /**
+   * Raw 128-byte channel records, keyed by 1-based channel number, exactly as
+   * the radio sent them.
+   *
+   * A write PATCHES these rather than building a record from scratch — that is
+   * what keeps the ~49 fields this driver decodes but does not encode, and the
+   * unnamed bytes beyond them, intact across a write. Without this map there is
+   * no safe write path at all, only an unsafe one.
+   */
+  readonly rawChannelRecords = new Map<number, Uint8Array>();
+
+  /**
+   * The raw presence mask, as read.
+   *
+   * Kept because a write must PATCH it, not rebuild it: a mask rebuilt over the
+   * 4000 storable slots writes zeros past them, and the radio uses slots 4000
+   * and 4001 for VFO A and B. Both serial captures show byte 500 as 0x03.
+   */
+  rawChannelMask: Uint8Array | null = null;
+
   async readChannelsPreview(
     onProgress?: (done: number, total: number) => void
   ): Promise<{ decoded: D890ChannelDecode[]; unresolvedTones: number }> {
     const conn = this.requireConnection();
     const mask = await conn.readMemory(D890_ADDR.CHANNEL_SET, D890_ADDR.CHANNEL_SET_SIZE);
+    this.rawChannelMask = Uint8Array.from(mask);
+    this.rawChannelRecords.clear();
     const present = occupiedIndices(
       decodeOccupancyMask(mask, D890_LIMITS.CHANNELS_MAX)
     );
@@ -244,6 +276,9 @@ export class D890UVProtocol extends BaseDigitalProtocol {
         // A record inside a run can still be vacant if the mask and the data
         // disagree; trust the data.
         if (isVacantChannel(record)) continue;
+        // Copy, not a view: `buffer` covers a whole span and would keep the
+        // entire run alive, and a later reader could see it mutate.
+        this.rawChannelRecords.set(index + 1, Uint8Array.from(record));
         decoded.push(parseChannel(record, index));
       }
       onProgress?.(Math.min(done, present.length), present.length);
@@ -541,6 +576,9 @@ export class D890UVProtocol extends BaseDigitalProtocol {
         const { primary } = channelAddresses(index);
         const record = await conn.readMemory(primary, D890_ADDR.CHANNEL_STRIDE);
         const { channel } = parseChannel(record, index);
+        // Cached under the same 1-based key as every other channel, so a writer
+        // does not have to special-case them to find their original bytes.
+        this.rawChannelRecords.set(index + 1, Uint8Array.from(record));
         out.push(channel);
       } catch (err) {
         log.warn(`DA-7X2 VFO at index ${index} unreadable: ${String(err)}`, 'D890');
@@ -581,6 +619,73 @@ export class D890UVProtocol extends BaseDigitalProtocol {
       out.push({ index, text, flag: 0, checkValue: 0 });
     }
     return out;
+  }
+
+  /**
+   * The current channel for each zone's A and B VFOs.
+   *
+   * ⚠️ THESE ARE POSITIONS IN THE ZONE'S MEMBER LIST, NOT CHANNEL NUMBERS.
+   * Zone 3's stored 8 means "the 9th channel in zone 3", not channel 8. Reading
+   * them as channel numbers gives a plausible number that is almost always the
+   * wrong channel — which is why this returns positions and makes the caller
+   * resolve them against the zone it belongs to.
+   *
+   * Verified against a real radio image: zone B holds [0, 1, 8, 5, 12, 5, 5]
+   * across seven zones, and each lands inside that zone's own member count.
+   */
+  async readZoneCurrentChannels(): Promise<{ a: number[]; b: number[] }> {
+    const conn = this.requireConnection();
+    const size = D890_LIMITS.ZONES_MAX * 2;
+    const readPositions = async (address: number): Promise<number[]> => {
+      const bytes = await conn.readMemory(address, Math.ceil(size / 0x10) * 0x10);
+      const out: number[] = [];
+      for (let z = 0; z < D890_LIMITS.ZONES_MAX; z += 1) {
+        out.push((bytes[z * 2] ?? 0) | ((bytes[z * 2 + 1] ?? 0) << 8));
+      }
+      return out;
+    };
+    return {
+      a: await readPositions(D890_ADDR.ZONE_A_CHANNEL),
+      b: await readPositions(D890_ADDR.ZONE_B_CHANNEL),
+    };
+  }
+
+  /** Emergency / alarm settings and the contact they call. */
+  async readEmergency(): Promise<{
+    settings: import('./emergency').D890EmergencySettings | null;
+    contact: import('./emergency').D890EmergencyContact | null;
+  }> {
+    const conn = this.requireConnection();
+    const settingsBytes = await conn.readMemory(D890_EMERGENCY.SETTINGS, D890_EMERGENCY.SIZE);
+    const contactBytes = await conn.readMemory(D890_EMERGENCY.CONTACT, D890_EMERGENCY.SIZE);
+    return {
+      settings: parseEmergencySettings(settingsBytes),
+      contact: parseEmergencyContact(contactBytes),
+    };
+  }
+
+  /** AM airband and FM broadcast channels, plus their VFO records. */
+  async readBroadcastChannels(band: D890BroadcastBand): Promise<D890BroadcastChannel[]> {
+    const conn = this.requireConnection();
+    const spec = D890_BROADCAST[band];
+    const mask = await conn.readMemory(spec.mask, band === 'am' ? 0x20 : 0x10);
+    const present = occupiedIndices(decodeOccupancyMask(mask, spec.channels));
+    const out: D890BroadcastChannel[] = [];
+    for (const index of present) {
+      const record = await conn.readMemory(broadcastChannelAddress(band, index), spec.stride);
+      const ch = parseBroadcastChannel(record, index, band);
+      if (!isVacantBroadcastChannel(ch)) out.push(ch);
+    }
+    return out;
+  }
+
+  /** The GPS Roaming geofence table. */
+  async readGpsRoaming(): Promise<import('./gpsRoaming').D890GpsRoamingEntry[]> {
+    const bytes = await this.requireConnection().readMemory(
+      D890_GPS_ROAMING.DATA,
+      D890_GPS_ROAMING.TABLE_BYTES
+    );
+    return parseGpsRoamingTable(bytes);
   }
 
   /**

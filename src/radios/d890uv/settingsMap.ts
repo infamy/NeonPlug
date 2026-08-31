@@ -318,7 +318,17 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'selectTxContact', label: 'Select TX Contact', group: 'Other', offset: 0x040, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'ContactOutSetEn', confidence: 'vendor-name' },
   { key: 'manDownDelayS', label: 'Man Down Delay[s]', group: 'Other', offset: 0x04f, max: 255, vendorField: 'ManDownWait', confidence: 'vendor-name' },
   { key: 'gpsTemplateInformation', label: 'GPS Template Information', group: 'GPS/Ranging', offset: 0x053, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'GpsTextUsed', confidence: 'vendor-name' },
+  // ⚠️ Reads 255 where the vendor shows 0. Verified against a real radio image
+  // 2026-08-31: this sits on an `ff ff` byte PAIR, so it is almost certainly a
+  // u16 with 0xFFFF meaning "none" — read here as a single byte, which surfaces
+  // 255 as though it were a real value. Do not write it until the width is
+  // settled; a one-byte write would leave half a sentinel behind.
   { key: 'autoRepeater1Uhf', label: 'Auto Repeater1(UHF)', group: 'Auto repeater', offset: 0x068, max: 255, vendorField: 'UhfAutoRep', confidence: 'inferred' },
+  // ⚠️ Reads 255 where the vendor shows 0. Verified against a real radio image
+  // 2026-08-31: this sits on an `ff ff` byte PAIR, so it is almost certainly a
+  // u16 with 0xFFFF meaning "none" — read here as a single byte, which surfaces
+  // 255 as though it were a real value. Do not write it until the width is
+  // settled; a one-byte write would leave half a sentinel behind.
   { key: 'autoRepeater1Vhf', label: 'Auto Repeater1(VHF)', group: 'Auto repeater', offset: 0x069, max: 255, vendorField: 'VhfAutoRep', confidence: 'inferred' },
   { key: 'priorityZoneA', label: 'Priority Zone A', group: 'Other', offset: 0x06f, max: 255, vendorField: 'PriZoneA', confidence: 'vendor-name' },
   { key: 'priorityZoneB', label: 'Priority Zone B', group: 'Other', offset: 0x070, max: 255, vendorField: 'PriZoneB', confidence: 'vendor-name' },
@@ -333,7 +343,17 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'displayChannelNumber', label: 'Display Channel Number', cpsLabel: 'Display Channel Number', group: 'Display', offset: 0x0b8, max: 1, options: ['Actual Channel Number', 'Sequence Number In Zone'], listLength: 2, vendorField: 'ChanNumDisKind', confidence: 'swept' },
   { key: 'startupZoneA', label: 'Startup Zone A', group: 'Power-on', offset: 0x0d7, max: 255, vendorField: 'StartZone1', confidence: 'vendor-name' },
   { key: 'startupZoneB', label: 'Startup Zone B', group: 'Power-on', offset: 0x0d8, max: 255, vendorField: 'StartZone2', confidence: 'vendor-name' },
+  // ⚠️ Reads 255 where the vendor shows 0. Verified against a real radio image
+  // 2026-08-31: this sits on an `ff ff` byte PAIR, so it is almost certainly a
+  // u16 with 0xFFFF meaning "none" — read here as a single byte, which surfaces
+  // 255 as though it were a real value. Do not write it until the width is
+  // settled; a one-byte write would leave half a sentinel behind.
   { key: 'startupChannelA', label: 'Startup Channel A', group: 'Power-on', offset: 0x0d9, max: 255, vendorField: 'StartCurChan1', confidence: 'inferred' },
+  // ⚠️ Reads 255 where the vendor shows 0. Verified against a real radio image
+  // 2026-08-31: this sits on an `ff ff` byte PAIR, so it is almost certainly a
+  // u16 with 0xFFFF meaning "none" — read here as a single byte, which surfaces
+  // 255 as though it were a real value. Do not write it until the width is
+  // settled; a one-byte write would leave half a sentinel behind.
   { key: 'startupChannelB', label: 'Startup Channel B', group: 'Power-on', offset: 0x0da, max: 255, vendorField: 'StartCurChan2', confidence: 'inferred' },
   { key: 'roamingZone', label: 'Roaming Zone', group: 'Auto repeater', offset: 0x0db, max: 255, vendorField: 'CurRoamZone', confidence: 'vendor-name' },
   { key: 'repeaterCheckReconnections', label: 'Repeater Check Reconnections', cpsLabel: 'Repeater Check Reconnections', group: 'Auto repeater', offset: 0x0de, max: 255, vendorField: 'BsCheckTimes', confidence: 'swept' },

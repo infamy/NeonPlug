@@ -259,4 +259,13 @@ export interface RadioCapabilities {
   supportsQuickMessages?: boolean;
   /** If true, radio has Analog Emergency Systems (DM-32UV only). */
   supportsAnalogEmergency?: boolean;
+  /**
+   * Digital emergency systems, as the DM-32 models them (metadata block 0x10).
+   *
+   * The DA-7X2 has emergency/alarm features but NOT this: its alarm data lives
+   * in two 0x30 regions at 0x3482e00 and 0x3483000 with an entirely different
+   * shape, and it has no block 0x10 at all. Showing the DM-32's section for it
+   * offers an editor backed by nothing.
+   */
+  supportsDigitalEmergency?: boolean;
 }

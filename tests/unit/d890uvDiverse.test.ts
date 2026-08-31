@@ -64,8 +64,19 @@ describe('DA-7X2 diverse codeplug — read path', () => {
       expect(got.name, `channel ${chIndex + 1} name`).toBe(want.name.slice(0, 16));
       expect(got.rxFrequency, `channel ${chIndex + 1} rx`).toBeCloseTo(want.rx, 4);
       expect(got.txFrequency, `channel ${chIndex + 1} tx`).toBeCloseTo(want.tx, 4);
-      const wantDigital = want.type.startsWith('D');
-      expect(got.mode === 'Digital', `channel ${chIndex + 1} mode`).toBe(wantDigital);
+      // All FOUR vendor types must round-trip, not just the analog/digital
+      // split. The parser used to collapse "A+D TX A" and "D+A TX D" into plain
+      // Analog/Digital, which silently erased mixed-mode channels — this
+      // codeplug has two of each.
+      const MODE_FOR_TYPE: Record<string, string> = {
+        'A-Analog': 'Analog',
+        'D-Digital': 'Digital',
+        'A+D TX A': 'Fixed Analog',
+        'D+A TX D': 'Fixed Digital',
+      };
+      expect(got.mode, `channel ${chIndex + 1} mode (vendor "${want.type}")`).toBe(
+        MODE_FOR_TYPE[want.type] ?? 'Analog',
+      );
       checked += 1;
     });
     expect(checked).toBe(118);

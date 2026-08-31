@@ -56,6 +56,15 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
    * 87.5-108 broadcast FM, but those are RX-only and not expressible in
    * bandLimits — channels there would be filtered out before a write, which is
    * the safe behaviour until airband support is designed properly.
+   *
+   * ⚠️ THESE ARE TRANSMIT LIMITS. The receive range is wider and is a different
+   * question: this radio receives 108-136 MHz AM airband and the FM broadcast
+   * band, on neither of which it can transmit. `planChannelWrite` checks TX only
+   * for exactly that reason.
+   *
+   * They are DECLARED, not read. The radio's actual TX range appears nowhere in
+   * a full codeplug capture — not in LocalInfo (model string and serial only)
+   * and not in any of the 52 KB the vendor CPS reads. Searched 2026-08-31.
    */
   bandLimits: {
     vhfMin: 136,
@@ -137,4 +146,12 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
    */
   supportsQuickMessages: true,
   supportsAnalogEmergency: false,
+  /**
+   * False. This radio HAS emergency features — the vendor's Emergency
+   * Information form carries 24 controls — but not in the DM-32's shape. Its
+   * alarm data is two 0x30 records at 0x3482e00 (contact) and 0x3483000
+   * (settings), fully mapped 2026-08-31, and there is no metadata block 0x10.
+   * The DM-32's section would render an editor over data that does not exist.
+   */
+  supportsDigitalEmergency: false,
 };

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { parseChannel, decodeOccupancyMask, occupiedIndices } from '../../src/radios/d890uv/structures';
 import { planChannelWrite, D890WriteRefusedError } from '../../src/radios/d890uv/writePlan';
 import type { Channel } from '../../src/models/Channel';
+import { NO_TX_FREQUENCY } from '../../src/services/validation/frequencyValidator';
 
 const DIR = join(__dirname, '../fixtures/d890uv');
 const rec = (i: number) => new Uint8Array(readFileSync(join(DIR, `channel-${i}.bin`)));
@@ -34,7 +35,11 @@ function setup(count = 4) {
     channels.push(channel);
     originals.set(channel.number, bytes);
   }
-  return { channels, originals, originalMask: REAL_MASK, counts: COUNTS };
+  // referencingTables: [] means "nothing on the radio points at a channel".
+  // Required because the real mask holds 120 channels while these tests write a
+  // handful, so every plan here CLEARS the rest — which the reverse-reference
+  // gate refuses unless the caller has checked.
+  return { channels, originals, originalMask: REAL_MASK, counts: COUNTS, referencingTables: [] };
 }
 
 describe('DA-7X2 channel write plan', () => {
@@ -60,7 +65,7 @@ describe('DA-7X2 channel write plan', () => {
   it('refuses to plan without the mask read from the radio', () => {
     const { channels, originals, counts } = setup(2);
     expect(() =>
-      planChannelWrite({ channels, originals, originalMask: new Uint8Array(8), counts }),
+      planChannelWrite({ channels, originals, originalMask: new Uint8Array(8), counts, referencingTables: [] }),
     ).toThrow(/read from the radio first/);
   });
 
@@ -78,7 +83,7 @@ describe('DA-7X2 channel write plan', () => {
     // Writing channels 1 and 3 must clear bit 1, not leave channel 2 claimed.
     const { channels, originals, counts } = setup(4);
     const subset = [channels[0], channels[2]];
-    const plan = planChannelWrite({ channels: subset, originals, originalMask: REAL_MASK, counts });
+    const plan = planChannelWrite({ channels: subset, originals, originalMask: REAL_MASK, counts, referencingTables: [] });
     expect(occupiedIndices(decodeOccupancyMask(plan.mask, 4000))).toEqual([0, 2]);
   });
 
@@ -104,7 +109,7 @@ describe('DA-7X2 channel write plan', () => {
     // record from scratch would zero every undecoded field.
     const { channels, counts } = setup(2);
     expect(() =>
-      planChannelWrite({ channels, originals: new Map(), originalMask: REAL_MASK, counts }),
+      planChannelWrite({ channels, originals: new Map(), originalMask: REAL_MASK, counts, referencingTables: [] }),
     ).toThrow(/no original record/);
   });
 
@@ -156,5 +161,107 @@ describe('what the plan refuses, and what it deliberately does not', () => {
     expect(() =>
       planChannelWrite({ channels: [bad], originals, originalMask: REAL_MASK, counts: COUNTS }),
     ).toThrow(D890WriteRefusedError);
+  });
+});
+
+
+describe('the reverse-reference gate', () => {
+  it('refuses to orphan a zone that still points at a removed channel', () => {
+    // The mirror of SetCommDataByChannelError. `findDanglingReferences` checks
+    // channel -> table; nothing checked table -> channel until now. Delete
+    // channel 3 while zone "Local" still lists it and the codeplug is broken in
+    // a way that reads back perfectly.
+    const { channels, originals, counts } = setup(4);
+    const subset = channels.slice(0, 2); // drops channels 3 and 4
+    expect(() =>
+      planChannelWrite({
+        channels: subset, originals, originalMask: REAL_MASK, counts,
+        referencingTables: [{ kind: 'zone', name: 'Local', channelNumbers: [1, 3] }],
+      }),
+    ).toThrow(/zone "Local" references channel\(s\) 3/);
+  });
+
+  it('allows the same write when nothing references the removed channels', () => {
+    const { channels, originals, counts } = setup(4);
+    const plan = planChannelWrite({
+      channels: channels.slice(0, 2), originals, originalMask: REAL_MASK, counts,
+      referencingTables: [{ kind: 'zone', name: 'Local', channelNumbers: [1, 2] }],
+    });
+    expect(plan.clearedChannelNumbers).toContain(3);
+    expect(plan.clearedChannelNumbers).toContain(4);
+  });
+
+  it('refuses a clearing write when given no membership to check at all', () => {
+    // Silence is not consent: a caller that has not looked cannot be assumed to
+    // have nothing to lose.
+    const { channels, originals, counts } = setup(4);
+    expect(() =>
+      planChannelWrite({ channels: channels.slice(0, 2), originals, originalMask: REAL_MASK, counts }),
+    ).toThrow(/no zone or scan-list membership/);
+  });
+
+  it('records VFO channels as skipped rather than dropping them silently', () => {
+    // readChannels prepends VFO A/B as 4001/4002. They are real records outside
+    // the storable range; this planner does not write them, but it must say so.
+    const { channels, originals, counts } = setup(2);
+    const vfo = { ...channels[0], number: 4001 } as Channel;
+    const plan = planChannelWrite({
+      channels: [...channels, vfo], originals, originalMask: REAL_MASK, counts,
+      referencingTables: [],
+    });
+    expect(plan.skipped.map((s) => s.channelNumber)).toContain(4001);
+    expect(plan.channelNumbers).not.toContain(4001);
+  });
+});
+
+describe('transmit band limits', () => {
+  const LIMITS = { vhfMin: 136, vhfMax: 174, uhfMin: 400, uhfMax: 480 };
+
+  it('refuses a channel transmitting outside the radio\'s bands', () => {
+    const { channels, originals, counts } = setup(2);
+    const bad = { ...channels[0], txFrequency: 220.5 } as Channel;
+    expect(() =>
+      planChannelWrite({
+        channels: [bad], originals, originalMask: REAL_MASK, counts,
+        referencingTables: [], txBandLimits: LIMITS,
+      }),
+    ).toThrow(/transmit outside this radio's bands/);
+  });
+
+  it('checks TX only — a receive-only channel outside the bands is fine', () => {
+    // This radio receives 108-136 AM airband and the FM broadcast band, neither
+    // of which it can transmit on. Filtering RX against TX limits would reject
+    // legal receive-only channels.
+    //
+    // NO_TX_FREQUENCY (1666.666) is the receive-only SENTINEL, not a frequency.
+    // A naive `txFrequency > 0` test treats it as out-of-band and rejects every
+    // channel the airport wizard produces.
+    const { channels, originals, counts } = setup(2);
+    for (const tx of [0, NO_TX_FREQUENCY]) {
+      const rxOnly = { ...channels[0], rxFrequency: 118.5, txFrequency: tx } as Channel;
+      expect(() =>
+        planChannelWrite({
+          channels: [rxOnly], originals, originalMask: REAL_MASK, counts,
+          referencingTables: [], txBandLimits: LIMITS,
+        }),
+      ).not.toThrow();
+    }
+    const rxOnly = { ...channels[0], rxFrequency: 118.5, txFrequency: 0 } as Channel;
+    expect(() =>
+      planChannelWrite({
+        channels: [rxOnly], originals, originalMask: REAL_MASK, counts,
+        referencingTables: [], txBandLimits: LIMITS,
+      }),
+    ).not.toThrow();
+  });
+
+  it('skips the check entirely when no limits are supplied', () => {
+    const { channels, originals, counts } = setup(2);
+    const bad = { ...channels[0], txFrequency: 220.5 } as Channel;
+    expect(() =>
+      planChannelWrite({
+        channels: [bad], originals, originalMask: REAL_MASK, counts, referencingTables: [],
+      }),
+    ).not.toThrow();
   });
 });

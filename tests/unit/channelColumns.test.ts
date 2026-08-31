@@ -175,3 +175,16 @@ describe('analog-only columns', () => {
     expect(both.map((c) => c.label)).toEqual([]);
   });
 });
+
+describe('Digital Emergency Systems is capability-gated', () => {
+  it('is off for the DA-7X2 and on for the DM-32', async () => {
+    // The DA-7X2 HAS emergency features — the vendor's Emergency Information
+    // form carries 24 controls — but stores them as two 0x30 records at
+    // 0x3482e00 / 0x3483000, with no metadata block 0x10 at all. The DM-32's
+    // section would render an editor over data that does not exist on it.
+    const { D890UV_CAPABILITIES } = await import('../../src/radios/d890uv/capabilities');
+    const { DM32UV_CAPABILITIES } = await import('../../src/radios/dm32uv/capabilities');
+    expect(D890UV_CAPABILITIES.supportsDigitalEmergency).toBe(false);
+    expect(DM32UV_CAPABILITIES.supportsDigitalEmergency).toBe(true);
+  });
+});

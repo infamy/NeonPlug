@@ -2,6 +2,7 @@ import type { Channel } from '../../models/Channel';
 import { D890_ADDR, D890_LIMITS } from './constants';
 import { assertWritableAddress } from './framing';
 import { channelAddresses } from './structures';
+import { NO_TX_FREQUENCY } from '../../services/validation/frequencyValidator';
 import {
   applyChannelToRecord,
   channelRecordFrames,
@@ -52,6 +53,18 @@ export interface D890ChannelWritePlan {
    * are preserved untouched — but the write could not verify them either.
    */
   unverifiableReferences: DanglingReference[];
+  /**
+   * Channels present on the radio that this plan marks ABSENT. Surfaced because
+   * clearing a slot is destructive and should never be silent.
+   */
+  clearedChannelNumbers: number[];
+  /**
+   * Channels handed in that the plan did not write, with the reason. VFO A and B
+   * land here: they are real records at indices 4000/4001 but sit outside the
+   * storable range, and silently dropping them was how they previously
+   * disappeared from a write.
+   */
+  skipped: { channelNumber: number; reason: string }[];
 }
 
 export class D890WriteRefusedError extends Error {
@@ -89,6 +102,34 @@ export interface D890ChannelWriteInput {
   originalMask: Uint8Array;
   /** Entry counts for the tables channels reference. */
   counts: D890TableCounts;
+  /**
+   * TRANSMIT frequency limits. Optional; when absent, no band check runs.
+   *
+   * ⚠️ TX ONLY. The receive range is wider and is not the same question — this
+   * radio receives 108-136 MHz AM airband and the FM broadcast band, neither of
+   * which it can transmit on. Filtering RX against these limits would reject
+   * perfectly legal receive-only channels.
+   */
+  txBandLimits?: { vhfMin: number; vhfMax: number; uhfMin?: number; uhfMax?: number };
+  /**
+   * Tables on the radio that reference CHANNELS, so the plan can refuse to
+   * orphan them.
+   *
+   * `findDanglingReferences` only checks channel -> table. Nothing checked
+   * table -> channel, which is the same failure from the other side: delete
+   * channel 50, and zone 3's membership array still lists it. That is
+   * structurally what produced `SetCommDataByChannelError`, and CLAUDE.md's
+   * write-path invariant 4 requires it for every other radio in this project.
+   *
+   * Optional only because a caller writing the full channel set clears nothing.
+   * If the plan WOULD clear a slot and this is absent, it refuses.
+   */
+  referencingTables?: readonly {
+    kind: 'zone' | 'scan list';
+    name: string;
+    /** 1-based channel numbers this table refers to. */
+    channelNumbers: readonly number[];
+  }[];
 }
 
 /**
@@ -103,7 +144,7 @@ export interface D890ChannelWriteInput {
  * fine and behaves wrongly.
  */
 export function planChannelWrite(input: D890ChannelWriteInput): D890ChannelWritePlan {
-  const { channels, originals, originalMask, counts } = input;
+  const { channels, originals, originalMask, counts, referencingTables } = input;
   if (!originalMask || originalMask.length < D890_ADDR.CHANNEL_SET_SIZE) {
     throw new D890WriteRefusedError(
       `Refusing to write: the presence mask must be read from the radio first ` +
@@ -141,8 +182,14 @@ export function planChannelWrite(input: D890ChannelWriteInput): D890ChannelWrite
     );
   }
 
-  // Gate 2 — originals. A missing one means we would have to invent 128 bytes.
-  const missing = channels.filter((c) => !originals.has(c.number)).map((c) => c.number);
+  // Gate 2 — originals, checked only for channels this plan will actually WRITE.
+  // A channel outside the storable range is skipped further down, so demanding
+  // its original would block every write that includes VFO A/B — which is how
+  // `readChannels` hands them over.
+  const writable = channels.filter(
+    (c) => c.number - 1 >= 0 && c.number - 1 < D890_LIMITS.CHANNELS_MAX
+  );
+  const missing = writable.filter((c) => !originals.has(c.number)).map((c) => c.number);
   if (missing.length > 0) {
     throw new D890WriteRefusedError(
       `Refusing to write: no original record for channel(s) ${missing.slice(0, 10).join(', ')}` +
@@ -155,11 +202,24 @@ export function planChannelWrite(input: D890ChannelWriteInput): D890ChannelWrite
   const frames: D890WriteFrame[] = [];
   const channelNumbers: number[] = [];
   const occupiedIdx: number[] = [];
+  const skipped: { channelNumber: number; reason: string }[] = [];
 
   for (const channel of channels) {
     // Channel numbers are 1-based; the wire index is 0-based.
     const index = channel.number - 1;
-    if (index < 0 || index >= D890_LIMITS.CHANNELS_MAX) continue;
+    if (index < 0 || index >= D890_LIMITS.CHANNELS_MAX) {
+      // VFO A and B arrive here as 4001/4002. They ARE real records, but they
+      // sit past the storable range and this planner does not write them.
+      // Recorded rather than dropped — their mask bits are preserved separately.
+      skipped.push({
+        channelNumber: channel.number,
+        reason:
+          index >= D890_LIMITS.CHANNELS_MAX
+            ? `outside the ${D890_LIMITS.CHANNELS_MAX} storable channels (VFO records are not written)`
+            : 'channel number below 1',
+      });
+      continue;
+    }
 
     const original = originals.get(channel.number)!;
     const record = applyChannelToRecord(original, channel);
@@ -195,6 +255,75 @@ export function planChannelWrite(input: D890ChannelWriteInput): D890ChannelWrite
     });
   }
 
+  // Gate 3b — transmit band limits.
+  //
+  // CLAUDE.md write-path invariant 4 requires this. It REFUSES rather than
+  // filtering silently: on this radio a write is a read-modify-write of records
+  // the user can see, so quietly dropping one leaves the grid and the radio
+  // disagreeing with no explanation.
+  //
+  // Checked against TX only. The radio's actual TX range is NOT discoverable —
+  // it is absent from LocalInfo and from every byte of a full codeplug capture,
+  // so these limits are declared per model rather than read from the hardware.
+  if (input.txBandLimits) {
+    const L = input.txBandLimits;
+    const inBand = (mhz: number) =>
+      (mhz >= L.vhfMin && mhz <= L.vhfMax) ||
+      (L.uhfMin !== undefined && L.uhfMax !== undefined && mhz >= L.uhfMin && mhz <= L.uhfMax);
+    // NO_TX_FREQUENCY is a SENTINEL meaning receive-only, not a frequency. It is
+    // 1666.666, which is > 0 and outside every band — so a naive `> 0` test
+    // rejects every receive-only channel the airport wizard produces. Those are
+    // exactly the channels this check must not touch.
+    const outOfBand = channels.filter(
+      (c) => c.txFrequency > 0 && c.txFrequency !== NO_TX_FREQUENCY && !inBand(c.txFrequency)
+    );
+    if (outOfBand.length > 0) {
+      const lines = outOfBand
+        .slice(0, 6)
+        .map((c) => `  channel ${c.number} "${c.name}": TX ${c.txFrequency} MHz`);
+      throw new D890WriteRefusedError(
+        `Refusing to write: ${outOfBand.length} channel(s) transmit outside this radio's bands ` +
+          `(${L.vhfMin}-${L.vhfMax}` +
+          `${L.uhfMin !== undefined ? `, ${L.uhfMin}-${L.uhfMax}` : ''} MHz).\n${lines.join('\n')}` +
+          (outOfBand.length > 6 ? `\n  ... and ${outOfBand.length - 6} more` : '') +
+          `\nReceive-only frequencies outside these bands are fine — this check is TX only.`
+      );
+    }
+  }
+
+  // Gate 4 — reverse references. Which slots does this plan CLEAR?
+  const wantedSet = new Set(occupiedIdx);
+  const cleared: number[] = [];
+  for (let slot = 0; slot < D890_LIMITS.CHANNELS_MAX; slot += 1) {
+    const wasPresent = ((originalMask[slot >> 3] ?? 0) >> (slot & 7)) & 1;
+    if (wasPresent && !wantedSet.has(slot)) cleared.push(slot + 1);
+  }
+  if (cleared.length > 0) {
+    if (!referencingTables) {
+      throw new D890WriteRefusedError(
+        `Refusing to write: this plan would mark ${cleared.length} channel(s) absent ` +
+          `(${cleared.slice(0, 8).join(', ')}${cleared.length > 8 ? ', …' : ''}) but was given no ` +
+          `zone or scan-list membership to check against. A zone still pointing at a removed ` +
+          `channel is the same fault as a channel pointing at a missing table.`
+      );
+    }
+    const orphaning: string[] = [];
+    const clearedSet = new Set(cleared);
+    for (const t of referencingTables) {
+      const hits = t.channelNumbers.filter((n) => clearedSet.has(n));
+      if (hits.length > 0) {
+        orphaning.push(`  ${t.kind} "${t.name}" references channel(s) ${hits.slice(0, 6).join(', ')}`);
+      }
+    }
+    if (orphaning.length > 0) {
+      throw new D890WriteRefusedError(
+        `Refusing to write: ${orphaning.length} table(s) reference channels this plan removes.\n` +
+          `${orphaning.join('\n')}\n` +
+          `Remove those references first, or keep the channels.`
+      );
+    }
+  }
+
   // Every frame is validated HERE, not at send time. A guarded address that
   // throws mid-session leaves a partial codeplug, and rule 1 forbids reading
   // back to discover what landed. A plan must be safe before the first frame.
@@ -222,6 +351,8 @@ export function planChannelWrite(input: D890ChannelWriteInput): D890ChannelWrite
     frames,
     channelNumbers,
     mask,
+    clearedChannelNumbers: cleared,
+    skipped,
     totalBytes: frames.length * 0x10,
     // Surfaced rather than swallowed: these did not block the write, but a caller
     // may want to tell the user which references it could not check.

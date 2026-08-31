@@ -1,5 +1,6 @@
 import type { Channel } from '../../models/Channel';
 import { D890_LIMITS, D890_CTCSS_TONES } from './constants';
+import { D890_SQUELCH_MODE, D890_OPTIONAL_SIGNAL } from './structures';
 import { decodeBcdAsHexU32 } from './structures';
 
 /**
@@ -26,6 +27,7 @@ import { decodeBcdAsHexU32 } from './structures';
 
 /** Bytes per channel record. Two 0x40 halves the protocol treats as one span. */
 export const D890_CHANNEL_RECORD_BYTES = 0x80;
+
 
 /**
  * Offsets this module writes. Everything else in the record is preserved.
@@ -67,7 +69,50 @@ const OFF = {
   RX_DCS: 0x0e,
   NAME: 0x44,
   NAME_END: 0x66,
+
+  // Added 2026-08-31. Each of these is confirmed by TWO independent routes:
+  // decoded correctly from a full radio image against the vendor's own CSV
+  // export, AND traced in the vendor's write/read marshallers. Before that,
+  // editing any of them silently did nothing.
+  CONTACT: 0x14,        // u32 LE, 0xFFFF+ = none
+  RADIO_ID: 0x18,
+  SQUELCH_PTT: 0x19,    // squelch mode bits 7-4 | PTT ID bits 3-0
+  BUSY_SIGNAL: 0x1a,    // optional signal bits 7-4 | busy lock bits 3-0
+  TWO_TONE_ID: 0x1d,
+  FIVE_TONE_ID: 0x1e,
+  DTMF_ID: 0x1f,
+  SCAN_LIST: 0x1b,
+  RX_GROUP: 0x1c,
+  COLOR_CODE: 0x20,
+  ENCRYPTION_KEY: 0x22,   // key SLOT, 1-based, 0 = Off
+  ARC4_KEY: 0x3d,         // ARC4 key slot; set only when the key is ARC4
+  DMR_FLAGS: 0x21,
+  FLAGS34: 0x34,
+  TX_COLOR_CODE: 0x43,
 } as const;
+
+/**
+ * Bits of 0x21 this writer will set. Bit 6 is EXCLUDED.
+ *
+ * Bit 6 is decoded as `channel.encryption` but is actually the AES ALGORITHM
+ * selector (`EMG_Kind`, Normal/Enhanced). Writing it from a boolean called
+ * "encryption" would switch AES mode on a channel that is not encrypted.
+ * Bit 1 is `Response` (the real "SMS Confirmation"), which this driver still
+ * decodes at the wrong offset — excluded until that is corrected.
+ */
+const FLAGS21_WRITABLE = 0b1011_1101;
+
+/**
+ * Bits of 0x34 this writer will set. Bits 5 and 6 are EXCLUDED.
+ *
+ * Every bit of 0x34 is traced in both marshallers, but bits 5 (`idle_tx`) and
+ * 6 (`compand`) are the only two whose CSV header is literally the variable
+ * name — the vendor offers no independent corroboration of what they DO. That
+ * is precisely the shape of `rec_only`, which the marshaller named "Receive
+ * Only" and which turned out to be DataACK forbid. Held until the front-panel
+ * loop moves them.
+ */
+const FLAGS34_WRITABLE = 0b1001_1111;
 
 export class D890ChannelWriteError extends Error {}
 
@@ -132,6 +177,66 @@ export function encodeWideCharString(text: string, byteLength: number): Uint8Arr
     out[i * 2 + 1] = (code >> 8) & 0xff;
   });
   return out;
+}
+
+/** Inverse of `oneBased`: a model value of 0 means "none" and stores as 0xFF. */
+function fromOneBased(value: number | undefined): number {
+  return value === undefined || value <= 0 ? 0xff : value - 1;
+}
+
+function writeU32LE(target: Uint8Array, offset: number, value: number): void {
+  target[offset] = value & 0xff;
+  target[offset + 1] = (value >>> 8) & 0xff;
+  target[offset + 2] = (value >>> 16) & 0xff;
+  target[offset + 3] = (value >>> 24) & 0xff;
+}
+
+function powerIndex(p: Channel['power']): number {
+  return p === 'Low' ? 0 : p === 'Medium' ? 1 : p === 'High' ? 2 : 3;
+}
+
+function bandwidthIndex(b: Channel['bandwidth']): number {
+  return b === '25kHz' ? 1 : 0;
+}
+
+/**
+ * Channel type bits 1-0 — all four values, straight through.
+ *
+ *   0 A-Analog   1 D-Digital   2 A+D TX A   3 D+A TX D
+ *
+ * The parser now preserves all four rather than collapsing to Analog/Digital,
+ * so the mode round-trips and a user can actually select a mixed type. The
+ * `existingFlags` argument is kept only so an unrecognised mode leaves the
+ * record's own type alone instead of forcing it to plain analog.
+ */
+function channelTypeBits(existingFlags: number, channel: Channel): number {
+  switch (channel.mode) {
+    case 'Analog': return 0;
+    case 'Digital': return 1;
+    case 'Fixed Analog': return 2;
+    case 'Fixed Digital': return 3;
+    default: return existingFlags & 0x03;
+  }
+}
+
+function squelchModeIndex(m: Channel['rxSquelchMode']): number {
+  const i = D890_SQUELCH_MODE.indexOf(m as (typeof D890_SQUELCH_MODE)[number]);
+  return i < 0 ? 0 : i;
+}
+
+function signalingIndex(s: Channel['signalingType']): number {
+  const i = D890_OPTIONAL_SIGNAL.indexOf(s as (typeof D890_OPTIONAL_SIGNAL)[number]);
+  return i < 0 ? 0 : i;
+}
+
+/**
+ * Busy Lock is only permitted on Analog and A-D channels; the radio CLEARS the
+ * field by itself when a channel becomes digital. Writing a value there would
+ * produce a read-back mismatch that is the radio behaving correctly.
+ */
+function busyLockFor(channel: Channel): number {
+  const digital = channel.mode === 'Digital' || channel.mode === 'Fixed Digital';
+  return digital ? 0 : (channel.busyLock ?? 0);
 }
 
 function writeU16LE(target: Uint8Array, offset: number, value: number): void {
@@ -215,6 +320,15 @@ export function applyChannelToRecord(original: Uint8Array, channel: Channel): Ui
     // from a decode we do not trust.
   }
 
+  // Clamped to the radio's own limit, not the field width. The field is 34
+  // bytes = 17 units, but the decoder reads 16 and the vendor CPS caps at 16 —
+  // a 17-character name would fill the field with no room for a terminator.
+  if ((channel.name ?? '').length > D890_CHANNEL_NAME_MAX) {
+    throw new D890ChannelWriteError(
+      `Channel ${channel.number}: name "${channel.name}" is ${channel.name!.length} characters; ` +
+        `this radio stores at most ${D890_CHANNEL_NAME_MAX}. Truncating silently would hide the loss.`
+    );
+  }
   rec.set(
     encodeWideCharString(channel.name ?? '', OFF.NAME_END - OFF.NAME),
     OFF.NAME
@@ -267,6 +381,69 @@ export function applyChannelToRecord(original: Uint8Array, channel: Channel): Ui
     rec[OFF.RX_TONE] = 0;
   }
 
+  // ── the fields that used to be silently discarded ────────────────────────
+  // Preserve the duplex bits (7-6) and write type, power and bandwidth.
+  const flags08 = rec[OFF.FLAGS] ?? 0;
+  rec[OFF.FLAGS] =
+    (flags08 & 0xc0) |
+    ((bandwidthIndex(channel.bandwidth) & 0x03) << 4) |
+    ((powerIndex(channel.power) & 0x03) << 2) |
+    (channelTypeBits(flags08, channel) & 0x03);
+
+  // References are stored zero-based with a sentinel for "none"; the model is
+  // 1-based with 0 meaning none. Getting this inverted points a channel one slot
+  // off, which reads back plausibly.
+  writeU32LE(rec, OFF.CONTACT, channel.contactId ? channel.contactId - 1 : 0xffffffff);
+  rec[OFF.SCAN_LIST] = channel.scanListId ? channel.scanListId - 1 : 0xff;
+  rec[OFF.RX_GROUP] = channel.rxGroupListId ? channel.rxGroupListId - 1 : 0xff;
+  rec[OFF.RADIO_ID] = channel.dmrRadioIdIndex ?? 0;
+  rec[OFF.COLOR_CODE] = channel.colorCode ?? 0;
+  // The encryption key SLOT. Safe to write now that hardware confirmed what it
+  // is — the model field is still named `emergencySystemIndex`, which is why
+  // this was previously held back: writing a key slot from a field labelled
+  // "Emergency System" is the kind of mismatch that enables encryption nobody
+  // asked for. The name is wrong; the meaning is not.
+  rec[OFF.ENCRYPTION_KEY] = channel.emergencySystemIndex ?? 0;
+  // The ARC4 key slot. Confirmed alongside 0x22: of two channels given keys,
+  // only the ARC4 one set this. Written because both bytes must move together —
+  // writing 0x22 alone would leave an ARC4 assignment looking like an AES one.
+  rec[OFF.ARC4_KEY] = channel.arc4Code ?? 0;
+  rec[OFF.TX_COLOR_CODE] = channel.txColorCode ?? 0;
+
+  // Two nibble-packed bytes. The high nibble of each is a different field, so
+  // both halves must be composed rather than assigned.
+  rec[OFF.SQUELCH_PTT] =
+    ((squelchModeIndex(channel.rxSquelchMode) & 0x0f) << 4) | ((channel.pttId ?? 0) & 0x0f);
+  rec[OFF.BUSY_SIGNAL] =
+    ((signalingIndex(channel.signalingType) & 0x0f) << 4) | (busyLockFor(channel) & 0x0f);
+
+  // Stored ZERO-based; the model exposes them one-based. Confirmed from the
+  // vendor's CSV row writer, which emits `record + 1` for all three while
+  // emitting the 2Tone DECODE group with no +1. Writing the model value raw
+  // shifts every one of them by a slot.
+  rec[OFF.TWO_TONE_ID] = fromOneBased(channel.twoToneId);
+  rec[OFF.FIVE_TONE_ID] = fromOneBased(channel.fiveToneId);
+  rec[OFF.DTMF_ID] = fromOneBased(channel.dtmfId);
+
+  // Bitfields: compose only the writable bits and keep the rest of the byte.
+  let f21 = 0;
+  if (channel.slotOperation) f21 |= 0x01;
+  f21 |= ((channel.dmrMode ?? 0) & 0x03) << 2;
+  if (channel.slotSuit) f21 |= 0x10;
+  if (channel.aprsReceive) f21 |= 0x20;
+  if (channel.loneWorker) f21 |= 0x80;
+  rec[OFF.DMR_FLAGS] = ((rec[OFF.DMR_FLAGS] ?? 0) & ~FLAGS21_WRITABLE & 0xff) | (f21 & FLAGS21_WRITABLE);
+
+  let f34 = 0;
+  if (channel.ranging) f34 |= 0x01;
+  // digitalDuplex is INVERTED: the bit set means simplex.
+  if (!channel.digitalDuplex) f34 |= 0x02;
+  if (channel.excludeFromRoaming) f34 |= 0x04;
+  if (channel.dataAckForbid) f34 |= 0x08;
+  if (channel.autoScan) f34 |= 0x10;
+  if (channel.dmrCrcIgnore) f34 |= 0x80;
+  rec[OFF.FLAGS34] = ((rec[OFF.FLAGS34] ?? 0) & ~FLAGS34_WRITABLE & 0xff) | (f34 & FLAGS34_WRITABLE);
+
   if (channel.reverse) flags09 |= 0x10;
   if (channel.forbidTx) flags09 |= 0x20;
   if (channel.callConfirmation) flags09 |= 0x40;
@@ -298,5 +475,5 @@ export function channelRecordFrames(
 /** Re-export so tests can prove the BCD pair are exact inverses. */
 export { decodeBcdAsHexU32 };
 
-/** Unused limit re-export kept for callers validating name length. */
+/** The radio's name limit — 16, not the 17 the 34-byte field would allow. */
 export const D890_CHANNEL_NAME_MAX = D890_LIMITS.NAME_MAX_CHARS;

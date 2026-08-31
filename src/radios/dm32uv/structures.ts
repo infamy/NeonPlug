@@ -259,6 +259,14 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   const scanBw = data[0x19];
   const bandwidth: Channel['bandwidth'] = (scanBw & 0x80) !== 0 ? '25kHz' : '12.5kHz';
   const scanAdd = (scanBw & 0x40) !== 0;
+  // ⚠️ KNOWN WRONG on this branch — fixed in PR #156 (`bug/scanlist2`), which is
+  // OPEN and unmerged. Byte 0x19 holds the scan list ref in bits 5-0
+  // (`scanBw & 0x3F`), not bits 5-2; hardware-verified 2026-08-07 via live
+  // CPS<->NeonPlug round-trips and recorded in CLAUDE.md.
+  //
+  // Deliberately NOT patched here: cherry-picking half of #156 onto feat/da7x2
+  // would conflict with it and split a hardware-verified fix across two branches.
+  // It lands when #156 merges.
   const scanListId = (scanBw >> 2) & 0x0F;
 
   // Talkaround & APRS (0x1A)
@@ -607,6 +615,7 @@ export function encodeChannel(channel: Channel): Uint8Array {
   let scanBw = 0;
   if (channel.bandwidth === '25kHz') scanBw |= 0x80; // Bit 7: 1=25kHz, 0=12.5kHz
   if (channel.scanAdd) scanBw |= 0x40; // Bit 6
+  // ⚠️ See the note on the decode side: fixed in PR #156, not on this branch.
   scanBw |= (channel.scanListId << 2) & 0x3C; // Bits 5-2
   data[0x19] = scanBw;
 

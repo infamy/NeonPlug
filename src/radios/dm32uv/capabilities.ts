@@ -58,4 +58,5 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   supportsBootImage: true,
   supportsQuickMessages: true,
   supportsAnalogEmergency: true,
+  supportsDigitalEmergency: true,
 };

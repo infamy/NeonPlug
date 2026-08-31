@@ -376,10 +376,11 @@ export const EXTRA_CHANNEL_COLUMNS: readonly ExtraChannelColumn[] = [
   {
     group: 'emergencyCodes',
     field: 'emergencySystemIndex',
-    header: 'Emerg Sys',
-    label: 'Emergency System',
+    header: 'Enc Key',
+    label: 'Digital Encryption (key slot)',
     offset: '0x22',
-    provenance: 'marshaller',
+    provenance: 'hardware',
+    note: 'The encryption KEY SLOT, 1-based, 0 = Off — confirmed on hardware 2026-08-31 by enabling encryption on one channel and watching only that channel take a non-zero value. The model field is still called emergencySystemIndex; the vendor name EMG_Key is vestigial and this is not an emergency setting. The CPS offers a dropdown, so it is a slot index rather than a free-form id.',
     editor: { kind: 'number', min: 0, max: 32 },
   },
   {
@@ -388,7 +389,7 @@ export const EXTRA_CHANNEL_COLUMNS: readonly ExtraChannelColumn[] = [
     header: 'ARC4',
     label: 'ARC4 code',
     offset: '0x3d',
-    provenance: 'marshaller',
+    provenance: 'hardware',
     editor: { kind: 'number', min: 0, max: 255 },
   },
 ];

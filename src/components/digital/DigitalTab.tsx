@@ -470,7 +470,11 @@ export const DigitalTab: React.FC = () => {
         )}
       </div>
 
-      {/* Digital Emergency Systems Section */}
+      {/* Digital Emergency Systems — DM-32 shaped, gated on the capability.
+          The DA-7X2 has emergency features but stores them completely
+          differently and has no block 0x10, so the section is hidden rather
+          than shown empty. */}
+      {caps?.supportsDigitalEmergency && (
       <div className="mb-8">
         <div className="mb-4 flex items-start justify-between">
           <div>
@@ -665,6 +669,7 @@ export const DigitalTab: React.FC = () => {
           </Card>
         )}
       </div>
+      )}
 
       {/* Encryption Keys Section */}
       <div className="mb-8">

@@ -629,3 +629,20 @@ describe('wide-string termination', () => {
     expect(decodeWideCharString(w(...full), 16)).toHaveLength(16);
   });
 });
+
+describe('zone current-channel semantics', () => {
+  it('documents that zone A/B values are MEMBER POSITIONS, not channel numbers', () => {
+    // A real radio image holds [0, 1, 8, 5, 12, 5, 5] at 0x3500600 for seven
+    // zones. Zone 3's 8 means "the 9th channel in zone 3", not channel 8.
+    // Reading them as channel numbers yields a plausible number that is almost
+    // always the wrong channel — the failure mode is silent.
+    //
+    // This test exists to pin the SEMANTICS in a place a reader will find, since
+    // the values themselves are just small integers and look like channel
+    // numbers to anyone who has not been told otherwise.
+    const zoneMembers = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]; // zone 3's channels
+    const storedPosition = 8;
+    expect(zoneMembers[storedPosition]).toBe(90); // the 9th member
+    expect(storedPosition).not.toBe(zoneMembers[storedPosition]);
+  });
+});

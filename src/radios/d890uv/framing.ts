@@ -211,6 +211,41 @@ export function assertWritableAddress(address: number): void {
  * The vendor CPS agrees by construction: a captured write session of 8389 frames
  * contains exactly ONE read, at 0x04f80020, before the first write. It never
  * reads again, and it never verifies.
+ *
+ * 4. **WHY in-session read-back is meaningless, not merely disruptive.** Writes
+ *    stage to RAM and commit at END; a read in the same PROGRAM session returns
+ *    FLASH, not the staged shadow. So an in-session verify does not just reboot
+ *    the radio — it compares against the pre-write contents and "passes" while
+ *    proving nothing. Verification must be CROSS-SESSION: write, END, let the
+ *    radio restart, reconnect, then compare.
+ *
+ * 5. **A "whole unit must be re-staged" rule does NOT hold — our own capture
+ *    refutes it.** A third-party project reports that writing any 16-byte block
+ *    into a 256 KB unit erases the whole unit, so every co-resident byte must be
+ *    re-staged in the same session. Measured against the vendor CPS's own write
+ *    session, that cannot be right: it writes as little as 0.01% of a unit
+ *    (2 frames into 0x4b80000, 3 into 0x3f00000) and 31 units at a mean of
+ *    ~1.6%, on a radio that works afterwards. Re-staging 31 units would be
+ *    507,904 frames; the CPS sends 8,389.
+ *
+ *    The reconciliation is most likely that the RADIO handles erase internally —
+ *    read-modify-erase-write behind the W frame — which also explains why the
+ *    vendor binary contains no erase vocabulary at all. Sparse 16-byte writes are
+ *    what the vendor does, so they are what we should do.
+ *
+ * 6. **The guarded offsets: what WE established, and what is hearsay.**
+ *    OURS: they hold structured data in otherwise-erased flash (0x103FBF4 reads
+ *    `22 33 44 55`, 0x103FFFC reads `55 55 AA AA`), the CPS never writes them —
+ *    0 occurrences across 8389 frames and 31 units — and the constants appear
+ *    ZERO times in the vendor binary. That is ample reason never to write them.
+ *
+ *    RELAYED, NOT VERIFIED: a third-party report that transmitting them diverts
+ *    every write 0x40000 above the address sent and can factory-reset the radio.
+ *    We see no trace of that in the disassembly or in either serial capture, and
+ *    the same report notes "Program error" has at least three distinct causes and
+ *    is not diagnostic. Treat it as an untested account of someone else's
+ *    incident, not as a mechanism we understand. The guard stands on our own
+ *    evidence and does not need it.
  */
 
 export function buildWriteCommand(address: number, data: Uint8Array): Uint8Array {
