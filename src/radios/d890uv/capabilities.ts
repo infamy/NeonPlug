@@ -9,7 +9,7 @@
  */
 
 import type { RadioCapabilities } from '../../types/radioCapabilities';
-import { D890_LIMITS } from './constants';
+import { D890_ADDR, D890_LIMITS } from './constants';
 
 /**
  * `RadioCapabilitiesDigital` requires these two parsers, but both are DM-32
@@ -31,6 +31,21 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
     parseDigitalEmergencies,
     limits: {
       TALK_GROUPS_MAX: D890_LIMITS.TALK_GROUPS_MAX,
+      QUICK_MESSAGES_MAX: D890_ADDR.PREDEFINED_SMS_MAX,
+      /**
+       * 200, from the vendor's own `SMSData(… Context varchar(200))`.
+       *
+       * ⚠️ INDIRECT EVIDENCE. That DDL describes the CPS's database, not the
+       * radio, and it is already known to be wrong about this very field's
+       * ENCODING — it says varchar where the radio stores UTF-16LE. So 200 is
+       * the vendor's practical limit, not a measured hardware one.
+       *
+       * The STRUCTURAL ceiling is 255: the slot is 0x200 bytes at two bytes per
+       * character, less a terminator. 200 is the safer of the two — writing 255
+       * to a radio that expects 200 is the failure with teeth, and being wrong
+       * the other way costs 55 unusable characters.
+       */
+      QUICK_MESSAGE_CHARS_MAX: D890_ADDR.PREDEFINED_SMS_MAX_CHARS,
       DMR_RADIO_IDS_MAX: D890_LIMITS.DMR_RADIO_IDS_MAX,
       RX_GROUPS_MAX: D890_LIMITS.RX_GROUPS_MAX,
       SCAN_LISTS_MAX: D890_LIMITS.SCAN_LISTS_MAX,
@@ -96,6 +111,7 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   /** Sparse addressed reads — this is what enables the Diagnostics region dump. */
   supportsRawRegionDump: true,
   supportsBootImage: false,
-  supportsQuickMessages: false,
+  /** "Pre-defined SMS" in the vendor CPS; layout confirmed on hardware 2026-08-30. */
+  supportsQuickMessages: true,
   supportsAnalogEmergency: false,
 };

@@ -953,6 +953,71 @@ export function parseEncryptionSlot(
   };
 }
 
+/**
+ * One AES or ARC4 key slot.
+ *
+ * Both tables share a shape — a key id byte, then the key bytes — so one parser
+ * serves both. `keyHex` is upper-case with no separators, matching how the
+ * vendor CPS displays and exports it.
+ */
+export interface D890RawKeySlot {
+  slot: number;
+  keyId: number;
+  keyHex: string;
+  /** True when every key byte is zero: an unused slot. */
+  empty: boolean;
+}
+
+function parseRawKeySlot(
+  bytes: Uint8Array,
+  index: number,
+  stride: number,
+  keyOffset: number,
+  keyLen: number
+): D890RawKeySlot {
+  const base = index * stride;
+  const key = bytes.subarray(base + keyOffset, base + keyOffset + keyLen);
+  let hex = '';
+  let empty = true;
+  for (let i = 0; i < keyLen; i += 1) {
+    const b = key[i] ?? 0;
+    if (b !== 0) empty = false;
+    hex += b.toString(16).padStart(2, '0').toUpperCase();
+  }
+  return { slot: index + 1, keyId: bytes[base] ?? 0, keyHex: hex, empty };
+}
+
+/** AES slot: 32 key bytes from +0x01 of a 0x40 record. */
+export function parseAesKeySlot(bytes: Uint8Array, index: number): D890RawKeySlot {
+  return parseRawKeySlot(
+    bytes,
+    index,
+    D890_ADDR.AES_KEY_STRIDE,
+    D890_ADDR.AES_KEY_OFFSET,
+    D890_ADDR.AES_KEY_BYTES
+  );
+}
+
+/**
+ * The key length the radio records, in hex characters — 0x40 for a 256-bit key.
+ * Kept separate from the key itself because a shorter key still occupies the
+ * full 32-byte field, so only this byte distinguishes AES-128 from AES-256.
+ */
+export function aesKeyNum(bytes: Uint8Array, index: number): number {
+  return bytes[index * D890_ADDR.AES_KEY_STRIDE + D890_ADDR.AES_KEY_NUM_OFFSET] ?? 0;
+}
+
+/** ARC4 slot: 5 key bytes from +0x01 of a 0x10 record. */
+export function parseArc4KeySlot(bytes: Uint8Array, index: number): D890RawKeySlot {
+  return parseRawKeySlot(
+    bytes,
+    index,
+    D890_ADDR.ARC4_KEY_STRIDE,
+    D890_ADDR.ARC4_KEY_OFFSET,
+    D890_ADDR.ARC4_KEY_BYTES
+  );
+}
+
 /** True when a slot holds no channel: RX frequency zero marks it vacant. */
 export function isVacantChannel(bytes: Uint8Array): boolean {
   return decodeFrequencyHz(bytes.subarray(0x00, 0x04)) === 0;

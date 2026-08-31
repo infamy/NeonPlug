@@ -25,6 +25,9 @@ import {
 import { formatAddress } from '../../utils/formatHelpers';
 import { getSettingsProfileForModel } from '../../data/settingsProfiles';
 import { SettingsFieldRenderer } from './fields';
+import { D890ImagesArea } from './D890ImagesArea';
+import { D890RoamingArea } from './D890RoamingArea';
+import { D890SatellitesArea } from './D890SatellitesArea';
 import type { RadioSettings } from '../../models/RadioSettings';
 import type { SettingsFieldDescriptor } from '../../types/settingsProfile';
 
@@ -668,6 +671,9 @@ export const SettingsTab: React.FC = () => {
             const featureTabs = [
               { id: 'feature-bootImage', title: 'Boot Image', feature: 'bootImage' },
               { id: 'feature-oneKeyOperation', title: 'One Key Operation', feature: 'oneKeyOperation' },
+              { id: 'feature-d890Roaming', title: 'Roaming', feature: 'd890Roaming' },
+              { id: 'feature-d890Satellites', title: 'GPS Satellites', feature: 'd890Satellites' },
+              { id: 'feature-d890Images', title: 'Boot & Standby Backgrounds', feature: 'd890Images' },
               { id: 'feature-gpsAprs', title: 'GPS & APRS', feature: 'gpsAprs' },
             ].filter((t) => profile.features?.includes(t.feature));
 
@@ -764,7 +770,28 @@ export const SettingsTab: React.FC = () => {
             );
           })()}
 
-          {/* One Key Operation - only when profile declares the feature */}
+          {settingsProfile?.features?.includes('d890Roaming') && (
+            <Card id="settings-section-feature-d890Roaming" className="mt-6">
+              <D890RoamingArea />
+            </Card>
+          )}
+
+          {settingsProfile?.features?.includes('d890Satellites') && (
+            <Card id="settings-section-feature-d890Satellites" className="mt-6">
+              <D890SatellitesArea />
+            </Card>
+          )}
+
+          {/* DA-7X2 pictures. Read on demand from inside the area — 3 x 40 KB is
+              larger than the rest of this radio combined, so they are not part of
+              the codeplug read. Sits below Radio Configuration: it is the
+              least-edited thing on the page and should not push settings down. */}
+          {settingsProfile?.features?.includes('d890Images') && (
+            <Card id="settings-section-feature-d890Images" className="mt-6">
+              <D890ImagesArea />
+            </Card>
+          )}
+
           {radioSettings && settingsProfile?.features?.includes('oneKeyOperation') && (
             <Card id="settings-section-feature-oneKeyOperation" className="mt-6">
               <SectionTitle underline>One Key Operation</SectionTitle>

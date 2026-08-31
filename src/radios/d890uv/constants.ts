@@ -25,7 +25,9 @@
  *     force than on the DM-32, not less — every co-resident byte in the unit
  *     must be read back and re-staged before touching any part of it.
  *   - Writes are also *slower*: the wire format allows only 16 bytes per frame.
- *     The OEM CPS needs ~9,976 frames for a full codeplug write.
+ *     A full codeplug write would need on the order of 10,000 frames — a figure
+ *     derived from the read set's total size, NOT measured. No write has ever
+ *     been performed or captured by this project.
  */
 
 /**
@@ -168,8 +170,13 @@ export const D890_ERASE_UNIT = 0x40000;
 
 /**
  * Per-unit offsets belonging to the radio's own flash management. These must
- * NEVER be written — the OEM CPS omits them, and a full-codeplug capture of
- * 9,976 write frames touched neither.
+ * NEVER be written.
+ *
+ * ⚠️ An earlier version of this comment cited "a full-codeplug capture of 9,976
+ * write frames" as evidence the OEM CPS omits them. That capture does not exist
+ * — no write has ever been performed or captured by anyone on this project, as
+ * the line immediately below already says about the erase unit itself. The
+ * offsets come from radio-family knowledge and nothing more.
  *
  * Unlike D890_FORBIDDEN_WRITE_ADDRESS (a single address), these repeat in EVERY
  * erase unit, so the check is `address % D890_ERASE_UNIT` against each entry.
@@ -335,33 +342,122 @@ export const D890_ADDR = {
   APRS_SETTINGS_SIZE: 0x100,
 
   /**
-   * Encryption keys — four separate tables, one per key type.
+   * Encryption keys — separate tables, one per key type. The radio does NOT
+   * keep a single mixed list the way the DM-32 does.
    *
-   * Addresses from the vendor's own upload/download marshallers. The basic
-   * table is CONFIRMED on hardware: 0x3585000 reads 01 01 02 02 … 20 20, the
-   * factory IDs 1-32, exactly as predicted before the dump.
+   * ALL THREE IMPLEMENTED TABLES ARE HARDWARE-CONFIRMED (2026-08-30). Two keys
+   * per type were set in the vendor CPS, written to the radio, and read back;
+   * every key returned byte for byte at the address, stride and offset the
+   * vendor marshaller predicted. The addresses came from the disassembly, not
+   * from searching memory — this table is nowhere near the four regions it was
+   * hunted for in.
    *
-   * ⚠️ AES, ARC4 and NX are NOT confirmed. They read all zeros on the captured
-   * radio, which is consistent with every slot being at factory default — and
-   * equally consistent with the address being wrong, because unused memory reads
-   * zeros too. Confirming them needs a codeplug with a key actually set.
-   *
-   * ⚠️ The radio stores encryption IDs BIG-endian while the .rdt stores them
-   * little-endian. Every factory ID is byte-palindromic (0x0101, 0x0202 …), so
-   * no captured data can tell the two apart — only the disassembly can, and it
-   * traced both directions. Do not "simplify" this to match the file.
+   * ✅ Endianness is now settled by DATA, not just by the disassembly. Encryption
+   * ID 22136 (0x5678) read back as `56 78` and key 4660 (0x1234) as `12 34`, so
+   * the radio is BIG-endian. Every factory value is byte-palindromic (0x0101,
+   * 0x0202 …), so this could only ever be proved by writing a non-palindromic
+   * one. The .rdt file stores these little-endian — do not "simplify" the two
+   * to match.
    */
   ENCRYPTION_ID_TABLE: 0x3585000,
   ENCRYPTION_ID_STRIDE: 2,
   ENCRYPTION_KEY_TABLE: 0x3585100,
   ENCRYPTION_KEY_STRIDE: 0x28,
-  /** Only +0x10/+0x11 of each 0x28 slot is touched; the rest is unresolved. */
+  /**
+   * Only +0x10/+0x11 of each 0x28 slot holds the key; the rest reads zero.
+   * Confirmed by slot 2's key landing at 0x38 = 0x28 + 0x10, which pins the
+   * stride and this offset simultaneously.
+   */
   ENCRYPTION_KEY_OFFSET: 0x10,
   ENCRYPTION_SLOTS: 32,
+
+  /** Key id at +0x00, then 32 key bytes. */
   AES_KEY_TABLE: 0x3580000,
   AES_KEY_STRIDE: 0x40,
+  AES_KEY_OFFSET: 0x01,
+  AES_KEY_BYTES: 32,
+  /** Key length in hex characters: 0x40 = 64 chars = a 256-bit key. */
+  AES_KEY_NUM_OFFSET: 0x22,
+
+  /** Key id at +0x00, then 5 key bytes. */
   ARC4_KEY_TABLE: 0x3584000,
   ARC4_KEY_STRIDE: 0x10,
+  ARC4_KEY_OFFSET: 0x01,
+  ARC4_KEY_BYTES: 5,
+
+  /**
+   * ⚠️ NXDN encryption (0x4b00200) is deliberately NOT here. NXDN is not in this
+   * radio's firmware, so there is nothing to set and nothing to confirm. It also
+   * appears in the vendor dispatcher's write phase with no counterpart in the
+   * read phase, which is unexplained. Out until it leaves beta.
+   */
+
+  /**
+   * Boot image and the two standby pictures. One format, three addresses.
+   *
+   * ✅ BOOT_IMAGE CONFIRMED ON HARDWARE 2026-08-30. A logo was written through
+   * the vendor CPS and read back: 160x128, RGB565, big-endian, column-major, all
+   * four verified against the capture. Decoding the radio's own bytes and packing
+   * them straight back is byte-identical.
+   *
+   * How the earlier all-0xFF read was resolved, because it recurs: both regions
+   * first read as erased flash, which is exactly as consistent with "never
+   * written" as with "wrong address" — the same trap AES and ARC4 sat in. Note
+   * 0xFF, not the 0x00 that unset tables return; that difference is what said the
+   * region was real. Writing a picture settled it.
+   *
+   * ✅ BK1 AND BK2 ALSO CONFIRMED 2026-08-30, by writing a DIFFERENT background
+   * colour to each — blue to BK1, red to BK2. Three results from one capture:
+   *   - the addresses are not transposed (BK1 returned blue, BK2 red);
+   *   - endianness re-proved on two regions with no prior evidence, across 63%
+   *     of each frame rather than from one hunted-down pixel (0x051D reads
+   *     rgb(0,160,232) blue big-endian, rgb(24,160,40) green little-endian);
+   *   - channel order proved INDEPENDENTLY of the backgrounds. Blue and red map
+   *     onto each other under an R/B swap, so the backgrounds alone cannot tell
+   *     a swap from transposed addresses. The NP logo left in the centre settles
+   *     it: 0xF9AE = rgb(248,52,112) pink in all three captures, at an identical
+   *     305 pixels; an R/B swap would read rgb(112,52,248).
+   *
+   * ⚠️ All three are 256 KB-aligned and hold only 40 KB, so the rest of each
+   * erase unit is unknown territory. NeonPlug has still never written to a radio.
+   */
+  BOOT_IMAGE: 0x3f80000,
+  STANDBY_BK1: 0x4000000,
+  STANDBY_BK2: 0x4080000,
+
+  /** GPS satellite table: 25 slots of 512 bytes = 12800 bytes. */
+  SATELLITE_TABLE: 0x4a80000,
+  SATELLITE_SLOT_STRIDE: 0x200,
+  SATELLITE_SLOTS: 25,
+
+  /**
+   * Pre-defined SMS — the vendor's "Pre-defined SMS", the DM-32's quick messages.
+   *
+   * CONFIRMED ON HARDWARE 2026-08-30. A radio returned the five AnyTone factory
+   * defaults at exactly this base and stride: "Hello!", "Welcome!", "Thank you!",
+   * "Good bye!", "Happy every day!".
+   *
+   * Text is UTF-16LE, NOT the `varchar(200)` the vendor's SQL DDL shows — that
+   * DDL describes the CPS's own database table, not the radio. Every string on
+   * this radio is UTF-16LE; the DDL is a red herring for anyone byte-mapping
+   * from it.
+   *
+   * ⚠️ An unused slot is 0xFF-filled, not zeroed. Reading to a NUL terminator
+   * alone yields 256 characters of U+FFFF. This is the third region on this
+   * radio where erased flash masquerades as data — the images and the satellite
+   * table both did the same thing.
+   */
+  PREDEFINED_SMS_DATA: 0x3180000,
+  PREDEFINED_SMS_STRIDE: 0x200,
+  /** Slots per bank; bank n is at +n * 0x80000. */
+  PREDEFINED_SMS_PER_BANK: 20,
+  PREDEFINED_SMS_BANK_STRIDE: 0x80000,
+  /** The vendor's own limit is 200 characters, well under the 256 the slot fits. */
+  PREDEFINED_SMS_MAX_CHARS: 200,
+  PREDEFINED_SMS_MAX: 100,
+  /** Presence bitmap. */
+  PREDEFINED_SMS_SET: 0x2980000,
+  PREDEFINED_SMS_SET_SIZE: 0x640,
 
   /** Receive group lists. */
   RX_GROUP_SET: 0x3701510,
@@ -617,3 +713,18 @@ export const D890_TONE_FLAG = {
  */
 export const D890_DCS_INVERTED_BIT = 0x200;
 export const D890_DCS_CODE_MASK = 0x1ff;
+
+/**
+ * How this radio's three key tables map onto the shared `EncryptionKey.encryptionType`.
+ *
+ * The codes are the DM-32's, because the model and the UI are already built
+ * around them and a user does not care which radio invented the numbering.
+ * The DA-7X2's own "Encryption Code" — a plain 16-bit value — has no DM-32
+ * equivalent, so it takes the Custom slot.
+ */
+export const D890_ENCRYPTION_TYPE = {
+  BASIC: 1,
+  ARC4: 2,
+  AES128: 3,
+  AES256: 4,
+} as const;

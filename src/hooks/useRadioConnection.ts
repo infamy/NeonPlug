@@ -55,7 +55,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setConnectionError } = useRadioStore();
+  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setD890Images, setD890Roaming, setD890Satellites, setConnectionError } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -68,7 +68,7 @@ export function useRadioConnection() {
   const { setRadioIds, setRawRadioIdData, setRadioIdsLoaded } = useDMRRadioIDsStore();
   const { setCalibration, setCalibrationLoaded } = useCalibrationStore();
   const { setGroups: setRXGroups, setRawGroupData, setGroupsLoaded } = useRXGroupsStore();
-  const { clearKeys: clearEncryptionKeys } = useEncryptionKeysStore();
+  const { clearKeys: clearEncryptionKeys, setKeys: setEncryptionKeys } = useEncryptionKeysStore();
 
   const readFromRadio = useCallback(async (
     onProgress?: (progress: number, message: string, step?: string) => void,
@@ -180,7 +180,15 @@ export function useRadioConnection() {
         setChannels([]);
         sectionReadWarnings.push('Channels');
       } else {
-        const channels = await proto.readChannels();
+        // Channels own 20-70% of the bar because they own most of the wall clock.
+        const withChannelProgress = proto as typeof proto & {
+          readChannels(cb?: (done: number, total: number) => void): Promise<Channel[]>;
+        };
+        const channels = await withChannelProgress.readChannels((done, total) => {
+          if (total > 0) {
+            onProgress?.(20 + (done / total) * 50, `Reading channel ${done} of ${total}...`, steps[4]);
+          }
+        });
         setChannels(channels);
       }
 
@@ -241,6 +249,61 @@ export function useRadioConnection() {
           const quick = await digital.readQuickContacts?.();
           if (quick) setQuickContacts(quick);
         } catch (err) { console.warn('Could not read Talk Groups:', err); sectionReadWarnings.push('Talk Groups'); }
+
+        // Pictures are NOT read here. Three 40 KB regions is the single largest
+        // thing this radio can be asked for, and they are cosmetic and rarely
+        // looked at — paying for them on every codeplug read is a bad trade.
+        // The Settings area reads them on demand instead.
+
+        // The rest of what this radio is known to hold. Each is independent and
+        // optional: none of them should be able to cost the user their channels.
+        const extras = digital as unknown as {
+          readEncryptionKeys?: () => Promise<import('../models/EncryptionKey').EncryptionKey[]>;
+          readRoamingChannels?: () => Promise<import('../radios/d890uv/structures').D890RoamingChannel[]>;
+          readRoamingZones?: () => Promise<import('../radios/d890uv/structures').D890RoamingZone[]>;
+          readSatellites?: () => Promise<import('../radios/d890uv/satellite').D890SatelliteRecord[]>;
+          readQuickMessages?: () => Promise<import('../models/QuickTextMessage').QuickTextMessage[]>;
+        };
+
+        if (extras.readEncryptionKeys) {
+          try {
+            setEncryptionKeys(await extras.readEncryptionKeys());
+          } catch (err) {
+            console.warn('Could not read encryption keys:', err);
+            sectionReadWarnings.push('Encryption keys');
+          }
+        }
+
+        if (extras.readRoamingChannels && extras.readRoamingZones) {
+          try {
+            setD890Roaming({
+              channels: await extras.readRoamingChannels(),
+              zones: await extras.readRoamingZones(),
+            });
+          } catch (err) {
+            console.warn('Could not read roaming:', err);
+            sectionReadWarnings.push('Roaming');
+          }
+        }
+
+        if (extras.readQuickMessages) {
+          try {
+            setMessages(await extras.readQuickMessages());
+            setMessagesLoaded(true);
+          } catch (err) {
+            console.warn('Could not read pre-defined SMS:', err);
+            sectionReadWarnings.push('Pre-defined SMS');
+          }
+        }
+
+        if (extras.readSatellites) {
+          try {
+            setD890Satellites(await extras.readSatellites());
+          } catch (err) {
+            console.warn('Could not read satellites:', err);
+            sectionReadWarnings.push('Satellites');
+          }
+        }
       }
 
       if (dm32) {
@@ -388,7 +451,7 @@ export function useRadioConnection() {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       setIsConnecting(false);
     }
-  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setConnectionError]);
+  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setD890Images, setD890Roaming, setD890Satellites, setEncryptionKeys, setConnectionError]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
@@ -449,6 +512,51 @@ export function useRadioConnection() {
       setIsConnecting(false);
     }
   }, [setContacts, setRadioInfo, setConnected, radioInfo]);
+
+  /**
+   * Read the DA-7X2's three pictures on demand.
+   *
+   * Deliberately separate from the codeplug read: 3 x 40 KB dwarfs everything
+   * else this radio holds, and the pictures are cosmetic. Anyone who wants to
+   * look at them can wait; nobody should wait for them by default.
+   */
+  const readD890Images = useCallback(async (
+    onProgress?: (progress: number, message: string) => void
+  ) => {
+    setIsConnecting(true);
+    setError(null);
+    let protocol: RadioProtocol | null = null;
+    try {
+      protocol = createProtocolForModel(selectedRadioModel ?? radioInfo?.model ?? '');
+      if (!protocol) throw new Error('No driver for this radio.');
+      const withImages = protocol as unknown as {
+        readImages?: (
+          cb?: (percent: number, label: string) => void
+        ) => Promise<{ boot: Uint8Array | null; bk1: Uint8Array | null; bk2: Uint8Array | null }>;
+      };
+      if (!withImages.readImages) throw new Error('This radio has no boot or standby pictures.');
+      onProgress?.(0, 'Connecting to radio...');
+      await protocol.connect();
+      onProgress?.(2, 'Reading pictures...');
+      // Connecting is a couple of percent; the transfer is the rest.
+      setD890Images(await withImages.readImages((percent, label) => {
+        onProgress?.(2 + percent * 0.98, label);
+      }));
+      onProgress?.(100, 'Pictures read.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setError(msg);
+      onProgress?.(0, `Error: ${msg}`);
+      throw err;
+    } finally {
+      // Disconnect on success as well as failure: leaving the port open and
+      // locked makes the NEXT port.open() throw.
+      if (protocol) {
+        try { await protocol.disconnect(); } catch (e) { console.warn('Error disconnecting after reading pictures:', e); }
+      }
+      setIsConnecting(false);
+    }
+  }, [selectedRadioModel, radioInfo, setD890Images]);
 
   const readBootImage = useCallback(async (
     onProgress?: (progress: number, message: string) => void
@@ -847,6 +955,7 @@ export function useRadioConnection() {
     readFromRadio,
     readContacts,
     readBootImage,
+    readD890Images,
     writeBootImage,
     writeContacts,
     writeChannelsToRadio,

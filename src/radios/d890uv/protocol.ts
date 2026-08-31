@@ -23,6 +23,13 @@ import type { DMRRadioID } from '../../models/DMRRadioID';
 import type { RadioInfo } from '../../types/radio';
 import type { RadioSettings } from '../../models/RadioSettings';
 import { parseD890Settings } from './settingsFormat';
+import type { EncryptionKey } from '../../models/EncryptionKey';
+import { log } from '../../utils/protocolLogger';
+import { D890_IMAGE, D890_IMAGE_ADDRESS, D890_IMAGE_LABEL, type D890ImageKind } from './bootImage';
+import { D890_ENCRYPTION_TYPE } from './constants';
+import { predefinedSmsAddress, parsePredefinedSms } from './predefinedSms';
+import type { QuickTextMessage } from '../../models/QuickTextMessage';
+import { D890_SATELLITE, decodeSatelliteTable, type D890SatelliteRecord } from './satellite';
 import { D890Connection, openD890Port, type D890Identity } from './connection';
 import {
   D890_ADDR,
@@ -40,6 +47,10 @@ import {
   parseRoamingZone,
   roamingChannelAddress,
   roamingZoneAddress,
+  parseEncryptionSlot,
+  parseAesKeySlot,
+  parseArc4KeySlot,
+  aesKeyNum,
   type D890RoamingChannel,
   type D890RoamingZone,
   parseRxGroup,
@@ -162,8 +173,11 @@ export class D890UVProtocol extends BaseDigitalProtocol {
    * kinds now decode, so a channel no longer reads as "no tone" when the radio
    * has one set.
    */
-  async readChannels(): Promise<Channel[]> {
-    const { decoded, unresolvedTones } = await this.readChannelsPreview();
+  async readChannels(onProgress?: (done: number, total: number) => void): Promise<Channel[]> {
+    // Forwarding this matters more than it looks. Channels are the longest phase
+    // of a read by a wide margin, and without a callback the progress bar sits
+    // frozen through all of it — which is indistinguishable from a hung read.
+    const { decoded, unresolvedTones } = await this.readChannelsPreview(onProgress);
     if (unresolvedTones > 0) {
       // Should not happen now the table is complete; if it does, the radio has a
       // tone index this build does not know and staying quiet would mean
@@ -486,6 +500,202 @@ export class D890UVProtocol extends BaseDigitalProtocol {
       D890_ADDR.APRS_SETTINGS,
       D890_ADDR.APRS_SETTINGS_SIZE
     );
+  }
+
+  /**
+   * Read pre-defined SMS — what the vendor calls "Pre-defined SMS" and what this
+   * app already models as quick messages.
+   *
+   * Slots are read until `emptyRunLimit` consecutive empties, rather than all
+   * 100. The presence bitmap at 0x2980000 would be the exact answer, but its
+   * layout is unconfirmed, and reading 100 banked slots to find five messages is
+   * 100 round trips for nothing. Stopping after a run of empties costs one extra
+   * bank read in the worst case and is honest about what it assumes.
+   */
+  async readQuickMessages(): Promise<QuickTextMessage[]> {
+    const conn = this.requireConnection();
+    const out: QuickTextMessage[] = [];
+    const emptyRunLimit = D890_ADDR.PREDEFINED_SMS_PER_BANK;
+    let emptyRun = 0;
+    for (let index = 0; index < D890_ADDR.PREDEFINED_SMS_MAX; index += 1) {
+      const bytes = await conn.readMemory(
+        predefinedSmsAddress(index),
+        D890_ADDR.PREDEFINED_SMS_STRIDE
+      );
+      const text = parsePredefinedSms(bytes);
+      if (text === null) {
+        emptyRun += 1;
+        if (emptyRun >= emptyRunLimit) break;
+        continue;
+      }
+      emptyRun = 0;
+      // `flag` and `checkValue` are DM-32 fields with no counterpart here; the
+      // model requires them, so they are zero rather than invented.
+      out.push({ index, text, flag: 0, checkValue: 0 });
+    }
+    return out;
+  }
+
+  /**
+   * Read the satellite table.
+   *
+   * Decode only — `satellite.ts` can also build the bytes, but nothing writes
+   * them. Slots are returned in table order with empties dropped: the vendor
+   * serializer zero-fills unused slots, so an all-zero slot means "no
+   * satellite" rather than "a satellite with no name".
+   */
+  async readSatellites(): Promise<D890SatelliteRecord[]> {
+    const bytes = await this.requireConnection().readMemory(
+      D890_ADDR.SATELLITE_TABLE,
+      D890_SATELLITE.TABLE_BYTES
+    );
+    return decodeSatelliteTable(bytes);
+  }
+
+  /**
+   * Read all three encryption tables into the shared `EncryptionKey` list.
+   *
+   * This radio keeps a SEPARATE table per algorithm — basic 16-bit codes, AES
+   * and ARC4 — where the DM-32 keeps one mixed list. They are flattened into one
+   * list here because that is the shape the UI and the model already have, and
+   * because a user thinks in terms of "my keys" rather than "my ARC4 table".
+   * `encryptionType` is what distinguishes them, and it is what makes a key's
+   * identity `(type, slot)` rather than slot alone — slot 1 exists three times.
+   *
+   * Only slots that are actually in use are returned. All three tables are 32
+   * slots regardless, so returning every one would bury a handful of real keys
+   * in 90+ empty rows.
+   *
+   * ⚠️ `name` is SYNTHESIZED, and kept under 10 characters because that is the
+   * name field's limit — a longer label is silently truncated the moment a user
+   * edits the row. None of these tables stores a name; the field exists in the
+   * model because the DM-32 has one. Do not write it back expecting the radio to
+   * keep it.
+   *
+   * The basic table's 16-bit Encryption ID is carried in `encryptionId`, which
+   * exists on the model for exactly this: a channel references that ID, not the
+   * slot, so dropping it would break any future channel/key cross-reference.
+   *
+   * ⚠️ The basic table's key passes through an XOR mask that is zero unless the
+   * vendor CPS has an activation file loaded. No activation file was available,
+   * so a radio programmed by an activated CPS would decode differently here.
+   */
+  async readEncryptionKeys(): Promise<EncryptionKey[]> {
+    const conn = this.requireConnection();
+    const out: EncryptionKey[] = [];
+    const push = (
+      id: number,
+      encryptionType: number,
+      key: string,
+      label: string,
+      encryptionId?: number
+    ) => {
+      out.push({ entryNumber: out.length + 1, id, name: label, encryptionType, key, encryptionId });
+    };
+
+    // Basic "Encryption Code" table: a 16-bit ID and a 16-bit key per slot.
+    try {
+      const ids = await conn.readMemory(
+        D890_ADDR.ENCRYPTION_ID_TABLE,
+        D890_ADDR.ENCRYPTION_SLOTS * D890_ADDR.ENCRYPTION_ID_STRIDE
+      );
+      const keys = await conn.readMemory(
+        D890_ADDR.ENCRYPTION_KEY_TABLE,
+        D890_ADDR.ENCRYPTION_SLOTS * D890_ADDR.ENCRYPTION_KEY_STRIDE
+      );
+      for (let i = 0; i < D890_ADDR.ENCRYPTION_SLOTS; i += 1) {
+        const slot = parseEncryptionSlot(ids, keys, i);
+        // A zero key is the factory state; the ID is populated on every slot
+        // whether or not a key was ever set, so the key is what marks it used.
+        if (slot.key === 0) continue;
+        push(
+          slot.slot,
+          D890_ENCRYPTION_TYPE.BASIC,
+          slot.key.toString(16).toUpperCase().padStart(4, '0'),
+          `Code ${slot.slot}`,
+          slot.encryptionId
+        );
+      }
+    } catch (err) {
+      log.warn(`DA-7X2 basic encryption table unreadable: ${String(err)}`, 'D890');
+    }
+
+    try {
+      const aes = await conn.readMemory(
+        D890_ADDR.AES_KEY_TABLE,
+        D890_ADDR.ENCRYPTION_SLOTS * D890_ADDR.AES_KEY_STRIDE
+      );
+      for (let i = 0; i < D890_ADDR.ENCRYPTION_SLOTS; i += 1) {
+        const slot = parseAesKeySlot(aes, i);
+        if (slot.empty) continue;
+        // aes_key_num is the key length in HEX CHARACTERS: 0x40 = 256-bit.
+        const bits = aesKeyNum(aes, i) * 4;
+        push(
+          slot.slot,
+          bits <= 128 ? D890_ENCRYPTION_TYPE.AES128 : D890_ENCRYPTION_TYPE.AES256,
+          slot.keyHex,
+          `AES ${slot.slot}`
+        );
+      }
+    } catch (err) {
+      log.warn(`DA-7X2 AES table unreadable: ${String(err)}`, 'D890');
+    }
+
+    try {
+      const arc4 = await conn.readMemory(
+        D890_ADDR.ARC4_KEY_TABLE,
+        D890_ADDR.ENCRYPTION_SLOTS * D890_ADDR.ARC4_KEY_STRIDE
+      );
+      for (let i = 0; i < D890_ADDR.ENCRYPTION_SLOTS; i += 1) {
+        const slot = parseArc4KeySlot(arc4, i);
+        if (slot.empty) continue;
+        push(slot.slot, D890_ENCRYPTION_TYPE.ARC4, slot.keyHex, `ARC4 ${slot.slot}`);
+      }
+    } catch (err) {
+      log.warn(`DA-7X2 ARC4 table unreadable: ${String(err)}`, 'D890');
+    }
+
+    return out;
+  }
+
+  /**
+   * Read the boot image and both standby pictures.
+   *
+   * All three are read on every codeplug read rather than on demand. That costs
+   * 3 x 40 KB, which on this radio is seconds — it is a sparse-address protocol
+   * at 921600 baud, not a clone image, so there is no whole-memory upload to sit
+   * behind. Making them part of the normal read means the Settings area can just
+   * show them, instead of every viewing being an explicit round trip.
+   *
+   * A failed image read must NOT fail the codeplug read: these are cosmetic, and
+   * a radio that returns nothing for them is still fully programmable. Each is
+   * therefore independent and returns null on failure.
+   */
+  async readImages(
+    onProgress?: (percent: number, label: string) => void
+  ): Promise<Record<D890ImageKind, Uint8Array | null>> {
+    const out: Record<D890ImageKind, Uint8Array | null> = { boot: null, bk1: null, bk2: null };
+    const kinds = ['boot', 'bk1', 'bk2'] as const;
+    const total = kinds.length * D890_IMAGE.BYTES;
+    let done = 0;
+    for (const [i, kind] of kinds.entries()) {
+      const label = `${D890_IMAGE_LABEL[kind]} (${i + 1} of ${kinds.length})`;
+      try {
+        out[kind] = await this.requireConnection().readMemory(
+          D890_IMAGE_ADDRESS[kind],
+          D890_IMAGE.BYTES,
+          // Progress is reported across ALL THREE images, not per image — three
+          // bars that each fill and reset tells the user less than one that
+          // moves steadily to the end.
+          (bytes) => onProgress?.(((done + bytes) / total) * 100, label)
+        );
+      } catch {
+        // Leave it null; the UI distinguishes "not read" from "blank".
+      }
+      done += D890_IMAGE.BYTES;
+      onProgress?.((done / total) * 100, label);
+    }
+    return out;
   }
 
   /**

@@ -153,9 +153,19 @@ export function assertWritableAddress(address: number): void {
         `address and writing it is believed to damage the radio.`
     );
   }
-  // The flash-management blocks at the tail of EVERY 256 KB erase unit. The OEM
-  // CPS never touches these: a full-codeplug capture of 9,976 write frames hit
-  // neither offset. Checked modulo the unit size, because they repeat.
+  // The flash-management blocks at the tail of EVERY 256 KB erase unit.
+  //
+  // ⚠️ PROVENANCE CORRECTED 2026-08-30. This previously claimed "a full-codeplug
+  // capture of 9,976 write frames hit neither offset". NO SUCH CAPTURE EXISTS —
+  // nobody on this project has ever performed or captured a write, and the
+  // figure was an inference from the frame COUNT a full write would need. It
+  // was a fabricated citation sitting inside a safety guard, which is the worst
+  // possible place for one.
+  //
+  // The guard stays, and is if anything better justified without it: these
+  // offsets come from radio-family knowledge, and a null result in the vendor
+  // CPS is not evidence the hazard is absent from the hardware. Checked modulo
+  // the unit size, because they repeat.
   const offsetInUnit = address % D890_ERASE_UNIT;
   if (D890_FORBIDDEN_UNIT_OFFSETS.includes(offsetInUnit as 0x3fbf0 | 0x3fff0)) {
     throw new Error(

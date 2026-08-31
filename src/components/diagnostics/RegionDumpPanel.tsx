@@ -3,6 +3,8 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { Button } from '../ui/Button';
 import { HexDump } from './HexDump';
+import { D890ImagePreview } from './D890ImagePreview';
+import { D890_IMAGE, type D890ImageKind } from '../../radios/d890uv/bootImage';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { createProtocolForModel } from '../../radios';
 import { D890_ADDR, D890_LIMITS } from '../../radios/d890uv/constants';
@@ -155,6 +157,27 @@ const REGIONS: RegionChoice[] = [
     note: 'One-byte members at +0x00 indexing the roaming-channel table; name at +0x40.',
   },
   {
+    key: 'boot-image',
+    label: 'Boot',
+    address: D890_ADDR.BOOT_IMAGE,
+    length: D890_IMAGE.BYTES,
+    note: 'Decoded and shown below. 40 KB, so this read takes a moment.',
+  },
+  {
+    key: 'bk1-image',
+    label: 'Standby Background',
+    address: D890_ADDR.STANDBY_BK1,
+    length: D890_IMAGE.BYTES,
+    note: 'Same format as the boot image.',
+  },
+  {
+    key: 'bk2-image',
+    label: 'Standby Background Alternate',
+    address: D890_ADDR.STANDBY_BK2,
+    length: D890_IMAGE.BYTES,
+    note: 'Same format as the boot image.',
+  },
+  {
     key: 'aprs',
     label: 'APRS settings',
     address: D890_ADDR.APRS_SETTINGS,
@@ -162,6 +185,17 @@ const REGIONS: RegionChoice[] = [
     note: 'Callsigns, digipeater path and symbol pair are visible as plain text.',
   },
 ];
+
+/**
+ * Which presets decode to a picture. Keyed off the preset rather than the
+ * address so a custom dump of the same address does not silently claim to be an
+ * image when the user asked for a partial span.
+ */
+const IMAGE_REGIONS: Record<string, D890ImageKind> = {
+  'boot-image': 'boot',
+  'bk1-image': 'bk1',
+  'bk2-image': 'bk2',
+};
 
 const MAX_CUSTOM_LENGTH = 0x4000; // 16 KB — keeps an accidental typo from hanging the UI
 
@@ -176,7 +210,7 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
   const [customLength, setCustomLength] = useState('');
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string>('');
-  const [result, setResult] = useState<{ address: number; data: Uint8Array } | null>(null);
+  const [result, setResult] = useState<{ address: number; data: Uint8Array; regionKey: string } | null>(null);
 
   // Capability-gated, never model-string-gated (golden rule #3).
   if (!caps?.supportsRawRegionDump) return null;
@@ -222,7 +256,7 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
       const data = await protocol.readRawRegion(target.address, target.length, (read, total) => {
         setProgress(`Reading ${read}/${total} bytes…`);
       });
-      setResult({ address: target.address, data });
+      setResult({ address: target.address, data, regionKey: selected });
       setProgress('');
     } catch (err) {
       showAlert(err instanceof Error ? err.message : 'Region dump failed', 'Region dump');
@@ -310,6 +344,12 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
           <p className="text-xs text-muted mb-2 font-mono">
             0x{result.address.toString(16)} — {result.data.length} bytes
           </p>
+          {IMAGE_REGIONS[result.regionKey] && (
+            <D890ImagePreview
+              kind={IMAGE_REGIONS[result.regionKey]}
+              data={result.data}
+            />
+          )}
           {/* downloadName gives the Hex/Bin download buttons; the filename encodes
               the address so a saved fixture is self-describing. */}
           <HexDump

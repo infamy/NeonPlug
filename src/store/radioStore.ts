@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import type { D890RoamingChannel, D890RoamingZone } from '../radios/d890uv/structures';
+import type { D890SatelliteRecord } from '../radios/d890uv/satellite';
 import type { RadioInfo } from '../types/radio';
 
 type ZoneComparisonData = Array<{
@@ -46,6 +48,19 @@ interface RadioState {
   writeBlockData: Map<number, { address: number; data: Uint8Array; metadata: number }>;
   zoneComparisonData: ZoneComparisonData;
   bootImageRaw: Uint8Array | null;
+  /**
+   * DA-7X2 boot image and both standby pictures, read with the codeplug.
+   * Separate from `bootImageRaw` because this radio has three of them and they
+   * are a different format (160x128 RGB565) from the DM-32's single image.
+   */
+  d890Images: { boot: Uint8Array | null; bk1: Uint8Array | null; bk2: Uint8Array | null } | null;
+  /**
+   * DA-7X2 roaming and satellite tables. Read with the codeplug and kept raw —
+   * neither has a model of its own yet, and inventing one before there is a UI
+   * would be guessing at what that UI needs.
+   */
+  d890Roaming: { channels: D890RoamingChannel[]; zones: D890RoamingZone[] } | null;
+  d890Satellites: D890SatelliteRecord[] | null;
   bootImageDescription: string | null;
   connectionError: string | null;
   setConnected: (connected: boolean) => void;
@@ -59,6 +74,9 @@ interface RadioState {
   setWriteBlockData: (data: Map<number, { address: number; data: Uint8Array; metadata: number }>) => void;
   setZoneComparisonData: (data: ZoneComparisonData) => void;
   setBootImageRaw: (data: Uint8Array | null) => void;
+  setD890Images: (images: { boot: Uint8Array | null; bk1: Uint8Array | null; bk2: Uint8Array | null } | null) => void;
+  setD890Roaming: (roaming: { channels: D890RoamingChannel[]; zones: D890RoamingZone[] } | null) => void;
+  setD890Satellites: (sats: D890SatelliteRecord[] | null) => void;
   setBootImageDescription: (description: string | null) => void;
   setConnectionError: (error: string | null) => void;
   setSelectedRadioModel: (model: string | null) => void;
@@ -82,6 +100,9 @@ export const useRadioStore = create<RadioState>((set) => ({
   writeBlockData: new Map(),
   zoneComparisonData: [],
   bootImageRaw: null,
+  d890Images: null,
+  d890Roaming: null,
+  d890Satellites: null,
   bootImageDescription: null,
   connectionError: null,
   setConnected: (connected) => set({ isConnected: connected }),
@@ -95,6 +116,9 @@ export const useRadioStore = create<RadioState>((set) => ({
   setWriteBlockData: (data) => set({ writeBlockData: data }),
   setZoneComparisonData: (data) => set({ zoneComparisonData: data }),
   setBootImageRaw: (data) => set({ bootImageRaw: data }),
+  setD890Images: (images) => set({ d890Images: images }),
+  setD890Roaming: (roaming) => set({ d890Roaming: roaming }),
+  setD890Satellites: (sats) => set({ d890Satellites: sats }),
   setBootImageDescription: (description) => set({ bootImageDescription: description }),
   setConnectionError: (error) => set({ connectionError: error }),
   setSelectedRadioModel: (model) => set({ selectedRadioModel: model }),

@@ -35,6 +35,7 @@ import {
 } from './framing';
 import { BaseSerialConnection, type SerialLikePort } from '../shared/BaseSerialConnection';
 import { requestSerialPort } from '../shared/serialPort';
+import { log, logger, LogLevel } from '../../utils/protocolLogger';
 
 const PROGRAM_CMD = new TextEncoder().encode(D890_HANDSHAKE.ENTER);
 const END_CMD = new TextEncoder().encode(D890_HANDSHAKE.EXIT);
@@ -164,6 +165,20 @@ export class D890Connection extends BaseSerialConnection {
     this.buf = new Uint8Array(0);
     await this.write(buildReadCommand(address, length));
     const frame = await this.readExact(readResponseSize(length), READ_TIMEOUT_MS);
+    // Raw frame at verbose level. The read reply and the write request are the
+    // same frame shape, so a captured reply is the only zero-risk way to check
+    // the write checksum against the radio's own arithmetic.
+    //
+    // The level is checked BEFORE building the string. A full codeplug read is
+    // thousands of frames, and formatting up to 248 bytes of hex for every one
+    // of them costs real time even when the log line is then discarded — it
+    // slowed a read to a crawl before this guard was added.
+    if (logger.getLevel() >= LogLevel.VERBOSE) {
+      log.verbose(
+        `RX ${Array.from(frame, (b) => b.toString(16).padStart(2, '0')).join(' ')}`,
+        'D890 frame'
+      );
+    }
     return parseReadResponse(frame, address, length);
   }
 

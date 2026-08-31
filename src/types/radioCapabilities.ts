@@ -116,6 +116,13 @@ export interface RadioCapabilitiesDigitalLimits {
   TALK_GROUPS_MAX: number;
   DMR_RADIO_IDS_MAX: number;
   QUICK_MESSAGES_MAX?: number;
+  /**
+   * Longest message the radio accepts, in characters.
+   *
+   * Optional because the editor hardcoded the DM-32's 128 before any second
+   * radio had quick messages; radios that omit it keep that behaviour.
+   */
+  QUICK_MESSAGE_CHARS_MAX?: number;
   RX_GROUPS_MAX?: number;
   SCAN_LISTS_MAX?: number;
 }

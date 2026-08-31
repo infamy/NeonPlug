@@ -35,6 +35,13 @@ export const DigitalTab: React.FC = () => {
   const talkGroupsMax = limits?.TALK_GROUPS_MAX ?? DEFAULT_TALK_GROUPS_MAX;
   const dmrRadioIdsMax = limits?.DMR_RADIO_IDS_MAX ?? DEFAULT_DMR_RADIO_IDS_MAX;
   const { keys, keysLoaded, setKeys, updateKey } = useEncryptionKeysStore();
+  // Driven by the data, not by the model: whichever radio supplies an ID gets
+  // the column. Gating on a model string would be golden-rule #3 all over again.
+  const showEncryptionId = keys.some((k) => k.encryptionId !== undefined);
+  // 128 was the DM-32's limit, hardcoded here before a second radio had quick
+  // messages. It is not universal: the DA-7X2 accepts 200.
+  const messageCharsMax = limits?.QUICK_MESSAGE_CHARS_MAX ?? 128;
+  const messagesMax = limits?.QUICK_MESSAGES_MAX ?? 20;
   const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem, addSystem: addDigitalEmergency, deleteSystem: deleteDigitalEmergency } = useDigitalEmergencyStore();
   const { radioIds, radioIdsLoaded, updateRadioId, addRadioId, deleteRadioId } = useDMRRadioIDsStore();
   const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact, setMaxTalkGroups } = useQuickContactsStore();
@@ -664,7 +671,9 @@ export const DigitalTab: React.FC = () => {
         <div className="mb-4">
           <SectionTitle as="h3" size="xl">Encryption Keys</SectionTitle>
           <p className="text-cool-gray text-sm">
-            Manage encryption keys from metadata block 0x10. Up to 8 keys can be configured.
+            {caps?.supportsBulkRead
+              ? 'Manage encryption keys from metadata block 0x10. Up to 8 keys can be configured.'
+              : 'Encryption keys read from the radio. Type cannot be changed once a key exists — create a new key of the right type instead.'}
           </p>
           {block10Address !== null && (
             <p className="text-cool-gray text-xs mt-1">
@@ -685,6 +694,13 @@ export const DigitalTab: React.FC = () => {
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-dark-charcoal border-b border-neon-cyan">
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
+                      {/* Only radios whose table carries an ID separate from the
+                          slot get this column — a channel points at the ID, so
+                          hiding it would leave the user unable to match a key to
+                          the channel using it. */}
+                      {showEncryptionId && (
+                        <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[90px]">Encryption ID</th>
+                      )}
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Encryption Type</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[300px]">Key (Hex)</th>
                       <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px]">Actions</th>
@@ -706,6 +722,11 @@ export const DigitalTab: React.FC = () => {
                             placeholder="Enter name"
                           />
                         </td>
+                        {showEncryptionId && (
+                          <td className="px-2 py-2 font-mono text-cool-gray">
+                            {key.encryptionId ?? '—'}
+                          </td>
+                        )}
                         <td className="px-2 py-2">
                           {isEncryptionTypeLocked(key) ? (
                             // Fixed for the key's lifetime. On a radio that keeps a
@@ -775,7 +796,8 @@ export const DigitalTab: React.FC = () => {
           <div>
             <SectionTitle as="h3" size="xl">Quick Text Messages</SectionTitle>
             <p className="text-cool-gray text-sm">
-              Manage quick text messages. Maximum 128 bytes per message, up to 20 messages.
+              Manage quick text messages. Up to {messageCharsMax} characters each,
+              {' '}{messagesMax} messages.
             </p>
           </div>
           {messagesLoaded && messages.length < 20 && (
@@ -821,11 +843,11 @@ export const DigitalTab: React.FC = () => {
                               type="text"
                               value={message.text}
                               onChange={(e) => {
-                                const newText = e.target.value.slice(0, 128);
+                                const newText = e.target.value.slice(0, messageCharsMax);
                                 const textLength = new TextEncoder().encode(newText).length;
                                 updateMessage(arrayIndex, { text: newText, flag: textLength });
                               }}
-                              maxLength={128}
+                              maxLength={messageCharsMax}
                               className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
                               placeholder="Enter message text"
                             />
