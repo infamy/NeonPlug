@@ -634,6 +634,27 @@ export const D890_ANALOG_APRS_PTT_MODE = [
  *
  * Indices above 2 have never been observed.
  */
+/**
+ * DMR Mode — `0x21` bits 3-2. CONFIRMED on hardware 2026-08-30 by selecting each
+ * option on the radio and re-reading the VFO record.
+ *
+ * ⚠️ THIS FIELD DOES NOT STAND ALONE. The radio's four-option DMR Mode menu is
+ * composed from TWO stored fields, and value 0 is shared:
+ *
+ *     menu option      0x21 bits 3-2     0x34 bit 1 (digitalDuplex, inverted)
+ *     DMO / Simplex          0                1
+ *     Repeater               0                0
+ *     Dual TS                1                -
+ *     TS Split               2                -
+ *
+ * So a UI that shows this field alone cannot distinguish DMO from Repeater, and
+ * a write that sets this field without also setting `0x34` bit 1 will land on
+ * whichever of the two the radio was already in.
+ *
+ * Value 3 was never reachable from the menu and stays unnamed.
+ */
+export const D890_DMR_MODE = ['Simplex / Repeater', 'Dual TS', 'TS Split', '3 (unconfirmed)'] as const;
+
 export const D890_BUSY_LOCK = ['Off / Always', 'Different CDT', 'Channel Free'] as const;
 
 /**

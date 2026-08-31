@@ -177,7 +177,22 @@ export interface Channel {
   /** Vendor "Exclude channel from roaming" (`roam_forbid`). */
   excludeFromRoaming?: boolean;
   /** Vendor `rec_only` — receive-only channel. */
+  /**
+   * ⚠️ DA-7X2: this radio HAS NO RECEIVE-ONLY SETTING, so the field is never
+   * populated for it. Three independent checks agree: the vendor's 77-column
+   * channel export has no such column, the radio's own menu has no such entry,
+   * and byte 0x34 bit 3 — which the marshaller names `rec_only` — was proved on
+   * hardware to be DataACK forbid.
+   *
+   * `rec_only` survives in the vendor's internal strings but is not a column,
+   * not a menu item and not a feature; it reads as a leftover from code shared
+   * with a sibling model. Do not "restore" it by pointing this at bit 3 — that
+   * would let a user ask for receive-only and get a channel that still
+   * transmits. Other radios are unaffected.
+   */
   receiveOnly?: boolean;
+  /** DA-7X2 "DataACK forbid" — byte 0x34 bit 3, confirmed on hardware. */
+  dataAckForbid?: boolean;
   /** Vendor "Auto Scan" (`auto_scan`). */
   autoScan?: boolean;
   /** Vendor "Idle TX" (`idle_tx`). */

@@ -795,11 +795,24 @@ export function parseChannel(
     /** Vendor "DataACK Disable" (`Response`). Byte 0x21 bit 1. */
     dataAckDisable: ((bytes[0x21] ?? 0) & 0x02) !== 0,
     /** Vendor "Digital Duplex" (`simplex`). Byte 0x34 bit 1, inverted. */
+    // CONFIRMED on hardware 2026-08-30: choosing Repeater on the radio CLEARED
+    // this bit, so 0 means duplex/repeater and 1 means simplex. The inversion is
+    // real — do not "fix" it to a plain truthiness test.
     digitalDuplex: ((bytes[0x34] ?? 0) & 0x02) === 0,
     /** Vendor "Exclude channel from roaming" (`roam_forbid`). Byte 0x34 bit 2. */
     excludeFromRoaming: ((bytes[0x34] ?? 0) & 0x04) !== 0,
-    /** Vendor `rec_only`. Byte 0x34 bit 3. */
-    receiveOnly: ((bytes[0x34] ?? 0) & 0x08) !== 0,
+    /**
+     * ⚠️ CORRECTED 2026-08-30. This bit was mapped as `rec_only` (Receive Only)
+     * from the vendor marshaller. It is NOT. Toggling "DataACK forbid" off on
+     * the radio cleared exactly this bit and nothing else in the 128-byte
+     * record; toggling it on had set it. Four dumps agree.
+     *
+     * The mislabel mattered: on a write path, a user asking for Receive Only
+     * would have got DataACK forbid instead, leaving the channel able to
+     * transmit. `receiveOnly` is now unmapped rather than pointed at the wrong
+     * bit — see the Channel model.
+     */
+    dataAckForbid: ((bytes[0x34] ?? 0) & 0x08) !== 0,
     /** Vendor "Auto Scan" (`auto_scan`). Byte 0x34 bit 4. */
     autoScan: ((bytes[0x34] ?? 0) & 0x10) !== 0,
     /** Vendor "Idle TX" (`idle_tx`). Byte 0x34 bit 5. */
@@ -807,6 +820,9 @@ export function parseChannel(
     /** Vendor `compand`. Byte 0x34 bit 6 — the shared model's `compander`. */
     compander: ((bytes[0x34] ?? 0) & 0x40) !== 0,
     /** Vendor `dmr_crc_ignore`. Byte 0x34 bit 7. */
+    // CONFIRMED on hardware 2026-08-30: enabling CRC ignore on VFO A set bit 7
+    // alone. One of the few 0x34 bits where the marshaller's name was right —
+    // bit 3's `rec_only` was not, so confirm rather than assume.
     dmrCrcIgnore: ((bytes[0x34] ?? 0) & 0x80) !== 0,
     /**
      * Vendor "Analog APRS PTT Mode" (`AprsUpDate`). Byte 0x36.

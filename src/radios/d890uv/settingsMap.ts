@@ -97,7 +97,7 @@ export interface D890SettingsField {
    * entry without an actual capture — DA7X2-NEEDS-CONFIRMING.md lists what would
    * settle each one.
    */
-  confidence?: 'swept' | 'vendor-name' | 'inferred';
+  confidence?: 'hardware' | 'swept' | 'vendor-name' | 'inferred';
   /** Byte offset from D890_ADDR.SETTINGS. */
   offset: number;
   /** Highest value ever observed from the CPS. A lower bound on the range. */
@@ -305,7 +305,9 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'manDown', label: 'Man Down', group: 'Other', offset: 0x024, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'FailAlarm', confidence: 'vendor-name' },
   { key: 'monKeyFunction', label: 'MON Key Function', group: 'Key Function', offset: 0x025, max: 255, vendorField: 'MonType', confidence: 'vendor-name' },
   { key: 'brightness', label: 'Brightness', group: 'Display', offset: 0x026, max: 255, vendorField: 'Lightness', confidence: 'vendor-name' },
-  { key: 'gps', label: 'GPS', group: 'GPS/Ranging', offset: 0x028, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'Gps', confidence: 'vendor-name' },
+  // CONFIRMED on hardware 2026-08-30: switching GPS off on the radio moved this
+  // byte 1 -> 0, and nothing else in the 256-byte settings region changed.
+  { key: 'gps', label: 'GPS', group: 'GPS/Ranging', offset: 0x028, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'Gps', confidence: 'hardware' },
   { key: 'frequencyDisplay', label: 'Frequency Display', group: 'Display', offset: 0x02a, max: 255, vendorField: 'FreqDis', confidence: 'vendor-name' },
   { key: 'fmMonitor', label: 'FM Monitor', group: 'AM/FM', offset: 0x02b, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'FmMon', confidence: 'vendor-name' },
   { key: 'mainChannelSet', label: 'Main Channel Set', cpsLabel: 'Main Channel Set', group: 'Work Mode', offset: 0x02c, max: 1, options: ['A', 'B'], listLength: 2, vendorField: 'MainState', confidence: 'swept' },
@@ -329,6 +331,15 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'btMicGain', label: 'BT MIC Gain', group: 'Vox/BT', offset: 0x0b6, max: 255, vendorField: 'BhtMicGain', confidence: 'vendor-name' },
   { key: 'btSpkGain', label: 'BT Spk Gain', group: 'Vox/BT', offset: 0x0b7, max: 255, vendorField: 'BhtSpkGain', confidence: 'vendor-name' },
   { key: 'displayChannelNumber', label: 'Display Channel Number', cpsLabel: 'Display Channel Number', group: 'Display', offset: 0x0b8, max: 1, options: ['Actual Channel Number', 'Sequence Number In Zone'], listLength: 2, vendorField: 'ChanNumDisKind', confidence: 'swept' },
+  // ⚠️ SUSPECTED PHANTOM. `DisUnitSet` appears in NO column of the vendor's
+  // 199-column OptionalSetting export, while all seven other GPS/Ranging fields
+  // do. There IS an `AprsDistanceDis` column (115) that may be the same concept
+  // under a different name, but nothing connects it to this offset.
+  //
+  // This is the shape `rec_only` had: a name in the vendor's internals for
+  // something the CPS never shows. Confirm it exists before trusting the offset
+  // — and see DA7X2-NEEDS-CONFIRMING.md on why a vendor field name is not
+  // evidence a feature exists.
   { key: 'distanceUnit', label: 'Distance Unit', group: 'GPS/Ranging', offset: 0x0bd, max: 255, vendorField: 'DisUnitSet', confidence: 'inferred' },
   { key: 'startupZoneA', label: 'Startup Zone A', group: 'Power-on', offset: 0x0d7, max: 255, vendorField: 'StartZone1', confidence: 'vendor-name' },
   { key: 'startupZoneB', label: 'Startup Zone B', group: 'Power-on', offset: 0x0d8, max: 255, vendorField: 'StartZone2', confidence: 'vendor-name' },

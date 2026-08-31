@@ -3,6 +3,7 @@ import type { ChannelColumnGroup } from '../../types/radioCapabilities';
 import {
   D890_ANALOG_APRS_PTT_MODE,
   D890_BUSY_LOCK,
+  D890_DMR_MODE,
 } from '../../radios/d890uv/constants';
 
 /**
@@ -62,13 +63,19 @@ export interface ExtraChannelColumn {
 }
 
 /**
- * Vendor "Busy Lock/TX Permit".
+ * Vendor "Busy Lock/TX Permit". CONFIRMED ON HARDWARE 2026-08-30.
  *
- * Kept as a number rather than a select on purpose. The CPS shows Off for analog
- * channels and Always for digital ones with zero exceptions, which looks like a
- * two-item list — but the stored byte is 0 on every channel of a codeplug built
- * to vary it. The CPS *derives* that column; nothing establishes what the stored
- * values mean.
+ * Setting the VFO to "Channel Free" on the radio's own front panel moved byte
+ * 0x1a from 0x00 to 0x02, and nothing else in the 128-byte record changed. That
+ * pins both the offset and the third vocabulary entry, since
+ * `D890_BUSY_LOCK[2] === 'Channel Free'`.
+ *
+ * This replaces an earlier note claiming the stored byte "is 0 on every channel
+ * of a codeplug built to vary it" and that the CPS derives the column. The byte
+ * is stored and it does vary — the earlier codeplug simply never set it.
+ *
+ * Still inferred: `Different CDT === 1`, from list position alone. One more
+ * toggle settles it.
  */
 export const EXTRA_CHANNEL_COLUMNS: readonly ExtraChannelColumn[] = [
   // ---- tones and signalling ------------------------------------------------
@@ -132,9 +139,9 @@ export const EXTRA_CHANNEL_COLUMNS: readonly ExtraChannelColumn[] = [
     field: 'busyLock',
     header: 'TX Permit',
     label: 'Busy Lock / TX Permit',
-    note: 'A stored 0 renders as "Off" on an analog channel and "Always" on a digital one, which is why this column looked confounded with channel type until a codeplug set the byte directly.',
+    note: 'Confirmed on hardware: setting Channel Free on the radio stored 2 at 0x1a. A stored 0 still renders as "Off" on an analog channel and "Always" on a digital one, which is why this column looked derived until the byte was watched changing.',
     offset: '0x1a bits 3-0',
-    provenance: 'marshaller',
+    provenance: 'hardware',
     editor: { kind: 'select', options: D890_BUSY_LOCK },
   },
   {
@@ -176,18 +183,8 @@ export const EXTRA_CHANNEL_COLUMNS: readonly ExtraChannelColumn[] = [
     header: 'DMR Mode',
     label: 'DMR MODE',
     offset: '0x21 bits 3-2',
-    provenance: 'marshaller',
-    editor: { kind: 'number', min: 0, max: 3 },
-    digitalOnly: true,
-  },
-  {
-    group: 'dmrAdvanced',
-    field: 'dataAckDisable',
-    header: 'No ACK',
-    label: 'DataACK Disable',
-    offset: '0x21 bit 1',
-    provenance: 'marshaller',
-    editor: { kind: 'boolean' },
+    provenance: 'hardware',
+    editor: { kind: 'select', options: D890_DMR_MODE },
     digitalOnly: true,
   },
   {
@@ -217,7 +214,7 @@ export const EXTRA_CHANNEL_COLUMNS: readonly ExtraChannelColumn[] = [
     header: 'CRC Ign',
     label: 'Ignore DMR CRC',
     offset: '0x34 bit 7',
-    provenance: 'marshaller',
+    provenance: 'hardware',
     editor: { kind: 'boolean' },
     digitalOnly: true,
   },
@@ -256,12 +253,14 @@ export const EXTRA_CHANNEL_COLUMNS: readonly ExtraChannelColumn[] = [
   },
   {
     group: 'scanRoaming',
-    field: 'receiveOnly',
-    header: 'RX Only',
-    label: 'Receive only',
+    field: 'dataAckForbid',
+    header: 'DataACK',
+    label: 'DataACK forbid',
     offset: '0x34 bit 3',
-    provenance: 'marshaller',
+    provenance: 'hardware',
+    note: 'Confirmed on hardware 2026-08-30 by toggling it alone on the radio. The vendor marshaller names this bit rec_only, which is wrong — Receive Only is not currently mapped for this radio, because pointing it at a bit that means something else would let a user ask for RX-only and get a channel that still transmits.',
     editor: { kind: 'boolean' },
+    digitalOnly: true,
   },
   {
     group: 'ranging',

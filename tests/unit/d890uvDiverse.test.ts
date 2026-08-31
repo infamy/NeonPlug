@@ -628,7 +628,13 @@ describe('DA-7X2 fields taken from the decompiled marshaller', () => {
       // this field the inverse of the stored bit.
       expect(g.digitalDuplex).toBe(false);
       expect(g.excludeFromRoaming).toBe(false);
-      expect(g.receiveOnly).toBe(false);
+      // `receiveOnly` is deliberately UNDEFINED for this radio. It used to be
+      // read from 0x34 bit 3, which was proved on hardware 2026-08-30 to be
+      // DataACK forbid instead. Leaving it unset is the point: a field that
+      // decides whether a channel may transmit must not be populated from a bit
+      // that means something else.
+      expect(g.receiveOnly).toBeUndefined();
+      expect(g.dataAckForbid).toBe(false);
       expect(g.autoScan).toBe(false);
       expect(g.idleTx).toBe(false);
       expect(g.compander).toBe(false);
