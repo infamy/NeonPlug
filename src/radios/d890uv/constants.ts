@@ -172,11 +172,18 @@ export const D890_ERASE_UNIT = 0x40000;
  * Per-unit offsets belonging to the radio's own flash management. These must
  * NEVER be written.
  *
- * ⚠️ An earlier version of this comment cited "a full-codeplug capture of 9,976
- * write frames" as evidence the OEM CPS omits them. That capture does not exist
- * — no write has ever been performed or captured by anyone on this project, as
- * the line immediately below already says about the erase unit itself. The
- * offsets come from radio-family knowledge and nothing more.
+ * ✅ CONFIRMED ON HARDWARE 2026-08-30 by reading them: 0x103FBF4 holds
+ * `22 33 44 55` and 0x103FFFC holds `55 55 AA AA`, both surrounded by 0xFF.
+ * 0x55/0xAA is the classic flash-management signature pattern.
+ *
+ * This also corroborates the 256 KB erase unit itself: the two markers sit at
+ * exactly the documented offsets within the first unit of the channel region.
+ *
+ * (An earlier version of this comment cited "a full-codeplug capture of 9,976
+ * write frames". That capture never existed and the claim was removed. The
+ * offsets then rested on recollection alone — and static analysis of the vendor
+ * CPS found the constants zero times — so the guard was a candidate for
+ * deletion until the radio was read.)
  *
  * Unlike D890_FORBIDDEN_WRITE_ADDRESS (a single address), these repeat in EVERY
  * erase unit, so the check is `address % D890_ERASE_UNIT` against each entry.

@@ -16,7 +16,7 @@ import { D890_APRS_NO_CHANNEL } from '../../src/radios/d890uv/aprs';
 import { decodeFrequencyMHz } from '../../src/radios/d890uv/structures';
 import {
   parseBroadcastChannel,
-  decodeBcd4,
+  decodeBcd,
   isVacantBroadcastChannel,
 } from '../../src/radios/d890uv/broadcastChannels';
 import {
@@ -470,16 +470,23 @@ describe('DA-7X2 AM airband and FM broadcast channels', () => {
     'FM-001'.split('').forEach((c, i) => { b[4 + i * 2] = c.charCodeAt(0); b[5 + i * 2] = 0; });
     b[4 + 6 * 2] = 0; b[5 + 6 * 2] = 0; return b; })();
 
-  it('uses a DIFFERENT frequency scale per band, and both land on 108 MHz', () => {
-    // The trap: both factory defaults display as 108.000 MHz in the vendor CPS,
-    // but their stored digits differ by a factor of ten. Reading both at one
-    // scale gives 108 and 10.8 — and the wrong one looks like a decode bug
-    // rather than a scale difference. Confirmed against the CPS by the operator.
+  it('uses a different WIDTH and scale per band', () => {
+    // AM is 4 BCD bytes / 100000; FM is 3 BCD bytes / 100. Both factory defaults
+    // read 108.000 MHz, which is why the difference stayed hidden.
     expect(parseBroadcastChannel(AM, 0, 'am').frequency).toBeCloseTo(108.0, 5);
     expect(parseBroadcastChannel(FM, 0, 'fm').frequency).toBeCloseTo(108.0, 4);
-    // and swapping the scales gives the wrong answer, which is what pins them
-    expect(parseBroadcastChannel(AM, 0, 'fm').frequency).toBeCloseTo(1080.0, 3);
-    expect(parseBroadcastChannel(FM, 0, 'am').frequency).toBeCloseTo(10.8, 4);
+  });
+
+  it('ignores FM byte +0x03, which the vendor never writes', () => {
+    // THE bug this replaced: reading four bytes for FM worked only because the
+    // one captured record has 0x00 there. The vendor's writer steps `add 3` then
+    // `add 1` straight past it, so it can hold anything. 98.30 MHz stored as
+    // `00 98 30` with leftover 0x55 decoded as 98.3055 MHz under the old reading.
+    const fm = new Uint8Array(0x40).fill(0xff);
+    fm.set([0x00, 0x98, 0x30, 0x55]);
+    'FM-002'.split('').forEach((c, i) => { fm[4 + i * 2] = c.charCodeAt(0); fm[5 + i * 2] = 0; });
+    fm[4 + 6 * 2] = 0; fm[5 + 6 * 2] = 0;
+    expect(parseBroadcastChannel(fm, 1, 'fm').frequency).toBeCloseTo(98.3, 5);
   });
 
   it('reads the UTF-16LE name at +0x04', () => {
@@ -488,11 +495,11 @@ describe('DA-7X2 AM airband and FM broadcast channels', () => {
   });
 
   it('decodes BCD and rejects erased padding rather than inventing a frequency', () => {
-    expect(decodeBcd4(Uint8Array.from([0x10, 0x80, 0x00, 0x00]))).toBe(10800000);
-    expect(decodeBcd4(Uint8Array.from([0x01, 0x08, 0x00, 0x00]))).toBe(1080000);
+    expect(decodeBcd(Uint8Array.from([0x10, 0x80, 0x00, 0x00]), 0, 4)).toBe(10800000);
+    expect(decodeBcd(Uint8Array.from([0x01, 0x08, 0x00]), 0, 3)).toBe(10800);
     // 0xFF is not a BCD digit pair; an erased slot must not become a frequency.
-    expect(decodeBcd4(new Uint8Array([0xff, 0xff, 0xff, 0xff]))).toBeNull();
-    expect(decodeBcd4(new Uint8Array([0x12, 0x3a, 0x00, 0x00]))).toBeNull();
+    expect(decodeBcd(new Uint8Array([0xff, 0xff, 0xff, 0xff]), 0, 4)).toBeNull();
+    expect(decodeBcd(new Uint8Array([0x12, 0x3a, 0x00, 0x00]), 0, 4)).toBeNull();
   });
 
   it('treats an erased slot as vacant', () => {

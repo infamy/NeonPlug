@@ -1,0 +1,302 @@
+import type { Channel } from '../../models/Channel';
+import { D890_LIMITS, D890_CTCSS_TONES } from './constants';
+import { decodeBcdAsHexU32 } from './structures';
+
+/**
+ * Turn an edited `Channel` back into the radio's 128-byte record.
+ *
+ * ⚠️ THIS PATCHES THE ORIGINAL RECORD. It does not build one from scratch, and
+ * that is the whole design.
+ *
+ * The channel record has 43 decoded fields, and SIXTEEN of the thirty columns we
+ * surface are `marshaller` provenance — named by the vendor's disassembly, never
+ * observed changing, meaning unverified. Beyond those sit bytes with no name at
+ * all. A from-scratch encoder would write zeros over every one of them, and the
+ * damage would be invisible: the channel would still read back, still tune, and
+ * quietly lose whatever those bytes controlled.
+ *
+ * Patching inverts the risk. Bytes this file does not explicitly write are
+ * preserved byte-for-byte, so an unknown field survives a write BECAUSE we do not
+ * understand it, not in spite of that. New fields become opt-in: adding one means
+ * adding a store here, and forgetting to is a no-op rather than data loss.
+ *
+ * The caller must supply the ORIGINAL bytes read from the radio. There is no
+ * safe default for "no original" — see `assertOriginalRecord`.
+ */
+
+/** Bytes per channel record. Two 0x40 halves the protocol treats as one span. */
+export const D890_CHANNEL_RECORD_BYTES = 0x80;
+
+/**
+ * Offsets this module writes. Everything else in the record is preserved.
+ *
+ * ⚠️ THIS LIST IS AN ALLOW-LIST TIED TO EVIDENCE, not an inventory of what has
+ * been implemented so far. A byte belongs here only if its decode is confirmed
+ * against a real radio. Two independent verifications (2026-08-30) against a
+ * full codeplug image plus the vendor's own CSV export established:
+ *
+ *   CONFIRMED, safe to write — RX/TX frequency and the BCD codec, the duplex
+ *   offset in both polarities, tone direction (ENC=TX 0x0a/0x0c, DEC=RX
+ *   0x0b/0x0e) across 13 asymmetric channels, the CTCSS table, the DCS codec,
+ *   the 0x09 tone-kind bits, and channel names.
+ *
+ *   DELIBERATELY NOT WRITTEN, and not an oversight:
+ *     0x34  — one of its eight bit mappings is PROVABLY WRONG (`idleTx`
+ *             disagrees on 120/120 channels) and only bit 0 is testable, because
+ *             every other bit is constant across the whole codeplug.
+ *     0x1d, 0x1e, 0x1f  — 2Tone / 5Tone / DTMF id, never observed non-constant.
+ *     0x36-0x3d  — APRS PTT modes, correct-frequency, emergency code, SMS
+ *             confirmation, talker alias, APRS TX path, ARC4. Same reason.
+ *     0x21 bit 6 — decoded as `encryption` but actually the AES ALGORITHM
+ *             SELECTOR (Normal/Enhanced). Writing it under that name would
+ *             switch AES mode on an unencrypted channel.
+ *     0x04 on simplex channels — the duplex-0 meaning of that field is unsettled
+ *             (see the note in applyChannelToRecord).
+ *
+ * Adding a byte here without a confirmed decode is how a write silently
+ * corrupts a setting the user never touched.
+ */
+const OFF = {
+  RX_FREQ: 0x00,
+  TX_OR_OFFSET: 0x04,
+  FLAGS: 0x08,
+  TONE_FLAGS: 0x09,
+  TX_TONE: 0x0a,
+  RX_TONE: 0x0b,
+  TX_DCS: 0x0c,
+  RX_DCS: 0x0e,
+  NAME: 0x44,
+  NAME_END: 0x66,
+} as const;
+
+export class D890ChannelWriteError extends Error {}
+
+/**
+ * Refuse to encode without the bytes that came off the radio.
+ *
+ * A caller with no original is asking for a from-scratch record, which is the
+ * failure mode this module exists to prevent. Better to fail loudly at the call
+ * site than to hand back 128 bytes that are wrong in ways nobody can see.
+ */
+export function assertOriginalRecord(original: Uint8Array | null | undefined): Uint8Array {
+  if (!original || original.length < D890_CHANNEL_RECORD_BYTES) {
+    throw new D890ChannelWriteError(
+      `A channel write needs the original ${D890_CHANNEL_RECORD_BYTES}-byte record read from ` +
+        `the radio, got ${original ? `${original.length} bytes` : 'nothing'}. Writing a record ` +
+        `built from scratch would zero every field this driver does not decode.`
+    );
+  }
+  return original;
+}
+
+/** Inverse of `decodeBcdAsHexU32`: value -> four "BCD as hex" bytes. */
+export function encodeBcdAsHexU32(value: number): Uint8Array {
+  if (!Number.isFinite(value) || value < 0 || value > 99999999) {
+    throw new D890ChannelWriteError(`Cannot BCD-encode ${value}: outside 0..99999999`);
+  }
+  const digits = String(Math.round(value)).padStart(8, '0');
+  const out = new Uint8Array(4);
+  for (let i = 0; i < 4; i += 1) {
+    out[i] = (Number(digits[i * 2]) << 4) | Number(digits[i * 2 + 1]);
+  }
+  return out;
+}
+
+/** MHz -> the radio's four frequency bytes (10 Hz units, BCD-as-hex). */
+export function encodeFrequencyMHz(mhz: number): Uint8Array {
+  return encodeBcdAsHexU32(Math.round(mhz * 1e5));
+}
+
+/**
+ * Write a name into a fixed field, NUL-terminated and NUL-padded.
+ *
+ * ⚠️ The decoder's comment claims the radio "terminates with 0xFFFF and pads with
+ * 0xFF". That is NOT what this radio does, and writing 0xFF padding was caught by
+ * the round-trip test: every name field in every fixture — channels, zones,
+ * roaming zones, talkgroups — is the text followed by 0x00 to the end.
+ *
+ *     43 00 68 00 61 00 6e 00 6e 00 65 00 6c 00 20 00 31 00  00 00 00 00 ...
+ *     C     h     a     n     n     e     l     ' '   1      NUL padding
+ *
+ * The decoder stops on either terminator, so reads were unaffected and the wrong
+ * claim survived. A write would have flipped 16 bytes per name across every
+ * channel on the radio.
+ */
+export function encodeWideCharString(text: string, byteLength: number): Uint8Array {
+  const out = new Uint8Array(byteLength); // zero-filled: NUL pad
+  const maxChars = byteLength >> 1;
+  const chars = Array.from(text).slice(0, maxChars);
+  chars.forEach((ch, i) => {
+    const code = ch.charCodeAt(0);
+    out[i * 2] = code & 0xff;
+    out[i * 2 + 1] = (code >> 8) & 0xff;
+  });
+  return out;
+}
+
+function writeU16LE(target: Uint8Array, offset: number, value: number): void {
+  target[offset] = value & 0xff;
+  target[offset + 1] = (value >> 8) & 0xff;
+}
+
+/**
+ * CTCSS Hz -> table index, or throw.
+ *
+ * Returning the "none" index (51) while the caller has already set the CTCSS
+ * flag produces a record that says "CTCSS enabled, tone none" — the tone
+ * silently disappears, and 51 is out of range for a 51-entry table. A codeplug
+ * converted from another radio is the likely source, and a named refusal is far
+ * more use than a channel that quietly stops opening squelch.
+ */
+function requireToneIndex(hz: number | undefined, direction: string): number {
+  const i = hz === undefined ? -1 : D890_CTCSS_TONES.indexOf(hz);
+  if (i < 0) {
+    throw new D890ChannelWriteError(
+      `CTCSS ${hz ?? '(unset)'} Hz is not one of this radio's ${D890_CTCSS_TONES.length} tones, ` +
+        `so it cannot be stored as the ${direction} tone.`
+    );
+  }
+  return i;
+}
+
+/** Inverse of `decodeDcsField`: code + polarity -> the stored word. */
+export function encodeDcsField(code: number | undefined, polarity: 'N' | 'P' | undefined): number {
+  if (code === undefined) return 0;
+  // The stored value's DECIMAL digits read as the octal code: code 23 -> 19.
+  const stored = parseInt(String(code), 8);
+  if (Number.isNaN(stored)) {
+    throw new D890ChannelWriteError(`DCS code ${code} is not a valid octal code`);
+  }
+  return polarity === 'P' ? stored | 0x200 : stored;
+}
+
+/**
+ * Apply a channel to its original record, returning a new patched copy.
+ *
+ * Only the fields listed in `OFF` are touched. The duplex bits in 0x08 are
+ * PRESERVED rather than recomputed, and the TX field is written to match
+ * whatever mode the record is already in — changing a channel's duplex mode is
+ * not something this function does, because getting it wrong silently changes
+ * the transmit frequency.
+ */
+export function applyChannelToRecord(original: Uint8Array, channel: Channel): Uint8Array {
+  const rec = Uint8Array.from(assertOriginalRecord(original));
+
+  rec.set(encodeFrequencyMHz(channel.rxFrequency), OFF.RX_FREQ);
+
+  // Duplex is read from the record, never inferred from the channel. Mode 1 is
+  // "TX = RX + offset", 2 is "RX - offset", anything else stores TX outright.
+  //
+  // ⚠️ The offset is SIGNED and the sign must agree with the stored mode. An
+  // earlier version took Math.abs() in both branches — which made them compute
+  // the identical value — so a user changing a +0.6 repeater to -0.6 got the
+  // offset stored with the plus bits intact and the radio transmitting 1.2 MHz
+  // from where they asked. With read-back forbidden during a write session, that
+  // is unrecoverable by the operator. Refuse rather than coerce.
+  const duplex = ((rec[OFF.FLAGS] ?? 0) >> 6) & 0x03;
+  const tx = channel.txFrequency;
+  if (duplex === 1 || duplex === 2) {
+    const wanted = tx - channel.rxFrequency; // + means TX above RX
+    const storedSign = duplex === 1 ? 1 : -1;
+    if (wanted !== 0 && Math.sign(wanted) !== storedSign) {
+      throw new D890ChannelWriteError(
+        `Channel ${channel.number}: the record stores a ${duplex === 1 ? 'positive' : 'negative'} ` +
+          `offset, but TX ${tx} MHz is ${wanted > 0 ? 'above' : 'below'} RX ${channel.rxFrequency} MHz. ` +
+          `This writer does not change a channel's duplex mode — getting that wrong silently moves ` +
+          `the transmit frequency. Set the offset direction on the radio or in the vendor CPS first.`
+      );
+    }
+    rec.set(encodeFrequencyMHz(Math.abs(wanted)), OFF.TX_OR_OFFSET);
+  } else {
+    // ⚠️ duplex 0 is NOT settled. Every captured simplex channel from the vendor
+    // has 0x04 == RX, but VFO A (also duplex 0) stores a genuine odd split, and
+    // all four local fixtures store 0.1 MHz here. Until that is resolved on
+    // hardware this field is LEFT ALONE on simplex channels rather than written
+    // from a decode we do not trust.
+  }
+
+  rec.set(
+    encodeWideCharString(channel.name ?? '', OFF.NAME_END - OFF.NAME),
+    OFF.NAME
+  );
+
+  // ── byte 0x09 ────────────────────────────────────────────────────────────
+  // NOT a tone byte. Bits 0-3 are the tone kind/direction flags; bits 4-7 are
+  // four INDEPENDENT channel flags that `parseChannel` also reads:
+  //
+  //   bit 4 reverse   bit 5 forbidTx (PTT Prohibit)
+  //   bit 6 callConfirmation        bit 7 talkaround — INVERTED
+  //
+  // An earlier version assigned this byte wholesale from the tone flags alone.
+  // That meant renaming a TX-inhibited channel re-enabled transmit on it, and
+  // simultaneously forbade talkaround everywhere, because bit 7 is inverted.
+  // The vendor's own capture proves all four are real and independent — four
+  // channels in its sweep carry exactly one each with no tone set.
+  let flags09 = 0;
+
+  // Tones. ENCODE is what the radio transmits (0x0a / 0x0c), DECODE what it
+  // needs to open squelch (0x0b / 0x0e) — the opposite of the obvious reading,
+  // and they were swapped in this driver until a hardware probe caught it.
+  const txTone = channel.txCtcssDcs;
+  const rxTone = channel.rxCtcssDcs;
+
+  // When a tone IS set, write its field and ZERO the other kind's for that
+  // direction — across 8389 captured frames the vendor never leaves a stale DCS
+  // word beside a CTCSS index, or vice versa.
+  //
+  // When NO tone is set, leave both alone. A real radio keeps leftover values in
+  // both fields while 0x09 reads 0x00 (see parseChannel), so zeroing them would
+  // change bytes we were not asked to change — and the patch contract is that we
+  // touch only what the edit requires.
+  if (txTone?.type === 'CTCSS') {
+    flags09 |= 0x04;
+    rec[OFF.TX_TONE] = requireToneIndex(txTone.value, 'transmit');
+    writeU16LE(rec, OFF.TX_DCS, 0);
+  } else if (txTone?.type === 'DCS') {
+    flags09 |= 0x08;
+    writeU16LE(rec, OFF.TX_DCS, encodeDcsField(txTone.value, txTone.polarity));
+    rec[OFF.TX_TONE] = 0;
+  }
+  if (rxTone?.type === 'CTCSS') {
+    flags09 |= 0x01;
+    rec[OFF.RX_TONE] = requireToneIndex(rxTone.value, 'receive');
+    writeU16LE(rec, OFF.RX_DCS, 0);
+  } else if (rxTone?.type === 'DCS') {
+    flags09 |= 0x02;
+    writeU16LE(rec, OFF.RX_DCS, encodeDcsField(rxTone.value, rxTone.polarity));
+    rec[OFF.RX_TONE] = 0;
+  }
+
+  if (channel.reverse) flags09 |= 0x10;
+  if (channel.forbidTx) flags09 |= 0x20;
+  if (channel.callConfirmation) flags09 |= 0x40;
+  // Inverted: the bit being SET means talkaround is allowed.
+  if (!channel.forbidTalkaround) flags09 |= 0x80;
+
+  rec[OFF.TONE_FLAGS] = flags09;
+
+  return rec;
+}
+
+/** Split a patched record into the eight 16-byte frames a write sends. */
+export function channelRecordFrames(
+  baseAddress: number,
+  record: Uint8Array
+): { address: number; data: Uint8Array }[] {
+  if (record.length !== D890_CHANNEL_RECORD_BYTES) {
+    throw new D890ChannelWriteError(
+      `A channel record must be exactly ${D890_CHANNEL_RECORD_BYTES} bytes, got ${record.length}`
+    );
+  }
+  const frames: { address: number; data: Uint8Array }[] = [];
+  for (let off = 0; off < record.length; off += 0x10) {
+    frames.push({ address: baseAddress + off, data: record.subarray(off, off + 0x10) });
+  }
+  return frames;
+}
+
+/** Re-export so tests can prove the BCD pair are exact inverses. */
+export { decodeBcdAsHexU32 };
+
+/** Unused limit re-export kept for callers validating name length. */
+export const D890_CHANNEL_NAME_MAX = D890_LIMITS.NAME_MAX_CHARS;

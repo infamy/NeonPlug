@@ -1,5 +1,3 @@
-import { D890_ADDR } from './constants';
-
 /**
  * DA-7X2 AM airband and FM broadcast channels.
  *
@@ -12,17 +10,24 @@ import { D890_ADDR } from './constants';
  *     +0x00  4 bytes  frequency, BCD digits
  *     +0x04  UTF-16LE name ("AM-001", "FM-001" as factory defaults)
  *
- * ⚠️ THE TWO BANDS USE DIFFERENT FREQUENCY SCALES. This is not a mistake and
- * must not be "tidied" into one constant:
+ * ⚠️ THE TWO BANDS DIFFER IN BOTH SCALE AND FIELD WIDTH. Verified against the
+ * vendor's write and read marshallers 2026-08-31:
  *
- *     AM airband   BCD x 10 Hz    10 80 00 00 -> 10800000 -> 108.00000 MHz
- *     FM broadcast BCD x 100 Hz   01 08 00 00 -> 01080000 -> 108.0000  MHz
+ *     AM airband   4 BCD bytes  +0x00..+0x03   MHz x 100000 (10 Hz)
+ *     FM broadcast 3 BCD bytes  +0x00..+0x02   MHz x 100     (10 kHz)
  *
- * Both defaults land on 108 MHz — the airband floor and the FM ceiling — which
- * is what made the two scales hard to separate from one capture. The operator
- * confirmed both readings against the vendor CPS. The reason is physical: the
- * airband needs 8.33/25 kHz steps, FM broadcast only 100 kHz, so FM can afford
- * the coarser unit and buys a wider range with the same four bytes.
+ * FM byte +0x03 is SKIPPED by both marshallers — the writer steps `add 3` then
+ * `add 1` past it. Reading four bytes for FM appeared to work because the only
+ * captured record is the 108.000 MHz factory default, whose +0x03 is zero. On a
+ * record where that byte holds anything else the four-byte reading is wrong:
+ * 98.30 MHz stored as `00 98 30` with `0x55` left over at +0x03 decodes as
+ * 98.3055 MHz.
+ *
+ * The scales are physical, not arbitrary: the airband needs 8.33/25 kHz steps,
+ * FM broadcast only 100 kHz.
+ *
+ * Evidence: FM `sub_00595E70` formats `freq * 100.0` (constant 0x00401E68) and
+ * the reader divides by the same; AM `sub_007F6A00` uses 100000.0 (0x00401E80).
  */
 
 export type D890BroadcastBand = 'am' | 'fm';
@@ -30,14 +35,29 @@ export type D890BroadcastBand = 'am' | 'fm';
 export const D890_BROADCAST = {
   am: {
     label: 'AM Airband',
-    data: D890_ADDR.AM_AIR_DATA,
-    /** Hz per BCD count. */
-    freqUnitHz: 10,
+    data: 0x3880000,
+    /** VFO record, outside the numbered channels and with no mask bit. */
+    vfo: 0x3884000,
+    /** Present mask, one bit per channel. */
+    mask: 0x3884200,
+    channels: 256,
+    stride: 0x40,
+    /** BCD digit bytes carrying the frequency. */
+    freqBytes: 4,
+    /** Divide the BCD value by this to get MHz. */
+    freqDivisor: 100000,
   },
   fm: {
     label: 'FM Broadcast',
-    data: D890_ADDR.FM_BROADCAST_DATA,
-    freqUnitHz: 100,
+    data: 0x3400000,
+    vfo: 0x3402000,
+    mask: 0x3402040,
+    /** Second mask: channels included in scan ("Add"). */
+    scanMask: 0x3402050,
+    channels: 100,
+    stride: 0x40,
+    freqBytes: 3,
+    freqDivisor: 100,
   },
 } as const;
 
@@ -55,9 +75,9 @@ export interface D890BroadcastChannel {
  * rather than to a bogus frequency, which matters because an unused slot on this
  * radio is erased flash, not zeros.
  */
-export function decodeBcd4(bytes: Uint8Array, offset = 0): number | null {
+export function decodeBcd(bytes: Uint8Array, offset: number, length: number): number | null {
   let value = 0;
-  for (let i = 0; i < 4; i += 1) {
+  for (let i = 0; i < length; i += 1) {
     const b = bytes[offset + i] ?? 0xff;
     const hi = b >> 4;
     const lo = b & 0x0f;
@@ -84,13 +104,19 @@ export function parseBroadcastChannel(
   index: number,
   band: D890BroadcastBand
 ): D890BroadcastChannel {
-  const raw = decodeBcd4(bytes, 0);
-  const unit = D890_BROADCAST[band].freqUnitHz;
+  const spec = D890_BROADCAST[band];
+  const raw = decodeBcd(bytes, 0, spec.freqBytes);
   return {
     index,
-    name: readName(bytes, 0x04, D890_ADDR.BROADCAST_NAME_CHARS),
-    frequency: raw === null ? null : (raw * unit) / 1e6,
+    // 34 bytes = 17 units, but the radio's own limit is 16 characters.
+    name: readName(bytes, 0x04, 16),
+    frequency: raw === null ? null : raw / spec.freqDivisor,
   };
+}
+
+/** Address of channel `index` in a band's table. */
+export function broadcastChannelAddress(band: D890BroadcastBand, index: number): number {
+  return D890_BROADCAST[band].data + index * D890_BROADCAST[band].stride;
 }
 
 /** True when a slot holds nothing: no name and no decodable frequency. */

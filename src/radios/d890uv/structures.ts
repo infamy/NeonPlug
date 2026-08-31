@@ -286,10 +286,13 @@ export function decodeWideCharString(bytes: Uint8Array, maxChars?: number): stri
   let out = '';
   for (let i = 0; i < limit; i++) {
     const code = (bytes[i * 2] ?? 0) | ((bytes[i * 2 + 1] ?? 0) << 8);
-    // The radio terminates names with 0xFFFF and pads with 0xFF, not with NUL —
-    // the vendor's own decoder stops on 0xFFFF. Stopping only on 0x0000 leaks
-    // the terminator and the padding into the string as U+FFFF characters, which
-    // no test with a short name would ever show.
+    // Stop on EITHER terminator. Every name field captured from this radio —
+    // channels, zones, roaming zones, talkgroups — is NUL-terminated and
+    // NUL-padded; an earlier version of this comment asserted 0xFFFF padding,
+    // which no fixture supports and which produced a WRONG ENCODER until a
+    // round-trip test caught it (see channelWrite.ts). 0xFFFF is still accepted
+    // because accepting both costs nothing and a read must never leak a
+    // terminator into the string as U+FFFF.
     if (code === 0 || code === 0xffff) break;
     out += String.fromCharCode(code);
   }
@@ -777,6 +780,16 @@ export function parseChannel(
     //   bit 6 AES encryption, bit 7 Work Alone (our loneWorker).
     loneWorker: ((bytes[0x21] ?? 0) & 0x80) !== 0,
     aprsReceive: ((bytes[0x21] ?? 0) & 0x20) !== 0,
+    // ⚠️ MISLABELLED. This is NOT an encryption on/off switch. Verified against
+    // a real radio image plus the vendor's own export 2026-08-30: it confirms
+    // 2-for-2 against the CPS column "AES Digital Encryption" = Normal(0) /
+    // Enhanced(1) — an ALGORITHM SELECTOR. The real "Digital Encryption" column
+    // (key index, or Off) is not mapped at all.
+    //
+    // On a write path this matters: a user toggling what the UI calls
+    // "encryption" would silently switch AES mode on a channel that is not
+    // encrypted. The name is left alone for now because renaming it touches the
+    // shared Channel model, but nothing should WRITE it under this name.
     encryption: ((bytes[0x21] ?? 0) & 0x40) !== 0,
     // Byte 0x19 packs the squelch mode into bit 4 and the PTT ID mode into
     // bits 1-0 (0 Off, 1 Start, 2 End, 3 Both). Both partition all 118 channels
@@ -843,6 +856,13 @@ export function parseChannel(
      */
     busyLock: (bytes[0x1a] ?? 0) & 0x0f,
     /** Vendor "Emergency System" (`EMG_Key`). Byte 0x22. */
+    // ⚠️ MISLABELLED. Byte 0x22 is the vendor's `EMG_Key`, exported as CSV column
+    // 30 "Digital Encryption" — the encryption KEY SLOT index, 0 meaning Off.
+    // It is not an emergency system reference. Both `EMG_*` names on this radio
+    // are vestigial, exactly like `rec_only`: `EMG_Kind` at 0x21 bit 6 is the AES
+    // algorithm selector and this is the key slot. The emergency-system field is
+    // `ex_emg_kind` at 0x3b bit 5, a different byte entirely.
+    // Traced: write 0x005b0424->0x005b043c, read 0x005b2a56, no mask.
     emergencySystemIndex: bytes[0x22] ?? 0,
     /** Vendor "DMR MODE" (`TDMA`). Byte 0x21 bits 3-2. */
     dmrMode: ((bytes[0x21] ?? 0) >> 2) & 0x03,
@@ -870,6 +890,22 @@ export function parseChannel(
     /** Vendor "Auto Scan" (`auto_scan`). Byte 0x34 bit 4. */
     autoScan: ((bytes[0x34] ?? 0) & 0x10) !== 0,
     /** Vendor "Idle TX" (`idle_tx`). Byte 0x34 bit 5. */
+    // CORRECT, despite appearing to disagree with the vendor's export.
+    //
+    // A comparison against a real codeplug found our `idleTx` reading Off on all
+    // 120 channels while the CSV column headed "Idle TX" said On on all 120 —
+    // which looked like a decisive refutation. It is not. The vendor's CSV
+    // exporter feeds that column from `simplex` (byte 0x34 BIT 1), not from
+    // `idle_tx`: `sub_00753110` @ 0x0075491e. The real `idle_tx` is bit 5 and is
+    // exported separately at column 65 under its own raw name.
+    //
+    // So `0x34 == 0x02` on 119 channels means simplex=1 on 119 channels, which
+    // is exactly why that column read On everywhere — and our `digitalDuplex` at
+    // bit 1, confirmed on hardware by watching it change, is also right. Both
+    // mappings hold; the CSV header was the misleading part.
+    //
+    // Byte 0x34 is VERIFIED in both directions from the write marshaller
+    // (0x005b054b-0x005b0608) and the read marshaller (0x005b2b78-0x005b2d5d).
     idleTx: ((bytes[0x34] ?? 0) & 0x20) !== 0,
     /** Vendor `compand`. Byte 0x34 bit 6 — the shared model's `compander`. */
     compander: ((bytes[0x34] ?? 0) & 0x40) !== 0,
@@ -897,10 +933,21 @@ export function parseChannel(
     /** Vendor `NormalEmgCode`. Byte 0x3a. */
     normalEmergencyCode: bytes[0x3a] ?? 0,
     /** Vendor "SMS Confirmation" (`sms_rec`). Byte 0x3b bit 2. */
+    // ⚠️ WRONG BIT. 0x3b bit 2 is the vendor's `sms_rec`, which the CPS never
+    // exports at all. The column headed "SMS Confirmation" is fed by `Response`
+    // at 0x21 BIT 1 (write 0x005b0247-0x005b03ee, read 0x005b27b0-0x005b29f4).
+    // Left in place because moving it changes what the UI shows for a field
+    // nothing has confirmed on hardware — but do not write this bit believing it
+    // is SMS Confirmation.
     smsConfirmation: ((bytes[0x3b] ?? 0) & 0x04) !== 0,
     /** Vendor "Ana APRS Mute" (`ana_aprs_mute`). Byte 0x3b bit 3. */
     analogAprsMute: ((bytes[0x3b] ?? 0) & 0x08) !== 0,
     /** Vendor "Send Talker Alias DMR/NX" (`tx_talkalaes`). Byte 0x3b bit 4. */
+    // ⚠️ MISLABELLED. 0x3b bit 4 is `tx_talkalaes`, exported under its own raw
+    // name at CSV column 61. The column "Send Talker Alias DMR/NX" is fed by
+    // `SctTxTalkAliasEn`, which the marshaller NEVER writes to the radio record —
+    // it is a CPS/.rdt-only field with no radio byte. Same for `dif_slot`,
+    // `CurRoamZone`, `BtRxState` and `set_tdma_item_en`.
     sendTalkerAlias: ((bytes[0x3b] ?? 0) & 0x10) !== 0,
     /** Vendor `AnaAprsTxPath`. Byte 0x3c. */
     analogAprsTxPath: bytes[0x3c] ?? 0,

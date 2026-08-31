@@ -155,17 +155,26 @@ export function assertWritableAddress(address: number): void {
   }
   // The flash-management blocks at the tail of EVERY 256 KB erase unit.
   //
-  // ⚠️ PROVENANCE CORRECTED 2026-08-30. This previously claimed "a full-codeplug
-  // capture of 9,976 write frames hit neither offset". NO SUCH CAPTURE EXISTS —
-  // nobody on this project has ever performed or captured a write, and the
-  // figure was an inference from the frame COUNT a full write would need. It
-  // was a fabricated citation sitting inside a safety guard, which is the worst
-  // possible place for one.
+  // ✅ CONFIRMED ON HARDWARE 2026-08-30. Both offsets were read from a radio and
+  // both hold structured data in otherwise-erased flash:
   //
-  // The guard stays, and is if anything better justified without it: these
-  // offsets come from radio-family knowledge, and a null result in the vendor
-  // CPS is not evidence the hazard is absent from the hardware. Checked modulo
-  // the unit size, because they repeat.
+  //     0x103FBF4:  22 33 44 55
+  //     0x103FFFC:  55 55 AA AA
+  //
+  // 0x55/0xAA is the canonical alternating-bit pattern of flash and EEPROM
+  // management. Everything around them is 0xFF. This is not codeplug data and
+  // it is not erased flash.
+  //
+  // The history matters, because it nearly went the other way. The comment here
+  // once cited "a full-codeplug capture of 9,976 write frames" — a capture that
+  // does not exist; no write has ever been performed by this project. With that
+  // retracted, and with static analysis showing the constants 0x3FBF0/0x3FFF0
+  // appear ZERO times in the vendor CPS, the guard rested on nothing but
+  // recollection and was a candidate for removal. Reading the radio was the
+  // cheap, zero-risk experiment that settled it — and the recollection was
+  // right.
+  //
+  // Checked modulo the unit size, because they repeat.
   const offsetInUnit = address % D890_ERASE_UNIT;
   if (D890_FORBIDDEN_UNIT_OFFSETS.includes(offsetInUnit as 0x3fbf0 | 0x3fff0)) {
     throw new Error(
@@ -182,6 +191,28 @@ export function assertWritableAddress(address: number): void {
  * desynchronise the radio, so this rejects anything but exactly 16 bytes rather
  * than padding or splitting silently.
  */
+/**
+ * ⚠️ WRITE-SESSION RULES — operator-established 2026-08-30, and the first one
+ * will damage a radio if ignored.
+ *
+ * 1. **NEVER READ DURING A WRITE SESSION.** Interleaving a read with writes makes
+ *    the radio REBOOT. This is not a performance note; a reboot part-way through
+ *    a write leaves the codeplug half-applied. It also rules out the obvious
+ *    "verify each record as we go" design.
+ *
+ * 2. **The radio needs time to commit.** Allow roughly a minute after the last
+ *    frame before reading anything back.
+ *
+ * 3. **NeonPlug must not read back after every write.** Verification is a
+ *    TESTING activity — write the whole session, close it, wait, then read to
+ *    compare. It is not a routine part of writing, and building it into the
+ *    normal path would mean rebooting the radio on every save.
+ *
+ * The vendor CPS agrees by construction: a captured write session of 8389 frames
+ * contains exactly ONE read, at 0x04f80020, before the first write. It never
+ * reads again, and it never verifies.
+ */
+
 export function buildWriteCommand(address: number, data: Uint8Array): Uint8Array {
   assertWritableAddress(address);
   if (data.length !== D890_BLOCK.WRITE_LEN) {
