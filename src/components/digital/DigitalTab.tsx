@@ -15,7 +15,15 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import type { EncryptionKey } from '../../models/EncryptionKey';
 import { LIMITS } from '../../radios/dm32uv/constants';
+import {
+  ENCRYPTION_TYPES,
+  clearEncryptionKey,
+  editEncryptionKey,
+  encryptionTypeLabel,
+  isEncryptionTypeLocked,
+} from '../../utils/encryptionKeys';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
@@ -77,7 +85,24 @@ export const DigitalTab: React.FC = () => {
     }
   }, [block10Data, caps?.digital, setDigitalEmergencies, setDigitalEmergencyConfig]);
 
-  const handleKeyChange = (entryNumber: number, field: keyof typeof keys[0], value: any) => {
+  const handleKeyChange = (
+    entryNumber: number,
+    field: keyof EncryptionKey,
+    value: string | number,
+  ) => {
+    // Checked here and not only in the control: a disabled select is a
+    // suggestion, and this rule protects channel references from being silently
+    // redirected on radios that store a separate key table per type.
+    const existing = keys.find((k) => k.entryNumber === entryNumber);
+    if (existing) {
+      const result = editEncryptionKey(existing, field, value);
+      if (!result.ok) {
+        showAlert(result.reason, 'Encryption key');
+        return;
+      }
+      updateKey(entryNumber, result.updates);
+      return;
+    }
     updateKey(entryNumber, { [field]: value });
   };
 
@@ -662,6 +687,7 @@ export const DigitalTab: React.FC = () => {
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Encryption Type</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[300px]">Key (Hex)</th>
+                      <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -681,17 +707,31 @@ export const DigitalTab: React.FC = () => {
                           />
                         </td>
                         <td className="px-2 py-2">
-                          <select
-                            value={key.encryptionType ?? 0}
-                            onChange={(e) => handleKeyChange(key.entryNumber, 'encryptionType', parseInt(e.target.value) || 0)}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
-                          >
-                            <option value={0}>None</option>
-                            <option value={1}>Custom</option>
-                            <option value={2}>ARC4</option>
-                            <option value={3}>AES128</option>
-                            <option value={4}>AES256</option>
-                          </select>
+                          {isEncryptionTypeLocked(key) ? (
+                            // Fixed for the key's lifetime. On a radio that keeps a
+                            // separate table per type, retyping is a MOVE between
+                            // tables — it changes the key's slot and silently
+                            // redirects every channel that referenced the old one.
+                            // Clear the slot and create a new key instead.
+                            <span
+                              className="text-xs text-white"
+                              title="A key's type is fixed once set. Use Clear to empty the slot, then choose a type for the new key."
+                            >
+                              {encryptionTypeLabel(key.encryptionType)}
+                              <span className="text-cool-gray ml-1">(fixed)</span>
+                            </span>
+                          ) : (
+                            <select
+                              value={key.encryptionType ?? 0}
+                              onChange={(e) => handleKeyChange(key.entryNumber, 'encryptionType', parseInt(e.target.value) || 0)}
+                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                              title="Choosing a type creates the key in this slot. It cannot be changed afterwards."
+                            >
+                              {ENCRYPTION_TYPES.map((label, value) => (
+                                <option key={label} value={value}>{label}</option>
+                              ))}
+                            </select>
+                          )}
                         </td>
                         <td className="px-2 py-2">
                           <input
@@ -707,6 +747,17 @@ export const DigitalTab: React.FC = () => {
                             className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono"
                             placeholder="Enter hex key"
                           />
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          {isEncryptionTypeLocked(key) && (
+                            <button
+                              onClick={() => updateKey(key.entryNumber, clearEncryptionKey())}
+                              className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-red-400 border border-red-600 border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+                              title="Empty this slot — clears the type, name and key material. The slot can then hold a new key of any type."
+                            >
+                              Clear
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

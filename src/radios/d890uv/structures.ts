@@ -841,6 +841,118 @@ export function parseChannel(
   return { channel, rxToneIndex, txToneIndex, rxDcsRaw, txDcsRaw, hasUnresolvedTone };
 }
 
+/**
+ * A roaming channel: the frequency pair the radio falls back to when roaming,
+ * held in its own table rather than referencing the channel list.
+ *
+ * Read off the radio 2026-08-30 and confirmed against the vendor's own export —
+ * 410.21250 / 418.21250 named "Roaming CH 1", matching RoamingChannel.CSV.
+ *
+ * Colour code and slot use OUT-OF-RANGE values to mean "No Use": the captured
+ * record holds 0x10 for a 0-15 field and 0x02 for a 0-1 field, and the CPS
+ * displays "No Use" for both. So they are surfaced as null rather than clamped —
+ * 16 is not colour code 16, it is the absence of one.
+ */
+export interface D890RoamingChannel {
+  index: number;
+  name: string;
+  rxFrequency: number;
+  txFrequency: number;
+  /** null when the record says "No Use". */
+  colorCode: number | null;
+  /** 0 = TS1, 1 = TS2, null when "No Use". */
+  slot: number | null;
+}
+
+export function parseRoamingChannel(bytes: Uint8Array, index: number): D890RoamingChannel {
+  const colorCode = bytes[0x08] ?? 0;
+  const slot = bytes[0x09] ?? 0;
+  return {
+    index,
+    rxFrequency: decodeFrequencyMHz(bytes.subarray(0x00, 0x04)),
+    txFrequency: decodeFrequencyMHz(bytes.subarray(0x04, 0x08)),
+    colorCode: colorCode <= 15 ? colorCode : null,
+    slot: slot <= 1 ? slot : null,
+    name: decodeWideCharString(bytes.subarray(0x0a, 0x2a), D890_LIMITS.NAME_MAX_CHARS),
+  };
+}
+
+/** Address of one roaming-channel record. */
+export function roamingChannelAddress(index: number): number {
+  return D890_ADDR.ROAMING_CHANNEL_DATA + index * D890_ADDR.ROAMING_CHANNEL_STRIDE;
+}
+
+/**
+ * A roaming zone: a named list of roaming-channel slots.
+ *
+ * Members are ONE byte each and index the roaming-channel table, not the main
+ * channel list — a different width and a different target from every other
+ * membership array on this radio, so it does not share `decodeU16Members`.
+ */
+export interface D890RoamingZone {
+  index: number;
+  name: string;
+  /** Zero-based roaming-channel indices, in order. */
+  members: number[];
+}
+
+export function parseRoamingZone(bytes: Uint8Array, index: number): D890RoamingZone {
+  const members: number[] = [];
+  for (let i = 0; i < D890_ADDR.ROAMING_ZONE_MEMBERS_LEN; i += 1) {
+    const v = bytes[i] ?? D890_SENTINEL.NO_REF_U8;
+    if (v === D890_SENTINEL.NO_REF_U8) break;
+    members.push(v);
+  }
+  return {
+    index,
+    members,
+    name: decodeWideCharString(
+      bytes.subarray(
+        D890_ADDR.ROAMING_ZONE_NAME_OFFSET,
+        D890_ADDR.ROAMING_ZONE_NAME_OFFSET + D890_ADDR.ROAMING_ZONE_NAME_LEN
+      ),
+      D890_LIMITS.NAME_MAX_CHARS
+    ),
+  };
+}
+
+/** Address of one roaming-zone record. */
+export function roamingZoneAddress(index: number): number {
+  return D890_ADDR.ROAMING_ZONE_DATA + index * D890_ADDR.ROAMING_ZONE_STRIDE;
+}
+
+/**
+ * The basic Encryption Code table — 32 slots of a 16-bit ID and a 16-bit key.
+ *
+ * CONFIRMED on hardware: 0x3585000 read `01 01 02 02 … 20 20`, the factory IDs
+ * 1-32, matching the prediction made before the dump.
+ *
+ * Both values are BIG-endian on the radio and little-endian in the .rdt. Every
+ * factory ID is byte-palindromic, so no captured codeplug can distinguish the
+ * two — this comes from the vendor's marshaller, traced in both directions, and
+ * must not be "simplified" to match the file.
+ *
+ * The key passes through `key XOR mask`, where the mask is 0 unless an
+ * activation file has been loaded into the CPS. With no activation file the
+ * transform is the identity, which is the only case anyone here can produce, so
+ * the mask is not modelled — a radio programmed by an activated CPS would need
+ * it and this decode would be wrong for that radio.
+ */
+export function parseEncryptionSlot(
+  idBytes: Uint8Array,
+  keyBytes: Uint8Array,
+  index: number
+): { slot: number; encryptionId: number; key: number } {
+  const idOffset = index * D890_ADDR.ENCRYPTION_ID_STRIDE;
+  const keyOffset = index * D890_ADDR.ENCRYPTION_KEY_STRIDE + D890_ADDR.ENCRYPTION_KEY_OFFSET;
+  const be16 = (b: Uint8Array, o: number) => ((b[o] ?? 0) << 8) | (b[o + 1] ?? 0);
+  return {
+    slot: index + 1,
+    encryptionId: be16(idBytes, idOffset),
+    key: be16(keyBytes, keyOffset),
+  };
+}
+
 /** True when a slot holds no channel: RX frequency zero marks it vacant. */
 export function isVacantChannel(bytes: Uint8Array): boolean {
   return decodeFrequencyHz(bytes.subarray(0x00, 0x04)) === 0;

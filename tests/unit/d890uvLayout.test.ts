@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   D890_CHANNEL_LAYOUT,
@@ -48,8 +48,30 @@ function covered(rows: readonly { offset: number; length: number }[]): Set<numbe
   return out;
 }
 
-describe('the confirmation list stays in step with what the UI shows', () => {
-  const DOC = readFileSync(join(__dirname, '../../DA7X2-NEEDS-CONFIRMING.md'), 'utf8');
+/**
+ * DA7X2-NEEDS-CONFIRMING.md is a local working note and is deliberately
+ * gitignored, so it does not exist in a fresh clone or in CI.
+ *
+ * These checks therefore SKIP rather than fail when it is absent. That is not a
+ * weakened guard: the property being asserted is that a local artifact stays in
+ * step with the UI, and where the artifact is absent there is nothing to be out
+ * of step with. What matters is that the skip is visible — a test that silently
+ * passed on a missing file would look like coverage and provide none.
+ *
+ * The alternative, committing the doc, was considered and rejected: it is a lab
+ * record of half-verified claims, which is exactly what the repo should not
+ * carry. If it ever becomes shipped documentation, delete the guard.
+ */
+const DOC_PATH = join(__dirname, '../../DA7X2-NEEDS-CONFIRMING.md');
+const DOC_PRESENT = existsSync(DOC_PATH);
+
+// Read guarded rather than inside the block: `describe.skipIf` still invokes the
+// callback to collect the tests it is about to skip, so an unguarded read here
+// throws at collection time and fails the whole FILE — which is exactly how this
+// was first shipped.
+const DOC = DOC_PRESENT ? readFileSync(DOC_PATH, 'utf8') : '';
+
+describe.skipIf(!DOC_PRESENT)('the confirmation list stays in step with what the UI shows', () => {
 
   it('names every channel column the UI marks as unconfirmed', () => {
     // The marker in the grid is a promise that the list says what would settle
@@ -161,6 +183,17 @@ describe('DA-7X2 record layout documentation', () => {
     for (let o = 0; o < 0x80; o++) {
       expect(documented.has(o), `0x${o.toString(16)} is undocumented`).toBe(true);
     }
+  });
+
+  it('has no duplicate region name or address', () => {
+    // The Diagnostics table keys its rows by `name`, so a duplicate makes React
+    // drop a row silently — the map looks complete and is not. This fired for
+    // real: an APRS entry was added when the region was decoded, on top of the
+    // stub that was already there from when it was only mapped.
+    const names = D890_MEMORY_MAP.map((r) => r.name);
+    const addresses = D890_MEMORY_MAP.map((r) => r.address);
+    expect(new Set(names).size, `duplicate region name in ${names.join(', ')}`).toBe(names.length);
+    expect(new Set(addresses).size, 'two regions claim the same address').toBe(addresses.length);
   });
 
   it('keeps the memory map in step with the addresses the driver uses', () => {

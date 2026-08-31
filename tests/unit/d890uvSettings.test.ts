@@ -14,6 +14,7 @@ import {
 import { parseD890Settings, encodeD890Settings } from '../../src/radios/d890uv/settingsFormat';
 import { D890_ADDR } from '../../src/radios/d890uv/constants';
 import { D890UV_SETTINGS_PROFILE } from '../../src/radios/d890uv/settingsProfile';
+import { D890_APRS_PROFILE_FIELDS } from '../../src/radios/d890uv/aprs';
 
 /**
  * Real bytes read off a DA-7X2 at 0x3500000 before any NeonPlug-authored
@@ -122,12 +123,19 @@ describe('D890 settings profile', () => {
   it('exposes every mapped field exactly once', () => {
     const keys = D890UV_SETTINGS_PROFILE.sections.flatMap((s) => s.fields.map((f) => f.key));
     expect(new Set(keys).size).toBe(keys.length);
+    // APRS is counted separately because it is not part of the settings block —
+    // it is its own region at 0x3501000, folded into the same profile so the
+    // user sees one Settings tab rather than two places to look.
     expect(keys.length).toBe(
       D890_SETTINGS_FIELDS.length +
         D890_SETTINGS_BITFIELDS.length +
         D890_SETTINGS_FREQUENCIES.length +
-        D890_UNMAPPED_BYTES.length,
+        D890_UNMAPPED_BYTES.length +
+        D890_APRS_PROFILE_FIELDS.length,
     );
+    for (const f of D890_APRS_PROFILE_FIELDS) {
+      expect(keys).toContain(`radioSpecific.${f.key}`);
+    }
     for (const f of D890_SETTINGS_FREQUENCIES) {
       expect(keys).toContain(`radioSpecific.${f.key}`);
     }

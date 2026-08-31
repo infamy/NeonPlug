@@ -58,6 +58,71 @@ describe('checksum8', () => {
   });
 });
 
+describe('the checksum bounds match the vendor routine', () => {
+  /**
+   * `sub_0062b760`, disassembled: a `mov cl, byte [edx+eax]` / `add edx, ebx`
+   * loop ending in `and ecx, 0x800000ff`. A plain 8-bit additive sum over the
+   * address, the length and all 16 data bytes — excluding the leading 0x57, the
+   * checksum itself and the trailing 0x06. Its `UBound-2` default bound lands
+   * exactly on the last data byte.
+   *
+   * This is worth pinning rather than trusting, for two reasons. A checksum
+   * whose range is off by one byte still agrees with ITSELF, so encode/decode
+   * round-trip tests pass and only the radio disagrees. And because the read
+   * reply and the write request are the same frame, these bounds are the ONLY
+   * thing standing between a correct write frame and a rejected one — on a radio
+   * where a bad write is not retryable.
+   */
+  it('covers frame[1..21] inclusive for a 16-byte payload', () => {
+    const payload = Uint8Array.from({ length: 0x10 }, (_, i) => 0xa0 + i);
+    const frame = new Uint8Array(24);
+    frame[0] = 0x57;
+    writeAddressBE(frame, 1, 0x03482a00);
+    frame[5] = 0x10;
+    frame.set(payload, 6);
+    const sum = checksum8(frame, 1, 6 + 0x10);
+    frame[22] = sum;
+    frame[23] = 0x06;
+
+    // Computed independently of the implementation, straight from the rule.
+    let expected = 0;
+    for (let i = 1; i <= 21; i++) expected = (expected + frame[i]) & 0xff;
+    expect(sum).toBe(expected);
+
+    // And the excluded bytes really are excluded: changing either must not move it.
+    frame[0] = 0x52;
+    frame[23] = 0x00;
+    expect(checksum8(frame, 1, 6 + 0x10)).toBe(expected);
+  });
+
+  it('is a plain additive sum, not a CRC', () => {
+    // Byte order must not matter to an additive sum. A CRC would fail this, and
+    // failing it would mean the routine was misread.
+    const a = Uint8Array.from([0, 0x11, 0x22, 0x33, 0x44]);
+    const b = Uint8Array.from([0, 0x44, 0x33, 0x22, 0x11]);
+    expect(checksum8(a, 1, 5)).toBe(checksum8(b, 1, 5));
+  });
+
+  it('validates a real read reply, which is the same frame a write sends', () => {
+    // parseReadResponse rejects a frame whose checksum disagrees. Every read this
+    // driver has ever completed passed that check, so the rule is confirmed
+    // against live traffic — and by construction against the write frame too.
+    const payload = Uint8Array.from({ length: 0x10 }, (_, i) => i);
+    const frame = new Uint8Array(24);
+    frame[0] = 0x57;
+    writeAddressBE(frame, 1, 0x01000000);
+    frame[5] = 0x10;
+    frame.set(payload, 6);
+    frame[22] = checksum8(frame, 1, 22);
+    frame[23] = 0x06;
+    expect(parseReadResponse(frame, 0x01000000, 0x10)).toEqual(payload);
+
+    const corrupted = Uint8Array.from(frame);
+    corrupted[22] = (corrupted[22] + 1) & 0xff;
+    expect(() => parseReadResponse(corrupted, 0x01000000, 0x10)).toThrow(/checksum/i);
+  });
+});
+
 describe('buildReadCommand', () => {
   it('is six bytes: opcode, BE address, length', () => {
     const cmd = buildReadCommand(0x4f80000, 0x10);

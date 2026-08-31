@@ -305,6 +305,64 @@ export const D890_ADDR = {
    */
   TALKGROUP_BANK_STRIDE: 0x40000,
 
+  /**
+   * Roaming — located by reading the radio 2026-08-30, not from the RE bundle.
+   *
+   * These are three of the addresses the settings marshaller reaches through
+   * stores whose address is parametric (`base + i*0x40` over a runtime-sized
+   * array), which is why no static trace could name them. Dumping them read-only
+   * and matching the bytes against the vendor's own CSV export settled all three
+   * in one pass each.
+   */
+  ROAMING_CHANNEL_SET: 0x2084000,
+  ROAMING_CHANNEL_SET_SIZE: 0x20,
+  ROAMING_CHANNEL_DATA: 0x2080000,
+  ROAMING_CHANNEL_STRIDE: 0x40,
+  ROAMING_ZONE_DATA: 0x2085000,
+  ROAMING_ZONE_STRIDE: 0x80,
+  /** A roaming zone's member list occupies the first half of its record. */
+  ROAMING_ZONE_MEMBERS_LEN: 0x40,
+  /** Its UTF-16LE name follows at +0x40. */
+  ROAMING_ZONE_NAME_OFFSET: 0x40,
+  ROAMING_ZONE_NAME_LEN: 0x22,
+
+  /**
+   * APRS settings. Mapped by the vendor settings marshaller (27 named fields)
+   * and confirmed on hardware by content — the dump carries the destination and
+   * source callsigns, the digipeater path and the symbol pair verbatim.
+   */
+  APRS_SETTINGS: 0x3501000,
+  APRS_SETTINGS_SIZE: 0x100,
+
+  /**
+   * Encryption keys — four separate tables, one per key type.
+   *
+   * Addresses from the vendor's own upload/download marshallers. The basic
+   * table is CONFIRMED on hardware: 0x3585000 reads 01 01 02 02 … 20 20, the
+   * factory IDs 1-32, exactly as predicted before the dump.
+   *
+   * ⚠️ AES, ARC4 and NX are NOT confirmed. They read all zeros on the captured
+   * radio, which is consistent with every slot being at factory default — and
+   * equally consistent with the address being wrong, because unused memory reads
+   * zeros too. Confirming them needs a codeplug with a key actually set.
+   *
+   * ⚠️ The radio stores encryption IDs BIG-endian while the .rdt stores them
+   * little-endian. Every factory ID is byte-palindromic (0x0101, 0x0202 …), so
+   * no captured data can tell the two apart — only the disassembly can, and it
+   * traced both directions. Do not "simplify" this to match the file.
+   */
+  ENCRYPTION_ID_TABLE: 0x3585000,
+  ENCRYPTION_ID_STRIDE: 2,
+  ENCRYPTION_KEY_TABLE: 0x3585100,
+  ENCRYPTION_KEY_STRIDE: 0x28,
+  /** Only +0x10/+0x11 of each 0x28 slot is touched; the rest is unresolved. */
+  ENCRYPTION_KEY_OFFSET: 0x10,
+  ENCRYPTION_SLOTS: 32,
+  AES_KEY_TABLE: 0x3580000,
+  AES_KEY_STRIDE: 0x40,
+  ARC4_KEY_TABLE: 0x3584000,
+  ARC4_KEY_STRIDE: 0x10,
+
   /** Receive group lists. */
   RX_GROUP_SET: 0x3701510,
   RX_GROUP_SET_SIZE: 0x20,
@@ -383,6 +441,18 @@ export const D890_LIMITS = {
   RX_GROUP_MEMBERS_MAX: 64,
 
   DMR_RADIO_IDS_MAX: 64,
+
+  /**
+   * Roaming channels and zones.
+   *
+   * Both caps are the structural size of the region rather than a figure from
+   * documentation: the bitmap is 0x20 bytes (256 bits) and a roaming zone's
+   * member list is 0x40 bytes of one-byte indices. The vendor CPS may enforce
+   * something lower — only four roaming channels and one zone have been seen.
+   */
+  ROAMING_CHANNELS_MAX: 256,
+  ROAMING_ZONES_MAX: 64,
+  ROAMING_ZONE_MEMBERS_MAX: 64,
 
   /** Names are wide-char (2 bytes/char) everywhere on this radio. */
   NAME_MAX_CHARS: 16,

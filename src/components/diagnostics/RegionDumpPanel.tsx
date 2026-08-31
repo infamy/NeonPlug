@@ -129,6 +129,38 @@ const REGIONS: RegionChoice[] = [
     address: D890_ADDR.RADIO_ID_DATA,
     length: D890_ADDR.RADIO_ID_STRIDE * 4,
   },
+  // Located by dumping the radio 2026-08-30, at addresses the RE bundle named
+  // but could not resolve. Presets rather than hand-typed addresses because
+  // typing one wrong and re-reading a stale dump is exactly how a region gets
+  // "confirmed" at the wrong place.
+  {
+    key: 'roaming-channel-set',
+    label: 'Roaming channel bitmap',
+    address: D890_ADDR.ROAMING_CHANNEL_SET,
+    length: D890_ADDR.ROAMING_CHANNEL_SET_SIZE,
+    note: 'One bit per roaming channel. NOT the per-zone roam bitmap at 0x4c00000.',
+  },
+  {
+    key: 'roaming-channel',
+    label: 'Roaming channel 1',
+    address: D890_ADDR.ROAMING_CHANNEL_DATA,
+    length: D890_ADDR.ROAMING_CHANNEL_STRIDE,
+    note: 'RX/TX as BCD u32, then colour code and slot, then a UTF-16LE name.',
+  },
+  {
+    key: 'roaming-zone',
+    label: 'Roaming zone 1',
+    address: D890_ADDR.ROAMING_ZONE_DATA,
+    length: D890_ADDR.ROAMING_ZONE_STRIDE,
+    note: 'One-byte members at +0x00 indexing the roaming-channel table; name at +0x40.',
+  },
+  {
+    key: 'aprs',
+    label: 'APRS settings',
+    address: D890_ADDR.APRS_SETTINGS,
+    length: D890_ADDR.APRS_SETTINGS_SIZE,
+    note: 'Callsigns, digipeater path and symbol pair are visible as plain text.',
+  },
 ];
 
 const MAX_CUSTOM_LENGTH = 0x4000; // 16 KB — keeps an accidental typo from hanging the UI

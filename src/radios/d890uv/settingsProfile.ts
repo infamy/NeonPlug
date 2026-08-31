@@ -24,6 +24,7 @@ import {
   D890_KEY_FUNCTION_FIELDS,
   D890_UNMAPPED_BYTES,
 } from './settingsMap';
+import { D890_APRS_PROFILE_FIELDS } from './aprs';
 
 /** The ten PF/P controls all render the same 67-entry vocabulary. */
 const KEY_FUNCTION_FIELDS = new Set<string>(D890_KEY_FUNCTION_FIELDS);
@@ -50,7 +51,8 @@ const SECTION_ORDER: readonly string[] = [
   'STE',
   'VFO Scan',
   'AM/FM',
-  'Record'
+  'Record',
+  'APRS'
 ];
 
 /**
@@ -143,6 +145,18 @@ export const D890UV_SETTINGS_PROFILE: SettingsProfile = {
     ],
   }))
     .filter((s) => s.fields.length > 0)
+    .concat([
+      {
+        // Its own region (0x3501000), not part of the settings block, but it is
+        // still settings from the user's point of view — so it renders through
+        // the same declarative profile rather than a bespoke component.
+        id: 'aprs',
+        title: 'APRS',
+        fields: D890_APRS_PROFILE_FIELDS.map(
+          (f): SettingsFieldDescriptor => ({ ...f, key: `radioSpecific.${f.key}` }) as SettingsFieldDescriptor,
+        ),
+      },
+    ])
     .concat([
       {
         id: 'unmapped',

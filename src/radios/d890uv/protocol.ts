@@ -36,6 +36,12 @@ import {
   parseZone,
   parseTalkgroup,
   parseTalkgroupQuick,
+  parseRoamingChannel,
+  parseRoamingZone,
+  roamingChannelAddress,
+  roamingZoneAddress,
+  type D890RoamingChannel,
+  type D890RoamingZone,
   parseRxGroup,
   parseScanList,
   parseChannel,
@@ -51,6 +57,11 @@ import {
   parseRadioId,
   radioIdAddress,
 } from './structures';
+import {
+  parseD890AprsSettings,
+  aprsToRadioSpecific,
+  type D890AprsSettings,
+} from './aprs';
 
 /**
  * Thrown for the parts of this driver that exist structurally but must not be
@@ -406,6 +417,78 @@ export class D890UVProtocol extends BaseDigitalProtocol {
   }
 
   /**
+   * Roaming channels — the fallback frequency pairs the radio uses when roaming.
+   *
+   * Gated on the presence bitmap like every other record type here: a slot whose
+   * bit is clear is absent no matter what its record contains.
+   */
+  async readRoamingChannels(): Promise<D890RoamingChannel[]> {
+    const conn = this.requireConnection();
+    const set = await conn.readMemory(
+      D890_ADDR.ROAMING_CHANNEL_SET,
+      D890_ADDR.ROAMING_CHANNEL_SET_SIZE
+    );
+    const present = occupiedIndices(
+      decodeOccupancyBitmap(set, D890_LIMITS.ROAMING_CHANNELS_MAX)
+    );
+    const out: D890RoamingChannel[] = [];
+    for (const index of present) {
+      const record = await conn.readMemory(
+        roamingChannelAddress(index),
+        D890_ADDR.ROAMING_CHANNEL_STRIDE
+      );
+      out.push(parseRoamingChannel(record, index));
+    }
+    return out;
+  }
+
+  /**
+   * Roaming zones.
+   *
+   * ⚠️ No presence bitmap has been found for these. The roaming-CHANNEL bitmap
+   * at 0x2084000 covers channels only, and nothing in the RE bundle names a zone
+   * equivalent. So this reads records until it finds one with no members, which
+   * is a guess about how the radio marks the end of the table — unlike the
+   * bitmap-gated reads, a stale record beyond the last real zone would be
+   * returned as real. Treat the zone list as least-trustworthy until a bitmap
+   * turns up or a codeplug with several zones proves the terminator.
+   */
+  async readRoamingZones(): Promise<D890RoamingZone[]> {
+    const conn = this.requireConnection();
+    const out: D890RoamingZone[] = [];
+    for (let index = 0; index < D890_LIMITS.ROAMING_ZONES_MAX; index += 1) {
+      const record = await conn.readMemory(
+        roamingZoneAddress(index),
+        D890_ADDR.ROAMING_ZONE_STRIDE
+      );
+      const zone = parseRoamingZone(record, index);
+      if (zone.members.length === 0) break;
+      out.push(zone);
+    }
+    return out;
+  }
+
+  /**
+   * APRS settings.
+   *
+   * Confirmed field by field against the vendor CPS's own export of the same
+   * codeplug — sixteen exact matches including three callsign strings and the
+   * symbol pair. Returns null only when the region reads short.
+   */
+  async readAprsSettings(): Promise<D890AprsSettings | null> {
+    const bytes = await this.readAprsSettingsRaw();
+    return parseD890AprsSettings(bytes);
+  }
+
+  /** The same region undecoded, for the Diagnostics dump and for fixtures. */
+  async readAprsSettingsRaw(): Promise<Uint8Array> {
+    return this.requireConnection().readMemory(
+      D890_ADDR.APRS_SETTINGS,
+      D890_ADDR.APRS_SETTINGS_SIZE
+    );
+  }
+
+  /**
    * Reads the general settings region.
    *
    * Read-only: `writeRadioSettings` is deliberately not implemented, so the
@@ -424,6 +507,18 @@ export class D890UVProtocol extends BaseDigitalProtocol {
     );
     const radioSpecific = parseD890Settings(bytes);
     if (!radioSpecific) return null;
+
+    // APRS lives in its own region (0x3501000), not in the settings block, but
+    // it is settings from the user's point of view — so it is folded in here
+    // rather than needing a second read path and a second store. A failure to
+    // read it must not lose the settings we already have, hence the catch.
+    try {
+      const aprs = parseD890AprsSettings(await this.readAprsSettingsRaw());
+      if (aprs) Object.assign(radioSpecific, aprsToRadioSpecific(aprs));
+    } catch {
+      /* APRS region unreadable — the rest of the settings are still good. */
+    }
+
     return { radioSpecific } as unknown as RadioSettings;
   }
 
