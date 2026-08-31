@@ -4,7 +4,7 @@
  * Partly hardware-verified against a real DA-7X2 on 2026-08-25. Confirmed:
  * the 921600 baud rate, the PROGRAM/QX handshake, identify, the read framing and
  * checksum, read sizes up to 0xf0, END, UTF-16LE names, the BCD-as-hex frequency
- * codec, the inverted talkgroup bitmap, and the channel/zone/scan-list/talkgroup
+ * codec, the inverted talkgroup mask, and the channel/zone/scan-list/talkgroup
  * record layouts. Everything else — the write path, the CTCSS table, DCS, and the
  * settings regions — is still transcribed from the codeplug-studio reference docs
  * and remains a hypothesis. See D890UV-HARDWARE-CHECKLIST.md for what each is.
@@ -188,10 +188,10 @@ export const D890_ERASE_UNIT = 0x40000;
 export const D890_FORBIDDEN_UNIT_OFFSETS = [0x3fbf0, 0x3fff0] as const;
 
 /**
- * Sparse memory regions. `bitmap` regions track which slots are occupied; the
+ * Sparse memory regions. `mask` regions track which slots are occupied; the
  * corresponding `data` region holds the records themselves. A record whose
- * bitmap bit is not set must be treated as absent regardless of its contents —
- * this is the same class of bug as the "channel enable bitmap" gotcha in
+ * mask bit is not set must be treated as absent regardless of its contents —
+ * this is the same class of bug as the "channel enable mask" gotcha in
  * ADDING_A_RADIO.md, except here it applies to *every* entity type.
  */
 export const D890_ADDR = {
@@ -208,7 +208,7 @@ export const D890_ADDR = {
   SETTINGS: 0x3500000,
   SETTINGS_SIZE: 0x160,
 
-  /** Channels: occupancy bitmap, then bodies split across 0x80000 blocks. */
+  /** Channels: occupancy mask, then bodies split across 0x80000 blocks. */
   CHANNEL_SET: 0x3482a00,
   CHANNEL_SET_SIZE: 0x200,
   CHANNEL_DATA: 0x1000000,
@@ -248,7 +248,7 @@ export const D890_ADDR = {
   ZONE_A_CHANNEL: 0x3500400,
   ZONE_B_CHANNEL: 0x3500600,
   /**
-   * Per-zone roaming bitmap, 32 bytes (256 bits) per zone: bit k set means the
+   * Per-zone roaming mask, 32 bytes (256 bits) per zone: bit k set means the
    * zone's k-th member is a roam channel. The vendor writer clears all 0x20
    * bytes before setting any bit. Not read by this driver yet.
    */
@@ -258,10 +258,10 @@ export const D890_ADDR = {
   /**
    * Radio (DMR) IDs.
    *
-   * 0x3482c40 is the 32-byte gap between the zone-hidden bitmap (0x3482c20) and
-   * the scan-list bitmap (0x3482c60). None of the six record marshallers in the
+   * 0x3482c40 is the 32-byte gap between the zone-hidden mask (0x3482c20) and
+   * the scan-list mask (0x3482c60). None of the six record marshallers in the
    * vendor CPS touches it, so the decompilation cannot name its owner; this
-   * driver reads it as the radio-ID occupancy bitmap on the strength of a live
+   * driver reads it as the radio-ID occupancy mask on the strength of a live
    * read alone. Treat the ownership as observed, not proven.
    */
   RADIO_ID_SET: 0x3482c40,
@@ -290,7 +290,7 @@ export const D890_ADDR = {
   /** Only 0x00..0xf9 of each stride is meaningful; the rest is zero fill. */
   SCAN_LIST_USED: 0xfa,
 
-  /** Talkgroups (digital contacts). NOTE the inverted bitmap — see below. */
+  /** Talkgroups (digital contacts). NOTE the inverted mask — see below. */
   TALKGROUP_SET: 0x3980000,
   /**
    * 0x4e2 = 1250 bytes = exactly 10,000 bits, matching the documented 10,000
@@ -299,7 +299,7 @@ export const D890_ADDR = {
    * reference doc's 0x4f0 (10,112 bits) was rounded up.
    */
   TALKGROUP_SET_SIZE: 0x4e2,
-  /** Read span for the talkgroup bitmap — 1250 bytes rounded up to 1264. */
+  /** Read span for the talkgroup mask — 1250 bytes rounded up to 1264. */
   TALKGROUP_SET_READ: alignRead(0x4e2),
   TALKGROUP_DATA: 0x3a00000,
   TALKGROUP_STRIDE: 0xc8,
@@ -455,7 +455,7 @@ export const D890_ADDR = {
   /** The vendor's own limit is 200 characters, well under the 256 the slot fits. */
   PREDEFINED_SMS_MAX_CHARS: 200,
   PREDEFINED_SMS_MAX: 100,
-  /** Presence bitmap. */
+  /** Presence mask. */
   PREDEFINED_SMS_SET: 0x2980000,
   PREDEFINED_SMS_SET_SIZE: 0x640,
 
@@ -497,12 +497,12 @@ export const D890_ADDR = {
 } as const;
 
 /**
- * The talkgroup bitmap is INVERTED relative to every other bitmap on this radio:
+ * The talkgroup mask is INVERTED relative to every other mask on this radio:
  * a set bit means the slot is **empty**. Getting this backwards yields either an
  * entirely empty contact list or 10,000 phantom contacts, so it is a named
  * constant rather than a bare `true` at the call site.
  */
-export const D890_TALKGROUP_BITMAP_INVERTED = true;
+export const D890_TALKGROUP_MASK_INVERTED = true;
 
 /**
  * Capacity limits.
@@ -510,12 +510,12 @@ export const D890_TALKGROUP_BITMAP_INVERTED = true;
  * Two of these contradict the reference docs, resolved by arithmetic rather than
  * by picking a side:
  *
- *   ZONES — limits.md says 250; the region summary said 32. The zone bitmap is
+ *   ZONES — limits.md says 250; the region summary said 32. The zone mask is
  *   0x20 bytes = 256 bits, so 250 is a CPS-enforced cap inside a 256-slot
  *   structure and 32 was simply wrong.
  *
  *   TALKGROUPS — limits.md says 10,000; the region summary said ~4000 and the
- *   record doc guessed 4,096. The bitmap is 0x4f0 = 1264 bytes = 10,112 bits,
+ *   record doc guessed 4,096. The mask is 0x4f0 = 1264 bytes = 10,112 bits,
  *   which holds 10,000 and cannot hold only 4,096. limits.md is right.
  *
  * Both still want hardware confirmation, but the arithmetic is not ambiguous.
@@ -527,8 +527,8 @@ export const D890_LIMITS = {
   VFO_B_INDEX: 4001,
 
   ZONES_MAX: 250,
-  /** Bitmap capacity, i.e. the hard structural ceiling above the CPS cap. */
-  ZONES_BITMAP_CAPACITY: 256,
+  /** Mask capacity, i.e. the hard structural ceiling above the CPS cap. */
+  ZONES_MASK_CAPACITY: 256,
   /**
    * 160 channels per zone — what the vendor CPS lets a user build, and so what
    * NeonPlug offers.
@@ -557,8 +557,8 @@ export const D890_LIMITS = {
   SCAN_LIST_MEMBERS_MAX: 50,
 
   TALK_GROUPS_MAX: 10000,
-  /** Exactly equal to the max — the bitmap is sized to the limit, not padded. */
-  TALK_GROUPS_BITMAP_CAPACITY: 10000,
+  /** Exactly equal to the max — the mask is sized to the limit, not padded. */
+  TALK_GROUPS_MASK_CAPACITY: 10000,
 
   RX_GROUPS_MAX: 250,
   RX_GROUP_MEMBERS_MAX: 64,
@@ -569,7 +569,7 @@ export const D890_LIMITS = {
    * Roaming channels and zones.
    *
    * Both caps are the structural size of the region rather than a figure from
-   * documentation: the bitmap is 0x20 bytes (256 bits) and a roaming zone's
+   * documentation: the mask is 0x20 bytes (256 bits) and a roaming zone's
    * member list is 0x40 bytes of one-byte indices. The vendor CPS may enforce
    * something lower — only four roaming channels and one zone have been seen.
    */

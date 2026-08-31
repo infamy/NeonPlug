@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  decodeOccupancyBitmap,
+  decodeOccupancyMask,
   occupiedIndices,
   decodeWideCharString,
   parseChannel,
@@ -13,7 +13,7 @@ import {
 } from '../../src/radios/d890uv/structures';
 import {
   D890_LIMITS,
-  D890_TALKGROUP_BITMAP_INVERTED,
+  D890_TALKGROUP_MASK_INVERTED,
   D890_ID_PREFIXES,
   D890_VERSION_PREFIX,
 } from '../../src/radios/d890uv/constants';
@@ -52,28 +52,28 @@ describe('identify (real radio)', () => {
   });
 });
 
-describe('occupancy bitmaps (real radio)', () => {
+describe('occupancy masks (real radio)', () => {
   it('reads 8 programmed channels', () => {
-    const occ = occupiedIndices(decodeOccupancyBitmap(fx('channel-set'), 256));
+    const occ = occupiedIndices(decodeOccupancyMask(fx('channel-set'), 256));
     expect(occ).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
   });
 
   it('reads 1 zone and 1 scan list', () => {
-    expect(occupiedIndices(decodeOccupancyBitmap(fx('zone-set'), 256))).toEqual([0]);
-    expect(occupiedIndices(decodeOccupancyBitmap(fx('scanlist-set'), 256))).toEqual([0]);
+    expect(occupiedIndices(decodeOccupancyMask(fx('zone-set'), 256))).toEqual([0]);
+    expect(occupiedIndices(decodeOccupancyMask(fx('scanlist-set'), 256))).toEqual([0]);
   });
 
-  it('confirms the talkgroup bitmap really is INVERTED', () => {
+  it('confirms the talkgroup mask really is INVERTED', () => {
     // The radio holds exactly one talkgroup and the first byte reads 0xfe, not
     // 0x01 — bit clear means occupied. Reading it the normal way round would
     // have produced ~10,000 phantom contacts and hidden the real one.
     const raw = fx('talkgroup-set');
     expect(raw[0]).toBe(0xfe);
     const inverted = occupiedIndices(
-      decodeOccupancyBitmap(raw, 256, D890_TALKGROUP_BITMAP_INVERTED)
+      decodeOccupancyMask(raw, 256, D890_TALKGROUP_MASK_INVERTED)
     );
     expect(inverted).toEqual([0]);
-    expect(occupiedIndices(decodeOccupancyBitmap(raw, 256)).length).toBe(255);
+    expect(occupiedIndices(decodeOccupancyMask(raw, 256)).length).toBe(255);
   });
 });
 

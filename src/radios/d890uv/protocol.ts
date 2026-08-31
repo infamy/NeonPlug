@@ -35,10 +35,10 @@ import {
   D890_ADDR,
   D890_LIMITS,
   D890_MODEL_IDS,
-  D890_TALKGROUP_BITMAP_INVERTED,
+  D890_TALKGROUP_MASK_INVERTED,
 } from './constants';
 import {
-  decodeOccupancyBitmap,
+  decodeOccupancyMask,
   occupiedIndices,
   parseZone,
   parseTalkgroup,
@@ -221,9 +221,9 @@ export class D890UVProtocol extends BaseDigitalProtocol {
     onProgress?: (done: number, total: number) => void
   ): Promise<{ decoded: D890ChannelDecode[]; unresolvedTones: number }> {
     const conn = this.requireConnection();
-    const bitmap = await conn.readMemory(D890_ADDR.CHANNEL_SET, D890_ADDR.CHANNEL_SET_SIZE);
+    const mask = await conn.readMemory(D890_ADDR.CHANNEL_SET, D890_ADDR.CHANNEL_SET_SIZE);
     const present = occupiedIndices(
-      decodeOccupancyBitmap(bitmap, D890_LIMITS.CHANNELS_MAX)
+      decodeOccupancyMask(mask, D890_LIMITS.CHANNELS_MAX)
     );
 
     // Read consecutive runs in one request each rather than two frames per
@@ -241,7 +241,7 @@ export class D890UVProtocol extends BaseDigitalProtocol {
         const offset = r * D890_ADDR.CHANNEL_STRIDE;
         const record = buffer.subarray(offset, offset + D890_ADDR.CHANNEL_STRIDE);
         done++;
-        // A record inside a run can still be vacant if the bitmap and the data
+        // A record inside a run can still be vacant if the mask and the data
         // disagree; trust the data.
         if (isVacantChannel(record)) continue;
         decoded.push(parseChannel(record, index));
@@ -276,11 +276,11 @@ export class D890UVProtocol extends BaseDigitalProtocol {
     );
   }
 
-  /** Zones: occupancy bitmap, then name + membership per occupied slot. */
+  /** Zones: occupancy mask, then name + membership per occupied slot. */
   async readZones(): Promise<Zone[]> {
     const conn = this.requireConnection();
-    const bitmap = await conn.readMemory(D890_ADDR.ZONE_SET, D890_ADDR.ZONE_SET_SIZE);
-    const present = occupiedIndices(decodeOccupancyBitmap(bitmap, D890_LIMITS.ZONES_MAX));
+    const mask = await conn.readMemory(D890_ADDR.ZONE_SET, D890_ADDR.ZONE_SET_SIZE);
+    const present = occupiedIndices(decodeOccupancyMask(mask, D890_LIMITS.ZONES_MAX));
 
     const zones: Zone[] = [];
     for (const index of present) {
@@ -300,22 +300,22 @@ export class D890UVProtocol extends BaseDigitalProtocol {
   /**
    * Talkgroups, surfaced as Contacts.
    *
-   * The occupancy bitmap here is INVERTED — a set bit means the slot is empty.
+   * The occupancy mask here is INVERTED — a set bit means the slot is empty.
    * The named constant is passed rather than a bare `true` so the sense is
    * legible at the call site; getting it wrong yields either nothing or ~10,000
    * phantom contacts.
    */
   async readContacts(): Promise<Contact[]> {
     const conn = this.requireConnection();
-    const bitmap = await conn.readMemory(
+    const mask = await conn.readMemory(
       D890_ADDR.TALKGROUP_SET,
       D890_ADDR.TALKGROUP_SET_READ
     );
     const present = occupiedIndices(
-      decodeOccupancyBitmap(
-        bitmap,
+      decodeOccupancyMask(
+        mask,
         D890_LIMITS.TALK_GROUPS_MAX,
-        D890_TALKGROUP_BITMAP_INVERTED
+        D890_TALKGROUP_MASK_INVERTED
       )
     );
 
@@ -341,15 +341,15 @@ export class D890UVProtocol extends BaseDigitalProtocol {
    */
   async readQuickContacts(): Promise<QuickContact[]> {
     const conn = this.requireConnection();
-    const bitmap = await conn.readMemory(
+    const mask = await conn.readMemory(
       D890_ADDR.TALKGROUP_SET,
       D890_ADDR.TALKGROUP_SET_READ
     );
     const present = occupiedIndices(
-      decodeOccupancyBitmap(
-        bitmap,
+      decodeOccupancyMask(
+        mask,
         D890_LIMITS.TALK_GROUPS_MAX,
-        D890_TALKGROUP_BITMAP_INVERTED
+        D890_TALKGROUP_MASK_INVERTED
       )
     );
 
@@ -385,12 +385,12 @@ export class D890UVProtocol extends BaseDigitalProtocol {
   /** Full D890 scan-list decode, without the lossy narrowing above. */
   async readScanListsDetailed(): Promise<ScanListDecoded[]> {
     const conn = this.requireConnection();
-    const bitmap = await conn.readMemory(
+    const mask = await conn.readMemory(
       D890_ADDR.SCAN_LIST_SET,
       D890_ADDR.SCAN_LIST_SET_SIZE
     );
     const present = occupiedIndices(
-      decodeOccupancyBitmap(bitmap, D890_LIMITS.SCAN_LISTS_MAX)
+      decodeOccupancyMask(mask, D890_LIMITS.SCAN_LISTS_MAX)
     );
 
     const lists: ScanListDecoded[] = [];
@@ -407,12 +407,12 @@ export class D890UVProtocol extends BaseDigitalProtocol {
   /** Receive group lists. Members are talkgroup bank indices, not DMR IDs. */
   async readRXGroups(): Promise<RXGroup[]> {
     const conn = this.requireConnection();
-    const bitmap = await conn.readMemory(
+    const mask = await conn.readMemory(
       D890_ADDR.RX_GROUP_SET,
       D890_ADDR.RX_GROUP_SET_SIZE
     );
     const present = occupiedIndices(
-      decodeOccupancyBitmap(bitmap, D890_LIMITS.RX_GROUPS_MAX)
+      decodeOccupancyMask(mask, D890_LIMITS.RX_GROUPS_MAX)
     );
 
     const groups: RXGroup[] = [];
@@ -429,7 +429,7 @@ export class D890UVProtocol extends BaseDigitalProtocol {
   /**
    * Reads the DMR radio IDs.
    *
-   * Occupancy comes from the same style of bitmap as every other list on this
+   * Occupancy comes from the same style of mask as every other list on this
    * radio, so an ID whose bit is clear is absent no matter what its record
    * contains — the gotcha called out in ADDING_A_RADIO.md, which applies to
    * every entity type here rather than just channels.
@@ -437,7 +437,7 @@ export class D890UVProtocol extends BaseDigitalProtocol {
   override async readDMRRadioIDs(): Promise<DMRRadioID[]> {
     const conn = this.requireConnection();
     const set = await conn.readMemory(D890_ADDR.RADIO_ID_SET, D890_ADDR.RADIO_ID_SET_SIZE);
-    const occupied = decodeOccupancyBitmap(set, D890_LIMITS.DMR_RADIO_IDS_MAX);
+    const occupied = decodeOccupancyMask(set, D890_LIMITS.DMR_RADIO_IDS_MAX);
     const out: DMRRadioID[] = [];
     for (let index = 0; index < occupied.length; index += 1) {
       if (!occupied[index]) continue;
@@ -450,7 +450,7 @@ export class D890UVProtocol extends BaseDigitalProtocol {
   /**
    * Roaming channels — the fallback frequency pairs the radio uses when roaming.
    *
-   * Gated on the presence bitmap like every other record type here: a slot whose
+   * Gated on the presence mask like every other record type here: a slot whose
    * bit is clear is absent no matter what its record contains.
    */
   async readRoamingChannels(): Promise<D890RoamingChannel[]> {
@@ -460,7 +460,7 @@ export class D890UVProtocol extends BaseDigitalProtocol {
       D890_ADDR.ROAMING_CHANNEL_SET_SIZE
     );
     const present = occupiedIndices(
-      decodeOccupancyBitmap(set, D890_LIMITS.ROAMING_CHANNELS_MAX)
+      decodeOccupancyMask(set, D890_LIMITS.ROAMING_CHANNELS_MAX)
     );
     const out: D890RoamingChannel[] = [];
     for (const index of present) {
@@ -476,12 +476,12 @@ export class D890UVProtocol extends BaseDigitalProtocol {
   /**
    * Roaming zones.
    *
-   * ⚠️ No presence bitmap has been found for these. The roaming-CHANNEL bitmap
+   * ⚠️ No presence mask has been found for these. The roaming-CHANNEL mask
    * at 0x2084000 covers channels only, and nothing in the RE bundle names a zone
    * equivalent. So this reads records until it finds one with no members, which
    * is a guess about how the radio marks the end of the table — unlike the
-   * bitmap-gated reads, a stale record beyond the last real zone would be
-   * returned as real. Treat the zone list as least-trustworthy until a bitmap
+   * mask-gated reads, a stale record beyond the last real zone would be
+   * returned as real. Treat the zone list as least-trustworthy until a mask
    * turns up or a codeplug with several zones proves the terminator.
    */
   async readRoamingZones(): Promise<D890RoamingZone[]> {
@@ -554,7 +554,7 @@ export class D890UVProtocol extends BaseDigitalProtocol {
    * app already models as quick messages.
    *
    * Slots are read until `emptyRunLimit` consecutive empties, rather than all
-   * 100. The presence bitmap at 0x2980000 would be the exact answer, but its
+   * 100. The presence mask at 0x2980000 would be the exact answer, but its
    * layout is unconfirmed, and reading 100 banked slots to find five messages is
    * 100 round trips for nothing. Stopping after a run of empties costs one extra
    * bank read in the worst case and is honest about what it assumes.

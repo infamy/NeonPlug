@@ -6,7 +6,7 @@ import {
   parseRoamingZone,
   roamingChannelAddress,
   roamingZoneAddress,
-  decodeOccupancyBitmap,
+  decodeOccupancyMask,
   occupiedIndices,
 } from '../../src/radios/d890uv/structures';
 import { D890_ADDR, D890_LIMITS } from '../../src/radios/d890uv/constants';
@@ -63,14 +63,14 @@ describe('DA-7X2 roaming channels', () => {
     );
   });
 
-  it('reads the presence bitmap the same way as every other record type', () => {
+  it('reads the presence mask the same way as every other record type', () => {
     // 0x0F against a codeplug holding exactly four roaming channels. This is the
-    // channel-presence bitmap, NOT the per-zone roam bitmap at 0x4c00000 — a
+    // channel-presence mask, NOT the per-zone roam mask at 0x4c00000 — a
     // different structure with a different meaning.
     const set = load('roaming-channel-set.bin');
     expect(set[0]).toBe(0x0f);
     const present = occupiedIndices(
-      decodeOccupancyBitmap(set, D890_LIMITS.ROAMING_CHANNELS_MAX),
+      decodeOccupancyMask(set, D890_LIMITS.ROAMING_CHANNELS_MAX),
     );
     expect(present).toEqual([0, 1, 2, 3]);
   });

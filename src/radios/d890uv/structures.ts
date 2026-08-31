@@ -189,14 +189,14 @@ export function rxGroupAddress(index: number): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Occupancy bitmaps: slot n lives in byte n/8, bit n%8.
+ * Occupancy masks: slot n lives in byte n/8, bit n%8.
  *
- * `inverted` exists solely for the talkgroup bitmap, where a set bit means the
+ * `inverted` exists solely for the talkgroup mask, where a set bit means the
  * slot is EMPTY. Passing the wrong sense yields either no contacts at all or
  * ten thousand phantom ones, so callers pass the named constant rather than a
  * bare boolean.
  */
-export function decodeOccupancyBitmap(
+export function decodeOccupancyMask(
   bytes: Uint8Array,
   slotCount: number,
   inverted = false
@@ -208,6 +208,60 @@ export function decodeOccupancyBitmap(
     out[slot] = inverted ? !bitSet : bitSet;
   }
   return out;
+}
+
+/**
+ * Build a presence mask from an occupancy list — the exact inverse of
+ * `decodeOccupancyMask`.
+ *
+ * WHY THIS EXISTS. The vendor CPS does not copy masks back when it writes; it
+ * DERIVES them from the codeplug it is sending. Establishing that was the main
+ * result of the write-set analysis: the read builder reads masks at fixed
+ * addresses to discover how many records exist, while the write builder already
+ * knows and computes everything. So a writer that echoes the mask it read is not
+ * mirroring the vendor — it is doing something the vendor never does.
+ *
+ * The failure that causes is specific and has already bitten this project: a
+ * record written without its mask bit set is invisible to the radio, and a mask
+ * bit set without a record behind it is a dangling reference — which is what
+ * `SetCommDataByChannelError` was.
+ *
+ * `byteLength` is the size of the mask REGION, not the minimum needed for
+ * `occupancy.length`. Masks sit in fixed-size blocks and the trailing bytes must
+ * be written as the radio expects them, so the caller passes the region size and
+ * the padding is filled with the same polarity as an absent slot.
+ */
+export function encodeOccupancyMask(
+  occupancy: readonly boolean[],
+  byteLength: number,
+  inverted = false
+): Uint8Array {
+  // An absent slot is 0 normally and 1 when inverted, so padding beyond the
+  // occupancy list has to follow the same rule — a zero-filled tail on an
+  // inverted mask would claim every unlisted slot is present.
+  const out = new Uint8Array(byteLength).fill(inverted ? 0xff : 0x00);
+  for (let slot = 0; slot < occupancy.length; slot += 1) {
+    const index = slot >> 3;
+    if (index >= byteLength) break;
+    const bit = 1 << (slot & 7);
+    const present = occupancy[slot] === true;
+    const bitShouldBeSet = inverted ? !present : present;
+    if (bitShouldBeSet) out[index] |= bit;
+    else out[index] &= ~bit & 0xff;
+  }
+  return out;
+}
+
+/** Convenience: mask from the indices that are occupied. */
+export function encodeOccupancyMaskFromIndices(
+  indices: readonly number[],
+  slotCount: number,
+  byteLength: number,
+  inverted = false
+): Uint8Array {
+  const occupancy = new Array<boolean>(slotCount).fill(false);
+  for (const i of indices) if (i >= 0 && i < slotCount) occupancy[i] = true;
+  return encodeOccupancyMask(occupancy, byteLength, inverted);
 }
 
 /** Indices of occupied slots, for iterating only the records that exist. */

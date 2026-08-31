@@ -105,7 +105,7 @@ describe('every read span the protocol asks for is 16-byte aligned', () => {
   // way through and folds at whichever record type hits the bad span first.
   //
   // Three constants were wrong at once when this was written — a zone name
-  // (0x22), the talkgroup bitmap (0x4e2) and a talkgroup record (0xc8) — and the
+  // (0x22), the talkgroup mask (0x4e2) and a talkgroup record (0xc8) — and the
   // last two had been wrong since the driver was first built, hidden because the
   // read folded at zones before it ever reached contacts.
   const PROTOCOL = readFileSync(
@@ -200,7 +200,7 @@ describe('DA-7X2 record layout documentation', () => {
     const byAddress = new Map(D890_MEMORY_MAP.map((r) => [r.address, r]));
     for (const [name, address] of [
       ['channels', D890_ADDR.CHANNEL_DATA],
-      ['channel bitmap', D890_ADDR.CHANNEL_SET],
+      ['channel mask', D890_ADDR.CHANNEL_SET],
       ['zone membership', D890_ADDR.ZONE_CHANNELS],
       ['zone names', D890_ADDR.ZONE_NAMES],
       ['scan lists', D890_ADDR.SCAN_LIST_DATA],

@@ -1,7 +1,7 @@
 /**
  * AT-D890UV / DA-7X2 capabilities.
  *
- * ⚠️ Limits are transcribed from documentation and confirmed only by bitmap
+ * ⚠️ Limits are transcribed from documentation and confirmed only by mask
  * arithmetic, not by hardware. See D890UV-HARDWARE-CHECKLIST.md §4.
  *
  * Per golden rule #3, nothing in the UI should ever branch on the model string —

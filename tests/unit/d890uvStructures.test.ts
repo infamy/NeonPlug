@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   channelAddresses,
-  decodeOccupancyBitmap,
+  decodeOccupancyMask,
   occupiedIndices,
   decodeWideCharString,
   decodeBcdAsHexU32,
@@ -26,7 +26,7 @@ import {
 import {
   D890_ADDR,
   D890_LIMITS,
-  D890_TALKGROUP_BITMAP_INVERTED,
+  D890_TALKGROUP_MASK_INVERTED,
 } from '../../src/radios/d890uv/constants';
 
 // NOTE: these pin the *documented* layout, not hardware-observed bytes. They
@@ -120,39 +120,39 @@ describe('channel addressing', () => {
   });
 });
 
-describe('occupancy bitmaps', () => {
+describe('occupancy masks', () => {
   it('maps slot n to byte n/8, bit n%8', () => {
     const bytes = new Uint8Array([0b0000_0101, 0b0000_0010]);
-    const occ = decodeOccupancyBitmap(bytes, 16);
+    const occ = decodeOccupancyMask(bytes, 16);
     expect(occupiedIndices(occ)).toEqual([0, 2, 9]);
   });
 
-  it('inverts for the talkgroup bitmap, where a set bit means EMPTY', () => {
+  it('inverts for the talkgroup mask, where a set bit means EMPTY', () => {
     const bytes = new Uint8Array([0b1111_1110]);
     // Normal sense: slots 1-7 present. Inverted: only slot 0 present.
-    expect(occupiedIndices(decodeOccupancyBitmap(bytes, 8))).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(occupiedIndices(decodeOccupancyMask(bytes, 8))).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(
-      occupiedIndices(decodeOccupancyBitmap(bytes, 8, D890_TALKGROUP_BITMAP_INVERTED))
+      occupiedIndices(decodeOccupancyMask(bytes, 8, D890_TALKGROUP_MASK_INVERTED))
     ).toEqual([0]);
   });
 
   it('treats bytes past the end of the array as empty rather than throwing', () => {
-    expect(occupiedIndices(decodeOccupancyBitmap(new Uint8Array([0xff]), 24))).toEqual([
+    expect(occupiedIndices(decodeOccupancyMask(new Uint8Array([0xff]), 24))).toEqual([
       0, 1, 2, 3, 4, 5, 6, 7,
     ]);
   });
 
-  it('the talkgroup bitmap is big enough for the documented 10,000 limit', () => {
-    // The vendor CPS reads this bitmap with length 0x4e2 = 1250 bytes = exactly
+  it('the talkgroup mask is big enough for the documented 10,000 limit', () => {
+    // The vendor CPS reads this mask with length 0x4e2 = 1250 bytes = exactly
     // 10,000 bits, matching the documented limit precisely. The reference doc's
     // 0x4f0 was rounded up; an exact fit is strong evidence the limit is real.
-    expect(D890_ADDR.TALKGROUP_SET_SIZE * 8).toBe(D890_LIMITS.TALK_GROUPS_BITMAP_CAPACITY);
-    expect(D890_LIMITS.TALK_GROUPS_BITMAP_CAPACITY).toBe(D890_LIMITS.TALK_GROUPS_MAX);
+    expect(D890_ADDR.TALKGROUP_SET_SIZE * 8).toBe(D890_LIMITS.TALK_GROUPS_MASK_CAPACITY);
+    expect(D890_LIMITS.TALK_GROUPS_MASK_CAPACITY).toBe(D890_LIMITS.TALK_GROUPS_MAX);
   });
 
-  it('the zone bitmap holds the documented 250 zones', () => {
-    expect(D890_ADDR.ZONE_SET_SIZE * 8).toBe(D890_LIMITS.ZONES_BITMAP_CAPACITY);
-    expect(D890_LIMITS.ZONES_BITMAP_CAPACITY).toBeGreaterThanOrEqual(D890_LIMITS.ZONES_MAX);
+  it('the zone mask holds the documented 250 zones', () => {
+    expect(D890_ADDR.ZONE_SET_SIZE * 8).toBe(D890_LIMITS.ZONES_MASK_CAPACITY);
+    expect(D890_LIMITS.ZONES_MASK_CAPACITY).toBeGreaterThanOrEqual(D890_LIMITS.ZONES_MAX);
   });
 });
 

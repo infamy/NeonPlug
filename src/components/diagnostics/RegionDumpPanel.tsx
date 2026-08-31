@@ -36,7 +36,7 @@ interface RegionChoice {
 /**
  * Small, safe spans by default. The channel and talkgroup *data* regions are
  * megabytes and would take a long time at 16-byte write framing / negotiated
- * read sizes, so the presets cover the bitmaps and a first record of each type —
+ * read sizes, so the presets cover the masks and a first record of each type —
  * enough to verify every layout assumption.
  */
 const REGIONS: RegionChoice[] = [
@@ -49,7 +49,7 @@ const REGIONS: RegionChoice[] = [
   },
   {
     key: 'channel-set',
-    label: 'Channel occupancy bitmap',
+    label: 'Channel occupancy mask',
     address: D890_ADDR.CHANNEL_SET,
     length: D890_ADDR.CHANNEL_SET_SIZE,
     note: 'Set bit = channel present.',
@@ -70,7 +70,7 @@ const REGIONS: RegionChoice[] = [
   },
   {
     key: 'zone-set',
-    label: 'Zone occupancy bitmap',
+    label: 'Zone occupancy mask',
     address: D890_ADDR.ZONE_SET,
     length: D890_ADDR.ZONE_SET_SIZE,
     note: `${D890_ADDR.ZONE_SET_SIZE * 8} bits — confirms the 250-zone cap.`,
@@ -90,7 +90,7 @@ const REGIONS: RegionChoice[] = [
   },
   {
     key: 'scanlist-set',
-    label: 'Scan list occupancy bitmap',
+    label: 'Scan list occupancy mask',
     address: D890_ADDR.SCAN_LIST_SET,
     length: D890_ADDR.SCAN_LIST_SET_SIZE,
   },
@@ -102,7 +102,7 @@ const REGIONS: RegionChoice[] = [
   },
   {
     key: 'talkgroup-set',
-    label: 'Talkgroup bitmap (first 256 bytes)',
+    label: 'Talkgroup mask (first 256 bytes)',
     address: D890_ADDR.TALKGROUP_SET,
     length: 0x100,
     note: 'INVERTED: set bit = empty. With 3 TGs expect 0xf8, not 0x07.',
@@ -115,7 +115,7 @@ const REGIONS: RegionChoice[] = [
   },
   {
     key: 'rxgroup-set',
-    label: 'RX group occupancy bitmap',
+    label: 'RX group occupancy mask',
     address: D890_ADDR.RX_GROUP_SET,
     length: D890_ADDR.RX_GROUP_SET_SIZE,
   },
@@ -137,10 +137,10 @@ const REGIONS: RegionChoice[] = [
   // "confirmed" at the wrong place.
   {
     key: 'roaming-channel-set',
-    label: 'Roaming channel bitmap',
+    label: 'Roaming channel mask',
     address: D890_ADDR.ROAMING_CHANNEL_SET,
     length: D890_ADDR.ROAMING_CHANNEL_SET_SIZE,
-    note: 'One bit per roaming channel. NOT the per-zone roam bitmap at 0x4c00000.',
+    note: 'One bit per roaming channel. NOT the per-zone roam mask at 0x4c00000.',
   },
   {
     key: 'roaming-channel',
