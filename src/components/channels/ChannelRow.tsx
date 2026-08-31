@@ -114,6 +114,9 @@ export const ExtraColumnCell: React.FC<{
   // Same convention the DMR block uses: a field with no meaning on this channel
   // shows a dash rather than a control that would write a value the radio
   // ignores.
+  if (column.analogOnly && isDigitalMode(channel.mode)) {
+    return <span className="text-muted">—</span>;
+  }
   if (column.digitalOnly && !isDigitalMode(channel.mode)) {
     return (
       <td className="px-2 py-2 text-center" title={title}>

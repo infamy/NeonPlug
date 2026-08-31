@@ -60,6 +60,17 @@ export interface ExtraChannelColumn {
   editor: ExtraColumnEditor;
   /** True for fields only meaningful on a digital channel. */
   digitalOnly?: boolean;
+  /**
+   * True for fields the radio only permits on an ANALOG-transmitting channel.
+   *
+   * The DA-7X2 has four channel types — 0 A-Analog, 1 D-Digital, 2 A+D TX A,
+   * 3 D+A TX D — and the shared model classifies by what the channel TRANSMITS,
+   * so 0 and 2 are 'Analog' while 1 and 3 are 'Digital'. That split happens to
+   * land exactly on the availability rule for Busy Lock (allowed on Analog and
+   * A-D, suppressed on Digital and D-A), so `!isDigitalMode()` is the correct
+   * predicate rather than an approximation of one.
+   */
+  analogOnly?: boolean;
 }
 
 /**
@@ -74,8 +85,22 @@ export interface ExtraChannelColumn {
  * of a codeplug built to vary it" and that the CPS derives the column. The byte
  * is stored and it does vary — the earlier codeplug simply never set it.
  *
+ * ⚠️ AVAILABLE ONLY ON Analog AND A-D CHANNELS — not on Digital or D-A
+ * (operator-confirmed 2026-08-30). That is a constraint on the FIELD, not on its
+ * value, and it explains a side effect observed the same day and left unexplained
+ * at the time: switching the VFO from analog to digital CLEARED 0x1a back to 0
+ * on its own. The radio zeroes a field its channel type does not permit.
+ *
+ * Two consequences:
+ *   - A report that this column is "100% determined by Channel Type" is an
+ *     overstatement of a real constraint, not an invention. The byte is stored
+ *     and the CPS can set it — on the channel types that allow it.
+ *   - ON A WRITE PATH: do not write this byte on a Digital or D-A channel. The
+ *     radio does not merely ignore it, it actively clears it, so a read-back
+ *     comparison would report a mismatch that is the radio behaving correctly.
+ *
  * Still inferred: `Different CDT === 1`, from list position alone. One more
- * toggle settles it.
+ * toggle settles it — on an analog channel.
  */
 export const EXTRA_CHANNEL_COLUMNS: readonly ExtraChannelColumn[] = [
   // ---- tones and signalling ------------------------------------------------
@@ -143,6 +168,10 @@ export const EXTRA_CHANNEL_COLUMNS: readonly ExtraChannelColumn[] = [
     offset: '0x1a bits 3-0',
     provenance: 'hardware',
     editor: { kind: 'select', options: D890_BUSY_LOCK },
+    // The vendor CPS suppresses this control on Digital and D-A channels, and
+    // the radio actively clears the byte when a channel becomes digital. Showing
+    // an editable field the radio will zero is worse than hiding it.
+    analogOnly: true,
   },
   {
     group: 'frequencyCorrection',
@@ -352,15 +381,6 @@ export const EXTRA_CHANNEL_COLUMNS: readonly ExtraChannelColumn[] = [
     offset: '0x22',
     provenance: 'marshaller',
     editor: { kind: 'number', min: 0, max: 32 },
-  },
-  {
-    group: 'emergencyCodes',
-    field: 'normalEmergencyCode',
-    header: 'Emerg Code',
-    label: 'Normal Emergency Code',
-    offset: '0x3a',
-    provenance: 'marshaller',
-    editor: { kind: 'number', min: 0, max: 255 },
   },
   {
     group: 'emergencyCodes',

@@ -104,6 +104,23 @@ export class D890Connection extends BaseSerialConnection {
   async identify(): Promise<D890Identity> {
     await this.write(new Uint8Array([D890_CMD.IDENTIFY]));
     const raw = await this.readExact(16, HANDSHAKE_TIMEOUT_MS);
+    // The whole 16-byte reply at debug level.
+    //
+    // Captured 2026-08-30 from a real radio:
+    //   49 44 4d 52 2d 37 58 32 00 56 31 30 30 00 00 06   "IDMR-7X2.V100.."
+    //   'I' opcode | model 1-7 | NUL | version 9-12 | pad | ACK
+    //
+    // Every byte is accounted for, so the parse below is complete — there is no
+    // longer firmware string hiding in the unused bytes. `V100` is genuinely all
+    // this radio reports, and it does NOT match the firmware version shown in
+    // the radio's own menu (1.05). That version is not exposed by identify, by
+    // LocalInfo (0x4f80000 — model and serial only), or by the device identity
+    // block (0x7000000 — blank). Do not go looking for it here again.
+    log.debug(
+      `identify raw: ${Array.from(raw, (b) => b.toString(16).padStart(2, '0')).join(' ')}  ` +
+        `ascii "${Array.from(raw, (b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : '.')).join('')}"`,
+      'D890'
+    );
     const strip = (bytes: Uint8Array) =>
       new TextDecoder().decode(bytes.filter((b) => b !== 0)).trim();
     return {

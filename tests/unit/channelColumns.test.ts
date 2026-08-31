@@ -157,3 +157,21 @@ describe('channel column gating', () => {
     }
   });
 });
+
+describe('analog-only columns', () => {
+  it('marks Busy Lock analog-only, matching what the radio permits', () => {
+    // The DA-7X2 allows Busy Lock on Analog and A-D channels only, and the radio
+    // CLEARS byte 0x1a by itself when a channel becomes digital — observed on
+    // hardware 2026-08-30. Offering an editable control the radio will zero is
+    // worse than hiding it, and on a write path it would produce a read-back
+    // mismatch that is the radio behaving correctly.
+    const busyLock = EXTRA_CHANNEL_COLUMNS.find((c) => c.field === 'busyLock');
+    expect(busyLock?.analogOnly).toBe(true);
+    expect(busyLock?.digitalOnly).toBeUndefined();
+  });
+
+  it('never marks a column both analog-only and digital-only', () => {
+    const both = EXTRA_CHANNEL_COLUMNS.filter((c) => c.analogOnly && c.digitalOnly);
+    expect(both.map((c) => c.label)).toEqual([]);
+  });
+});

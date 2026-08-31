@@ -112,6 +112,29 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   supportsRawRegionDump: true,
   supportsBootImage: false,
   /** "Pre-defined SMS" in the vendor CPS; layout confirmed on hardware 2026-08-30. */
+  /**
+   * ⚠️ NO FIRMWARE CHECK IS POSSIBLE ON THIS RADIO, and `expectedFirmware` is
+   * deliberately NOT set.
+   *
+   * DA-7X2 support requires firmware 1.05, but the version cannot be read:
+   * confirmed 2026-08-30 by checking every place it could be. The identify reply
+   * is `IDMR-7X2.V100..` with all sixteen bytes accounted for, so `V100` is
+   * everything the radio reports and it is not the firmware version.
+   * `LocalInfo` (0x4f80000) holds only the model string and serial. The device
+   * identity block (0x7000000) is blank. The vendor CPS does not display a
+   * firmware version either — only the radio's own menu does, reading it from a
+   * part of flash the programming protocol never exposes.
+   *
+   * Consequences, which are real and not merely theoretical:
+   *   - A user on firmware older than 1.05 CANNOT be warned. We will not know.
+   *   - What such a radio does on a read is untested and unknown.
+   *   - Setting `expectedFirmware` would be worse than leaving it unset: it
+   *     implies a check that cannot exist, and would compare against `V100`,
+   *     which never changes with firmware.
+   *
+   * If a firmware gate is ever needed, it has to be a question to the user, not
+   * a protocol read.
+   */
   supportsQuickMessages: true,
   supportsAnalogEmergency: false,
 };

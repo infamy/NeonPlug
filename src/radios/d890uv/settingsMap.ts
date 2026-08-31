@@ -267,7 +267,7 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'powerOnVolumeType',               label: 'Power On Volume Type',                cpsLabel: 'Power On Volume Type',                group: 'Volume/Audio',    offset: 0x155, max: 1, listLength: 2, options: ['Preset', 'Minimum'], vendorField: 'VolType' },
   { key: 'powerOnVolume',                   label: 'Power On Volume',                     cpsLabel: 'Power On Volume',                     group: 'Volume/Audio',    offset: 0x156, max: 15, listLength: 16, vendorField: 'MinVolData' },
   { key: 'subSpklntx',                      label: 'sub SpklnTx',                         cpsLabel: 'sub SpklnTx',                         group: 'Volume/Audio',    offset: 0x15b, max: 1, listLength: 2, options: ['Off', 'On'] },
-  { key: 'simpRepeater',                    label: 'Simp Repeater',                       cpsLabel: 'Simp Repearter',                      group: 'Auto repeater',   offset: 0x15c, max: 1, listLength: 2, options: ['Off', 'On'] },
+  { key: 'simpRepeater',                    label: 'Simp Repearter',                       cpsLabel: 'Simp Repearter',                      group: 'Auto repeater',   offset: 0x15c, max: 1, listLength: 2, options: ['Off', 'On'] },
 
   // ---------------------------------------------------------------------------
   // Recovered from the vendor CPS rather than from a radio (2026-08-30)
@@ -331,16 +331,6 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'btMicGain', label: 'BT MIC Gain', group: 'Vox/BT', offset: 0x0b6, max: 255, vendorField: 'BhtMicGain', confidence: 'vendor-name' },
   { key: 'btSpkGain', label: 'BT Spk Gain', group: 'Vox/BT', offset: 0x0b7, max: 255, vendorField: 'BhtSpkGain', confidence: 'vendor-name' },
   { key: 'displayChannelNumber', label: 'Display Channel Number', cpsLabel: 'Display Channel Number', group: 'Display', offset: 0x0b8, max: 1, options: ['Actual Channel Number', 'Sequence Number In Zone'], listLength: 2, vendorField: 'ChanNumDisKind', confidence: 'swept' },
-  // ⚠️ SUSPECTED PHANTOM. `DisUnitSet` appears in NO column of the vendor's
-  // 199-column OptionalSetting export, while all seven other GPS/Ranging fields
-  // do. There IS an `AprsDistanceDis` column (115) that may be the same concept
-  // under a different name, but nothing connects it to this offset.
-  //
-  // This is the shape `rec_only` had: a name in the vendor's internals for
-  // something the CPS never shows. Confirm it exists before trusting the offset
-  // — and see DA7X2-NEEDS-CONFIRMING.md on why a vendor field name is not
-  // evidence a feature exists.
-  { key: 'distanceUnit', label: 'Distance Unit', group: 'GPS/Ranging', offset: 0x0bd, max: 255, vendorField: 'DisUnitSet', confidence: 'inferred' },
   { key: 'startupZoneA', label: 'Startup Zone A', group: 'Power-on', offset: 0x0d7, max: 255, vendorField: 'StartZone1', confidence: 'vendor-name' },
   { key: 'startupZoneB', label: 'Startup Zone B', group: 'Power-on', offset: 0x0d8, max: 255, vendorField: 'StartZone2', confidence: 'vendor-name' },
   { key: 'startupChannelA', label: 'Startup Channel A', group: 'Power-on', offset: 0x0d9, max: 255, vendorField: 'StartCurChan1', confidence: 'inferred' },
@@ -360,7 +350,11 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'manualDialGroupHoldTime', label: 'Manual Dial - Group TG Hold Time', group: 'Digital Func', offset: 0x107, max: 255, vendorField: 'DialGroupHold', confidence: 'vendor-name' },
   { key: 'manualDialPrivateHoldTime', label: 'Manual Dial - Private TG Hold Time', group: 'Digital Func', offset: 0x108, max: 255, vendorField: 'DialPrivateHold', confidence: 'vendor-name' },
   { key: 'digitalEmergencyKind', label: 'Digital Emergency Kind', group: 'Digital Func', offset: 0x10a, max: 255, vendorField: 'DigiEmgKind', confidence: 'vendor-name' },
-  { key: 'zoneBarsEnable', label: 'Zone Bars', group: 'GPS/Ranging', offset: 0x114, max: 255, vendorField: 'ZoneBarsEn', confidence: 'vendor-name' },
+  // The CPS labels this "GPS Roaming" on the GPS/Ranging tab — confirmed by
+  // screenshot 2026-08-30. It is the enable for the geofence table at 0x3502000
+  // (STR_ZONE_BARS), which switches the radio to a zone when it enters a circle
+  // of a given radius around a position.
+  { key: 'zoneBarsEnable', label: 'GPS Roaming', group: 'GPS/Ranging', offset: 0x114, max: 255, vendorField: 'ZoneBarsEn', confidence: 'vendor-name' },
   { key: 'amVfoMem', label: 'AM VFO/MEM', group: 'AM/FM', offset: 0x13f, max: 255, vendorField: 'AmChanVfo', confidence: 'vendor-name' },
   { key: 'amWorkZone', label: 'AM Work Zone', group: 'AM/FM', offset: 0x140, max: 255, vendorField: 'CurAmChan', confidence: 'vendor-name' },
   { key: 'amOffset', label: 'AM Offset', group: 'AM/FM', offset: 0x141, max: 255, vendorField: 'AmOffset', confidence: 'vendor-name' },
@@ -375,12 +369,12 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'digitalProtocol', label: 'Digital Protocol', group: 'Digital Func', offset: 0x152, max: 255, vendorField: 'DigiProtocal', confidence: 'vendor-name' },
   { key: 'nxdnMicGain', label: 'NXDN Mic Gain', cpsLabel: 'NXDN Mic Gain', group: 'Volume/Audio', offset: 0x153, max: 5, options: ['1', '2', '3', '4', '5', 'Auto'], listLength: 6, vendorField: 'NxdnMic', confidence: 'swept' },
   { key: 'resetDigitalProtocol', label: 'Reset Digital Protocol', cpsLabel: 'Reset Digital Protocol', group: 'Digital Func', offset: 0x154, max: 1, options: ['Off', 'DMR'], listLength: 2, vendorField: 'ResetDigiProtocal', confidence: 'swept' },
-  { key: 'noaaMonitor', label: 'NOAA Monitor', cpsLabel: 'NOAA Monitor', group: 'Other', offset: 0x157, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'WxMoni', confidence: 'swept' },
+  { key: 'noaaMonitor', label: 'NOAA Moni', cpsLabel: 'NOAA Monitor', group: 'Other', offset: 0x157, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'WxMoni', confidence: 'swept' },
   { key: 'noaaScan', label: 'NOAA Scan', cpsLabel: 'NOAA Scan', group: 'Other', offset: 0x158, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'WxScan', confidence: 'swept' },
-  { key: 'amFrequencyStep', label: 'AM Frequency Step', group: 'AM/FM', offset: 0x159, max: 9, options: ['2.5K', '5K', '6.25K', '8.33K', '10K', '12.5K', '20K', '25K', '30K', '50K'], listLength: 10, vendorField: 'AmFreqStep', confidence: 'vendor-name' },
+  { key: 'amFrequencyStep', label: 'Freq Step', group: 'AM/FM', offset: 0x159, max: 9, options: ['2.5K', '5K', '6.25K', '8.33K', '10K', '12.5K', '20K', '25K', '30K', '50K'], listLength: 10, vendorField: 'AmFreqStep', confidence: 'vendor-name' },
   { key: 'repeaterWhitelist', label: 'Repeater Whitelist', cpsLabel: 'Repeater Whitelist', group: 'Auto repeater', offset: 0x15a, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'RepIdLimit', confidence: 'swept' },
-  { key: 'simpRepeaterVoiceEnable', label: 'Simplex Repeater Voice Enable', group: 'Auto repeater', offset: 0x15d, max: 1, confidence: 'inferred' },
-  { key: 'simpRepeaterSlot', label: 'Simplex Repeater Slot', group: 'Auto repeater', offset: 0x15e, max: 2, options: ['Slot 1', 'Slot 2', 'Current Slot'], listLength: 3, vendorField: 'SimpRepterSlot', confidence: 'vendor-name' },
+  { key: 'simpRepeaterVoiceEnable', label: 'Simp Repearter VoiceEn', group: 'Auto repeater', offset: 0x15d, max: 1, confidence: 'inferred' },
+  { key: 'simpRepeaterSlot', label: 'Simp Repearter Slot', group: 'Auto repeater', offset: 0x15e, max: 2, options: ['Slot 1', 'Slot 2', 'Current Slot'], listLength: 3, vendorField: 'SimpRepterSlot', confidence: 'vendor-name' },
 ] as const;
 
 /**
@@ -460,6 +454,12 @@ export const D890_UNMAPPED_BYTES: readonly D890UnmappedByte[] = [
   { offset: 0x034, observedChanging: false, vendorName: 'comVersion' },
   { offset: 0x03d, observedChanging: false, vendorName: 'Reserved_DigiKillEn' },
   { offset: 0x04e, observedChanging: false },
+  // Was mapped as "Distance Unit" (vendorField DisUnitSet) until the vendor CPS's
+  // GPS/Ranging tab was screenshotted 2026-08-30: it carries exactly four
+  // controls — Get GPS Positioning, Time Zone, Gps Mode, GPS Roaming — and no
+  // distance unit anywhere in the UI. APRS was checked too; its only similar
+  // label is APRSDisTime, a time. The feature does not exist on this radio.
+  { offset: 0x0bd, observedChanging: false, vendorName: 'DisUnitSet' },
   { offset: 0x054, observedChanging: false },
   { offset: 0x055, observedChanging: false },
   { offset: 0x056, observedChanging: false },

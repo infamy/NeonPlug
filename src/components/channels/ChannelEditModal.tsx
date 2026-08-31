@@ -1048,7 +1048,9 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
               <h3 className="text-neon-cyan font-bold mb-2 text-sm">Radio-specific</h3>
               <div className="space-y-2">
                 {extraColumns.map((c) => {
-                  const disabled = c.digitalOnly === true && !isDigitalMode(editedChannel.mode);
+                  const disabled =
+                    (c.digitalOnly === true && !isDigitalMode(editedChannel.mode)) ||
+                    (c.analogOnly === true && isDigitalMode(editedChannel.mode));
                   const raw = editedChannel[c.field];
                   const title = extraColumnTitle(c);
                   if (c.editor.kind === 'boolean') {
