@@ -459,6 +459,33 @@ export const D890_ADDR = {
   PREDEFINED_SMS_SET: 0x2980000,
   PREDEFINED_SMS_SET_SIZE: 0x640,
 
+  /**
+   * AM airband and FM broadcast channels — separate tables from the main channel
+   * list. See `broadcastChannels.ts` for the record shape and the two different
+   * frequency scales.
+   *
+   * ⚠️ RECORD STRIDE IS NOT CONFIRMED. A dumped radio holds exactly one of each
+   * (the factory "AM-001" / "FM-001"), so no second record exists to measure
+   * against — the same reason the AM ZONE table cannot be mapped from this
+   * codeplug at all. Do not read a run of records until the stride is settled.
+   */
+  /**
+   * VFO A and B: the two channel slots immediately past the 4000 storable ones.
+   * Reached through ordinary channel addressing — not a separate region.
+   *
+   * These are 0-BASED indices. The channel list numbers from 1, so they surface
+   * as channel 4001 and 4002, which is what `isVFOChannel` matches on. The APRS
+   * region's "no channel" sentinel is 4002 for the same reason — it names VFO B's
+   * slot rather than a real channel.
+   */
+  VFO_A_INDEX: 4000,
+  VFO_B_INDEX: 4001,
+
+  AM_AIR_DATA: 0x3880000,
+  FM_BROADCAST_DATA: 0x3400000,
+  /** Name field is UTF-16LE at +0x04; character count unconfirmed. */
+  BROADCAST_NAME_CHARS: 16,
+
   /** Receive group lists. */
   RX_GROUP_SET: 0x3701510,
   RX_GROUP_SET_SIZE: 0x20,

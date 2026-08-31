@@ -47,6 +47,7 @@ import {
   parseRoamingZone,
   roamingChannelAddress,
   roamingZoneAddress,
+  channelAddresses,
   parseEncryptionSlot,
   parseAesKeySlot,
   parseArc4KeySlot,
@@ -187,7 +188,23 @@ export class D890UVProtocol extends BaseDigitalProtocol {
           `51-entry table; their tones read as None. Please report this.`
       );
     }
-    return decoded.map((d) => d.channel);
+    const channels = decoded.map((d) => d.channel);
+
+    // VFO A and B go at the TOP of the list, not in number order.
+    //
+    // They carry numbers 4001/4002 so `isVFOChannel` recognises them, which
+    // would sort them to the very bottom below 4000 real channels — the one
+    // place nobody looks for the thing they are currently tuned to. The DM-32
+    // shows them first for the same reason.
+    //
+    // A VFO that will not read must not cost the user their channels, so this
+    // is best-effort and silent on failure beyond a log line.
+    try {
+      channels.unshift(...(await this.readVfoChannels()));
+    } catch (err) {
+      log.warn(`DA-7X2 VFO read failed: ${String(err)}`, 'D890');
+    }
+    return channels;
   }
 
   /**
@@ -500,6 +517,36 @@ export class D890UVProtocol extends BaseDigitalProtocol {
       D890_ADDR.APRS_SETTINGS,
       D890_ADDR.APRS_SETTINGS_SIZE
     );
+  }
+
+  /**
+   * Read VFO A and B.
+   *
+   * They live at channel indices 4000 and 4001 — the two slots immediately past
+   * the 4000 addressable channels — and are reached through the ordinary channel
+   * addressing, so no new layout is involved.
+   *
+   * They are read UNCONDITIONALLY rather than through the presence mask. A VFO
+   * always exists; the mask covers the 4000 storable channels and says nothing
+   * about these two, so gating on it would mean never reading them.
+   *
+   * Numbers are 1-based to match the rest of the channel list, which puts VFO A
+   * at 4001 and B at 4002 — exactly what `isVFOChannel` in ChannelRow expects.
+   */
+  async readVfoChannels(): Promise<Channel[]> {
+    const conn = this.requireConnection();
+    const out: Channel[] = [];
+    for (const index of [D890_ADDR.VFO_A_INDEX, D890_ADDR.VFO_B_INDEX]) {
+      try {
+        const { primary } = channelAddresses(index);
+        const record = await conn.readMemory(primary, D890_ADDR.CHANNEL_STRIDE);
+        const { channel } = parseChannel(record, index);
+        out.push(channel);
+      } catch (err) {
+        log.warn(`DA-7X2 VFO at index ${index} unreadable: ${String(err)}`, 'D890');
+      }
+    }
+    return out;
   }
 
   /**

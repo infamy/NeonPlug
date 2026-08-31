@@ -8,7 +8,7 @@ import { createDefaultChannel } from '../../utils/channelHelpers';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import type { Channel } from '../../models/Channel';
 
-const isVFOChannel = (n: number) => n === 4001 || n === 4002;
+import { isVFOChannel } from '../../utils/vfoChannels';
 
 export const ChannelsTab: React.FC = () => {
   const { channels, addChannel, deleteChannels } = useChannelsStore();

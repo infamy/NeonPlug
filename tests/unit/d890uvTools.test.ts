@@ -11,6 +11,14 @@ import {
   planImageWrite,
   D890_IMAGE_ADDRESS,
 } from '../../src/radios/d890uv/bootImage';
+import { D890_ADDR, D890_LIMITS } from '../../src/radios/d890uv/constants';
+import { D890_APRS_NO_CHANNEL } from '../../src/radios/d890uv/aprs';
+import { decodeFrequencyMHz } from '../../src/radios/d890uv/structures';
+import {
+  parseBroadcastChannel,
+  decodeBcd4,
+  isVacantBroadcastChannel,
+} from '../../src/radios/d890uv/broadcastChannels';
 import {
   parsePredefinedSms,
   encodePredefinedSms,
@@ -448,5 +456,88 @@ describe('pre-defined SMS length', () => {
     // fits. This would fail if the limit were ever raised to the structural 256.
     const enc = encodePredefinedSms('y'.repeat(200));
     expect(enc.length - 200 * 2).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('DA-7X2 AM airband and FM broadcast channels', () => {
+  // Real bytes off a radio 2026-08-30, both factory defaults.
+  const AM = (() => { const b = new Uint8Array(0x40).fill(0xff);
+    b.set([0x10, 0x80, 0x00, 0x00]);
+    'AM-001'.split('').forEach((c, i) => { b[4 + i * 2] = c.charCodeAt(0); b[5 + i * 2] = 0; });
+    b[4 + 6 * 2] = 0; b[5 + 6 * 2] = 0; return b; })();
+  const FM = (() => { const b = new Uint8Array(0x40).fill(0xff);
+    b.set([0x01, 0x08, 0x00, 0x00]);
+    'FM-001'.split('').forEach((c, i) => { b[4 + i * 2] = c.charCodeAt(0); b[5 + i * 2] = 0; });
+    b[4 + 6 * 2] = 0; b[5 + 6 * 2] = 0; return b; })();
+
+  it('uses a DIFFERENT frequency scale per band, and both land on 108 MHz', () => {
+    // The trap: both factory defaults display as 108.000 MHz in the vendor CPS,
+    // but their stored digits differ by a factor of ten. Reading both at one
+    // scale gives 108 and 10.8 — and the wrong one looks like a decode bug
+    // rather than a scale difference. Confirmed against the CPS by the operator.
+    expect(parseBroadcastChannel(AM, 0, 'am').frequency).toBeCloseTo(108.0, 5);
+    expect(parseBroadcastChannel(FM, 0, 'fm').frequency).toBeCloseTo(108.0, 4);
+    // and swapping the scales gives the wrong answer, which is what pins them
+    expect(parseBroadcastChannel(AM, 0, 'fm').frequency).toBeCloseTo(1080.0, 3);
+    expect(parseBroadcastChannel(FM, 0, 'am').frequency).toBeCloseTo(10.8, 4);
+  });
+
+  it('reads the UTF-16LE name at +0x04', () => {
+    expect(parseBroadcastChannel(AM, 0, 'am').name).toBe('AM-001');
+    expect(parseBroadcastChannel(FM, 0, 'fm').name).toBe('FM-001');
+  });
+
+  it('decodes BCD and rejects erased padding rather than inventing a frequency', () => {
+    expect(decodeBcd4(Uint8Array.from([0x10, 0x80, 0x00, 0x00]))).toBe(10800000);
+    expect(decodeBcd4(Uint8Array.from([0x01, 0x08, 0x00, 0x00]))).toBe(1080000);
+    // 0xFF is not a BCD digit pair; an erased slot must not become a frequency.
+    expect(decodeBcd4(new Uint8Array([0xff, 0xff, 0xff, 0xff]))).toBeNull();
+    expect(decodeBcd4(new Uint8Array([0x12, 0x3a, 0x00, 0x00]))).toBeNull();
+  });
+
+  it('treats an erased slot as vacant', () => {
+    const erased = new Uint8Array(0x40).fill(0xff);
+    expect(isVacantBroadcastChannel(parseBroadcastChannel(erased, 0, 'am'))).toBe(true);
+    expect(isVacantBroadcastChannel(parseBroadcastChannel(AM, 0, 'am'))).toBe(false);
+  });
+});
+
+describe('DA-7X2 VFO numbering', () => {
+  it('places VFO A and B at channel numbers 4001 and 4002', () => {
+    // Channel numbers are 1-based (`number: index + 1`), so the 0-based slots
+    // 4000/4001 surface as 4001/4002 — which is exactly what isVFOChannel
+    // matches. Getting this off by one puts VFO A under a real channel number.
+    expect(D890_ADDR.VFO_A_INDEX + 1).toBe(4001);
+    expect(D890_ADDR.VFO_B_INDEX + 1).toBe(4002);
+  });
+
+  it('agrees with the APRS "no channel" sentinel', () => {
+    // APRS stores 4002 to mean "unset", which is VFO B's number rather than a
+    // real channel. That cross-check is why the numbering above is not a guess.
+    expect(D890_APRS_NO_CHANNEL).toBe(D890_ADDR.VFO_B_INDEX + 1);
+  });
+
+  it('keeps VFO outside the storable channel range', () => {
+    expect(D890_ADDR.VFO_A_INDEX).toBeGreaterThanOrEqual(D890_LIMITS.CHANNELS_MAX);
+  });
+});
+
+describe('DA-7X2 VFO A, against a radio with a known setting', () => {
+  // Read from 0x1f81000 — channel index 4000 — on 2026-08-30, with VFO A set to
+  // 435.06250 MHz in the vendor CPS. This is what settled where VFO lives: the
+  // bundle's mapping.md labels 0x3884000 "VFO", and this value is not there.
+  const VFO_A = Uint8Array.from([0x43, 0x50, 0x62, 0x50, 0x43, 0x51, 0x25, 0x00]);
+
+  it('is BCD, not a little-endian integer', () => {
+    // 43 50 62 50 read as u32 LE is 0x50625043 = 13,486 MHz, which is not a
+    // frequency this radio can reach. As BCD digits it is exactly 435.06250.
+    expect(decodeFrequencyMHz(VFO_A.subarray(0, 4))).toBeCloseTo(435.0625, 5);
+    const asU32LE = (VFO_A[0] | (VFO_A[1] << 8) | (VFO_A[2] << 16) | (VFO_A[3] << 24)) >>> 0;
+    expect((asU32LE * 10) / 1e6).toBeGreaterThan(1000); // nonsense, as expected
+  });
+
+  it('carries RX then TX in the first eight bytes', () => {
+    expect(decodeFrequencyMHz(VFO_A.subarray(0, 4))).toBeCloseTo(435.0625, 5);
+    expect(decodeFrequencyMHz(VFO_A.subarray(4, 8))).toBeCloseTo(435.125, 5);
   });
 });

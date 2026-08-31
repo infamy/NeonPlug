@@ -331,7 +331,11 @@ const MemoryMapTable: React.FC = () => (
         </tr>
       </thead>
       <tbody>
-        {D890_MEMORY_MAP.map((r) => (
+        {/* Sorted by address. The declaration order in recordLayout.ts groups
+            regions by feature, which is how you write them but not how you read
+            a memory map — jumping between 0x1000000 and 0x4f80000 and back makes
+            it impossible to see what neighbours what, or where the gaps are. */}
+        {[...D890_MEMORY_MAP].sort((a, b) => a.address - b.address).map((r) => (
           <tr key={r.name} className="border-b border-yellow-600/10 align-top">
             <td className="px-2 py-1 font-mono text-white whitespace-nowrap">{hex(r.address, 7)}</td>
             <td className="px-2 py-1 text-neon-cyan">{r.name}</td>

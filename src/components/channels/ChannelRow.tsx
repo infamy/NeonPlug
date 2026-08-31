@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { isVFOChannel, getVFOIdentifier } from '../../utils/vfoChannels';
 import type { Channel } from '../../models/Channel';
 import type { ScanList } from '../../models/ScanList';
 import type { RXGroup } from '../../models/RXGroup';
@@ -16,14 +17,9 @@ import {
   type ExtraChannelColumn,
 } from './extraChannelColumns';
 
-export const isVFOChannel = (channelNumber: number): boolean =>
-  channelNumber === 4001 || channelNumber === 4002;
-
-export const getVFOIdentifier = (channelNumber: number): string => {
-  if (channelNumber === 4001) return 'A';
-  if (channelNumber === 4002) return 'B';
-  return channelNumber.toString();
-};
+// Re-exported so existing importers keep working; the numbers now derive from
+// the radio's channel count rather than being hardcoded in three places.
+export { isVFOChannel, getVFOIdentifier };
 
 export const isDigitalMode = (mode: Channel['mode']): boolean =>
   mode === 'Digital' || mode === 'Fixed Digital';

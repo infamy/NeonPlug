@@ -1,4 +1,5 @@
 import React from 'react';
+import { isVFOChannel, getVFOIdentifier } from '../../utils/vfoChannels';
 import { Modal } from '../ui/Modal';
 import type { Channel } from '../../models/Channel';
 import type { RXGroup } from '../../models/RXGroup';
@@ -132,16 +133,6 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
 
   const isDigitalMode = (mode: Channel['mode']): boolean => {
     return mode === 'Digital' || mode === 'Fixed Digital';
-  };
-
-  const isVFOChannel = (channelNumber: number): boolean => {
-    return channelNumber === 4001 || channelNumber === 4002;
-  };
-
-  const getVFOIdentifier = (channelNumber: number): string => {
-    if (channelNumber === 4001) return 'A';
-    if (channelNumber === 4002) return 'B';
-    return channelNumber.toString();
   };
 
   const vfoName = isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : null;
