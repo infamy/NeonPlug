@@ -121,7 +121,14 @@ export const D890UV_SETTINGS_PROFILE: SettingsProfile = {
   radioType: 'DA-7X2',
   // The pictures are read with the codeplug on this radio, so they get an area
   // of their own rather than the DM-32's read-on-demand card.
-  features: ['d890Images', 'd890Roaming', 'd890Satellites'],
+  features: [
+    'd890Images',
+    'd890Roaming',
+    'd890GpsRoaming',
+    'd890Satellites',
+    'd890Broadcast',
+    'd890Emergency',
+  ],
   sections: SECTION_ORDER.map((title) => ({
     id: title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
     title,

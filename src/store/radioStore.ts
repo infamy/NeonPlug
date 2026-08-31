@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { D890RoamingChannel, D890RoamingZone } from '../radios/d890uv/structures';
 import type { D890SatelliteRecord } from '../radios/d890uv/satellite';
+import type { D890BroadcastChannel } from '../radios/d890uv/broadcastChannels';
+import type { D890GpsRoamingEntry } from '../radios/d890uv/gpsRoaming';
 import type { RadioInfo } from '../types/radio';
 
 type ZoneComparisonData = Array<{
@@ -61,6 +63,20 @@ interface RadioState {
    */
   d890Roaming: { channels: D890RoamingChannel[]; zones: D890RoamingZone[] } | null;
   d890Satellites: D890SatelliteRecord[] | null;
+  /** Emergency / alarm settings and the contact they call. */
+  d890Emergency: {
+    settings: import('../radios/d890uv/emergency').D890EmergencySettings | null;
+    contact: import('../radios/d890uv/emergency').D890EmergencyContact | null;
+  } | null;
+  /** AM airband and FM broadcast channels — separate tables from the main list. */
+  d890Broadcast: { am: D890BroadcastChannel[]; fm: D890BroadcastChannel[] } | null;
+  /** GPS Roaming geofences. */
+  d890GpsRoaming: D890GpsRoamingEntry[] | null;
+  /**
+   * Per-zone current A/B channel, as POSITIONS within that zone's own member
+   * list — not channel numbers. Index is the zone number.
+   */
+  d890ZoneCurrentChannels: { a: number[]; b: number[] } | null;
   bootImageDescription: string | null;
   connectionError: string | null;
   setConnected: (connected: boolean) => void;
@@ -77,6 +93,13 @@ interface RadioState {
   setD890Images: (images: { boot: Uint8Array | null; bk1: Uint8Array | null; bk2: Uint8Array | null } | null) => void;
   setD890Roaming: (roaming: { channels: D890RoamingChannel[]; zones: D890RoamingZone[] } | null) => void;
   setD890Satellites: (sats: D890SatelliteRecord[] | null) => void;
+  setD890Emergency: (e: {
+    settings: import('../radios/d890uv/emergency').D890EmergencySettings | null;
+    contact: import('../radios/d890uv/emergency').D890EmergencyContact | null;
+  } | null) => void;
+  setD890Broadcast: (b: { am: D890BroadcastChannel[]; fm: D890BroadcastChannel[] } | null) => void;
+  setD890GpsRoaming: (g: D890GpsRoamingEntry[] | null) => void;
+  setD890ZoneCurrentChannels: (z: { a: number[]; b: number[] } | null) => void;
   setBootImageDescription: (description: string | null) => void;
   setConnectionError: (error: string | null) => void;
   setSelectedRadioModel: (model: string | null) => void;
@@ -103,6 +126,10 @@ export const useRadioStore = create<RadioState>((set) => ({
   d890Images: null,
   d890Roaming: null,
   d890Satellites: null,
+  d890Emergency: null,
+  d890Broadcast: null,
+  d890GpsRoaming: null,
+  d890ZoneCurrentChannels: null,
   bootImageDescription: null,
   connectionError: null,
   setConnected: (connected) => set({ isConnected: connected }),
@@ -119,6 +146,10 @@ export const useRadioStore = create<RadioState>((set) => ({
   setD890Images: (images) => set({ d890Images: images }),
   setD890Roaming: (roaming) => set({ d890Roaming: roaming }),
   setD890Satellites: (sats) => set({ d890Satellites: sats }),
+  setD890Emergency: (e) => set({ d890Emergency: e }),
+  setD890Broadcast: (b) => set({ d890Broadcast: b }),
+  setD890GpsRoaming: (g) => set({ d890GpsRoaming: g }),
+  setD890ZoneCurrentChannels: (z) => set({ d890ZoneCurrentChannels: z }),
   setBootImageDescription: (description) => set({ bootImageDescription: description }),
   setConnectionError: (error) => set({ connectionError: error }),
   setSelectedRadioModel: (model) => set({ selectedRadioModel: model }),

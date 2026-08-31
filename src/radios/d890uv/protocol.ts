@@ -247,6 +247,17 @@ export class D890UVProtocol extends BaseDigitalProtocol {
    */
   rawChannelMask: Uint8Array | null = null;
 
+  /**
+   * Hardware slot index of each zone returned by `readZones`, in the same order.
+   *
+   * `parseZone` generates a fresh UI id and drops the slot, so without this the
+   * zones array cannot be lined up against any other per-slot zone table. The
+   * A/B current-channel tables are indexed by slot, so reading them against the
+   * compacted zones array would attribute zone 5's channel to zone 3 the moment
+   * a zone slot is empty.
+   */
+  readonly rawZoneIndices: number[] = [];
+
   async readChannelsPreview(
     onProgress?: (done: number, total: number) => void
   ): Promise<{ decoded: D890ChannelDecode[]; unresolvedTones: number }> {
@@ -318,7 +329,9 @@ export class D890UVProtocol extends BaseDigitalProtocol {
     const present = occupiedIndices(decodeOccupancyMask(mask, D890_LIMITS.ZONES_MAX));
 
     const zones: Zone[] = [];
+    this.rawZoneIndices.length = 0;
     for (const index of present) {
+      this.rawZoneIndices.push(index);
       const nameBytes = await conn.readMemory(
         zoneNameAddress(index),
         D890_ADDR.ZONE_NAME_READ

@@ -4,6 +4,7 @@ import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
 import { useZonesStore } from '../../store/zonesStore';
 import { useChannelsStore } from '../../store/channelsStore';
+import { useRadioStore } from '../../store/radioStore';
 import type { Zone } from '../../models/Zone';
 import { ListDetailLayout } from '../ui/ListDetailLayout';
 import { OrderedItemPicker } from '../ui/OrderedItemPicker';
@@ -12,6 +13,101 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+
+/** One of the two per-zone VFO channel pickers. Hoisted, not nested in its
+ *  parent's render: a component defined inside a render is a new type on every
+ *  pass, so React unmounts and remounts the <select> and the dropdown closes
+ *  the moment the store updates. */
+const ZoneChannelSelect: React.FC<{
+  title: string;
+  position: number;
+  zone: Zone;
+  label: (number: number) => string;
+  onChange: (position: number) => void;
+}> = ({ title, position, zone, label, onChange }) => (
+  <div>
+    <label className="block text-cool-gray text-xs mb-1">{title}</label>
+    <select
+      value={position}
+      onChange={(e) => onChange(parseInt(e.target.value, 10))}
+      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+    >
+      {position >= zone.channels.length && <option value={position}>Not set</option>}
+      {zone.channels.map((number, index) => (
+        <option key={`${number}-${index}`} value={index}>
+          {label(number)}
+        </option>
+      ))}
+    </select>
+  </div>
+);
+
+/**
+ * The zone's current A and B channel — what the radio has tuned on each VFO
+ * when this zone is selected.
+ *
+ * Stored per zone as a POSITION within that zone's own member list, not as a
+ * channel number, so it must be resolved through `zone.channels` and is
+ * meaningless against any other zone. Editing therefore writes a position back,
+ * not a channel number, and reordering the zone's channels moves what A and B
+ * point at — which is how the radio itself behaves.
+ *
+ * A position past the end of the member list renders as "Not set" rather than
+ * being clamped to a real channel: the radio can hold one (a zone shrunk since
+ * the value was written), and quietly showing channel 1 instead would be a
+ * claim about the radio that is not true.
+ */
+const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
+  const { d890ZoneCurrentChannels, setD890ZoneCurrentChannels } = useRadioStore();
+  const { channels } = useChannelsStore();
+  const { zones } = useZonesStore();
+
+  // Index against the store's own array: the list pane filters out unnamed
+  // zones, so a render position from there would be the wrong zone.
+  const zoneIndex = zones.findIndex((z) => z.id === zone.id);
+  if (!d890ZoneCurrentChannels || zoneIndex < 0) return null;
+
+  const label = (number: number): string => {
+    const channel = channels.find((c) => c.number === number);
+    return channel ? `${number} · ${channel.name}` : `${number}`;
+  };
+
+  const update = (which: 'a' | 'b', position: number) => {
+    const next = {
+      a: [...d890ZoneCurrentChannels.a],
+      b: [...d890ZoneCurrentChannels.b],
+    };
+    next[which][zoneIndex] = position;
+    setD890ZoneCurrentChannels(next);
+  };
+
+  return (
+    <div className="m-4 mb-0 bg-neon-cyan bg-opacity-5 border border-neon-cyan border-opacity-30 rounded-lg overflow-hidden">
+      <div className="p-3 pb-2">
+        <h4 className="text-neon-cyan font-medium">Zone Settings</h4>
+        <p className="text-cool-gray text-xs mt-0.5">
+          The channel each VFO tunes to when this zone is selected.
+        </p>
+      </div>
+      <div className="p-4 pt-0 grid grid-cols-2 gap-4">
+        <ZoneChannelSelect
+          title="Current Channel A"
+          position={d890ZoneCurrentChannels.a[zoneIndex] ?? 0}
+          zone={zone}
+          label={label}
+          onChange={(p) => update('a', p)}
+        />
+        <ZoneChannelSelect
+          title="Current Channel B"
+          position={d890ZoneCurrentChannels.b[zoneIndex] ?? 0}
+          zone={zone}
+          label={label}
+          onChange={(p) => update('b', p)}
+        />
+      </div>
+    </div>
+  );
+};
 
 export const ZonesList: React.FC = () => {
   const { zones, selectedZoneId, setSelectedZoneId, addZone, deleteZone, renameZone } = useZonesStore();
@@ -240,7 +336,9 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone, onAlert }) => {
     .map(channelPickerItem);
 
   return (
-    <OrderedItemPicker
+    <div className="flex flex-col h-full">
+      <ZoneCurrentChannels zone={zone} />
+      <OrderedItemPicker
       selectedIds={zone.channels}
       availableItems={availableItems}
       resolveItem={(num) => {
@@ -253,6 +351,7 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone, onAlert }) => {
       containerNoun="zone"
       onAlert={onAlert}
       fillHeight
-    />
+      />
+    </div>
   );
 };

@@ -1244,3 +1244,25 @@ export function planChannelReads(indices: number[]): ChannelReadSpan[] {
   flush();
   return spans;
 }
+
+/**
+ * Re-index the per-slot zone A/B current-channel tables onto a compacted zones
+ * array.
+ *
+ * The radio stores one entry per hardware zone SLOT (0..ZONES_MAX). `readZones`
+ * drops empty slots, so `zones[n]` is generally NOT slot n. Indexing the raw
+ * table by array position would attribute one zone's current channel to another
+ * the moment any slot below it is empty — silently, and only on radios whose
+ * zones are not densely packed from slot 0.
+ *
+ * `slots` is the hardware index of each returned zone, in the same order.
+ */
+export function alignZoneCurrentChannels(
+  raw: { a: number[]; b: number[] },
+  slots: readonly number[]
+): { a: number[]; b: number[] } {
+  return {
+    a: slots.map((slot) => raw.a[slot] ?? 0),
+    b: slots.map((slot) => raw.b[slot] ?? 0),
+  };
+}

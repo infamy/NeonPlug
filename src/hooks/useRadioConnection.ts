@@ -7,6 +7,7 @@ import { getCapabilitiesForModel } from '../radios/capabilities';
 import type { Contact } from '../models/Contact';
 import type { QuickContact } from '../models/QuickContact';
 import type { RXGroup } from '../models/RXGroup';
+import { alignZoneCurrentChannels } from '../radios/d890uv/structures';
 import { useRadioStore } from '../store/radioStore';
 import { useChannelsStore } from '../store/channelsStore';
 import { useZonesStore } from '../store/zonesStore';
@@ -51,11 +52,26 @@ const WRITE_CHANNELS_STEPS: string[] = [
   'Writing channels',
 ];
 
+/**
+ * The model a read will actually be attempted as.
+ *
+ * NOT the same precedence as `useEffectiveRadioModel`, which prefers the model
+ * of the last successful read. Here the user's explicit pick wins, because that
+ * is what builds the protocol — and after reading a DM-32 and then picking a
+ * DA-7X2, the two disagree. Anything that TELLS the user which radio is being
+ * read must use this, or it will confidently name the wrong one in exactly the
+ * situation the label exists to resolve.
+ */
+export function modelForRead(): string | null {
+  const { selectedRadioModel, radioInfo } = useRadioStore.getState();
+  return selectedRadioModel ?? radioInfo?.model ?? null;
+}
+
 export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setD890Images, setD890Roaming, setD890Satellites, setConnectionError } = useRadioStore();
+  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setConnectionError } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -122,8 +138,7 @@ export function useRadioConnection() {
     // Read model from live store — selectedRadioModel may be null if the user never explicitly
     // used the picker (UI pre-selects it via useEffectiveRadioModel but doesn't write the store).
     // Fall back to the model from the last successful read.
-    const { selectedRadioModel: liveModel, radioInfo: liveRadioInfo } = useRadioStore.getState();
-    const effectiveModel: string | null = liveModel ?? liveRadioInfo?.model ?? null;
+    const effectiveModel: string | null = modelForRead();
 
     // All data-reading steps after connect() are extracted here so both the first attempt
     // and the retry go through exactly the same code path.
@@ -263,6 +278,16 @@ export function useRadioConnection() {
           readRoamingZones?: () => Promise<import('../radios/d890uv/structures').D890RoamingZone[]>;
           readSatellites?: () => Promise<import('../radios/d890uv/satellite').D890SatelliteRecord[]>;
           readQuickMessages?: () => Promise<import('../models/QuickTextMessage').QuickTextMessage[]>;
+          readEmergency?: () => Promise<{
+            settings: import('../radios/d890uv/emergency').D890EmergencySettings | null;
+            contact: import('../radios/d890uv/emergency').D890EmergencyContact | null;
+          }>;
+          readBroadcastChannels?: (
+            band: 'am' | 'fm'
+          ) => Promise<import('../radios/d890uv/broadcastChannels').D890BroadcastChannel[]>;
+          readGpsRoaming?: () => Promise<import('../radios/d890uv/gpsRoaming').D890GpsRoamingEntry[]>;
+          readZoneCurrentChannels?: () => Promise<{ a: number[]; b: number[] }>;
+          rawZoneIndices?: number[];
         };
 
         if (extras.readEncryptionKeys) {
@@ -302,6 +327,59 @@ export function useRadioConnection() {
           } catch (err) {
             console.warn('Could not read satellites:', err);
             sectionReadWarnings.push('Satellites');
+          }
+        }
+
+        if (extras.readEmergency) {
+          try {
+            setD890Emergency(await extras.readEmergency());
+          } catch (err) {
+            console.warn('Could not read emergency:', err);
+            sectionReadWarnings.push('Emergency');
+          }
+        }
+
+        // AM and FM are separate tables from the channel list and from each
+        // other. Read together so a radio with only one of them populated still
+        // shows the one it has rather than nothing.
+        if (extras.readBroadcastChannels) {
+          try {
+            setD890Broadcast({
+              am: await extras.readBroadcastChannels('am'),
+              fm: await extras.readBroadcastChannels('fm'),
+            });
+          } catch (err) {
+            console.warn('Could not read broadcast channels:', err);
+            sectionReadWarnings.push('AM/FM broadcast');
+          }
+        }
+
+        if (extras.readGpsRoaming) {
+          try {
+            setD890GpsRoaming(await extras.readGpsRoaming());
+          } catch (err) {
+            console.warn('Could not read GPS roaming:', err);
+            sectionReadWarnings.push('GPS roaming');
+          }
+        }
+
+        // Positions within each zone, so this is only meaningful next to the
+        // zones themselves — read after them, and tolerated as missing.
+        //
+        // The radio's table is indexed by hardware zone SLOT; the zones array
+        // has empty slots dropped. Re-index onto the zones array here so the UI
+        // can use a plain array position and cannot silently misattribute a
+        // zone's A/B channel when a slot in the middle is empty.
+        if (extras.readZoneCurrentChannels) {
+          try {
+            const raw = await extras.readZoneCurrentChannels();
+            const slots = extras.rawZoneIndices;
+            setD890ZoneCurrentChannels(
+              slots && slots.length > 0 ? alignZoneCurrentChannels(raw, slots) : raw
+            );
+          } catch (err) {
+            console.warn('Could not read zone A/B channels:', err);
+            sectionReadWarnings.push('Zone A/B channels');
           }
         }
       }
@@ -451,7 +529,7 @@ export function useRadioConnection() {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       setIsConnecting(false);
     }
-  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setD890Images, setD890Roaming, setD890Satellites, setEncryptionKeys, setConnectionError]);
+  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setEncryptionKeys, setConnectionError]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
@@ -961,6 +1039,14 @@ export function useRadioConnection() {
     writeChannelsToRadio,
     readSteps: READ_STEPS,
     writeChannelsSteps: WRITE_CHANNELS_STEPS,
+    /** Model the next/current read is attempted as — for display, see modelForRead. */
+    readModel: selectedRadioModel ?? radioInfo?.model ?? null,
+    /**
+     * Model a write is performed as. Deliberately NOT the same as readModel:
+     * the write path builds its protocol from `radioInfo.model` alone, so a
+     * write only ever targets a radio that was actually read.
+     */
+    writeModel: radioInfo?.model ?? null,
   };
 }
 

@@ -42,7 +42,7 @@ export const Toolbar: React.FC = () => {
   const { groups: rxGroups, setGroups: setRXGroups } = useRXGroupsStore();
   const { keys: encryptionKeys, setKeys: setEncryptionKeys } = useEncryptionKeysStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { readFromRadio, writeChannelsToRadio, isConnecting, error, readSteps, writeChannelsSteps } = useRadioConnection();
+  const { readFromRadio, writeChannelsToRadio, isConnecting, error, readSteps, writeChannelsSteps, readModel, writeModel } = useRadioConnection();
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
   const [currentStep, setCurrentStep] = useState('');
@@ -565,6 +565,7 @@ export const Toolbar: React.FC = () => {
         onChangePort={!isWriting ? handleChangePort : undefined}
         onClose={handleCloseModal}
         mode={isWriting ? 'write' : 'read'}
+        model={isWriting ? writeModel : readModel}
       />
       <ConfirmModal
         isOpen={writeWarningOpen}
