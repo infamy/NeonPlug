@@ -35,7 +35,7 @@ export const SmartImportTab: React.FC = () => {
   const [isSearchingAll, setIsSearchingAll] = useState(false);
 
   // Generation result
-  const [generationResult, setGenerationResult] = useState<{ channels: number; zones: number } | null>(null);
+  const [generationResult, setGenerationResult] = useState<{ channels: number; zones: number; airband?: number } | null>(null);
 
   // Airport search results
   const [airports, setAirports] = useState<(AirportData & { distance?: number })[]>([]);
@@ -424,6 +424,17 @@ export const SmartImportTab: React.FC = () => {
       {generationResult && (
         <div className="bg-deep-gray border border-neon-cyan rounded p-3 mb-4 text-neon-cyan">
           Successfully generated {generationResult.channels} channels and {generationResult.zones} zones!
+          {generationResult.airband ? (
+            <>
+              {' '}
+              <span className="text-neon-cyan">
+                {generationResult.airband} AM airband{' '}
+                {generationResult.airband === 1 ? 'frequency' : 'frequencies'} went to the
+                AM Airband list — this radio keeps them in their own table, not with your
+                channels.
+              </span>
+            </>
+          ) : null}
         </div>
       )}
 

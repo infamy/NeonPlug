@@ -235,6 +235,19 @@ export interface RadioCapabilities {
   memoryRegions?: MemoryRegionSpec[];
   /** If true, channel list includes VFO A/B as channels 4001/4002 (e.g. DM-32UV). Analog-only radios typically do not. */
   supportsVfoChannels?: boolean;
+  /**
+   * AM airband lives in its OWN table, not in the main channel list.
+   *
+   * On the AnyTone D890 family the airband memories are a separate region with
+   * their own numbering, and the main channel record has no way to express an
+   * AM receive-only channel. Writing a 108-137 MHz entry into the main list
+   * would therefore corrupt the codeplug, so any generator that produces
+   * airband frequencies must route them here instead.
+   *
+   * Radios without this flag keep airband in the ordinary channel list, which
+   * is correct for them — the DM-32 and the analog radios all do.
+   */
+  separateAirbandTable?: boolean;
   /** Max zone count when supportsZones is true (e.g. 250 for DM32). */
   maxZones?: number;
   /**

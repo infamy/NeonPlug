@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 import { formatPlural } from '../../../utils/formatPlural';
 import { useImportStores } from '../../../hooks/useImportStores';
 import { getNextChannelNumber, selectionCardClass } from '../../../utils/importHelpers';
-import { generateAirportChannels, COMMON_AIRCRAFT_FREQUENCIES } from '../../../services/airportChannels';
+import {
+  generateAirportChannels,
+  splitAirbandChannels,
+  COMMON_AIRCRAFT_FREQUENCIES,
+} from '../../../services/airportChannels';
+import { useRadioCapabilities } from '../../../hooks/useRadioCapabilities';
+import { useRadioStore } from '../../../store/radioStore';
 import { getAirportFrequenciesWithTypes, type AirportData } from '../../../data/airportsData';
 import { SelectAllButtons } from '../SelectAllButtons';
 import { Button } from '../../ui/Button';
@@ -13,7 +19,7 @@ interface AirportSourceProps {
   airports: (AirportData & { distance?: number })[];
   isSearching: boolean;
   onError: (msg: string) => void;
-  onGenerationResult: (r: { channels: number; zones: number }) => void;
+  onGenerationResult: (r: { channels: number; zones: number; airband?: number }) => void;
 }
 
 export const AirportSource: React.FC<AirportSourceProps> = ({
@@ -23,6 +29,8 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
   onGenerationResult,
 }) => {
   const { channels, setChannels, zones, setZones } = useImportStores();
+  const { caps } = useRadioCapabilities();
+  const { d890Broadcast, setD890Broadcast } = useRadioStore();
 
   const [selectedAirports, setSelectedAirports] = useState<Set<number>>(new Set());
   const [airportZoneGrouping, setAirportZoneGrouping] = useState<'individual' | 'single'>('individual');
@@ -99,17 +107,38 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
         return;
       }
 
+      // On radios that keep AM airband in its own table, airband frequencies
+      // must NOT enter the main channel list — that record cannot express an AM
+      // receive-only channel and writing one there corrupts the codeplug. Every
+      // other radio keeps its airband in the ordinary list, unchanged.
+      const routed = caps?.separateAirbandTable
+        ? splitAirbandChannels(result.channels, result.zones)
+        : { channels: result.channels, zones: result.zones, airband: [] };
+
+      if (routed.airband.length > 0) {
+        const existing = d890Broadcast ?? { am: [], fm: [], fmVfo: null };
+        // Airband entries are indexed within their own table, not by channel
+        // number, so they are renumbered onto the end of it.
+        const appended = routed.airband.map((c, i) => ({
+          index: existing.am.length + i,
+          name: c.name,
+          frequency: c.rxFrequency,
+        }));
+        setD890Broadcast({ ...existing, am: [...existing.am, ...appended] });
+      }
+
       // Add channels
-      const updatedChannels = [...channels, ...result.channels];
+      const updatedChannels = [...channels, ...routed.channels];
       setChannels(updatedChannels);
 
       // Add zones (one per airport)
-      const updatedZones = [...zones, ...result.zones];
+      const updatedZones = [...zones, ...routed.zones];
       setZones(updatedZones);
 
       onGenerationResult({
-        channels: result.channels.length,
-        zones: result.zones.length,
+        channels: routed.channels.length,
+        zones: routed.zones.length,
+        airband: routed.airband.length,
       });
 
       // Clear selection

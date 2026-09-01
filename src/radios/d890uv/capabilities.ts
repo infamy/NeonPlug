@@ -112,6 +112,7 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   analogOnly: false,
   /** VFO A/B occupy channel slots 4000/4001. */
   supportsVfoChannels: true,
+  separateAirbandTable: true,
   /**
    * False: "bulk read" means the DM-32's contiguous block read. This radio has
    * no contiguous image — reads are sparse and addressed per region.

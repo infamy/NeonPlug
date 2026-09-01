@@ -251,3 +251,47 @@ export function generateAirportChannels(
   };
 }
 
+
+/**
+ * Airband edges, in MHz. The civil VHF air band, which is AM and receive-only
+ * on these radios.
+ */
+export const AIRBAND_MIN_MHZ = 108;
+export const AIRBAND_MAX_MHZ = 137;
+
+/** True when a frequency belongs in a separate AM airband table. */
+export function isAirbandFrequency(mhz: number): boolean {
+  return mhz >= AIRBAND_MIN_MHZ && mhz < AIRBAND_MAX_MHZ;
+}
+
+/**
+ * Split generated channels by where the radio actually stores them.
+ *
+ * On a radio with `separateAirbandTable`, an AM airband frequency CANNOT go in
+ * the main channel list: that record has no way to express AM receive-only, and
+ * writing one there corrupts the codeplug. The airband entries are returned
+ * separately so the caller can put them in the AM table instead.
+ *
+ * Zones are rebuilt to reference only the channels that stayed behind. A zone
+ * pointing at a channel number that was diverted would dangle, and on this
+ * family a dangling zone member is exactly the kind of thing that gets written
+ * to the radio and then cannot be explained.
+ */
+export function splitAirbandChannels(
+  channels: Channel[],
+  zones: Zone[]
+): { channels: Channel[]; zones: Zone[]; airband: Channel[] } {
+  const airband = channels.filter((c) => isAirbandFrequency(c.rxFrequency));
+  if (airband.length === 0) return { channels, zones, airband: [] };
+
+  const diverted = new Set(airband.map((c) => c.number));
+  const kept = channels.filter((c) => !diverted.has(c.number));
+  const keptNumbers = new Set(kept.map((c) => c.number));
+
+  const rebuiltZones = zones
+    .map((z) => ({ ...z, channels: z.channels.filter((n) => keptNumbers.has(n)) }))
+    // A zone whose every member was airband has nothing left to hold.
+    .filter((z) => z.channels.length > 0);
+
+  return { channels: kept, zones: rebuiltZones, airband };
+}

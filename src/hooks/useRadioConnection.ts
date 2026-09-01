@@ -608,7 +608,7 @@ export function useRadioConnection() {
       // DMR contact database. This button means the database.
       const d890 = protocol instanceof D890UVProtocol ? protocol : null;
       const contacts = d890
-        ? (await d890.readDigitalContacts(onProgress)).map((c, i) => ({
+        ? (await d890.readDigitalContacts(report)).map((c, i) => ({
             id: i + 1,
             name: c.name,
             dmrId: c.dmrId,
@@ -660,6 +660,7 @@ export function useRadioConnection() {
   ) => {
     setIsConnecting(true);
     setRadioBusy(true);
+    const report = publish('Reading images', onProgress);
     setError(null);
     let protocol: RadioProtocol | null = null;
     try {
@@ -671,18 +672,18 @@ export function useRadioConnection() {
         ) => Promise<{ boot: Uint8Array | null; bk1: Uint8Array | null; bk2: Uint8Array | null }>;
       };
       if (!withImages.readImages) throw new Error('This radio has no boot or standby pictures.');
-      onProgress?.(0, 'Connecting to radio...');
+      report(0, 'Connecting to radio...');
       await protocol.connect();
-      onProgress?.(2, 'Reading pictures...');
+      report(2, 'Reading pictures...');
       // Connecting is a couple of percent; the transfer is the rest.
       setD890Images(await withImages.readImages((percent, label) => {
-        onProgress?.(2 + percent * 0.98, label);
+        report(2 + percent * 0.98, label);
       }));
-      onProgress?.(100, 'Pictures read.');
+      report(100, 'Pictures read.');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setError(msg);
-      onProgress?.(0, `Error: ${msg}`);
+      report(0, `Error: ${msg}`);
       throw err;
     } finally {
       // Disconnect on success as well as failure: leaving the port open and
@@ -700,33 +701,34 @@ export function useRadioConnection() {
   ) => {
     setIsConnecting(true);
     setRadioBusy(true);
+    const report = publish('Reading boot image', onProgress);
     setError(null);
     let protocol: RadioProtocol | null = null;
     try {
       protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       protocol.onProgress = (progress, message) => {
-        onProgress?.(progress, message);
+        report(progress, message);
       };
-      onProgress?.(0, 'Connecting to radio...');
+      report(0, 'Connecting to radio...');
       await protocol.connect();
       if (!radioInfo) {
-        onProgress?.(5, 'Reading radio information...');
+        report(5, 'Reading radio information...');
         const info = await protocol.getRadioInfo();
         setRadioInfo(info);
         setConnected(true);
       }
-      onProgress?.(10, 'Reading boot image from radio...');
+      report(10, 'Reading boot image from radio...');
       const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
       if (!dm32) throw new Error('Boot image is only supported on DM-32UV');
       const raw = await dm32.readBootImage();
       setBootImageRaw(raw);
       const parsed = parseBootImageHeader(raw);
       setBootImageDescription(parsed.description || null);
-      onProgress?.(100, 'Boot image read complete');
+      report(100, 'Boot image read complete');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMsg);
-      onProgress?.(0, `Error: ${errorMsg}`);
+      report(0, `Error: ${errorMsg}`);
       throw err;
     } finally {
       if (protocol) {
@@ -747,33 +749,34 @@ export function useRadioConnection() {
   ) => {
     setIsConnecting(true);
     setRadioBusy(true);
+    const report = publish('Writing boot image', onProgress);
     setError(null);
     let protocol: RadioProtocol | null = null;
     try {
       protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       protocol.onProgress = (progress, message) => {
-        onProgress?.(progress, message);
+        report(progress, message);
       };
-      onProgress?.(0, 'Connecting to radio...');
+      report(0, 'Connecting to radio...');
       await protocol.connect();
       if (!radioInfo) {
-        onProgress?.(5, 'Reading radio information...');
+        report(5, 'Reading radio information...');
         const info = await protocol.getRadioInfo();
         setRadioInfo(info);
         setConnected(true);
       }
-      onProgress?.(10, 'Writing boot image to radio...');
+      report(10, 'Writing boot image to radio...');
       const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
       if (!dm32) throw new Error('Boot image is only supported on DM-32UV');
       await dm32.writeBootImage(data);
       setBootImageRaw(data);
       const parsed = parseBootImageHeader(data);
       setBootImageDescription(parsed.description || null);
-      onProgress?.(100, 'Boot image write complete');
+      report(100, 'Boot image write complete');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMsg);
-      onProgress?.(0, `Error: ${errorMsg}`);
+      report(0, `Error: ${errorMsg}`);
       throw err;
     } finally {
       if (protocol) {
