@@ -35,7 +35,7 @@ export const SmartImportTab: React.FC = () => {
   const [isSearchingAll, setIsSearchingAll] = useState(false);
 
   // Generation result
-  const [generationResult, setGenerationResult] = useState<{ channels: number; zones: number; airband?: number } | null>(null);
+  const [generationResult, setGenerationResult] = useState<{ channels: number; zones: number; airband?: number; amZones?: number; amZonesSkipped?: number } | null>(null);
 
   // Airport search results
   const [airports, setAirports] = useState<(AirportData & { distance?: number })[]>([]);
@@ -432,6 +432,14 @@ export const SmartImportTab: React.FC = () => {
                 {generationResult.airband === 1 ? 'frequency' : 'frequencies'} went to the
                 AM Airband list — this radio keeps them in their own table, not with your
                 channels.
+                {generationResult.amZones
+                  ? ` Grouped into ${generationResult.amZones} AM ${
+                      generationResult.amZones === 1 ? 'zone' : 'zones'
+                    }.`
+                  : ''}
+                {generationResult.amZonesSkipped
+                  ? ` ${generationResult.amZonesSkipped} more could not be grouped — the radio holds only 16 AM zones.`
+                  : ''}
               </span>
             </>
           ) : null}

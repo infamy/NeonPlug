@@ -280,18 +280,41 @@ export function isAirbandFrequency(mhz: number): boolean {
 export function splitAirbandChannels(
   channels: Channel[],
   zones: Zone[]
-): { channels: Channel[]; zones: Zone[]; airband: Channel[] } {
+): {
+  channels: Channel[];
+  zones: Zone[];
+  airband: Channel[];
+  /**
+   * The airband members of each generated zone, by ORIGINAL channel number.
+   *
+   * Returned rather than resolved because AM zones index into the AM table's
+   * own numbering, and only the caller knows where these channels will land in
+   * that table — it depends on what is already there.
+   */
+  airbandZones: { name: string; channelNumbers: number[] }[];
+} {
   const airband = channels.filter((c) => isAirbandFrequency(c.rxFrequency));
-  if (airband.length === 0) return { channels, zones, airband: [] };
+  if (airband.length === 0) return { channels, zones, airband: [], airbandZones: [] };
 
   const diverted = new Set(airband.map((c) => c.number));
   const kept = channels.filter((c) => !diverted.has(c.number));
   const keptNumbers = new Set(kept.map((c) => c.number));
 
-  const rebuiltZones = zones
-    .map((z) => ({ ...z, channels: z.channels.filter((n) => keptNumbers.has(n)) }))
-    // A zone whose every member was airband has nothing left to hold.
-    .filter((z) => z.channels.length > 0);
+  // A generated zone can hold both kinds. Its airband half becomes an AM zone;
+  // whatever is left stays a normal zone. Dropping the airband half — as this
+  // did until the AM zone table was mapped — silently discarded the grouping
+  // the wizard had just built.
+  const airbandZones: { name: string; channelNumbers: number[] }[] = [];
+  const rebuiltZones: Zone[] = [];
 
-  return { channels: kept, zones: rebuiltZones, airband };
+  for (const zone of zones) {
+    const airbandMembers = zone.channels.filter((n) => diverted.has(n));
+    const remaining = zone.channels.filter((n) => keptNumbers.has(n));
+    if (airbandMembers.length > 0) {
+      airbandZones.push({ name: zone.name, channelNumbers: airbandMembers });
+    }
+    if (remaining.length > 0) rebuiltZones.push({ ...zone, channels: remaining });
+  }
+
+  return { channels: kept, zones: rebuiltZones, airband, airbandZones };
 }

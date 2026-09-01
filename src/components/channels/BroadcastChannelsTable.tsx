@@ -2,6 +2,7 @@ import React from 'react';
 import { Card } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
 import type { D890BroadcastChannel } from '../../radios/d890uv/broadcastChannels';
+import { AmZonesEditor } from './AmZonesEditor';
 
 /**
  * AM airband / FM broadcast memories.
@@ -24,18 +25,35 @@ export const BroadcastChannelsTable: React.FC<{
    * no mask bit, so calling it 101 would imply a memory slot that isn't one.
    */
   vfoIndex?: number;
-}> = ({ entries, decimals, emptyMessage, vfoIndex }) => {
+  /**
+   * AM zones, shown above the channels. A separate zone system from the main
+   * one — its members are AM channel INDICES, so they are resolved against this
+   * table rather than against channel numbers.
+   */
+  /** Present (even if empty) when this band has zones — AM does, FM does not. */
+  zones?: unknown[];
+}> = ({ entries, decimals, emptyMessage, vfoIndex, zones }) => {
   // Decided ONCE for the whole table, then used for both the header and every
   // cell. Testing each row separately would emit a header with no cells (or the
   // reverse) the moment one row disagreed, and a row one cell short of its
   // header shifts every column after it — the exact bug fixed in ChannelRow.
   const showScan = entries.some((c) => c.scanAdd !== undefined);
 
+  // AM zones are editable; the editor owns its own rendering and empty state.
+  const zoneList = zones ? <AmZonesEditor channels={entries} /> : null;
+
   if (entries.length === 0) {
-    return <EmptyState message={emptyMessage} secondary="Read the radio to load these memories" />;
+    return (
+      <>
+        {zoneList}
+        <EmptyState message={emptyMessage} secondary="Read the radio to load these memories" />
+      </>
+    );
   }
 
   return (
+    <>
+    {zoneList}
     <Card className="h-full overflow-auto" padding="none">
       <table className="w-full border-collapse text-sm">
         <thead className="sticky top-0 z-10">
@@ -78,5 +96,6 @@ export const BroadcastChannelsTable: React.FC<{
         </tbody>
       </table>
     </Card>
+    </>
   );
 };

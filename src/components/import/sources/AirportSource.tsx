@@ -9,6 +9,7 @@ import {
 } from '../../../services/airportChannels';
 import { useRadioCapabilities } from '../../../hooks/useRadioCapabilities';
 import { useRadioStore } from '../../../store/radioStore';
+import { D890_AM_ZONES } from '../../../radios/d890uv/amZones';
 import { getAirportFrequenciesWithTypes, type AirportData } from '../../../data/airportsData';
 import { SelectAllButtons } from '../SelectAllButtons';
 import { Button } from '../../ui/Button';
@@ -19,7 +20,7 @@ interface AirportSourceProps {
   airports: (AirportData & { distance?: number })[];
   isSearching: boolean;
   onError: (msg: string) => void;
-  onGenerationResult: (r: { channels: number; zones: number; airband?: number }) => void;
+  onGenerationResult: (r: { channels: number; zones: number; airband?: number; amZones?: number; amZonesSkipped?: number }) => void;
 }
 
 export const AirportSource: React.FC<AirportSourceProps> = ({
@@ -30,7 +31,7 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
 }) => {
   const { channels, setChannels, zones, setZones } = useImportStores();
   const { caps } = useRadioCapabilities();
-  const { d890Broadcast, setD890Broadcast } = useRadioStore();
+  const { d890Broadcast, setD890Broadcast, d890AmZones, setD890AmZones } = useRadioStore();
 
   const [selectedAirports, setSelectedAirports] = useState<Set<number>>(new Set());
   const [airportZoneGrouping, setAirportZoneGrouping] = useState<'individual' | 'single'>('individual');
@@ -111,20 +112,59 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
       // must NOT enter the main channel list — that record cannot express an AM
       // receive-only channel and writing one there corrupts the codeplug. Every
       // other radio keeps its airband in the ordinary list, unchanged.
+      let amZonesCreated = 0;
+      let amZonesSkipped = 0;
       const routed = caps?.separateAirbandTable
         ? splitAirbandChannels(result.channels, result.zones)
-        : { channels: result.channels, zones: result.zones, airband: [] };
+        : {
+            channels: result.channels,
+            zones: result.zones,
+            airband: [] as typeof result.channels,
+            airbandZones: [] as { name: string; channelNumbers: number[] }[],
+          };
 
       if (routed.airband.length > 0) {
         const existing = d890Broadcast ?? { am: [], fm: [], fmVfo: null };
         // Airband entries are indexed within their own table, not by channel
-        // number, so they are renumbered onto the end of it.
-        const appended = routed.airband.map((c, i) => ({
-          index: existing.am.length + i,
-          name: c.name,
-          frequency: c.rxFrequency,
-        }));
+        // number, so they are renumbered onto the end of it. Keep the mapping —
+        // the AM zones below reference these by their NEW index.
+        const amIndexOf = new Map<number, number>();
+        const appended = routed.airband.map((c, i) => {
+          const index = existing.am.length + i;
+          amIndexOf.set(c.number, index);
+          return { index, name: c.name, frequency: c.rxFrequency };
+        });
         setD890Broadcast({ ...existing, am: [...existing.am, ...appended] });
+
+        // Carry the wizard's grouping across into AM zones. Without this the
+        // airband channels arrive loose, on a radio that has 16 zones for
+        // exactly this purpose.
+        if (routed.airbandZones.length > 0) {
+          const current = d890AmZones ?? [];
+          const used = new Set(current.map((z) => z.index));
+          const created: typeof current = [];
+          for (const group of routed.airbandZones) {
+            let index = 0;
+            while (used.has(index)) index += 1;
+            // 16 slots is the radio's limit; the rest keep their channels but
+            // lose the grouping, which is reported rather than hidden.
+            if (index >= D890_AM_ZONES.SLOTS) break;
+            used.add(index);
+            created.push({
+              index,
+              name: group.name.slice(0, 16),
+              members: group.channelNumbers
+                .map((n) => amIndexOf.get(n))
+                .filter((i): i is number => i !== undefined),
+              currentChannel: 0,
+            });
+          }
+          if (created.length > 0) {
+            setD890AmZones([...current, ...created].sort((a, b) => a.index - b.index));
+          }
+          amZonesCreated = created.length;
+          amZonesSkipped = routed.airbandZones.length - created.length;
+        }
       }
 
       // Add channels
@@ -139,6 +179,8 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
         channels: routed.channels.length,
         zones: routed.zones.length,
         airband: routed.airband.length,
+        amZones: amZonesCreated,
+        amZonesSkipped,
       });
 
       // Clear selection

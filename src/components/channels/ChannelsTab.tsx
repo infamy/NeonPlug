@@ -28,7 +28,7 @@ export const ChannelsTab: React.FC = () => {
   // AM airband and FM broadcast are separate tables on the radio, not rows in
   // the main list — shown as sibling views so they keep channel-list room
   // without pretending to be channel numbers.
-  const { d890Broadcast } = useRadioStore();
+  const { d890Broadcast, d890AmZones } = useRadioStore();
   // The FM VFO is the 101st memory — outside the numbered table, so it is
   // appended rather than sorted in, and only for the FM view.
   const broadcast =
@@ -252,6 +252,7 @@ export const ChannelsTab: React.FC = () => {
             entries={filteredBroadcast}
             decimals={view === 'am' ? 4 : 2}
             vfoIndex={view === 'fm' ? d890Broadcast?.fmVfo?.index : undefined}
+            zones={view === 'am' ? d890AmZones ?? undefined : undefined}
             emptyMessage={
               view === 'am' ? 'No AM airband memories stored' : 'No FM broadcast memories stored'
             }

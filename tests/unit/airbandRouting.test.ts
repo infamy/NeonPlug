@@ -37,12 +37,24 @@ describe('airband routing', () => {
     expect(zones[0].channels).toEqual([2]);
   });
 
-  it('drops a zone whose members were all airband', () => {
-    const { zones } = splitAirbandChannels(
+  it('turns an all-airband zone into an AM zone rather than discarding it', () => {
+    // The wizard groups one zone per airport. Dropping that grouping loses
+    // real structure on a radio that has 16 AM zones for exactly this.
+    const out = splitAirbandChannels(
       [ch(1, 118.1), ch(2, 121.5)],
-      [zone('Airports', [1, 2])]
+      [zone('KJFK', [1, 2])]
     );
-    expect(zones).toEqual([]);
+    expect(out.zones).toEqual([]);
+    expect(out.airbandZones).toEqual([{ name: 'KJFK', channelNumbers: [1, 2] }]);
+  });
+
+  it('splits a mixed zone into both a normal zone and an AM zone', () => {
+    const out = splitAirbandChannels(
+      [ch(1, 118.1), ch(2, 145.5), ch(3, 121.5)],
+      [zone('Mixed', [1, 2, 3])]
+    );
+    expect(out.zones).toEqual([{ id: 'Mixed', name: 'Mixed', channels: [2] }]);
+    expect(out.airbandZones).toEqual([{ name: 'Mixed', channelNumbers: [1, 3] }]);
   });
 
   it('is a no-op when nothing is airband', () => {
@@ -52,5 +64,6 @@ describe('airband routing', () => {
     expect(out.channels).toBe(input);
     expect(out.zones).toBe(zones);
     expect(out.airband).toEqual([]);
+    expect(out.airbandZones).toEqual([]);
   });
 });

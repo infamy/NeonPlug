@@ -38,6 +38,7 @@ import {
 } from './broadcastChannels';
 import { D890_GPS_ROAMING, parseGpsRoamingTable } from './gpsRoaming';
 import { D890_POWER_ON, parsePowerOnDisplay } from './powerOnDisplay';
+import { D890_AM_ZONES, parseAmZoneTable, type D890AmZone } from './amZones';
 import {
   D890_DIGITAL_CONTACTS,
   isEmptyContactBank,
@@ -819,6 +820,15 @@ export class D890UVProtocol extends BaseDigitalProtocol {
       D890_POWER_ON.SPAN
     );
     return parsePowerOnDisplay(bytes);
+  }
+
+  /** Zones over the AM airband table — a separate system from the main zones. */
+  async readAmZones(): Promise<D890AmZone[]> {
+    const bytes = await this.requireConnection().readMemory(
+      D890_AM_ZONES.ADDRESS,
+      D890_AM_ZONES.STRIDE * D890_AM_ZONES.SLOTS
+    );
+    return parseAmZoneTable(bytes);
   }
 
   /** The GPS Roaming geofence table. */
