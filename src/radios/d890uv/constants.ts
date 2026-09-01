@@ -229,6 +229,14 @@ export const D890_ADDR = {
   /** Zones. */
   ZONE_SET: 0x3482c00,
   ZONE_SET_SIZE: 0x20,
+  /**
+   * Zone hidden mask — one bit per zone, SET = hidden from the radio's menu.
+   *
+   * Sits immediately after the 32-byte presence mask, no gap. A note quoting
+   * `0x3482c28` was an OCR error carried between machines (confirmed
+   * 2026-08-31); the contiguity is pinned by a test so the typo cannot come
+   * back as a "correction".
+   */
   ZONE_HIDE: 0x3482c20,
   ZONE_HIDE_SIZE: 0x20,
   ZONE_NAMES: 0x3600000,
@@ -393,10 +401,15 @@ export const D890_ADDR = {
   ARC4_KEY_BYTES: 5,
 
   /**
-   * ⚠️ NXDN encryption (0x4b00200) is deliberately NOT here. NXDN is not in this
-   * radio's firmware, so there is nothing to set and nothing to confirm. It also
-   * appears in the vendor dispatcher's write phase with no counterpart in the
-   * read phase, which is unexplained. Out until it leaves beta.
+   * ⚠️ NXDN encryption (0x4b00200) is deliberately NOT here.
+   *
+   * NXDN needs alternative firmware, which we have decided not to support — a
+   * scope choice, NOT a fact about the hardware. An earlier version of this
+   * comment claimed NXDN "is not in this radio's firmware"; the V1.05 package
+   * ships an NXDN image, so that was wrong.
+   *
+   * It also appears in the vendor dispatcher's write phase with no counterpart
+   * in the read phase, which remains unexplained. See DA7X2-NXDN-NOTES.md.
    */
 
   /**

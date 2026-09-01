@@ -13,11 +13,12 @@ import {
 } from '../../src/radios/d890uv/bootImage';
 import { D890_ADDR, D890_LIMITS } from '../../src/radios/d890uv/constants';
 import { D890_APRS_NO_CHANNEL } from '../../src/radios/d890uv/aprs';
-import { decodeFrequencyMHz } from '../../src/radios/d890uv/structures';
+import { decodeFrequencyMHz, decodeOccupancyMask, occupiedIndices } from '../../src/radios/d890uv/structures';
 import {
   parseBroadcastChannel,
   decodeBcd,
   isVacantBroadcastChannel,
+  D890_BROADCAST,
 } from '../../src/radios/d890uv/broadcastChannels';
 import {
   parsePredefinedSms,
@@ -546,5 +547,61 @@ describe('DA-7X2 VFO A, against a radio with a known setting', () => {
   it('carries RX then TX in the first eight bytes', () => {
     expect(decodeFrequencyMHz(VFO_A.subarray(0, 4))).toBeCloseTo(435.0625, 5);
     expect(decodeFrequencyMHz(VFO_A.subarray(4, 8))).toBeCloseTo(435.125, 5);
+  });
+});
+
+describe('broadcast tables read whole, not slot by slot', () => {
+  it('costs a fixed span regardless of how many slots look occupied', () => {
+    // The read no longer consults the presence mask, so an erased 0xFF mask —
+    // which decodes as all 256 slots present — cannot turn into 256 record
+    // reads. The span is the same either way.
+    const erased = new Uint8Array(0x20).fill(0xff);
+    expect(occupiedIndices(decodeOccupancyMask(erased, 256))).toHaveLength(256);
+    for (const band of ['am', 'fm'] as const) {
+      const spec = D890_BROADCAST[band];
+      const span = spec.channels * spec.stride;
+      // One aligned span, which readMemory chunks at the negotiated length.
+      expect(span % 0x10).toBe(0);
+      // ...and strictly fewer frames than a record-at-a-time loop would send.
+      expect(Math.ceil(span / 0xf0)).toBeLessThan(spec.channels);
+    }
+  });
+
+  it('treats an all-0xFF record as vacant, so erased slots drop out', () => {
+    // This is what replaces the mask: a record with no name and no decodable
+    // frequency is absent, and erased flash is exactly that.
+    const erased = new Uint8Array(0x40).fill(0xff);
+    expect(isVacantBroadcastChannel(parseBroadcastChannel(erased, 0, 'fm'))).toBe(true);
+  });
+});
+
+describe('broadcast slots that are zero-filled rather than erased', () => {
+  it('treats an all-zero record as vacant, not as a channel at 0.0000 MHz', () => {
+    // Erased flash decodes to null, but a zero-filled slot is valid BCD for 0 —
+    // which sailed past a null-only vacancy check and showed up as a ghost row.
+    const zeroed = new Uint8Array(0x40);
+    const ch = parseBroadcastChannel(zeroed, 255, 'am');
+    expect(ch.frequency).toBeNull();
+    expect(isVacantBroadcastChannel(ch)).toBe(true);
+  });
+
+  it('shows a named slot with no frequency as unset rather than 0.0000', () => {
+    const bytes = new Uint8Array(0x40);
+    // 'ATIS' in UTF-16LE at the name offset.
+    for (const [i, code] of [...'ATIS'].entries()) {
+      bytes[0x04 + i * 2] = code.charCodeAt(0);
+    }
+    const ch = parseBroadcastChannel(bytes, 3, 'am');
+    expect(ch.name).toBe('ATIS');
+    expect(ch.frequency).toBeNull();
+    // Named, so it is NOT vacant — it still belongs in the list.
+    expect(isVacantBroadcastChannel(ch)).toBe(false);
+  });
+
+  it('still decodes a real frequency', () => {
+    const bytes = new Uint8Array(0x40);
+    // 118.7000 MHz: BCD digits 1187 0000, divisor 100000.
+    bytes.set([0x11, 0x87, 0x00, 0x00], 0);
+    expect(parseBroadcastChannel(bytes, 0, 'am').frequency).toBeCloseTo(118.7, 4);
   });
 });

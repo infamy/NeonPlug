@@ -43,6 +43,9 @@ export const Toolbar: React.FC = () => {
   const { keys: encryptionKeys, setKeys: setEncryptionKeys } = useEncryptionKeysStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { readFromRadio, writeChannelsToRadio, isConnecting, error, readSteps, writeChannelsSteps, readModel, writeModel } = useRadioConnection();
+  // Any operation anywhere owns the port; a second port.open() throws AND
+  // leaves it locked for the next attempt.
+  const { radioBusy } = useRadioStore();
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
   const [currentStep, setCurrentStep] = useState('');
@@ -507,7 +510,7 @@ export const Toolbar: React.FC = () => {
                 variant="primary"
                 data-action="read-from-radio"
                 onClick={() => handleRead()}
-                disabled={isConnecting || !webSerialSupported}
+                disabled={isConnecting || radioBusy || !webSerialSupported}
                 className={`rounded-r-none border-r border-white border-opacity-20 ${!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Read codeplug from current radio type'}
               >
@@ -516,7 +519,7 @@ export const Toolbar: React.FC = () => {
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setReadDropdownOpen((v) => !v); }}
-                disabled={isConnecting || isWriting}
+                disabled={isConnecting || isWriting || radioBusy}
                 title="Switch to a different radio type"
                 className="px-2 py-2 bg-neon-cyan text-dark-charcoal hover:bg-opacity-90 border-l border-white border-opacity-20 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none transition-all"
                 aria-expanded={readDropdownOpen}
@@ -542,7 +545,7 @@ export const Toolbar: React.FC = () => {
           <Button
             variant="primary"
             onClick={handleWrite}
-            disabled={isConnecting || isWriting || (channels.length === 0 && zones.length === 0 && scanLists.length === 0) || !webSerialSupported || !!connectionError}
+            disabled={isConnecting || isWriting || radioBusy || (channels.length === 0 && zones.length === 0 && scanLists.length === 0) || !webSerialSupported || !!connectionError}
             className={!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}
             title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Write codeplug to connected radio'}
             glow={webSerialSupported}

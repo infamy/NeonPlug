@@ -115,7 +115,14 @@ export const ExtraColumnCell: React.FC<{
   // shows a dash rather than a control that would write a value the radio
   // ignores.
   if (column.analogOnly && isDigitalMode(channel.mode)) {
-    return <span className="text-muted">—</span>;
+    // MUST be a <td>, like every other branch here. Returning a bare <span>
+    // left the row one cell short of the header, so every extra column to the
+    // right of this one rendered under its neighbour's heading on digital rows.
+    return (
+      <td className="px-2 py-2 text-center" title={title}>
+        <span className="text-cool-gray text-xs">-</span>
+      </td>
+    );
   }
   if (column.digitalOnly && !isDigitalMode(channel.mode)) {
     return (

@@ -69,7 +69,7 @@ interface RadioState {
     contact: import('../radios/d890uv/emergency').D890EmergencyContact | null;
   } | null;
   /** AM airband and FM broadcast channels — separate tables from the main list. */
-  d890Broadcast: { am: D890BroadcastChannel[]; fm: D890BroadcastChannel[] } | null;
+  d890Broadcast: { am: D890BroadcastChannel[]; fm: D890BroadcastChannel[]; fmVfo: D890BroadcastChannel | null } | null;
   /** GPS Roaming geofences. */
   d890GpsRoaming: D890GpsRoamingEntry[] | null;
   /**
@@ -77,6 +77,28 @@ interface RadioState {
    * list — not channel numbers. Index is the zone number.
    */
   d890ZoneCurrentChannels: { a: number[]; b: number[] } | null;
+  /** Power-on screen text and password. */
+  d890PowerOnDisplay: import('../radios/d890uv/powerOnDisplay').D890PowerOnDisplay | null;
+  /**
+   * A radio operation owns the serial port right now.
+   *
+   * SHARED deliberately. `useRadioConnection` is called from four components and
+   * each gets its own `isConnecting`, so the Contacts read could not disable the
+   * toolbar's Read/Write. Starting a second operation calls port.open() on an
+   * already-open port, which throws AND leaves the port locked for the next
+   * attempt — one misclick during a multi-minute read breaks the session.
+   */
+  radioBusy: boolean;
+  /**
+   * Progress of a LONG radio operation — contacts, boot image, backgrounds.
+   *
+   * Lives in the store rather than the component that started it, for two
+   * reasons: the Contacts tab unmounts when you switch tabs and would otherwise
+   * lose its bar mid-read, and a job that runs for minutes should be visible
+   * from wherever you happen to be. Short operations leave this null; a header
+   * bar for a two-second read would be noise.
+   */
+  radioProgress: { label: string; percent: number; message: string } | null;
   bootImageDescription: string | null;
   connectionError: string | null;
   setConnected: (connected: boolean) => void;
@@ -97,9 +119,16 @@ interface RadioState {
     settings: import('../radios/d890uv/emergency').D890EmergencySettings | null;
     contact: import('../radios/d890uv/emergency').D890EmergencyContact | null;
   } | null) => void;
-  setD890Broadcast: (b: { am: D890BroadcastChannel[]; fm: D890BroadcastChannel[] } | null) => void;
+  setD890Broadcast: (b: { am: D890BroadcastChannel[]; fm: D890BroadcastChannel[]; fmVfo: D890BroadcastChannel | null } | null) => void;
   setD890GpsRoaming: (g: D890GpsRoamingEntry[] | null) => void;
   setD890ZoneCurrentChannels: (z: { a: number[]; b: number[] } | null) => void;
+  setD890PowerOnDisplay: (
+    d: import('../radios/d890uv/powerOnDisplay').D890PowerOnDisplay | null
+  ) => void;
+  setRadioBusy: (busy: boolean) => void;
+  setRadioProgress: (
+    p: { label: string; percent: number; message: string } | null
+  ) => void;
   setBootImageDescription: (description: string | null) => void;
   setConnectionError: (error: string | null) => void;
   setSelectedRadioModel: (model: string | null) => void;
@@ -130,6 +159,9 @@ export const useRadioStore = create<RadioState>((set) => ({
   d890Broadcast: null,
   d890GpsRoaming: null,
   d890ZoneCurrentChannels: null,
+  d890PowerOnDisplay: null,
+  radioBusy: false,
+  radioProgress: null,
   bootImageDescription: null,
   connectionError: null,
   setConnected: (connected) => set({ isConnected: connected }),
@@ -150,6 +182,9 @@ export const useRadioStore = create<RadioState>((set) => ({
   setD890Broadcast: (b) => set({ d890Broadcast: b }),
   setD890GpsRoaming: (g) => set({ d890GpsRoaming: g }),
   setD890ZoneCurrentChannels: (z) => set({ d890ZoneCurrentChannels: z }),
+  setD890PowerOnDisplay: (d) => set({ d890PowerOnDisplay: d }),
+  setRadioBusy: (busy) => set({ radioBusy: busy, ...(busy ? {} : { radioProgress: null }) }),
+  setRadioProgress: (p) => set({ radioProgress: p }),
   setBootImageDescription: (description) => set({ bootImageDescription: description }),
   setConnectionError: (error) => set({ connectionError: error }),
   setSelectedRadioModel: (model) => set({ selectedRadioModel: model }),

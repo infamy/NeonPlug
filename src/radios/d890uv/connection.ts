@@ -83,6 +83,26 @@ export class D890Connection extends BaseSerialConnection {
     return this.readLength;
   }
 
+  /**
+   * Force a read size, bypassing negotiation.
+   *
+   * For benchmarking. Whether 240-byte reads are actually faster than the
+   * vendor's 16 is a measurable question, not an obvious one — a longer reply
+   * may cost the radio more per byte than it saves in round trips, and the CPS
+   * uses 16 exclusively across a million requests. Rejects anything the frame
+   * format cannot express: the length is a single byte and reads are 16-aligned.
+   */
+  forceReadLength(length: number): void {
+    if (length < D890_BLOCK.MIN_READ_LEN || length > D890_BLOCK.MAX_READ_LEN
+        || length % D890_BLOCK.ALIGNMENT !== 0) {
+      throw new Error(
+        `Read length must be a multiple of ${D890_BLOCK.ALIGNMENT} between `
+        + `${D890_BLOCK.MIN_READ_LEN} and ${D890_BLOCK.MAX_READ_LEN}`
+      );
+    }
+    this.readLength = length;
+  }
+
   /** PROGRAM -> "QX" + ACK. */
   async enterProgramMode(): Promise<void> {
     await this.write(PROGRAM_CMD);
@@ -151,19 +171,44 @@ export class D890Connection extends BaseSerialConnection {
   /**
    * Find the largest read size the radio answers consistently.
    *
-   * Reads LocalInfo at the 16-byte baseline, then at each larger candidate, and
-   * keeps the largest whose first 16 bytes match the baseline. Any mismatch
-   * falls back to 0x10, which the reference says is always safe.
+   * The vendor CPS only ever issues 16-byte reads — all 1,025,484 of them in a
+   * captured contact download — so anything larger is our own finding. The
+   * length field is a single byte, so 0xf0 is the largest 16-aligned size the
+   * frame format can express; there is nothing above it to try.
+   *
+   * MEASURED 2026-08-31, 16 KB from 0x3480000 on real hardware:
+   *
+   *     16 B/frame   1.62 s   9.9 KB/s   1,024 frames    1.59 ms/frame
+   *    240 B/frame   1.51 s  10.6 KB/s      69 frames   21.84 ms/frame
+   *
+   * Fifteen times fewer round trips bought SEVEN PERCENT. Time per frame scaled
+   * with size (13.7x for a 15x payload), so this radio is byte-limited, not
+   * round-trip-limited — and ~10 KB/s is only 11% of the 921600 baud line rate,
+   * which puts the ceiling in the radio's own flash reads rather than the wire
+   * or our framing. Do not expect a large read size to rescue a slow transfer;
+   * it will not. 0xf0 is kept because 7% is free, not because it is decisive.
+   *
+   * BOTH ENDS of a candidate are checked against independent 16-byte reads.
+   * Verifying only the head — as this did until 2026-08-31 — would accept a
+   * radio that answers the first 16 bytes correctly and returns rubbish for the
+   * remaining 224, and every read afterwards would be quietly corrupt with no
+   * symptom but bad data. Any mismatch falls back to 0x10, which is always safe.
    */
   async negotiateReadLength(): Promise<number> {
-    const baseline = await this.readChunk(D890_ADDR.LOCAL_INFO, D890_BLOCK.MIN_READ_LEN);
+    const min = D890_BLOCK.MIN_READ_LEN;
+    const head = await this.readChunk(D890_ADDR.LOCAL_INFO, min);
 
     for (const candidate of D890_BLOCK.READ_LEN_CANDIDATES) {
-      if (candidate === D890_BLOCK.MIN_READ_LEN) break;
+      if (candidate === min) break;
       try {
+        // The last aligned window inside the candidate span, read on its own.
+        const tailAt = D890_ADDR.LOCAL_INFO + candidate - min;
+        const tail = await this.readChunk(tailAt, min);
         const probe = await this.readChunk(D890_ADDR.LOCAL_INFO, candidate);
-        const consistent = baseline.every((byte, i) => probe[i] === byte);
-        if (consistent) {
+
+        const headOk = head.every((byte, i) => probe[i] === byte);
+        const tailOk = tail.every((byte, i) => probe[candidate - min + i] === byte);
+        if (headOk && tailOk) {
           this.readLength = candidate;
           return candidate;
         }
@@ -172,7 +217,7 @@ export class D890Connection extends BaseSerialConnection {
       }
     }
 
-    this.readLength = D890_BLOCK.MIN_READ_LEN;
+    this.readLength = min;
     return this.readLength;
   }
 

@@ -126,7 +126,6 @@ export const D890UV_SETTINGS_PROFILE: SettingsProfile = {
     'd890Roaming',
     'd890GpsRoaming',
     'd890Satellites',
-    'd890Broadcast',
     'd890Emergency',
   ],
   sections: SECTION_ORDER.map((title) => ({

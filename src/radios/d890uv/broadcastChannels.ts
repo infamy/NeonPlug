@@ -66,6 +66,15 @@ export interface D890BroadcastChannel {
   name: string;
   /** MHz, or null when the record carries no usable frequency. */
   frequency: number | null;
+  /**
+   * Included when scanning this band — the vendor's `Scan` column, CPS "Add".
+   *
+   * Undefined where we cannot know rather than false: FM keeps it in a flat mask
+   * we read, but AM's lives in `AmChannelList_CH_Scan`, keyed by AM zone, inside
+   * the AM zone table we do not read yet. Defaulting AM to false would assert
+   * every airband memory is excluded from scan, which we have not established.
+   */
+  scanAdd?: boolean;
 }
 
 /**
@@ -110,7 +119,13 @@ export function parseBroadcastChannel(
     index,
     // 34 bytes = 17 units, but the radio's own limit is 16 characters.
     name: readName(bytes, 0x04, 16),
-    frequency: raw === null ? null : raw / spec.freqDivisor,
+    // A decoded 0 is "no frequency stored", not a channel at 0 Hz. An unused
+    // slot on this radio is usually erased 0xFF, which decodes to null — but
+    // some are zero-filled instead, and all-zero bytes are perfectly valid BCD.
+    // Neither band can hold 0: AM airband is 108-137 MHz and FM broadcast
+    // 64-108 MHz. Treating it as null here means a nameless zero slot is vacant
+    // and a NAMED one renders "—" rather than a confident 0.0000 MHz.
+    frequency: raw === null || raw === 0 ? null : raw / spec.freqDivisor,
   };
 }
 

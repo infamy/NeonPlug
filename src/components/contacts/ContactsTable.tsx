@@ -7,9 +7,16 @@ import { Card } from '../ui/Card';
 const CONTACTS_PER_PAGE = 100;
 
 export const ContactsTable: React.FC = () => {
-  const { contacts, deleteContact } = useContactsStore();
+  const { contacts, deleteContact, updateContact } = useContactsStore();
   const [currentPage, setCurrentPage] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [friendsOnly, setFriendsOnly] = useState(false);
+
+  // The radio has the concept only if a read populated it. Undefined on every
+  // other radio, and on an unread codeplug — in which case the column and the
+  // filter are both hidden rather than shown empty.
+  const supportsFriends = contacts.some((c) => c.isFriend !== undefined);
+  const friendCount = contacts.filter((c) => c.isFriend).length;
 
   // Filter contacts based on search query
   const filteredContacts = useMemo(() => {
@@ -29,18 +36,23 @@ export const ContactsTable: React.FC = () => {
     );
   }, [contacts, searchQuery]);
 
+  const visibleContacts = useMemo(
+    () => (friendsOnly ? filteredContacts.filter((c) => c.isFriend) : filteredContacts),
+    [filteredContacts, friendsOnly]
+  );
+
   const paginatedContacts = useMemo(() => {
     const startIndex = currentPage * CONTACTS_PER_PAGE;
     const endIndex = startIndex + CONTACTS_PER_PAGE;
-    return filteredContacts.slice(startIndex, endIndex);
-  }, [filteredContacts, currentPage]);
+    return visibleContacts.slice(startIndex, endIndex);
+  }, [visibleContacts, currentPage]);
 
-  const totalPages = Math.ceil(filteredContacts.length / CONTACTS_PER_PAGE);
+  const totalPages = Math.ceil(visibleContacts.length / CONTACTS_PER_PAGE);
 
   // Reset to first page when search changes
   React.useEffect(() => {
     setCurrentPage(0);
-  }, [searchQuery]);
+  }, [searchQuery, friendsOnly]);
 
   if (contacts.length === 0) {
     return (
@@ -73,16 +85,35 @@ export const ContactsTable: React.FC = () => {
               Clear
             </button>
           )}
+          {/* Searching 160,000 contacts to tick two of them is the whole
+              workflow, so the friends filter sits next to the search rather
+              than somewhere you have to go and find. */}
+          {supportsFriends && (
+            <button
+              onClick={() => setFriendsOnly((v) => !v)}
+              className={`px-3 py-2 rounded text-sm border whitespace-nowrap transition-colors ${
+                friendsOnly
+                  ? 'bg-neon-cyan bg-opacity-20 border-neon-cyan text-neon-cyan'
+                  : 'border-neon-cyan border-opacity-30 text-cool-gray hover:text-neon-cyan'
+              }`}
+              title="Show only contacts in the radio's Friends List"
+            >
+              Friends <span className="opacity-70">{friendCount}</span>
+            </button>
+          )}
         </div>
-        {searchQuery && (
+        {(searchQuery || friendsOnly) && (
           <div className="mt-2 text-xs text-cool-gray">
-            Found {filteredContacts.length.toLocaleString()} {formatPlural(filteredContacts.length, 'contact')} matching "{searchQuery}"
+            Showing {visibleContacts.length.toLocaleString()}{' '}
+            {formatPlural(visibleContacts.length, 'contact')}
+            {searchQuery && ` matching "${searchQuery}"`}
+            {friendsOnly && ' in the Friends List'}
           </div>
         )}
       </div>
       
       <div className="flex-1 overflow-y-auto">
-        {filteredContacts.length === 0 ? (
+        {visibleContacts.length === 0 ? (
           <EmptyState
             message="No contacts found"
             secondary={searchQuery ? `No contacts match "${searchQuery}"` : undefined}
@@ -91,6 +122,9 @@ export const ContactsTable: React.FC = () => {
           <table className="w-full border-collapse text-xs">
             <thead className="sticky top-0 bg-dark-charcoal z-10">
               <tr className="bg-dark-charcoal border-b border-neon-cyan">
+                {supportsFriends && (
+                  <th className="px-2 py-2 text-center text-neon-cyan font-bold w-16">Friend</th>
+                )}
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[150px]">Name</th>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">TG/DMR ID</th>
                 <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]">Callsign</th>
@@ -107,6 +141,17 @@ export const ContactsTable: React.FC = () => {
                   key={contact.id}
                   className="border-b border-neon-cyan border-opacity-20 hover:bg-deep-gray hover:bg-opacity-50 transition-colors"
                 >
+                  {supportsFriends && (
+                    <td className="px-2 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={contact.isFriend === true}
+                        onChange={(e) => updateContact(contact.id, { isFriend: e.target.checked })}
+                        className="checkbox-theme"
+                        title="Show this contact in the radio's Friends List"
+                      />
+                    </td>
+                  )}
                   <td className="px-2 py-2 text-white">{contact.name}</td>
                   <td className="px-2 py-2 text-white text-center">{contact.dmrId}</td>
                   <td className="px-2 py-2 text-white">{contact.callSign || '-'}</td>
@@ -128,10 +173,10 @@ export const ContactsTable: React.FC = () => {
           </table>
         )}
       </div>
-      {filteredContacts.length > 0 && totalPages > 1 && (
+      {visibleContacts.length > 0 && totalPages > 1 && (
         <div className="mt-2 pt-2 border-t border-neon-cyan border-opacity-20 flex items-center justify-between text-sm text-cool-gray px-2 pb-2">
           <span>
-            Showing {currentPage * CONTACTS_PER_PAGE + 1}-{Math.min((currentPage + 1) * CONTACTS_PER_PAGE, filteredContacts.length)} of {filteredContacts.length.toLocaleString()} {formatPlural(filteredContacts.length, 'contact')}
+            Showing {currentPage * CONTACTS_PER_PAGE + 1}-{Math.min((currentPage + 1) * CONTACTS_PER_PAGE, visibleContacts.length)} of {visibleContacts.length.toLocaleString()} {formatPlural(visibleContacts.length, 'contact')}
             {searchQuery && ` (${contacts.length.toLocaleString()} total)`}
           </span>
           <div className="flex items-center gap-2">

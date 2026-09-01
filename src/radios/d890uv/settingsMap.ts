@@ -266,8 +266,8 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'satelliteAosLimit',               label: 'Satellite Aos Limit',                 cpsLabel: 'Sate Aos Limit',                      group: 'Satellite',       offset: 0x151, max: 30, listLength: 31, vendorField: 'SateAosLimit', valueRule: { scale: 1, offset: 0, unit: '', basis: 'range-forced' } },
   { key: 'powerOnVolumeType',               label: 'Power On Volume Type',                cpsLabel: 'Power On Volume Type',                group: 'Volume/Audio',    offset: 0x155, max: 1, listLength: 2, options: ['Preset', 'Minimum'], vendorField: 'VolType' },
   { key: 'powerOnVolume',                   label: 'Power On Volume',                     cpsLabel: 'Power On Volume',                     group: 'Volume/Audio',    offset: 0x156, max: 15, listLength: 16, vendorField: 'MinVolData' },
-  { key: 'subSpklntx',                      label: 'sub SpklnTx',                         cpsLabel: 'sub SpklnTx',                         group: 'Volume/Audio',    offset: 0x15b, max: 1, listLength: 2, options: ['Off', 'On'] },
-  { key: 'simpRepeater',                    label: 'Simp Repearter',                       cpsLabel: 'Simp Repearter',                      group: 'Auto repeater',   offset: 0x15c, max: 1, listLength: 2, options: ['Off', 'On'] },
+  { key: 'subSpkInTx',                      label: 'Sub Speaker in TX',                   cpsLabel: 'sub SpkInTx',                         group: 'Volume/Audio',    offset: 0x15b, max: 1, listLength: 2, options: ['Off', 'On'], vendorField: 'SubSpkInTx' },
+  { key: 'simpRepeater',                    label: 'Simp Repearter',                       cpsLabel: 'Simp Repearter',                      group: 'Auto repeater',   offset: 0x15c, max: 1, listLength: 2, options: ['Off', 'On'], vendorField: 'SimpRepter'},
 
   // ---------------------------------------------------------------------------
   // Recovered from the vendor CPS rather than from a radio (2026-08-30)
@@ -296,7 +296,7 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'vfMrA', label: 'VF/MR(A)', cpsLabel: 'VF/MR(A)', group: 'Work Mode', offset: 0x015, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'RMV1', confidence: 'swept' },
   { key: 'vfMrB', label: 'VF/MR(B)', cpsLabel: 'VF/MR(B)', group: 'Work Mode', offset: 0x016, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'RMV2', confidence: 'swept' },
   { key: 'steWhenNoSignal', label: 'STE When No Signal', group: 'STE', offset: 0x018, max: 255, vendorField: 'STE_Freq', confidence: 'vendor-name' },
-  { key: 'voiceHeaderRepetitions', label: 'Voice header repetitions', group: 'Digital Func', offset: 0x01b, max: 255, confidence: 'inferred' },
+  { key: 'voiceHeaderRepetitions', label: 'Voice header repetitions', group: 'Digital Func', offset: 0x01b, max: 255, confidence: 'inferred', vendorField: 'VcallRpheader'},
   { key: 'fmWorkChannel', label: 'FM Work Channel', group: 'AM/FM', offset: 0x01d, max: 255, vendorField: 'Work_FMCH', confidence: 'vendor-name' },
   { key: 'fmVfoMem', label: 'FM VFO/MEM', group: 'AM/FM', offset: 0x01e, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'FM_VFO', confidence: 'vendor-name' },
   { key: 'memZoneA', label: 'MEM Zone(A)', group: 'Work Mode', offset: 0x01f, max: 255, vendorField: 'Work_Zone1', confidence: 'vendor-name' },
@@ -393,7 +393,7 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'noaaScan', label: 'NOAA Scan', cpsLabel: 'NOAA Scan', group: 'Other', offset: 0x158, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'WxScan', confidence: 'swept' },
   { key: 'amFrequencyStep', label: 'Freq Step', group: 'AM/FM', offset: 0x159, max: 9, options: ['2.5K', '5K', '6.25K', '8.33K', '10K', '12.5K', '20K', '25K', '30K', '50K'], listLength: 10, vendorField: 'AmFreqStep', confidence: 'vendor-name' },
   { key: 'repeaterWhitelist', label: 'Repeater Whitelist', cpsLabel: 'Repeater Whitelist', group: 'Auto repeater', offset: 0x15a, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'RepIdLimit', confidence: 'swept' },
-  { key: 'simpRepeaterVoiceEnable', label: 'Simp Repearter VoiceEn', group: 'Auto repeater', offset: 0x15d, max: 1, confidence: 'inferred' },
+  { key: 'simpRepeaterVoiceEnable', label: 'Simp Repearter VoiceEn', group: 'Auto repeater', offset: 0x15d, max: 1, confidence: 'inferred', vendorField: 'SimpRepterVoiceEn'},
   { key: 'simpRepeaterSlot', label: 'Simp Repearter Slot', group: 'Auto repeater', offset: 0x15e, max: 2, options: ['Slot 1', 'Slot 2', 'Current Slot'], listLength: 3, vendorField: 'SimpRepterSlot', confidence: 'vendor-name' },
 ] as const;
 

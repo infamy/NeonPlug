@@ -60,12 +60,14 @@ const ZoneChannelSelect: React.FC<{
 const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
   const { d890ZoneCurrentChannels, setD890ZoneCurrentChannels } = useRadioStore();
   const { channels } = useChannelsStore();
-  const { zones } = useZonesStore();
+  const { zones, updateZone } = useZonesStore();
 
   // Index against the store's own array: the list pane filters out unnamed
   // zones, so a render position from there would be the wrong zone.
   const zoneIndex = zones.findIndex((z) => z.id === zone.id);
-  if (!d890ZoneCurrentChannels || zoneIndex < 0) return null;
+  const showHidden = zone.hidden !== undefined;
+  const showChannels = !!d890ZoneCurrentChannels && zoneIndex >= 0;
+  if (!showHidden && !showChannels) return null;
 
   const label = (number: number): string => {
     const channel = channels.find((c) => c.number === number);
@@ -73,6 +75,8 @@ const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
   };
 
   const update = (which: 'a' | 'b', position: number) => {
+    // Only reachable from the A/B selects, which render only when this is set.
+    if (!d890ZoneCurrentChannels) return;
     const next = {
       a: [...d890ZoneCurrentChannels.a],
       b: [...d890ZoneCurrentChannels.b],
@@ -86,9 +90,11 @@ const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
       <div className="p-3 pb-2">
         <h4 className="text-neon-cyan font-medium">Zone Settings</h4>
         <p className="text-cool-gray text-xs mt-0.5">
-          The channel each VFO tunes to when this zone is selected.
+          The channel each VFO tunes to when this zone is selected, and whether the zone
+          appears on the radio at all.
         </p>
       </div>
+      {showChannels && d890ZoneCurrentChannels && (
       <div className="p-4 pt-0 grid grid-cols-2 gap-4">
         <ZoneChannelSelect
           title="Current Channel A"
@@ -105,6 +111,24 @@ const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
           onChange={(p) => update('b', p)}
         />
       </div>
+      )}
+      {/* Buried several levels down in the vendor CPS's zone editor. Surfaced
+          plainly here — it changes whether the zone appears on the radio at
+          all, which is not a thing to make people hunt for. */}
+      {showHidden && (
+        <div className="px-4 pb-3 pt-1 flex items-center gap-2">
+          <input
+            id={`zone-hidden-${zone.id}`}
+            type="checkbox"
+            checked={zone.hidden === true}
+            onChange={(e) => updateZone(zone.id, { hidden: e.target.checked })}
+            className="checkbox-theme"
+          />
+          <label htmlFor={`zone-hidden-${zone.id}`} className="text-cool-gray text-xs">
+            Hide this zone from the radio&apos;s zone menu
+          </label>
+        </div>
+      )}
     </div>
   );
 };

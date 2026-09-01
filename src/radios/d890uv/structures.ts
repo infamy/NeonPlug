@@ -415,7 +415,8 @@ export function decodeU32Members(bytes: Uint8Array, maxMembers: number, offset =
 export function parseZone(
   nameBytes: Uint8Array,
   memberBytes: Uint8Array,
-  index: number
+  index: number,
+  hidden = false
 ): Zone {
   const name = decodeWideCharString(nameBytes, D890_LIMITS.NAME_MAX_CHARS);
   // Structural, not the enforced cap: reading is where truncation is silent and
@@ -426,6 +427,7 @@ export function parseZone(
     id: generateZoneId(),
     name: name || `Zone ${index + 1}`,
     channels: members.map((wireIndex) => wireIndex + 1),
+    hidden,
   };
 }
 

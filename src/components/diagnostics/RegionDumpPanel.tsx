@@ -211,6 +211,11 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<string>('');
   const [result, setResult] = useState<{ address: number; data: Uint8Array; regionKey: string } | null>(null);
+  /** '' = use the negotiated size; otherwise force it, to A/B the read speed. */
+  const [forcedLength, setForcedLength] = useState('');
+  const [timing, setTiming] = useState<
+    { seconds: number; bytes: number; readLength: number } | null
+  >(null);
 
   // Capability-gated, never model-string-gated (golden rule #3).
   if (!caps?.supportsRawRegionDump) return null;
@@ -252,10 +257,16 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
     setResult(null);
     try {
       await protocol.connect();
-      setProgress(`Reading 0x${target.length.toString(16)} bytes…`);
+      if (forcedLength) protocol.forceReadLength(parseInt(forcedLength, 10));
+      const readLength = protocol.getReadLength();
+
+      setProgress(`Reading 0x${target.length.toString(16)} bytes at ${readLength} B/frame…`);
+      const startedAt = Date.now();
       const data = await protocol.readRawRegion(target.address, target.length, (read, total) => {
         setProgress(`Reading ${read}/${total} bytes…`);
       });
+      const seconds = (Date.now() - startedAt) / 1000;
+      setTiming({ seconds, bytes: data.length, readLength });
       setResult({ address: target.address, data, regionKey: selected });
       setProgress('');
     } catch (err) {
@@ -331,12 +342,42 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
           region.note && <p className="text-xs text-muted">{region.note}</p>
         )}
 
+        {/* Read size is a benchmark control, not a setting. The vendor CPS uses
+            16 bytes for every one of its million requests; whether our 240 is
+            actually faster on this hardware is worth measuring rather than
+            assuming, so dump the same region twice and compare the timings. */}
+        <label className="text-sm text-cool-gray">
+          Read size
+          <select
+            value={forcedLength}
+            onChange={(e) => setForcedLength(e.target.value)}
+            disabled={busy}
+            className="mt-1 w-full bg-black border border-panel rounded px-2 py-1 text-neon-cyan text-sm"
+          >
+            <option value="">Negotiated (largest the radio accepts)</option>
+            <option value="16">16 bytes — what the vendor CPS uses</option>
+            <option value="64">64 bytes</option>
+            <option value="128">128 bytes</option>
+            <option value="240">240 bytes — the frame format's maximum</option>
+          </select>
+        </label>
+
         <div className="flex items-center gap-3 flex-wrap">
           <Button onClick={handleDump} disabled={busy} variant="primary">
             {busy ? 'Reading…' : 'Connect and dump'}
           </Button>
           {progress && <span className="text-xs text-neon-cyan font-mono">{progress}</span>}
         </div>
+
+        {timing && (
+          <div className="text-xs font-mono text-neon-cyan bg-black bg-opacity-30 rounded p-2">
+            {timing.bytes.toLocaleString()} B at {timing.readLength} B/frame ·{' '}
+            {timing.seconds.toFixed(2)} s ·{' '}
+            {(timing.bytes / 1024 / timing.seconds).toFixed(1)} KB/s ·{' '}
+            {Math.ceil(timing.bytes / timing.readLength).toLocaleString()} frames ·{' '}
+            {((timing.seconds * 1000) / Math.ceil(timing.bytes / timing.readLength)).toFixed(2)} ms/frame
+          </div>
+        )}
       </div>
 
       {result && (

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { alignZoneCurrentChannels } from '../../src/radios/d890uv/structures';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  alignZoneCurrentChannels,
+  decodeOccupancyMask,
+  parseZone,
+} from '../../src/radios/d890uv/structures';
+import { D890_ADDR } from '../../src/radios/d890uv/constants';
 
 /**
  * The A/B tables are indexed by hardware zone slot; the zones array has empty
@@ -30,5 +37,71 @@ describe('zone current channel alignment', () => {
 
   it('returns nothing for a radio with no zones', () => {
     expect(alignZoneCurrentChannels({ a: [1, 2], b: [3, 4] }, [])).toEqual({ a: [], b: [] });
+  });
+});
+
+describe('zone hidden flag', () => {
+  it('is a second mask over the same slots, not a variant of presence', () => {
+    // Zone 2 hidden, zones 1 and 3 not. A hidden zone is still PRESENT —
+    // conflating the two masks would drop a hidden zone's channels entirely.
+    const hide = new Uint8Array(0x20);
+    hide[0] = 0b0000_0010;
+    const decoded = decodeOccupancyMask(hide, 250);
+    expect(decoded[0]).toBe(false);
+    expect(decoded[1]).toBe(true);
+    expect(decoded[2]).toBe(false);
+  });
+
+  it('carries the flag onto the parsed zone', () => {
+    const name = new Uint8Array(0x22);
+    const members = new Uint8Array(0x40);
+    members[0] = 0x00; members[1] = 0x00;   // member: channel 1
+    members[2] = 0xff; members[3] = 0xff;   // terminator
+    expect(parseZone(name, members, 0, true).hidden).toBe(true);
+    expect(parseZone(name, members, 0, false).hidden).toBe(false);
+  });
+
+  it('sits immediately after the presence mask, with no gap', () => {
+    // 250 zones is 32 bytes of mask, so the two regions are back to back.
+    // Pinned because a note transcribed between machines once read this address
+    // as 0x3482c28 (an OCR slip), which would leave an 8-byte hole. A wrong
+    // address here fails silently — both regions are zeros until a zone is
+    // actually hidden — so the invariant is cheaper than the discovery.
+    expect(D890_ADDR.ZONE_SET + D890_ADDR.ZONE_SET_SIZE).toBe(D890_ADDR.ZONE_HIDE);
+    expect(Math.ceil(250 / 8)).toBe(D890_ADDR.ZONE_HIDE_SIZE);
+  });
+});
+
+/**
+ * The hidden mask as read off a real DA-7X2 (dump of 0x3480000, 2026-08-29),
+ * on a radio whose owner confirms no zone is hidden.
+ *
+ * What this DOES establish: the address holds a clean, well-formed mask rather
+ * than erased flash or unrelated data. Its neighbour at 0x3482c00 reads exactly
+ * one present zone in the same dump, so the address family is right.
+ *
+ * What it does NOT establish, and the reason this radio has burned us before:
+ * an all-zero read cannot separate "correct address, nothing hidden" from
+ * "wrong address that happens to be zeros". Only a radio with a KNOWN hidden
+ * zone can do that — one specific bit has to flip. Until then the polarity
+ * (set = hidden) is marshaller-derived, not observed.
+ */
+describe('zone hidden mask, against a real dump', () => {
+  const HIDE = new Uint8Array(readFileSync(join(__dirname, '../fixtures/d890uv/zone-hide.bin')));
+
+  it('is a full 32-byte mask, not a short or padded read', () => {
+    expect(HIDE.length).toBe(0x20);
+  });
+
+  it('reads as no zones hidden, matching the radio it came from', () => {
+    expect(decodeOccupancyMask(HIDE, 250).some(Boolean)).toBe(false);
+  });
+
+  it('is zeros rather than erased 0xFF', () => {
+    // An unused region on this radio reads 0xFF. Zeros mean the vendor wrote
+    // this mask, which is weak evidence the address is real — and it is the
+    // only evidence an unhidden radio can give.
+    expect(HIDE.every((b) => b === 0x00)).toBe(true);
+    expect(HIDE.some((b) => b === 0xff)).toBe(false);
   });
 });

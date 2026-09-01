@@ -84,8 +84,19 @@ export function parseGpsRoamingEntry(bytes: Uint8Array, index: number): D890GpsR
   // An unused slot on this radio is erased flash, not zeros — the fourth region
   // where that has caught us. A record of 0xFF is absent, not a geofence at
   // 255 degrees with a 4-billion-metre radius.
+  // Absent if EVERY used byte is 0x00 or 0xFF — not merely if the whole record
+  // is uniformly one or the other.
+  //
+  // Real slots on this radio mix the two: observed 2026-08-31 on hardware with
+  // ONOFF = 0x00 and ZONE = 0xFF in the same record, which passed a
+  // uniformity test and rendered 32 phantom geofences reading
+  // "255 (no such zone)" at 0.00000, 0.00000.
+  //
+  // Safe because a configured entry always has at least one byte that is
+  // neither: enabled is 1, a zone index is below 250, and a position or radius
+  // that is all-zero/all-FF is not a location anyone set.
   const used = bytes.subarray(0, D890_GPS_ROAMING.USED_BYTES);
-  if (used.every((b) => b === 0xff) || used.every((b) => b === 0x00)) return null;
+  if (used.every((b) => b === 0x00 || b === 0xff)) return null;
 
   return {
     index,
@@ -125,4 +136,42 @@ export function gpsRoamingPositionToDecimal(
 ): number {
   const negative = 'south' in p ? p.south : (p as { west: boolean }).west;
   return (negative ? -1 : 1) * (p.degrees + (p.minutes + p.minuteFraction / 100) / 60);
+}
+
+/**
+ * Decimal degrees back into the radio's degrees / whole minutes / hundredths /
+ * hemisphere quadruple — the inverse of `gpsRoamingPositionToDecimal`.
+ *
+ * The rounding carry is the whole difficulty. 51.99999° is 51° 59.9994', which
+ * rounds to 60.00 minutes; storing minutes=60 would be a position the radio
+ * cannot represent, so it carries into degrees. The same applies one level down
+ * when the hundredths round to 100.
+ *
+ * Sign is carried by the hemisphere flag, never by the magnitude — every stored
+ * component is an unsigned byte.
+ */
+export function decimalToGpsRoamingPosition(decimal: number): {
+  degrees: number;
+  minutes: number;
+  minuteFraction: number;
+  negative: boolean;
+} {
+  const negative = decimal < 0;
+  const absolute = Math.abs(decimal);
+
+  let degrees = Math.floor(absolute);
+  const totalMinutes = (absolute - degrees) * 60;
+  let minutes = Math.floor(totalMinutes);
+  let minuteFraction = Math.round((totalMinutes - minutes) * 100);
+
+  if (minuteFraction >= 100) {
+    minuteFraction -= 100;
+    minutes += 1;
+  }
+  if (minutes >= 60) {
+    minutes -= 60;
+    degrees += 1;
+  }
+
+  return { degrees, minutes, minuteFraction, negative };
 }

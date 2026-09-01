@@ -198,6 +198,46 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
  * other contents are unknown. Staging without sending is the useful half: it
  * exercises the encoder and shows the user precisely what would go out.
  */
+/**
+ * The custom power-on text — the alternative the boot image replaces.
+ *
+ * Lives here rather than in the settings grid for two reasons: it is the other
+ * half of "what the radio shows at power on", and it sits at 0x3500900, outside
+ * the settings block that `settingsMap.ts` covers.
+ *
+ * Read-only for now. The password is shown because the CPS shows it in clear on
+ * the same tab; it is the radio's power-on lock, not a credential of the user's.
+ */
+const PowerOnText: React.FC = () => {
+  const { d890PowerOnDisplay } = useRadioStore();
+  if (!d890PowerOnDisplay) return null;
+  const { line1, line2, password } = d890PowerOnDisplay;
+  if (!line1 && !line2 && !password) return null;
+
+  return (
+    <div className="mb-6 bg-neon-cyan bg-opacity-5 border border-neon-cyan border-opacity-30 rounded-lg p-4">
+      <h4 className="text-neon-cyan font-medium mb-1">Power-on Text</h4>
+      <p className="text-cool-gray text-xs mb-3">
+        Shown instead of the boot image when <em>Power On</em> is set to custom text.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+        <div>
+          <div className="text-cool-gray mb-1">Line 1</div>
+          <div className="text-white font-mono">{line1 || <span className="text-muted">—</span>}</div>
+        </div>
+        <div>
+          <div className="text-cool-gray mb-1">Line 2</div>
+          <div className="text-white font-mono">{line2 || <span className="text-muted">—</span>}</div>
+        </div>
+        <div>
+          <div className="text-cool-gray mb-1">Power-on Password</div>
+          <div className="text-white font-mono">{password || <span className="text-muted">Not set</span>}</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const D890ImagesArea: React.FC = () => {
   const { d890Images } = useRadioStore();
   const { readD890Images, isConnecting } = useRadioConnection();
@@ -231,6 +271,8 @@ export const D890ImagesArea: React.FC = () => {
         {' '}The boot image only appears if <em>Power On</em> is set to Image rather
         than custom text.
       </p>
+
+      <PowerOnText />
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <button

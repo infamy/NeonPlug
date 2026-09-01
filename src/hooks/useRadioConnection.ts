@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { RadioProtocol } from '../types/radio';
 import { createDefaultProtocol, createProtocolForModel } from '../radios';
+import { D890UVProtocol } from '../radios/d890uv/protocol';
 import { DM32UVProtocol } from '../radios/dm32uv/protocol';
 import { BaseDigitalProtocol } from '../radios/shared/BaseProtocols';
 import { getCapabilitiesForModel } from '../radios/capabilities';
@@ -71,7 +72,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setConnectionError } = useRadioStore();
+  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setD890PowerOnDisplay, setRadioBusy, setRadioProgress, setConnectionError } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -91,6 +92,7 @@ export function useRadioConnection() {
     { forcePortSelection = true }: { forcePortSelection?: boolean } = {}
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
     setError(null);
     setConnectionError(null);
 
@@ -286,8 +288,14 @@ export function useRadioConnection() {
             band: 'am' | 'fm'
           ) => Promise<import('../radios/d890uv/broadcastChannels').D890BroadcastChannel[]>;
           readGpsRoaming?: () => Promise<import('../radios/d890uv/gpsRoaming').D890GpsRoamingEntry[]>;
+          readFmVfo?: () => Promise<
+            import('../radios/d890uv/broadcastChannels').D890BroadcastChannel | null
+          >;
           readZoneCurrentChannels?: () => Promise<{ a: number[]; b: number[] }>;
           rawZoneIndices?: number[];
+          readPowerOnDisplay?: () => Promise<
+            import('../radios/d890uv/powerOnDisplay').D890PowerOnDisplay
+          >;
         };
 
         if (extras.readEncryptionKeys) {
@@ -347,10 +355,20 @@ export function useRadioConnection() {
             setD890Broadcast({
               am: await extras.readBroadcastChannels('am'),
               fm: await extras.readBroadcastChannels('fm'),
+              fmVfo: extras.readFmVfo ? await extras.readFmVfo() : null,
             });
           } catch (err) {
             console.warn('Could not read broadcast channels:', err);
             sectionReadWarnings.push('AM/FM broadcast');
+          }
+        }
+
+        if (extras.readPowerOnDisplay) {
+          try {
+            setD890PowerOnDisplay(await extras.readPowerOnDisplay());
+          } catch (err) {
+            console.warn('Could not read power-on display:', err);
+            sectionReadWarnings.push('Power-on display');
           }
         }
 
@@ -513,6 +531,7 @@ export function useRadioConnection() {
           setConnectionError(retryErrorMessage);
           onProgress?.(0, `Error: ${retryErrorMessage}`, 'Error');
           setIsConnecting(false);
+      setRadioBusy(false);
           try { await protocol?.disconnect(); } catch { /* ignore */ }
           throw retryErr;
         }
@@ -523,19 +542,38 @@ export function useRadioConnection() {
       onProgress?.(0, `Error: ${errorMessage}`, 'Error');
       console.error('Radio read error:', err);
       setIsConnecting(false);
+      setRadioBusy(false);
       try { await protocol?.disconnect(); } catch { /* ignore */ }
       throw err;
     } finally {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       setIsConnecting(false);
+      setRadioBusy(false);
     }
-  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setEncryptionKeys, setConnectionError]);
+  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setD890PowerOnDisplay, setEncryptionKeys, setConnectionError]);
+
+  /**
+   * Mirror a long operation's progress into the store so it survives the
+   * starting component unmounting, and can be shown in the header.
+   *
+   * Only for jobs measured in minutes. Wrapping a two-second read would put a
+   * bar in the header that flickers and says nothing.
+   */
+  const publish = useCallback((
+    label: string,
+    onProgress?: (progress: number, message: string) => void
+  ) => (percent: number, message: string) => {
+    setRadioProgress({ label, percent, message });
+    onProgress?.(percent, message);
+  }, [setRadioProgress]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
     setError(null);
+    const report = publish('Reading contacts', onProgress);
     
     let protocol: RadioProtocol | null = null;
 
@@ -545,24 +583,42 @@ export function useRadioConnection() {
       
       // Set up progress callback
       protocol.onProgress = (progress, message) => {
-        onProgress?.(progress, message);
+        report(progress, message);
       };
       
       // Connect to radio (reuse existing connection if available)
-      onProgress?.(0, 'Connecting to radio...');
+      report(0, 'Connecting to radio...');
       await protocol.connect();
       
       // Get radio info if not already available
       if (!radioInfo) {
-        onProgress?.(5, 'Reading radio information...');
+        report(5, 'Reading radio information...');
         const info = await protocol.getRadioInfo();
         setRadioInfo(info);
         setConnected(true);
       }
       
-      // Read contacts (this is slow - reads many 4KB blocks)
-      onProgress?.(10, 'Reading contacts from radio (this may take a while)...');
-      const contacts = await protocol.readContacts();
+      // Report 0, not a made-up milestone. This used to claim 10% before a
+      // single contact byte had moved, so the bar jumped to 10 and then fell
+      // back to 1 as soon as real per-bank progress arrived.
+      report(0, 'Reading contacts from radio (this may take a while)...');
+
+      // The D890 family keeps TWO different things called "contacts": talkgroups
+      // (what readContacts returns, already loaded with the codeplug) and the
+      // DMR contact database. This button means the database.
+      const d890 = protocol instanceof D890UVProtocol ? protocol : null;
+      const contacts = d890
+        ? (await d890.readDigitalContacts(onProgress)).map((c, i) => ({
+            id: i + 1,
+            name: c.name,
+            dmrId: c.dmrId,
+            callSign: c.callSign,
+            city: c.city,
+            province: c.province,
+            country: c.country,
+            isFriend: c.isFriend,
+          }))
+        : await protocol.readContacts();
       setContacts(contacts);
       
       const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
@@ -573,11 +629,11 @@ export function useRadioConnection() {
         setRawContactBlocks(dm32.rawContactBlocks);
       }
       
-      onProgress?.(100, `Successfully read ${contacts.length} contacts`);
+      report(100, `Successfully read ${contacts.length} contacts`);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMsg);
-      onProgress?.(0, `Error: ${errorMsg}`);
+      report(0, `Error: ${errorMsg}`);
       throw err;
     } finally {
       if (protocol) {
@@ -588,6 +644,7 @@ export function useRadioConnection() {
         }
       }
       setIsConnecting(false);
+      setRadioBusy(false);
     }
   }, [setContacts, setRadioInfo, setConnected, radioInfo]);
 
@@ -602,6 +659,7 @@ export function useRadioConnection() {
     onProgress?: (progress: number, message: string) => void
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
     setError(null);
     let protocol: RadioProtocol | null = null;
     try {
@@ -633,6 +691,7 @@ export function useRadioConnection() {
         try { await protocol.disconnect(); } catch (e) { console.warn('Error disconnecting after reading pictures:', e); }
       }
       setIsConnecting(false);
+      setRadioBusy(false);
     }
   }, [selectedRadioModel, radioInfo, setD890Images]);
 
@@ -640,6 +699,7 @@ export function useRadioConnection() {
     onProgress?: (progress: number, message: string) => void
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
     setError(null);
     let protocol: RadioProtocol | null = null;
     try {
@@ -677,6 +737,7 @@ export function useRadioConnection() {
         }
       }
       setIsConnecting(false);
+      setRadioBusy(false);
     }
   }, [setBootImageRaw, setBootImageDescription, setRadioInfo, setConnected, radioInfo]);
 
@@ -685,6 +746,7 @@ export function useRadioConnection() {
     onProgress?: (progress: number, message: string) => void
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
     setError(null);
     let protocol: RadioProtocol | null = null;
     try {
@@ -722,6 +784,7 @@ export function useRadioConnection() {
         }
       }
       setIsConnecting(false);
+      setRadioBusy(false);
     }
   }, [setBootImageRaw, setBootImageDescription, setRadioInfo, setConnected, radioInfo]);
 
@@ -730,6 +793,7 @@ export function useRadioConnection() {
     onProgress?: (progress: number, message: string) => void
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
     setError(null);
     
     let protocol: RadioProtocol | null = null;
@@ -777,6 +841,7 @@ export function useRadioConnection() {
         }
       }
       setIsConnecting(false);
+      setRadioBusy(false);
     }
   }, [setContacts, setRadioInfo, setConnected, radioInfo]);
 
@@ -787,6 +852,7 @@ export function useRadioConnection() {
     onProgress?: (progress: number, message: string, step?: string) => void
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
     setError(null);
     setConnectionError(null);
     
@@ -1008,6 +1074,7 @@ export function useRadioConnection() {
 
       // Set connecting to false so modal can show error state
       setIsConnecting(false);
+      setRadioBusy(false);
 
       // Try to disconnect on error (if connection exists)
       if (protocol) {
@@ -1024,6 +1091,7 @@ export function useRadioConnection() {
     } finally {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       setIsConnecting(false);
+      setRadioBusy(false);
     }
   }, [radioInfo, selectedRadioModel, setConnected, setRadioInfo, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setConnectionError]);
 

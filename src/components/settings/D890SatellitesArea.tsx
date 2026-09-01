@@ -4,7 +4,11 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { D890_SATELLITE, satelliteFreqToMHz } from '../../radios/d890uv/satellite';
 
 /**
- * The GPS satellite table.
+ * The satellite repeater table.
+ *
+ * NOT APRS. These are amateur radio satellites worked as repeaters — uplink and
+ * downlink pairs with Doppler correction — and the table is unrelated to the
+ * APRS settings at 0x3501000 despite both living under GPS in the vendor CPS.
  *
  * Read-only. Frequencies are shown in MHz: the 10 Hz unit was inferred until a
  * radio came back holding twelve real satellites at their published pairs, and
@@ -15,9 +19,9 @@ export const D890SatellitesArea: React.FC = () => {
 
   return (
     <div>
-      <SectionTitle size="lg" underline>GPS Satellites</SectionTitle>
+      <SectionTitle size="lg" underline>Satellites</SectionTitle>
       <p className="text-cool-gray text-sm mb-4">
-        The satellite table used for APRS via satellite. Holds up to
+        Amateur satellites worked as repeaters — uplink and downlink pairs. Holds up to
         {' '}{D890_SATELLITE.SLOTS} entries.
       </p>
 

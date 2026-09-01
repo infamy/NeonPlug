@@ -31,13 +31,19 @@ import { predefinedSmsAddress, parsePredefinedSms } from './predefinedSms';
 import { D890_EMERGENCY, parseEmergencySettings, parseEmergencyContact } from './emergency';
 import {
   D890_BROADCAST,
-  broadcastChannelAddress,
   parseBroadcastChannel,
   isVacantBroadcastChannel,
   type D890BroadcastBand,
   type D890BroadcastChannel,
 } from './broadcastChannels';
 import { D890_GPS_ROAMING, parseGpsRoamingTable } from './gpsRoaming';
+import { D890_POWER_ON, parsePowerOnDisplay } from './powerOnDisplay';
+import {
+  D890_DIGITAL_CONTACTS,
+  isEmptyContactBank,
+  parseDigitalContactBank,
+  type D890DigitalContact,
+} from './digitalContacts';
 import type { QuickTextMessage } from '../../models/QuickTextMessage';
 import { D890_SATELLITE, decodeSatelliteTable, type D890SatelliteRecord } from './satellite';
 import { D890Connection, openD890Port, type D890Identity } from './connection';
@@ -115,7 +121,12 @@ export class D890UVProtocol extends BaseDigitalProtocol {
       await conn.enterProgramMode();
       const identity = await conn.identify();
       conn.assertKnownModel(identity);
-      await conn.negotiateReadLength();
+      // Logged because it is the single biggest lever on read speed: the
+      // vendor CPS uses 16-byte reads, so a fallback to 0x10 here means ~15x
+      // more round trips for the same bytes. When a read feels slow, this line
+      // says whether it is the protocol or the radio.
+      const readLength = await conn.negotiateReadLength();
+      log.info(`Negotiated read length 0x${readLength.toString(16)} (${readLength} bytes/frame)`, 'D890UV');
       this.identity = identity;
       this.connection = conn;
     } catch (err) {
@@ -328,6 +339,13 @@ export class D890UVProtocol extends BaseDigitalProtocol {
     const mask = await conn.readMemory(D890_ADDR.ZONE_SET, D890_ADDR.ZONE_SET_SIZE);
     const present = occupiedIndices(decodeOccupancyMask(mask, D890_LIMITS.ZONES_MAX));
 
+    // A second, independent mask over the same slots — NOT a variant of the
+    // presence one. A hidden zone is still a present zone: it keeps its channels
+    // and must still be read, it is just absent from the radio's zone menu.
+    const hideBytes = await conn.readMemory(D890_ADDR.ZONE_HIDE, D890_ADDR.ZONE_HIDE_SIZE);
+    const hidden = decodeOccupancyMask(hideBytes, D890_LIMITS.ZONES_MAX);
+
+
     const zones: Zone[] = [];
     this.rawZoneIndices.length = 0;
     for (const index of present) {
@@ -340,7 +358,7 @@ export class D890UVProtocol extends BaseDigitalProtocol {
         zoneChannelsAddress(index),
         D890_ADDR.ZONE_CHANNELS_STRIDE
       );
-      zones.push(parseZone(nameBytes, memberBytes, index));
+      zones.push(parseZone(nameBytes, memberBytes, index, hidden[index] === true));
     }
     return zones;
   }
@@ -681,15 +699,126 @@ export class D890UVProtocol extends BaseDigitalProtocol {
   async readBroadcastChannels(band: D890BroadcastBand): Promise<D890BroadcastChannel[]> {
     const conn = this.requireConnection();
     const spec = D890_BROADCAST[band];
-    const mask = await conn.readMemory(spec.mask, band === 'am' ? 0x20 : 0x10);
-    const present = occupiedIndices(decodeOccupancyMask(mask, spec.channels));
+
+    // Read the whole table in one span and let the RECORDS say what is stored,
+    // rather than asking the presence mask first.
+    //
+    // Two reasons. Frames: readMemory chunks at the negotiated read length
+    // (up to 0xf0), so one 0x4000 span is ~69 frames where a record-at-a-time
+    // loop over 256 slots is 256 — and an erased 0xFF mask reads as "all
+    // present", which is exactly when the loop is at its worst.
+    //
+    // Trust: this mask's polarity is marshaller-derived and never confirmed,
+    // and our own files disagree about its address (recordLayout puts the AM
+    // mask at 0x3884000, D890_BROADCAST at 0x3884200). A vacant record is
+    // unambiguous — no name and no decodable frequency — so reading the records
+    // removes the need to resolve that before the data can be shown at all.
+    const table = await conn.readMemory(spec.data, spec.channels * spec.stride);
+
+    // The scan ("Add") flag is a SEPARATE flat mask, and only FM has one here.
+    // AM's equivalent is per AM-zone (`AmChannelList_CH_Scan`) inside the zone
+    // table we do not read, so AM channels come back with scanAdd undefined
+    // rather than a fabricated false.
+    const scanMaskAddr = 'scanMask' in spec ? spec.scanMask : undefined;
+    const scan = scanMaskAddr === undefined
+      ? undefined
+      : decodeOccupancyMask(await conn.readMemory(scanMaskAddr, 0x10), spec.channels);
+
     const out: D890BroadcastChannel[] = [];
-    for (const index of present) {
-      const record = await conn.readMemory(broadcastChannelAddress(band, index), spec.stride);
-      const ch = parseBroadcastChannel(record, index, band);
-      if (!isVacantBroadcastChannel(ch)) out.push(ch);
+    for (let index = 0; index < spec.channels; index += 1) {
+      const start = index * spec.stride;
+      const ch = parseBroadcastChannel(table.subarray(start, start + spec.stride), index, band);
+      if (isVacantBroadcastChannel(ch)) continue;
+      out.push(scan === undefined ? ch : { ...ch, scanAdd: scan[index] === true });
     }
     return out;
+  }
+
+  /**
+   * The FM VFO — the 101st FM memory.
+   *
+   * Confirmed by the CPS's own help text on the FM node: "101 FMs (100 Normal
+   * FMs + VFO FM)". It sits outside the numbered table and has no mask bit, so
+   * it is read directly rather than filtered by occupancy.
+   *
+   * AM has an equivalent address in D890_BROADCAST, but it is NOT read here:
+   * `recordLayout.ts` calls 0x3884000 the AM mask region while broadcastChannels
+   * calls it the AM VFO, and that disagreement is unresolved. Reading a wrong
+   * region would invent an airband memory.
+   */
+  async readFmVfo(): Promise<D890BroadcastChannel | null> {
+    const spec = D890_BROADCAST.fm;
+    const bytes = await this.requireConnection().readMemory(spec.vfo, spec.stride);
+    const ch = parseBroadcastChannel(bytes, spec.channels, 'fm');
+    return isVacantBroadcastChannel(ch) ? null : ch;
+  }
+
+  /**
+   * The DMR contact database — the CPS's Digital Contact List, and the source
+   * of its Friends List.
+   *
+   * SLOW BY NATURE: the vendor CPS spends ~1,025,000 frames and 16.4 MB here.
+   * This stops at the first empty bank instead of walking all 83, which on a
+   * radio with a partly-filled database is the difference between seconds and
+   * many minutes. Never call this from a codeplug read.
+   */
+  async readDigitalContacts(
+    onProgress?: (percent: number, message: string) => void
+  ): Promise<D890DigitalContact[]> {
+    const conn = this.requireConnection();
+    const out: D890DigitalContact[] = [];
+
+    // Find out how much work there actually is BEFORE reporting any progress.
+    //
+    // A bank is 200,000 bytes; its first 16 tell you whether it holds anything.
+    // Probing all 83 costs 83 small reads — about a fifth of a second at this
+    // radio's ~10 KB/s — and buys an honest denominator. Without it the bar is
+    // measured against 83 banks while the loop stops at the first empty one, so
+    // a half-full database crawls to 10% and then snaps to done.
+    //
+    // It also handles a GAP correctly. Stopping at the first empty bank assumes
+    // the database is dense from the start; probing does not have to assume it.
+    const probeSize = 0x10;
+    const populated: number[] = [];
+    for (let bank = 0; bank < D890_DIGITAL_CONTACTS.BANKS; bank += 1) {
+      const address = D890_DIGITAL_CONTACTS.BASE + bank * D890_DIGITAL_CONTACTS.BANK_STRIDE;
+      const head = await conn.readMemory(address, probeSize);
+      if (!isEmptyContactBank(head)) populated.push(bank);
+    }
+    if (populated.length === 0) return out;
+
+    const startedAt = Date.now();
+    let bytesRead = 0;
+
+    for (const [done, bank] of populated.entries()) {
+      const address = D890_DIGITAL_CONTACTS.BASE + bank * D890_DIGITAL_CONTACTS.BANK_STRIDE;
+      const bytes = await conn.readMemory(address, D890_DIGITAL_CONTACTS.BANK_BYTES);
+      bytesRead += bytes.length;
+      out.push(...parseDigitalContactBank(bytes));
+
+      const seconds = (Date.now() - startedAt) / 1000;
+      const rate = seconds > 0 ? Math.round(bytesRead / 1024 / seconds) : 0;
+      onProgress?.(
+        Math.round(((done + 1) / populated.length) * 100),
+        `Read ${out.length.toLocaleString()} contacts · `
+        + `${Math.round(bytesRead / 1024).toLocaleString()} KB · ${rate} KB/s`
+      );
+    }
+    log.info(
+      `Digital contacts: ${out.length} records from ${populated.length} banks, `
+      + `${bytesRead} bytes in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
+      'D890UV'
+    );
+    return out;
+  }
+
+  /** Power-on screen text and password — outside the settings block. */
+  async readPowerOnDisplay(): Promise<import('./powerOnDisplay').D890PowerOnDisplay> {
+    const bytes = await this.requireConnection().readMemory(
+      D890_POWER_ON.LINE_1,
+      D890_POWER_ON.SPAN
+    );
+    return parsePowerOnDisplay(bytes);
   }
 
   /** The GPS Roaming geofence table. */
@@ -901,6 +1030,16 @@ export class D890UVProtocol extends BaseDigitalProtocol {
    * Raw region read, for the Diagnostics tab and for capturing the fixtures the
    * hardware checklist calls for. Returns bytes exactly as the radio sent them.
    */
+  /** Benchmarking hook — force a read size instead of the negotiated one. */
+  forceReadLength(length: number): void {
+    this.requireConnection().forceReadLength(length);
+  }
+
+  /** The read size in use, negotiated or forced. */
+  getReadLength(): number {
+    return this.requireConnection().getReadLength();
+  }
+
   async readRawRegion(
     address: number,
     length: number,
