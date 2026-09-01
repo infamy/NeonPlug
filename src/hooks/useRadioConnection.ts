@@ -72,7 +72,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setD890PowerOnDisplay, setD890AmZones, setRadioBusy, setRadioProgress, setConnectionError } = useRadioStore();
+  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setD890PowerOnDisplay, setD890AmZones, setD890Tones, setRadioBusy, setRadioProgress, setConnectionError } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -289,6 +289,10 @@ export function useRadioConnection() {
           ) => Promise<import('../radios/d890uv/broadcastChannels').D890BroadcastChannel[]>;
           readGpsRoaming?: () => Promise<import('../radios/d890uv/gpsRoaming').D890GpsRoamingEntry[]>;
           readAmZones?: () => Promise<import('../radios/d890uv/amZones').D890AmZone[]>;
+          readTones?: () => Promise<{
+            fiveTone: import('../radios/d890uv/tones').D890FiveTone[];
+            twoTone: import('../radios/d890uv/tones').D890TwoTone[];
+          }>;
           readFmVfo?: () => Promise<
             import('../radios/d890uv/broadcastChannels').D890BroadcastChannel | null
           >;
@@ -370,6 +374,15 @@ export function useRadioConnection() {
           } catch (err) {
             console.warn('Could not read power-on display:', err);
             sectionReadWarnings.push('Power-on display');
+          }
+        }
+
+        if (extras.readTones) {
+          try {
+            setD890Tones(await extras.readTones());
+          } catch (err) {
+            console.warn('Could not read tone lists:', err);
+            sectionReadWarnings.push('2-Tone / 5-Tone');
           }
         }
 
@@ -560,7 +573,7 @@ export function useRadioConnection() {
       setIsConnecting(false);
       setRadioBusy(false);
     }
-  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setD890PowerOnDisplay, setD890AmZones, setEncryptionKeys, setConnectionError]);
+  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setD890PowerOnDisplay, setD890AmZones, setD890Tones, setEncryptionKeys, setConnectionError]);
 
   /**
    * Mirror a long operation's progress into the store so it survives the

@@ -13,13 +13,23 @@ export const D890_TONES = {
     address: 0x3480000,
     /** Proven by the added entry landing exactly here. */
     stride: 0x40,
-    /** Structural. The vendor CPS's own list length is not known. */
+    /**
+     * 100 — CONFIRMED by where the table stops. Slot 100 would begin at
+     * 0x3481900, and those bytes hold a different shape entirely (timing-like
+     * values, probably the 5-Tone settings; the vendor schema has several
+     * 5-tone tables). Reading past 100 would decode that as tone records.
+     */
     slots: 100,
   },
   twoTone: {
     address: 0x3482000,
     stride: 0x20,
-    slots: 24,
+    /**
+     * 32, not the 24 first guessed — CONFIRMED by the boundary. Slot 32 begins
+     * at 0x3482400, and those bytes repeat slot 0 verbatim, so that is a second
+     * 2-tone table rather than more of this one (the schema has three).
+     */
+    slots: 32,
   },
 } as const;
 

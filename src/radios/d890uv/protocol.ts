@@ -40,6 +40,13 @@ import { D890_GPS_ROAMING, parseGpsRoamingTable } from './gpsRoaming';
 import { D890_POWER_ON, parsePowerOnDisplay } from './powerOnDisplay';
 import { D890_AM_ZONES, parseAmZoneTable, type D890AmZone } from './amZones';
 import {
+  D890_TONES,
+  parseFiveTone,
+  parseTwoTone,
+  type D890FiveTone,
+  type D890TwoTone,
+} from './tones';
+import {
   D890_DIGITAL_CONTACTS,
   isEmptyContactBank,
   parseDigitalContactBank,
@@ -820,6 +827,28 @@ export class D890UVProtocol extends BaseDigitalProtocol {
       D890_POWER_ON.SPAN
     );
     return parsePowerOnDisplay(bytes);
+  }
+
+  /** The 5-Tone and 2-Tone signalling code lists. */
+  async readTones(): Promise<{ fiveTone: D890FiveTone[]; twoTone: D890TwoTone[] }> {
+    const conn = this.requireConnection();
+    const five = D890_TONES.fiveTone;
+    const two = D890_TONES.twoTone;
+
+    const fiveBytes = await conn.readMemory(five.address, five.stride * five.slots);
+    const twoBytes = await conn.readMemory(two.address, two.stride * two.slots);
+
+    const fiveTone: D890FiveTone[] = [];
+    for (let i = 0; i < five.slots; i += 1) {
+      const entry = parseFiveTone(fiveBytes.subarray(i * five.stride, (i + 1) * five.stride), i);
+      if (entry) fiveTone.push(entry);
+    }
+    const twoTone: D890TwoTone[] = [];
+    for (let i = 0; i < two.slots; i += 1) {
+      const entry = parseTwoTone(twoBytes.subarray(i * two.stride, (i + 1) * two.stride), i);
+      if (entry) twoTone.push(entry);
+    }
+    return { fiveTone, twoTone };
   }
 
   /** Zones over the AM airband table — a separate system from the main zones. */

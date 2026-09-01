@@ -29,6 +29,7 @@ import { D890ImagesArea } from './D890ImagesArea';
 import { D890RoamingArea } from './D890RoamingArea';
 import { D890SatellitesArea } from './D890SatellitesArea';
 import { D890GpsRoamingArea } from './D890GpsRoamingArea';
+import { D890TonesArea } from './D890TonesArea';
 import { D890EmergencyArea } from './D890EmergencyArea';
 import type { RadioSettings } from '../../models/RadioSettings';
 import type { SettingsFieldDescriptor } from '../../types/settingsProfile';
@@ -676,6 +677,7 @@ export const SettingsTab: React.FC = () => {
               { id: 'feature-d890Roaming', title: 'Roaming', feature: 'd890Roaming' },
               { id: 'feature-d890GpsRoaming', title: 'GPS Roaming', feature: 'd890GpsRoaming' },
               { id: 'feature-d890Satellites', title: 'Satellites', feature: 'd890Satellites' },
+              { id: 'feature-d890Tones', title: '5-Tone & 2-Tone', feature: 'd890Tones' },
               { id: 'feature-d890Emergency', title: 'Emergency Alarm', feature: 'd890Emergency' },
               { id: 'feature-d890Images', title: 'Boot & Standby Backgrounds', feature: 'd890Images' },
               { id: 'feature-gpsAprs', title: 'GPS & APRS', feature: 'gpsAprs' },
@@ -789,6 +791,12 @@ export const SettingsTab: React.FC = () => {
           {settingsProfile?.features?.includes('d890Satellites') && (
             <Card id="settings-section-feature-d890Satellites" className="mt-6">
               <D890SatellitesArea />
+            </Card>
+          )}
+
+          {settingsProfile?.features?.includes('d890Tones') && (
+            <Card id="settings-section-feature-d890Tones" className="mt-6">
+              <D890TonesArea />
             </Card>
           )}
 

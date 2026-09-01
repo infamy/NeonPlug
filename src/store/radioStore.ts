@@ -72,6 +72,11 @@ interface RadioState {
   d890Broadcast: { am: D890BroadcastChannel[]; fm: D890BroadcastChannel[]; fmVfo: D890BroadcastChannel | null } | null;
   /** Zones over the AM airband table. */
   d890AmZones: import('../radios/d890uv/amZones').D890AmZone[] | null;
+  /** 5-Tone and 2-Tone signalling code lists. */
+  d890Tones: {
+    fiveTone: import('../radios/d890uv/tones').D890FiveTone[];
+    twoTone: import('../radios/d890uv/tones').D890TwoTone[];
+  } | null;
   /** GPS Roaming geofences. */
   d890GpsRoaming: D890GpsRoamingEntry[] | null;
   /**
@@ -123,6 +128,10 @@ interface RadioState {
   } | null) => void;
   setD890Broadcast: (b: { am: D890BroadcastChannel[]; fm: D890BroadcastChannel[]; fmVfo: D890BroadcastChannel | null } | null) => void;
   setD890AmZones: (z: import('../radios/d890uv/amZones').D890AmZone[] | null) => void;
+  setD890Tones: (t: {
+    fiveTone: import('../radios/d890uv/tones').D890FiveTone[];
+    twoTone: import('../radios/d890uv/tones').D890TwoTone[];
+  } | null) => void;
   setD890GpsRoaming: (g: D890GpsRoamingEntry[] | null) => void;
   setD890ZoneCurrentChannels: (z: { a: number[]; b: number[] } | null) => void;
   setD890PowerOnDisplay: (
@@ -161,6 +170,7 @@ export const useRadioStore = create<RadioState>((set) => ({
   d890Emergency: null,
   d890Broadcast: null,
   d890AmZones: null,
+  d890Tones: null,
   d890GpsRoaming: null,
   d890ZoneCurrentChannels: null,
   d890PowerOnDisplay: null,
@@ -185,6 +195,7 @@ export const useRadioStore = create<RadioState>((set) => ({
   setD890Emergency: (e) => set({ d890Emergency: e }),
   setD890Broadcast: (b) => set({ d890Broadcast: b }),
   setD890AmZones: (z) => set({ d890AmZones: z }),
+  setD890Tones: (t) => set({ d890Tones: t }),
   setD890GpsRoaming: (g) => set({ d890GpsRoaming: g }),
   setD890ZoneCurrentChannels: (z) => set({ d890ZoneCurrentChannels: z }),
   setD890PowerOnDisplay: (d) => set({ d890PowerOnDisplay: d }),
