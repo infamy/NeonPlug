@@ -28,6 +28,13 @@ export interface SettingsFieldDescriptorBase {
   key: string;
   label: string;
   type: SettingsFieldType;
+  /**
+   * One-line explanation shown under the control.
+   *
+   * Only ever sourced from the radio's own documentation — never from guessing
+   * what a field name implies. A wrong explanation is worse than none.
+   */
+  hint?: string;
 }
 
 export interface SettingsTextFieldDescriptor extends SettingsFieldDescriptorBase {

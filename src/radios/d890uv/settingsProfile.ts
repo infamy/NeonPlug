@@ -75,7 +75,7 @@ function fieldFor(f: (typeof D890_SETTINGS_FIELDS)[number]): SettingsFieldDescri
   if (f.options) {
     return {
       key,
-      label: labelFor(f),
+      hint: f.hint, label: labelFor(f),
       type: 'select',
       options: f.options.map((label, value) => ({ value, label })),
     };
@@ -86,7 +86,7 @@ function fieldFor(f: (typeof D890_SETTINGS_FIELDS)[number]): SettingsFieldDescri
   if (KEY_FUNCTION_FIELDS.has(f.key)) {
     return {
       key,
-      label: labelFor(f),
+      hint: f.hint, label: labelFor(f),
       type: 'select',
       options: D890_KEY_FUNCTIONS.map((label, value) => ({ value, label })),
     };
@@ -97,7 +97,7 @@ function fieldFor(f: (typeof D890_SETTINGS_FIELDS)[number]): SettingsFieldDescri
     const { scale, offset, unit, zeroLabel } = f.valueRule;
     return {
       key,
-      label: unit ? `${labelFor(f)} [${unit}]` : labelFor(f),
+      hint: f.hint, label: unit ? `${labelFor(f)} [${unit}]` : labelFor(f),
       type: 'select',
       options: Array.from({ length: f.listLength }, (_, value) => {
         if (value === 0 && zeroLabel) return { value, label: zeroLabel };
@@ -108,13 +108,13 @@ function fieldFor(f: (typeof D890_SETTINGS_FIELDS)[number]): SettingsFieldDescri
       }),
     };
   }
-  if (f.max <= 1) return { key, label: labelFor(f), type: 'checkbox' };
+  if (f.max <= 1) return { key, hint: f.hint, label: labelFor(f), type: 'checkbox' };
   // listLength is measured, not assumed: {END} lands on the dropdown's last
   // item, so the byte it produced is exactly N-1. Bounding the input to that
   // beats offering 0-255 and letting someone type a value the radio has no
   // meaning for.
   const max = f.listLength !== undefined ? f.listLength - 1 : 255;
-  return { key, label: labelFor(f), type: 'number', min: 0, max, step: 1 };
+  return { key, hint: f.hint, label: labelFor(f), type: 'number', min: 0, max, step: 1 };
 }
 
 export const D890UV_SETTINGS_PROFILE: SettingsProfile = {

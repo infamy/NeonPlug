@@ -105,3 +105,30 @@ describe('zone hidden mask, against a real dump', () => {
     expect(HIDE.some((b) => b === 0xff)).toBe(false);
   });
 });
+
+describe('zone hidden mask, with one zone actually hidden', () => {
+  /**
+   * Read off the radio 2026-08-31 after hiding exactly one zone from its own
+   * menu — zone 1, "Z1 Single", confirmed by name with the radio's owner. The
+   * present mask at 0x3482c00 read 0xFF (8 zones); this read 0x01.
+   * One bit for one hidden zone is what proves polarity and bit order together
+   * — an all-zero mask, which is what two earlier captures held, could prove
+   * neither.
+   */
+  const HIDE = new Uint8Array(
+    readFileSync(join(__dirname, '../fixtures/d890uv/zone-hide-one-set.bin'))
+  );
+
+  it('reads a SET bit as hidden, not as visible', () => {
+    const decoded = decodeOccupancyMask(HIDE, 250);
+    expect(decoded.filter(Boolean)).toHaveLength(1);
+    expect(decoded[0]).toBe(true);
+  });
+
+  it('puts zone 1 in bit 0 — LSB first, like the present mask', () => {
+    // If the bit order were reversed, hiding zone 1 would light bit 7 and the
+    // UI would flag a different zone entirely.
+    expect(HIDE[0]).toBe(0x01);
+    expect(decodeOccupancyMask(HIDE, 250)[1]).toBe(false);
+  });
+});

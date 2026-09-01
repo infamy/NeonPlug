@@ -81,6 +81,19 @@ export interface D890SettingsField {
    */
   vendorField?: string;
   /**
+   * One-line explanation of what this setting does, shown under the control.
+   *
+   * SOURCE RULE: hints come from the vendor's own documentation — the DA-7X2
+   * Operating Manual and the BTECH V1.05 guides — not from inference about what
+   * a name probably means. A field whose purpose we are guessing at gets no
+   * hint; an empty space is better than a confident wrong explanation, and this
+   * radio has already produced several names that mean nothing like they look
+   * (`rec_only`, `DisUnitSet`).
+   *
+   * Extract manual text with `tools/pdf-text.py`.
+   */
+  hint?: string;
+  /**
    * How the field's identity was established. Absent means the strongest case:
    * located by writing fingerprint codeplugs to a radio and diffing read-only
    * dumps, then independently confirmed by the vendor settings marshaller.
@@ -172,7 +185,7 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'sqlLevelA',                       label: 'SQL Level(A)',                        cpsLabel: 'SQL Level(A)',                        group: 'Other',           offset: 0x009, max: 5, listLength: 6, vendorField: 'SQL1' },
   { key: 'sqlLevelB',                       label: 'SQL Level(B)',                        cpsLabel: 'SQL Level(B)',                        group: 'Other',           offset: 0x00a, max: 5, listLength: 6, vendorField: 'SQL2' },
   { key: 'powerSave',                       label: 'Power save',                          cpsLabel: 'Power save',                          group: 'Power Save',      offset: 0x00b, max: 2, listLength: 3, vendorField: 'PowerSave' },
-  { key: 'voxDelay',                        label: 'VOX Delay',                           cpsLabel: 'VOX Delay',                           group: 'Vox/BT',          offset: 0x00d, max: 25, listLength: 26, vendorField: 'VOX_Delay', valueRule: { scale: 0.1, offset: 0.5, unit: 's', basis: 'two-point' } },
+  { key: 'voxDelay',                        label: 'VOX Delay',                           cpsLabel: 'VOX Delay',                           group: 'Vox/BT',          offset: 0x00d, max: 25, listLength: 26, vendorField: 'VOX_Delay', valueRule: { scale: 0.1, offset: 0.5, unit: 's', basis: 'two-point' }, hint: 'How long the radio keeps transmitting after you stop speaking.'},
   { key: 'vfoScanType',                     label: 'VFO Scan Type',                       cpsLabel: 'VFO Scan Type',                       group: 'VFO Scan',        offset: 0x00e, max: 2, listLength: 3, options: ['TO', 'CO', 'SE'], vendorField: 'ScanType' },
   { key: 'dmrMicGain',                      label: 'DMR Mic Gain',                        cpsLabel: 'DMR Mic Gain',                        group: 'Volume/Audio',    offset: 0x00f, max: 5, listLength: 6, vendorField: 'MicLevel' },
   { key: 'pf1ShortKey',                     label: 'PF1 Short Key',                       cpsLabel: 'PFI Short Key',                       group: 'Key Function',    offset: 0x010, max: 66, listLength: 67 },
@@ -191,7 +204,7 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'callAlert',                       label: 'Call Alert',                          cpsLabel: 'Call Alen',                           group: 'Alert Tone',      offset: 0x02f, max: 1, listLength: 2, options: ['None', 'Ring'], vendorField: 'CallRing' },
   { key: 'timeZone',                        label: 'Time Zone',                           cpsLabel: 'Tme Zone',                            group: 'GPS/Ranging',     offset: 0x030, max: 33, listLength: 34, vendorField: 'TmZone' },
   { key: 'talkPermit',                      label: 'Talk Permit',                         cpsLabel: 'Talk Permit',                         group: 'Alert Tone',      offset: 0x031, max: 3, listLength: 4, vendorField: 'TalkTips' },
-  { key: 'voxDetection',                    label: 'VOX Detection',                       cpsLabel: 'VOX Detection',                       group: 'Vox/BT',          offset: 0x033, max: 2, listLength: 3, options: ['Built-in Microphone', 'External Microphone', 'Both'], vendorField: 'VoxHeadset' },
+  { key: 'voxDetection',                    label: 'VOX Detection',                       cpsLabel: 'VOX Detection',                       group: 'Vox/BT',          offset: 0x033, max: 2, listLength: 3, options: ['Built-in Microphone', 'External Microphone', 'Both'], vendorField: 'VoxHeadset', hint: 'VOX sensitivity — how loud speech must be to key the radio.'},
   { key: 'digitalIdleChannelTone',          label: 'Digital Idle Channel Tone',           cpsLabel: 'Digi Idle Channel Tone',              group: 'Alert Tone',      offset: 0x036, max: 3, listLength: 4, vendorField: 'SqOnVoice' },
   { key: 'menuExitTimeS',                   label: 'Menu Exit Time[s]',                   cpsLabel: 'Menu Exit Tme[s]',                    group: 'Display',         offset: 0x037, max: 11, listLength: 12, vendorField: 'IdleWait', valueRule: { scale: 5, offset: 5, unit: 's', basis: 'two-point' } },
   { key: 'filterOwnIdInMisscall',           label: 'Filter Own ID In MissCall',           cpsLabel: 'Filter Own ID In MissCall',           group: 'Digital Func',    offset: 0x038, max: 1, listLength: 2, options: ['Off', 'On'], vendorField: 'MissCallFilter' },
@@ -212,7 +225,7 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'longKeyTimeS',                    label: 'Long Key Time[s]',                    cpsLabel: 'Long Key Tme[s]',                     group: 'Key Function',    offset: 0x046, max: 4, listLength: 5, vendorField: 'PfLongTime', valueRule: { scale: 1, offset: 1, unit: 's', basis: 'range-forced' } },
   { key: 'volumeBar',                       label: 'Volume Bar',                          cpsLabel: 'Volume Bar',                          group: 'Display',         offset: 0x047, max: 1, listLength: 2, options: ['Off', 'On'], vendorField: 'VolNoteEn' },
   { key: 'autoRepeaterA',                   label: 'Auto Repeater A',                     cpsLabel: 'Auto Repeater A',                     group: 'Auto repeater',   offset: 0x048, max: 2, listLength: 3, vendorField: 'AutoRepeater' },
-  { key: 'digitalMonitor',                  label: 'Digital Monitor',                     cpsLabel: 'Digital Monitor',                     group: 'Digital Func',    offset: 0x049, max: 2, listLength: 3, vendorField: 'DigiMoni' },
+  { key: 'digitalMonitor',                  label: 'Digital Monitor',                     cpsLabel: 'Digital Monitor',                     group: 'Digital Func',    offset: 0x049, max: 2, listLength: 3, vendorField: 'DigiMoni', hint: 'In DMR mode, monitors activity the channel filtering would otherwise hide.'},
   { key: 'digitalMonitorCc',                label: 'Digital Monitor CC',                  cpsLabel: 'Digital Monitor CC',                  group: 'Digital Func',    offset: 0x04a, max: 1, listLength: 2, options: ['Any', 'Same'], vendorField: 'DigiMoniCc' },
   { key: 'digitalMonitorId',                label: 'Digital Monitor ID',                  cpsLabel: 'Digital Monitor ID',                  group: 'Digital Func',    offset: 0x04b, max: 1, listLength: 2, options: ['Any', 'Same'], vendorField: 'DigiMoniId' },
   { key: 'monitorSlotHold',                 label: 'Monitor Slot Hold',                   cpsLabel: 'Monitor Slot Hold',                   group: 'Digital Func',    offset: 0x04c, max: 1, listLength: 2, options: ['Off', 'On'], vendorField: 'DigiMoniSlot' },
@@ -292,7 +305,7 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'language', label: 'Language', cpsLabel: 'Language', group: 'Other', offset: 0x005, max: 255, vendorField: 'Language', confidence: 'swept' },
   { key: 'powerOnInterface', label: 'Power-on Interface', cpsLabel: 'Power-on Interface', group: 'Power-on', offset: 0x006, max: 2, options: ['Default Interface', 'Custom Char', 'Custom Picture'], listLength: 3, vendorField: 'StartDspSet', confidence: 'swept' },
   { key: 'powerOnPassword', label: 'Power-on Password', cpsLabel: 'Power-on Password', group: 'Power-on', offset: 0x007, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'Password', confidence: 'swept' },
-  { key: 'voxOnOff', label: 'VOX On/Off', cpsLabel: 'VOX On/Off', group: 'Vox/BT', offset: 0x00c, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'VOX', confidence: 'swept' },
+  { key: 'voxOnOff', label: 'VOX On/Off', cpsLabel: 'VOX On/Off', group: 'Vox/BT', offset: 0x00c, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'VOX', confidence: 'swept', hint: 'Transmit on voice rather than PTT.'},
   { key: 'vfMrA', label: 'VF/MR(A)', cpsLabel: 'VF/MR(A)', group: 'Work Mode', offset: 0x015, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'RMV1', confidence: 'swept' },
   { key: 'vfMrB', label: 'VF/MR(B)', cpsLabel: 'VF/MR(B)', group: 'Work Mode', offset: 0x016, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'RMV2', confidence: 'swept' },
   { key: 'steWhenNoSignal', label: 'STE When No Signal', group: 'STE', offset: 0x018, max: 255, vendorField: 'STE_Freq', confidence: 'vendor-name' },
@@ -301,8 +314,8 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'fmVfoMem', label: 'FM VFO/MEM', group: 'AM/FM', offset: 0x01e, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'FM_VFO', confidence: 'vendor-name' },
   { key: 'memZoneA', label: 'MEM Zone(A)', group: 'Work Mode', offset: 0x01f, max: 255, vendorField: 'Work_Zone1', confidence: 'vendor-name' },
   { key: 'memZoneB', label: 'MEM Zone(B)', group: 'Work Mode', offset: 0x020, max: 255, vendorField: 'Work_Zone2', confidence: 'vendor-name' },
-  { key: 'recordFunction', label: 'Record Function', cpsLabel: 'Record Function', group: 'Record', offset: 0x022, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'Record_En', confidence: 'swept' },
-  { key: 'manDown', label: 'Man Down', group: 'Other', offset: 0x024, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'FailAlarm', confidence: 'vendor-name' },
+  { key: 'recordFunction', label: 'Record Function', cpsLabel: 'Record Function', group: 'Record', offset: 0x022, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'Record_En', confidence: 'swept', hint: 'Enable or disable the recording function.'},
+  { key: 'manDown', label: 'Man Down', group: 'Other', offset: 0x024, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'FailAlarm', confidence: 'vendor-name', hint: 'Alarms if the radio is tilted past its threshold, for the delay below.'},
   { key: 'monKeyFunction', label: 'MON Key Function', group: 'Key Function', offset: 0x025, max: 255, vendorField: 'MonType', confidence: 'vendor-name' },
   { key: 'brightness', label: 'Brightness', group: 'Display', offset: 0x026, max: 255, vendorField: 'Lightness', confidence: 'vendor-name' },
   // CONFIRMED on hardware 2026-08-30: switching GPS off on the radio moved this
@@ -378,18 +391,18 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'amVfoMem', label: 'AM VFO/MEM', group: 'AM/FM', offset: 0x13f, max: 255, vendorField: 'AmChanVfo', confidence: 'vendor-name' },
   { key: 'amWorkZone', label: 'AM Work Zone', group: 'AM/FM', offset: 0x140, max: 255, vendorField: 'CurAmChan', confidence: 'vendor-name' },
   { key: 'amOffset', label: 'AM Offset', group: 'AM/FM', offset: 0x141, max: 255, vendorField: 'AmOffset', confidence: 'vendor-name' },
-  { key: 'amSquelchLevel', label: 'AM Squelch Level', group: 'AM/FM', offset: 0x142, max: 255, vendorField: 'AmSqLevel', confidence: 'vendor-name' },
+  { key: 'amSquelchLevel', label: 'AM Squelch Level', group: 'AM/FM', offset: 0x142, max: 255, vendorField: 'AmSqLevel', confidence: 'vendor-name', hint: 'Squelch level for the AM air band, to improve reception.'},
   { key: 'repeaterSlotPathA', label: 'Repeater Slot Path A', cpsLabel: 'Repeater Slot Path A', group: 'Auto repeater', offset: 0x145, max: 2, options: ['Off', 'Channel A Fixed Time Slot1', 'Channel A Fixed Time Slot2'], listLength: 3, vendorField: 'RepSlotPathA', confidence: 'swept' },
   { key: 'repeaterSlotPathB', label: 'Repeater Slot Path B', cpsLabel: 'Repeater Slot Path B', group: 'Auto repeater', offset: 0x146, max: 2, options: ['Off', 'Channel B Fixed Time Slot1', 'Channel B Fixed Time Slot2'], listLength: 3, vendorField: 'RepSlotPathB', confidence: 'swept' },
   { key: 'dcsSte', label: 'DCS STE', group: 'STE', offset: 0x14a, max: 255, vendorField: 'DcsSte', confidence: 'vendor-name' },
   { key: 'btNoiseReductionBefore', label: 'Bt Nr Before', group: 'Vox/BT', offset: 0x14b, max: 255, vendorField: 'BtNrBefore', confidence: 'vendor-name' },
   { key: 'btNoiseReductionAfter', label: 'Bt Nr After', group: 'Vox/BT', offset: 0x14c, max: 255, vendorField: 'BtNrAfter', confidence: 'vendor-name' },
   { key: 'satelliteTxPower', label: 'Satellite TX Power', cpsLabel: 'Satellite TX Power', group: 'Satellite', offset: 0x14f, max: 3, options: ['Low', 'Mid', 'High', 'Turbo'], listLength: 4, vendorField: 'SateTxPower', confidence: 'swept' },
-  { key: 'satelliteAnalogSquelch', label: 'Satellite Analog Squelch', cpsLabel: 'Satellite Analog Squelch', group: 'Satellite', offset: 0x150, max: 255, vendorField: 'SateAnaSql', confidence: 'swept' },
+  { key: 'satelliteAnalogSquelch', label: 'Satellite Analog Squelch', cpsLabel: 'Satellite Analog Squelch', group: 'Satellite', offset: 0x150, max: 255, vendorField: 'SateAnaSql', confidence: 'swept', hint: 'Squelch used while working a satellite.'},
   { key: 'digitalProtocol', label: 'Digital Protocol', group: 'Digital Func', offset: 0x152, max: 255, vendorField: 'DigiProtocal', confidence: 'vendor-name' },
   { key: 'nxdnMicGain', label: 'NXDN Mic Gain', cpsLabel: 'NXDN Mic Gain', group: 'Volume/Audio', offset: 0x153, max: 5, options: ['1', '2', '3', '4', '5', 'Auto'], listLength: 6, vendorField: 'NxdnMic', confidence: 'swept' },
   { key: 'resetDigitalProtocol', label: 'Reset Digital Protocol', cpsLabel: 'Reset Digital Protocol', group: 'Digital Func', offset: 0x154, max: 1, options: ['Off', 'DMR'], listLength: 2, vendorField: 'ResetDigiProtocal', confidence: 'swept' },
-  { key: 'noaaMonitor', label: 'NOAA Moni', cpsLabel: 'NOAA Monitor', group: 'Other', offset: 0x157, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'WxMoni', confidence: 'swept' },
+  { key: 'noaaMonitor', label: 'NOAA Moni', cpsLabel: 'NOAA Monitor', group: 'Other', offset: 0x157, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'WxMoni', confidence: 'swept', hint: 'Weather channel monitoring.'},
   { key: 'noaaScan', label: 'NOAA Scan', cpsLabel: 'NOAA Scan', group: 'Other', offset: 0x158, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'WxScan', confidence: 'swept' },
   { key: 'amFrequencyStep', label: 'Freq Step', group: 'AM/FM', offset: 0x159, max: 9, options: ['2.5K', '5K', '6.25K', '8.33K', '10K', '12.5K', '20K', '25K', '30K', '50K'], listLength: 10, vendorField: 'AmFreqStep', confidence: 'vendor-name' },
   { key: 'repeaterWhitelist', label: 'Repeater Whitelist', cpsLabel: 'Repeater Whitelist', group: 'Auto repeater', offset: 0x15a, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'RepIdLimit', confidence: 'swept' },
@@ -467,35 +480,84 @@ export interface D890UnmappedByte {
    * watch which control moves — the same loop that produced the mapped fields.
    */
   vendorName?: string;
+  /**
+   * Why this byte cannot simply be named and promoted to a field.
+   *
+   * Most of these are not scalars at all. The settings marshaller writes them
+   * from a register or a call result rather than from a named global, so the
+   * global-to-name join that named the rest has nothing to attach to — the
+   * reason is structural, not a gap in the analysis.
+   */
+  structure?: 'array-element' | 'loop-group' | 'computed' | 'outside-map';
 }
 
+/**
+ * The settings bytes with no field.
+ *
+ * Nine now carry a vendor name, from static analysis joining the settings
+ * marshaller's stores against the 409 global-to-name pairs in THIS radio's JSON
+ * exporter (`frm_datajsonImportExport.frm`) — the "this radio's" part matters,
+ * since the binary serves five models.
+ *
+ * The other fourteen cannot be named that way, and the reason is structural
+ * rather than a gap: every one is written from a register or a call result, not
+ * from a named global, so there is nothing for the join to attach to. They are
+ * array elements, members of loop-written four-byte groups, or computed values.
+ * See the `structure` field.
+ *
+ * ALL OF THEM READ ZERO on the captured radio, and no format can be inferred
+ * from a zero. Resolving them is a read/save exercise, not more disassembly: set
+ * each corresponding CPS control to a DISTINCT non-zero value, save, and diff.
+ * The four-byte groups reveal their width immediately, and the array slots
+ * reveal which control feeds which element. No radio write is needed.
+ */
 export const D890_UNMAPPED_BYTES: readonly D890UnmappedByte[] = [
   { offset: 0x023, observedChanging: false, vendorName: 'DTMFSpeed' },
   { offset: 0x034, observedChanging: false, vendorName: 'comVersion' },
-  { offset: 0x03d, observedChanging: false, vendorName: 'Reserved_DigiKillEn' },
-  { offset: 0x04e, observedChanging: false },
-  // Was mapped as "Distance Unit" (vendorField DisUnitSet) until the vendor CPS's
-  // GPS/Ranging tab was screenshotted 2026-08-30: it carries exactly four
-  // controls — Get GPS Positioning, Time Zone, Gps Mode, GPS Roaming — and no
-  // distance unit anywhere in the UI. APRS was checked too; its only similar
-  // label is APRSDisTime, a time. The feature does not exist on this radio.
-  { offset: 0x0bd, observedChanging: false, vendorName: 'DisUnitSet' },
-  { offset: 0x054, observedChanging: false },
-  { offset: 0x055, observedChanging: false },
-  { offset: 0x056, observedChanging: false },
-  { offset: 0x06a, observedChanging: false },
-  { offset: 0x06b, observedChanging: false },
-  { offset: 0x06c, observedChanging: false },
-  { offset: 0x06d, observedChanging: false },
-  { offset: 0x0b0, observedChanging: false },
-  { offset: 0x0b2, observedChanging: false },
-  { offset: 0x0bb, observedChanging: false },
-  { offset: 0x0e7, observedChanging: false, vendorName: 'RoamEffectChanDis' },
-  { offset: 0x0f1, observedChanging: false },
-  { offset: 0x0f2, observedChanging: false },
-  { offset: 0x0f3, observedChanging: false },
-  { offset: 0x115, observedChanging: false },
-  { offset: 0x15f, observedChanging: false },
+  // The name exists, but only in `Mod_ListPort` — NOT in this radio's JSON
+  // exporter — and the marshaller's source here is a call result rather than a
+  // named global, so nothing actually binds the two. Unconfirmed.
+  { offset: 0x03d, observedChanging: false, vendorName: 'Reserved_DigiKillEn?', structure: 'computed' },
+  { offset: 0x04e, observedChanging: false, structure: 'computed' },
+  // NOT DisUnitSet — it is BookOwnId. Corrected 2026-08-31 by static analysis
+  // of the settings marshaller joined against this radio's own JSON exporter:
+  // the store at this address comes from global 0x009D2B15, which binds to the
+  // literal "BookOwnId".
+  //
+  // Three lines agree that DisUnitSet is not this byte and not this radio:
+  // the global binding above; DisUnitSet appearing ONLY in the D168UV/D868UV/
+  // D878UVII modules and not in this radio's exporter; and the CPS UI having no
+  // distance-unit control anywhere (GPS/Ranging has four controls, none of them
+  // it). The same `rec_only` pattern — a real vendor name belonging to a
+  // sibling model. See [[da7x2-cps-is-multi-model]].
+  { offset: 0x0bd, observedChanging: false, vendorName: 'BookOwnId' },
+  { offset: 0x054, observedChanging: false, structure: 'computed' },
+  { offset: 0x055, observedChanging: false, structure: 'computed' },
+  { offset: 0x056, observedChanging: false, structure: 'computed' },
+  // Elements 2 and 3 of the global array at 0x009D1ABC, interleaved two bytes
+  // per element across a 60-byte / 12-store tile. Array slots, not settings.
+  { offset: 0x06a, observedChanging: false, structure: 'array-element' },
+  { offset: 0x06b, observedChanging: false, structure: 'array-element' },
+  { offset: 0x06c, observedChanging: false, structure: 'array-element' },
+  { offset: 0x06d, observedChanging: false, structure: 'array-element' },
+  { offset: 0x0b0, observedChanging: false, vendorName: 'CallSignColour' },
+  { offset: 0x0b2, observedChanging: false, structure: 'computed' },
+  // Last byte of the 0x0b8-0x0bb group, same 0..3 loop shape as 0x0e7.
+  { offset: 0x0bb, observedChanging: false, structure: 'loop-group' },
+  // The name is real and IS in this radio's exporter, but this byte is the last
+  // of a four-byte group (0x0e4-0x0e7) written by one 0..3 loop through
+  // __vbaUI1I4 — a Long truncated to bytes. The name almost certainly belongs to
+  // the group, not to this byte alone.
+  { offset: 0x0e7, observedChanging: false, vendorName: 'RoamEffectChanDis', structure: 'loop-group' },
+  { offset: 0x0f1, observedChanging: false, vendorName: 'ChanNameColourB' },
+  { offset: 0x0f2, observedChanging: false, vendorName: 'DigiEmgKind' },
+  { offset: 0x0f3, observedChanging: false, vendorName: 'TotPreEn' },
+  // Inside a 40-byte / 8-store tile; an array slot, and an array has one name.
+  { offset: 0x115, observedChanging: false, structure: 'array-element' },
+  // OUTSIDE the settings marshaller's coverage entirely — it traces
+  // 0x3500000-0x3500146 and this is past the end. Either another marshaller owns
+  // it or nothing writes it.
+  { offset: 0x15f, observedChanging: false, structure: 'outside-map' },
 ] as const;
 
 /**

@@ -86,7 +86,10 @@ const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
   };
 
   return (
-    <div className="m-4 mb-0 bg-neon-cyan bg-opacity-5 border border-neon-cyan border-opacity-30 rounded-lg overflow-hidden">
+    // shrink-0: this sits in a flex column beside a fillHeight picker, which
+    // otherwise compresses it below its own content and the overflow-hidden
+    // above clips the last row — the hide checkbox.
+    <div className="m-4 mb-0 shrink-0 bg-neon-cyan bg-opacity-5 border border-neon-cyan border-opacity-30 rounded-lg overflow-hidden">
       <div className="p-3 pb-2">
         <h4 className="text-neon-cyan font-medium">Zone Settings</h4>
         <p className="text-cool-gray text-xs mt-0.5">
@@ -240,7 +243,21 @@ export const ZonesList: React.FC = () => {
                   </div>
                 ) : (
                   <>
-                    <span className="text-white font-medium">{zone.name}</span>
+                    <span className={`font-medium ${zone.hidden ? 'text-cool-gray italic' : 'text-white'}`}>
+                      {zone.name}
+                    </span>
+                    {/* Hidden zones still exist and still hold their channels —
+                        they are simply absent from the radio's zone menu. Dimmed
+                        and badged rather than removed, so the list still matches
+                        the codeplug. */}
+                    {zone.hidden && (
+                      <span
+                        className="text-[10px] uppercase tracking-wide text-amber-400 border border-amber-400 border-opacity-40 rounded px-1 py-px"
+                        title="Hidden from the radio's zone menu — the zone and its channels still exist"
+                      >
+                        hidden
+                      </span>
+                    )}
                     <span className="text-cool-gray text-xs">
                       {zone.channels.length} {formatPlural(zone.channels.length, 'channel')}
                     </span>
