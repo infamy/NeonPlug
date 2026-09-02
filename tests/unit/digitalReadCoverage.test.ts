@@ -45,6 +45,27 @@ describe('generic DMR content is read for every digital radio', () => {
     expect(dm32Branch).toContain('dm32.readQuickContacts');
   });
 
+  it('does not read big on-demand tables with the codeplug', async () => {
+    // The link is byte-limited at ~10 KB/s, so a table nobody is looking at is
+    // dead weight on every read. Satellites is 12,800 bytes (~1.3 s) and the
+    // pictures are 40 KB each. The vendor CPS draws the same line — satellites
+    // are behind its Tools menu, which is why they never appear in a CPS
+    // codeplug capture. Both are read on demand from their Settings area.
+    const labels = CODEPLUG_READS.map((r) => r.label);
+    expect(labels).not.toContain('Satellites');
+    expect(labels).not.toContain('Pictures');
+
+    // And prove it by planning: a protocol that CAN read them is still not
+    // asked to during a codeplug read.
+    const proto = {
+      readSatellites: async () => [],
+      readImages: async () => ({ boot: null, bk1: null, bk2: null }),
+    } as unknown as Parameters<(typeof CODEPLUG_READS)[number]['plan']>[0];
+    for (const spec of CODEPLUG_READS) {
+      expect(spec.plan(proto), `${spec.label} should not plan for this protocol`).toBeNull();
+    }
+  });
+
   it('reads RX groups and talkgroups for any radio that implements them', async () => {
     // This used to be a grep of the hook's source, because the alternative was
     // standing up a fake radio. The registry makes the real thing cheap: run it
@@ -96,7 +117,6 @@ describe('generic DMR content is read for every digital radio', () => {
       'Encryption keys',
       'Roaming',
       'Pre-defined SMS',
-      'Satellites',
       'Emergency',
       'AM/FM broadcast',
       'Power-on display',

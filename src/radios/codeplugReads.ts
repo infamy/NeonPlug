@@ -112,7 +112,11 @@ export const CODEPLUG_READS: CodeplugRead[] = [
         : null,
   },
 
-  table('satellites', 'Satellites', (p) => p.readSatellites?.bind(p) ?? null),
+  // Satellites are NOT here on purpose. The table is 12,800 bytes — about 1.3 s
+  // on a ~10 KB/s link — for something most users never open, and the vendor
+  // CPS does not read it with a codeplug either: it sits behind its Tools menu,
+  // which is why it never appears in a CPS codeplug capture. Read on demand
+  // from the Satellites area instead, like the pictures.
   table('emergencyAlarm', 'Emergency', (p) => p.readEmergency?.bind(p) ?? null),
 
   // AM and FM are separate tables from the channel list and from each other.

@@ -575,27 +575,36 @@ export function useRadioConnection() {
    * else this radio holds, and the pictures are cosmetic. Anyone who wants to
    * look at them can wait; nobody should wait for them by default.
    */
-  const readPictures = useCallback(async (
-    onProgress?: (progress: number, message: string) => void
+  /**
+   * A read that is NOT part of a codeplug read: the user asked for this one
+   * thing, so connect, fetch it, disconnect.
+   *
+   * Kept separate from the codeplug because of what it costs. The link is
+   * byte-limited at ~10 KB/s, so a table nobody is looking at is dead weight on
+   * every read — the three picture regions are 40 KB each, and the satellite
+   * table is 12.8 KB. The vendor CPS draws the same line: satellites are behind
+   * its Tools menu, not part of reading a codeplug.
+   */
+  const runOnDemandRead = useCallback(async (
+    label: string,
+    onProgress: ((progress: number, message: string) => void) | undefined,
+    run: (
+      proto: RadioProtocol & Partial<OptionalDigitalReads>,
+      report: (percent: number, message: string) => void
+    ) => Promise<void>
   ) => {
     setIsConnecting(true);
     setRadioBusy(true);
-    const report = publish('Reading images', onProgress);
+    const report = publish(label, onProgress);
     setError(null);
     let protocol: RadioProtocol | null = null;
     try {
       protocol = createProtocolForModel(selectedRadioModel ?? radioInfo?.model ?? '');
       if (!protocol) throw new Error('No driver for this radio.');
-      const withImages = protocol as RadioProtocol & Partial<OptionalDigitalReads>;
-      if (!withImages.readImages) throw new Error('This radio has no boot or standby pictures.');
       report(0, 'Connecting to radio...');
       await protocol.connect();
-      report(2, 'Reading pictures...');
-      // Connecting is a couple of percent; the transfer is the rest.
-      setTable('pictures', await withImages.readImages((percent, label) => {
-        report(2 + percent * 0.98, label);
-      }));
-      report(100, 'Pictures read.');
+      await run(protocol as RadioProtocol & Partial<OptionalDigitalReads>, report);
+      report(100, `${label} complete.`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setError(msg);
@@ -605,12 +614,38 @@ export function useRadioConnection() {
       // Disconnect on success as well as failure: leaving the port open and
       // locked makes the NEXT port.open() throw.
       if (protocol) {
-        try { await protocol.disconnect(); } catch (e) { console.warn('Error disconnecting after reading pictures:', e); }
+        try { await protocol.disconnect(); } catch (e) { console.warn(`Error disconnecting after ${label}:`, e); }
       }
       setIsConnecting(false);
       setRadioBusy(false);
     }
-  }, [selectedRadioModel, radioInfo, setTable]);
+  }, [selectedRadioModel, radioInfo, publish]);
+
+  const readPictures = useCallback((
+    onProgress?: (progress: number, message: string) => void
+  ) => runOnDemandRead('Reading images', onProgress, async (proto, report) => {
+    if (!proto.readImages) throw new Error('This radio has no boot or standby pictures.');
+    report(2, 'Reading pictures...');
+    // Connecting is a couple of percent; the transfer is the rest.
+    setTable('pictures', await proto.readImages((percent, label) => {
+      report(2 + percent * 0.98, label);
+    }));
+  }), [runOnDemandRead, setTable]);
+
+  /**
+   * The satellite table, on demand.
+   *
+   * It used to be read with the codeplug, costing 12,800 bytes — about 1.3 s of
+   * a ~10 s read — on every single read, for a table most users never open. The
+   * vendor CPS does not read it with a codeplug either; it is behind Tools.
+   */
+  const readSatellites = useCallback((
+    onProgress?: (progress: number, message: string) => void
+  ) => runOnDemandRead('Reading satellites', onProgress, async (proto, report) => {
+    if (!proto.readSatellites) throw new Error('This radio has no satellite table.');
+    report(2, 'Reading satellite table...');
+    setTable('satellites', await proto.readSatellites());
+  }), [runOnDemandRead, setTable]);
 
   const readBootImage = useCallback(async (
     onProgress?: (progress: number, message: string) => void
@@ -1021,6 +1056,7 @@ export function useRadioConnection() {
     readContacts,
     readBootImage,
     readPictures,
+    readSatellites,
     writeBootImage,
     writeContacts,
     writeChannelsToRadio,

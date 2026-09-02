@@ -39,7 +39,7 @@ import {
 } from './broadcastChannels';
 import { D890_GPS_ROAMING, parseGpsRoamingTable } from './gpsRoaming';
 import { D890_POWER_ON, parsePowerOnDisplay } from './powerOnDisplay';
-import { D890_AM_ZONES, parseAmZoneTable, type D890AmZone } from './amZones';
+import { D890_AM_ZONES, parseAmZone, type D890AmZone } from './amZones';
 import {
   D890_TONES,
   parseFiveTone,
@@ -61,10 +61,13 @@ import {
   D890_LIMITS,
   D890_MODEL_IDS,
   D890_TALKGROUP_MASK_INVERTED,
+  D890_BLOCK,
 } from './constants';
 import {
   decodeOccupancyMask,
   occupiedIndices,
+  range,
+  consecutiveRuns,
   parseZone,
   parseTalkgroup,
   parseTalkgroupQuick,
@@ -704,41 +707,81 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     };
   }
 
+  /**
+   * Read a strided table by asking its presence mask which slots are stored.
+   *
+   * This is the shape the vendor CPS uses for every such table, confirmed
+   * 2026-09-01 from its own serial capture (`7x2_read_new.txt`). In every case
+   * it reads the mask first and then fetches exactly as many records as the
+   * mask has bits set:
+   *
+   *   AM channels  mask 0x3884200 = 07  ->  192 B / 0x40 = 3 records
+   *   AM zones     mask 0x3884400 = 01  ->  128 B / 0x80 = 1 record
+   *   5-Tone       mask 0x3481900 = 03  ->  128 B / 0x40 = 2 records
+   *   2-Tone       mask 0x3482800 = 03  ->   64 B / 0x20 = 2 records
+   *
+   * Polarity is SET = PRESENT in all four.
+   *
+   * This matters because the link is byte-limited at ~10 KB/s — reading a whole
+   * table to find two records is most of a codeplug read. Unlike the CPS, which
+   * asks in 16-byte frames throughout, we keep the negotiated read length, so
+   * three AM records are one 192-byte request rather than twelve 16-byte ones.
+   *
+   * Two safety properties, both deliberate:
+   *  - the mask only decides HOW MUCH to read. The caller still parses each
+   *    record and decides whether it is vacant, so a wrongly-set bit costs a
+   *    few bytes and never invents an entry.
+   *  - a mask that decodes to nothing is not believed. Erased flash reads 0xFF
+   *    ("all present", so the whole table) and an all-zero mask falls back to
+   *    the whole table too — which is exactly what these reads did before.
+   */
+  private async readMaskedSlots(
+    maskAddress: number,
+    dataAddress: number,
+    stride: number,
+    slots: number
+  ): Promise<{ index: number; bytes: Uint8Array }[]> {
+    const conn = this.requireConnection();
+    const maskLength = Math.ceil(Math.ceil(slots / 8) / D890_BLOCK.ALIGNMENT) * D890_BLOCK.ALIGNMENT;
+    const present = occupiedIndices(
+      decodeOccupancyMask(await conn.readMemory(maskAddress, maskLength), slots)
+    );
+    const wanted = present.length > 0 ? present : range(slots);
+
+    const out: { index: number; bytes: Uint8Array }[] = [];
+    for (const run of consecutiveRuns(wanted)) {
+      const bytes = await conn.readMemory(dataAddress + run.start * stride, run.count * stride);
+      for (let i = 0; i < run.count; i += 1) {
+        out.push({
+          index: run.start + i,
+          bytes: bytes.subarray(i * stride, (i + 1) * stride),
+        });
+      }
+    }
+    return out;
+  }
+
   /** AM airband and FM broadcast channels, plus their VFO records. */
   async readBroadcastChannels(band: D890BroadcastBand): Promise<D890BroadcastChannel[]> {
     const conn = this.requireConnection();
     const spec = D890_BROADCAST[band];
 
-    // Read the whole table in one span and let the RECORDS say what is stored,
-    // rather than asking the presence mask first.
-    //
-    // Two reasons. Frames: readMemory chunks at the negotiated read length
-    // (up to 0xf0), so one 0x4000 span is ~69 frames where a record-at-a-time
-    // loop over 256 slots is 256 — and an erased 0xFF mask reads as "all
-    // present", which is exactly when the loop is at its worst.
-    //
-    // Trust: this mask's polarity is marshaller-derived and never confirmed,
-    // and our own files disagree about its address (recordLayout puts the AM
-    // mask at 0x3884000, D890_BROADCAST at 0x3884200). A vacant record is
-    // unambiguous — no name and no decodable frequency — so reading the records
-    // removes the need to resolve that before the data can be shown at all.
-    const table = await conn.readMemory(spec.data, spec.channels * spec.stride);
-
     // The scan ("Add") flag is a SEPARATE flat mask, and only FM has one here.
     // AM's equivalent is per AM-zone (`AmChannelList_CH_Scan`) inside the zone
-    // table we do not read, so AM channels come back with scanAdd undefined
-    // rather than a fabricated false.
+    // table, so AM channels come back with scanAdd undefined rather than a
+    // fabricated false.
     const scanMaskAddr = 'scanMask' in spec ? spec.scanMask : undefined;
     const scan = scanMaskAddr === undefined
       ? undefined
       : decodeOccupancyMask(await conn.readMemory(scanMaskAddr, 0x10), spec.channels);
 
     const out: D890BroadcastChannel[] = [];
-    for (let index = 0; index < spec.channels; index += 1) {
-      const start = index * spec.stride;
-      const ch = parseBroadcastChannel(table.subarray(start, start + spec.stride), index, band);
+    for (const slot of await this.readMaskedSlots(
+      spec.mask, spec.data, spec.stride, spec.channels
+    )) {
+      const ch = parseBroadcastChannel(slot.bytes, slot.index, band);
       if (isVacantBroadcastChannel(ch)) continue;
-      out.push(scan === undefined ? ch : { ...ch, scanAdd: scan[index] === true });
+      out.push(scan === undefined ? ch : { ...ch, scanAdd: scan[slot.index] === true });
     }
     return out;
   }
@@ -832,21 +875,17 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
 
   /** The 5-Tone and 2-Tone signalling code lists. */
   async readTones(): Promise<{ fiveTone: D890FiveTone[]; twoTone: D890TwoTone[] }> {
-    const conn = this.requireConnection();
     const five = D890_TONES.fiveTone;
     const two = D890_TONES.twoTone;
 
-    const fiveBytes = await conn.readMemory(five.address, five.stride * five.slots);
-    const twoBytes = await conn.readMemory(two.address, two.stride * two.slots);
-
     const fiveTone: D890FiveTone[] = [];
-    for (let i = 0; i < five.slots; i += 1) {
-      const entry = parseFiveTone(fiveBytes.subarray(i * five.stride, (i + 1) * five.stride), i);
+    for (const slot of await this.readMaskedSlots(five.mask, five.address, five.stride, five.slots)) {
+      const entry = parseFiveTone(slot.bytes, slot.index);
       if (entry) fiveTone.push(entry);
     }
     const twoTone: D890TwoTone[] = [];
-    for (let i = 0; i < two.slots; i += 1) {
-      const entry = parseTwoTone(twoBytes.subarray(i * two.stride, (i + 1) * two.stride), i);
+    for (const slot of await this.readMaskedSlots(two.mask, two.address, two.stride, two.slots)) {
+      const entry = parseTwoTone(slot.bytes, slot.index);
       if (entry) twoTone.push(entry);
     }
     return { fiveTone, twoTone };
@@ -854,11 +893,14 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
 
   /** Zones over the AM airband table — a separate system from the main zones. */
   async readAmZones(): Promise<D890AmZone[]> {
-    const bytes = await this.requireConnection().readMemory(
-      D890_AM_ZONES.ADDRESS,
-      D890_AM_ZONES.STRIDE * D890_AM_ZONES.SLOTS
-    );
-    return parseAmZoneTable(bytes);
+    const out: D890AmZone[] = [];
+    for (const slot of await this.readMaskedSlots(
+      D890_AM_ZONES.MASK, D890_AM_ZONES.ADDRESS, D890_AM_ZONES.STRIDE, D890_AM_ZONES.SLOTS
+    )) {
+      const zone = parseAmZone(slot.bytes, slot.index);
+      if (zone) out.push(zone);
+    }
+    return out;
   }
 
   /** The GPS Roaming geofence table. */

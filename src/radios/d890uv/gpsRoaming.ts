@@ -10,6 +10,16 @@
  * (read): 32 entries bounded by `cmp ebx, 0x20` at fourteen sites, stride 0x20,
  * and the CPS's own `GPSRoaming.CSV` has exactly 32 rows.
  *
+ * NO PRESENCE MASK, confirmed 2026-09-01 from the vendor CPS's serial capture:
+ * it sweeps this region contiguously with nothing read beforehand, unlike the
+ * AM channel, AM zone, 5-Tone and 2-Tone tables, which each get a mask read
+ * first. So this one stays a whole-table read and occupancy comes from the
+ * records. That costs nothing worth optimising — the table is 1,024 bytes.
+ *
+ * (The CPS reads 1,280 bytes here, 256 past the 32 entries. Those bytes are all
+ * zero in the capture, and the 32-entry geometry has two independent sources,
+ * so the overread is unexplained but not evidence of more slots.)
+ *
  * ⚠️ Do NOT identify this pair by its error label. Both procedures carry
  * `SetCommDataByEMG_CodeError`, which is boilerplate shared by five completely
  * different tables — AES keys, ARC4 keys, the basic encryption codes, this, and

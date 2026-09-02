@@ -19,6 +19,15 @@ import { decodeWideCharString } from './structures';
  */
 export const D890_AM_ZONES = {
   ADDRESS: 0x3888000,
+  /**
+   * Presence mask, SET = PRESENT. Lives in the AM mask block at 0x3884xxx
+   * rather than beside the zone records.
+   *
+   * CONFIRMED 2026-09-01 from the vendor CPS's serial capture: request #2379
+   * reads `01` here, and request #5206 then reads exactly 128 bytes at
+   * 0x3888000 — one record, matching the single AM zone on the radio.
+   */
+  MASK: 0x3884400,
   STRIDE: 0x80,
   /** The CPS's AM Zone node shows 16 rows. */
   SLOTS: 16,
@@ -69,7 +78,15 @@ export function parseAmZone(bytes: Uint8Array, index: number): D890AmZone | null
   };
 }
 
-/** Parse the whole table, dropping unused slots. */
+/**
+ * Parse a whole contiguous table dump, dropping unused slots.
+ *
+ * NOT the live read path any more — that asks the presence mask at
+ * `D890_AM_ZONES.MASK` and fetches only the slots it names, so it never has a
+ * full-table buffer to hand. This stays for the inputs that ARE contiguous: a
+ * region dump from Diagnostics, and anything a write path has to reason about
+ * as a whole table.
+ */
 export function parseAmZoneTable(bytes: Uint8Array): D890AmZone[] {
   const out: D890AmZone[] = [];
   for (let i = 0; i < D890_AM_ZONES.SLOTS; i += 1) {

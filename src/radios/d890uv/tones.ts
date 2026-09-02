@@ -11,6 +11,15 @@ import { decodeWideCharString } from './structures';
 export const D890_TONES = {
   fiveTone: {
     address: 0x3480000,
+    /**
+     * Presence mask, one bit per slot, SET = PRESENT.
+     *
+     * CONFIRMED 2026-09-01 from the vendor CPS's serial capture: request #221
+     * reads this address and gets `03`, and request #5088 then reads exactly
+     * 128 bytes at 0x3480000 — two records. Popcount matches record count, and
+     * the mask is read first. Same shape as the AM airband mask.
+     */
+    mask: 0x3481900,
     /** Proven by the added entry landing exactly here. */
     stride: 0x40,
     /**
@@ -23,6 +32,8 @@ export const D890_TONES = {
   },
   twoTone: {
     address: 0x3482000,
+    /** Presence mask — CPS request #297 reads `03` here, then two records. */
+    mask: 0x3482800,
     stride: 0x20,
     /**
      * 32, not the 24 first guessed — CONFIRMED by the boundary. Slot 32 begins

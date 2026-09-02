@@ -271,6 +271,31 @@ export function occupiedIndices(occupancy: boolean[]): number[] {
   return out;
 }
 
+/** `[0, 1, ... n-1]`. Used as the "read everything" fallback for a mask that says nothing. */
+export function range(n: number): number[] {
+  return Array.from({ length: n }, (_, i) => i);
+}
+
+/**
+ * Group ascending indices into consecutive runs.
+ *
+ * The point is round trips: a table whose occupied slots are 0,1,2 should be
+ * ONE read of three records, not three reads of one. The vendor CPS does the
+ * same — for three AM channels it issues a single 192-byte request.
+ *
+ * Input must be ascending and duplicate-free, which is what `occupiedIndices`
+ * returns.
+ */
+export function consecutiveRuns(indices: number[]): { start: number; count: number }[] {
+  const runs: { start: number; count: number }[] = [];
+  for (const index of indices) {
+    const last = runs[runs.length - 1];
+    if (last && index === last.start + last.count) last.count += 1;
+    else runs.push({ start: index, count: 1 });
+  }
+  return runs;
+}
+
 /**
  * Names on this radio are wide-char (2 bytes per character), unlike the
  * single-byte ASCII the DM-32 and Yaesu radios use. Stops at the first NUL, so

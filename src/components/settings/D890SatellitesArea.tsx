@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
+import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { SectionTitle } from '../ui/SectionTitle';
 import { D890_SATELLITE, satelliteFreqToMHz } from '../../radios/d890uv/satellite';
 
@@ -16,6 +17,17 @@ import { D890_SATELLITE, satelliteFreqToMHz } from '../../radios/d890uv/satellit
  */
 export const D890SatellitesArea: React.FC = () => {
   const { tables } = useRadioStore();
+  const { readSatellites, isConnecting } = useRadioConnection();
+  const [readError, setReadError] = useState<string | null>(null);
+
+  const onRead = async () => {
+    setReadError(null);
+    try {
+      await readSatellites();
+    } catch (e) {
+      setReadError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   return (
     <div>
@@ -25,8 +37,26 @@ export const D890SatellitesArea: React.FC = () => {
         {' '}{D890_SATELLITE.SLOTS} entries.
       </p>
 
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void onRead()}
+          disabled={isConnecting}
+          className="px-4 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-50 text-neon-cyan text-sm font-medium rounded hover:bg-neon-cyan hover:text-black disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          title="Read the satellite table from the radio"
+        >
+          {isConnecting ? 'Reading…' : 'Read from radio'}
+        </button>
+        {readError && <span className="text-xs text-amber-400">{readError}</span>}
+      </div>
+
       {!tables.satellites ? (
-        <p className="text-sm text-muted">Read the radio to see its satellite table.</p>
+        <p className="text-sm text-muted">
+          Read the satellite table to see it. It is not read with the codeplug — the
+          table is 12.8 KB, which is over a second of every read for something most
+          users never open. The vendor CPS keeps it behind its Tools menu for the
+          same reason.
+        </p>
       ) : tables.satellites.length === 0 ? (
         <p className="text-sm text-muted">This radio has no satellites set.</p>
       ) : (
