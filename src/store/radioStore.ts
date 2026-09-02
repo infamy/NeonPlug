@@ -1,8 +1,5 @@
 import { create } from 'zustand';
-import type { D890RoamingChannel, D890RoamingZone } from '../radios/d890uv/structures';
-import type { D890SatelliteRecord } from '../radios/d890uv/satellite';
-import type { D890BroadcastChannel } from '../radios/d890uv/broadcastChannels';
-import type { D890GpsRoamingEntry } from '../radios/d890uv/gpsRoaming';
+import type { RadioTables } from '../types/radioTables';
 import type { RadioInfo } from '../types/radio';
 
 type ZoneComparisonData = Array<{
@@ -51,41 +48,17 @@ interface RadioState {
   zoneComparisonData: ZoneComparisonData;
   bootImageRaw: Uint8Array | null;
   /**
-   * DA-7X2 boot image and both standby pictures, read with the codeplug.
-   * Separate from `bootImageRaw` because this radio has three of them and they
-   * are a different format (160x128 RGB565) from the DM-32's single image.
+   * Optional data tables this radio holds, keyed by an agnostic table id.
+   *
+   * This used to be ten `d890*` slots. See `types/radioTables.ts` for why the
+   * ids are generic: no consumer of this data ever behaved differently because
+   * of which radio it came from, so none of them should have to name one.
+   *
+   * A key is absent when the table has not been read or the radio has no such
+   * table — those two cases are deliberately not distinguished, because every
+   * consumer treats them the same way.
    */
-  d890Images: { boot: Uint8Array | null; bk1: Uint8Array | null; bk2: Uint8Array | null } | null;
-  /**
-   * DA-7X2 roaming and satellite tables. Read with the codeplug and kept raw —
-   * neither has a model of its own yet, and inventing one before there is a UI
-   * would be guessing at what that UI needs.
-   */
-  d890Roaming: { channels: D890RoamingChannel[]; zones: D890RoamingZone[] } | null;
-  d890Satellites: D890SatelliteRecord[] | null;
-  /** Emergency / alarm settings and the contact they call. */
-  d890Emergency: {
-    settings: import('../radios/d890uv/emergency').D890EmergencySettings | null;
-    contact: import('../radios/d890uv/emergency').D890EmergencyContact | null;
-  } | null;
-  /** AM airband and FM broadcast channels — separate tables from the main list. */
-  d890Broadcast: { am: D890BroadcastChannel[]; fm: D890BroadcastChannel[]; fmVfo: D890BroadcastChannel | null } | null;
-  /** Zones over the AM airband table. */
-  d890AmZones: import('../radios/d890uv/amZones').D890AmZone[] | null;
-  /** 5-Tone and 2-Tone signalling code lists. */
-  d890Tones: {
-    fiveTone: import('../radios/d890uv/tones').D890FiveTone[];
-    twoTone: import('../radios/d890uv/tones').D890TwoTone[];
-  } | null;
-  /** GPS Roaming geofences. */
-  d890GpsRoaming: D890GpsRoamingEntry[] | null;
-  /**
-   * Per-zone current A/B channel, as POSITIONS within that zone's own member
-   * list — not channel numbers. Index is the zone number.
-   */
-  d890ZoneCurrentChannels: { a: number[]; b: number[] } | null;
-  /** Power-on screen text and password. */
-  d890PowerOnDisplay: import('../radios/d890uv/powerOnDisplay').D890PowerOnDisplay | null;
+  tables: Partial<RadioTables>;
   /**
    * A radio operation owns the serial port right now.
    *
@@ -119,24 +92,13 @@ interface RadioState {
   setWriteBlockData: (data: Map<number, { address: number; data: Uint8Array; metadata: number }>) => void;
   setZoneComparisonData: (data: ZoneComparisonData) => void;
   setBootImageRaw: (data: Uint8Array | null) => void;
-  setD890Images: (images: { boot: Uint8Array | null; bk1: Uint8Array | null; bk2: Uint8Array | null } | null) => void;
-  setD890Roaming: (roaming: { channels: D890RoamingChannel[]; zones: D890RoamingZone[] } | null) => void;
-  setD890Satellites: (sats: D890SatelliteRecord[] | null) => void;
-  setD890Emergency: (e: {
-    settings: import('../radios/d890uv/emergency').D890EmergencySettings | null;
-    contact: import('../radios/d890uv/emergency').D890EmergencyContact | null;
-  } | null) => void;
-  setD890Broadcast: (b: { am: D890BroadcastChannel[]; fm: D890BroadcastChannel[]; fmVfo: D890BroadcastChannel | null } | null) => void;
-  setD890AmZones: (z: import('../radios/d890uv/amZones').D890AmZone[] | null) => void;
-  setD890Tones: (t: {
-    fiveTone: import('../radios/d890uv/tones').D890FiveTone[];
-    twoTone: import('../radios/d890uv/tones').D890TwoTone[];
-  } | null) => void;
-  setD890GpsRoaming: (g: D890GpsRoamingEntry[] | null) => void;
-  setD890ZoneCurrentChannels: (z: { a: number[]; b: number[] } | null) => void;
-  setD890PowerOnDisplay: (
-    d: import('../radios/d890uv/powerOnDisplay').D890PowerOnDisplay | null
-  ) => void;
+  /**
+   * Store one table. Passing null clears it, so a fresh read starts clean.
+   * The key is checked against `RadioTables`, so a typo cannot compile.
+   */
+  setTable: <K extends keyof RadioTables>(key: K, value: RadioTables[K] | null) => void;
+  /** Drop every table. Used when disconnecting or switching radios. */
+  clearTables: () => void;
   setRadioBusy: (busy: boolean) => void;
   setRadioProgress: (
     p: { label: string; percent: number; message: string } | null
@@ -164,16 +126,7 @@ export const useRadioStore = create<RadioState>((set) => ({
   writeBlockData: new Map(),
   zoneComparisonData: [],
   bootImageRaw: null,
-  d890Images: null,
-  d890Roaming: null,
-  d890Satellites: null,
-  d890Emergency: null,
-  d890Broadcast: null,
-  d890AmZones: null,
-  d890Tones: null,
-  d890GpsRoaming: null,
-  d890ZoneCurrentChannels: null,
-  d890PowerOnDisplay: null,
+  tables: {},
   radioBusy: false,
   radioProgress: null,
   bootImageDescription: null,
@@ -189,16 +142,16 @@ export const useRadioStore = create<RadioState>((set) => ({
   setWriteBlockData: (data) => set({ writeBlockData: data }),
   setZoneComparisonData: (data) => set({ zoneComparisonData: data }),
   setBootImageRaw: (data) => set({ bootImageRaw: data }),
-  setD890Images: (images) => set({ d890Images: images }),
-  setD890Roaming: (roaming) => set({ d890Roaming: roaming }),
-  setD890Satellites: (sats) => set({ d890Satellites: sats }),
-  setD890Emergency: (e) => set({ d890Emergency: e }),
-  setD890Broadcast: (b) => set({ d890Broadcast: b }),
-  setD890AmZones: (z) => set({ d890AmZones: z }),
-  setD890Tones: (t) => set({ d890Tones: t }),
-  setD890GpsRoaming: (g) => set({ d890GpsRoaming: g }),
-  setD890ZoneCurrentChannels: (z) => set({ d890ZoneCurrentChannels: z }),
-  setD890PowerOnDisplay: (d) => set({ d890PowerOnDisplay: d }),
+  setTable: (key, value) =>
+    set((state) => {
+      const tables = { ...state.tables };
+      // null clears rather than storing an empty slot, so `key in tables` and a
+      // truthiness check agree about what the radio actually gave us.
+      if (value === null) delete tables[key];
+      else tables[key] = value;
+      return { tables };
+    }),
+  clearTables: () => set({ tables: {} }),
   setRadioBusy: (busy) => set({ radioBusy: busy, ...(busy ? {} : { radioProgress: null }) }),
   setRadioProgress: (p) => set({ radioProgress: p }),
   setBootImageDescription: (description) => set({ bootImageDescription: description }),

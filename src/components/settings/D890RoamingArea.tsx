@@ -16,9 +16,9 @@ const fmtFreq = (mhz: number) => (mhz > 0 ? `${mhz.toFixed(5)} MHz` : '—');
  * as numbers would invent a colour code the user never chose.
  */
 export const D890RoamingArea: React.FC = () => {
-  const { d890Roaming } = useRadioStore();
+  const { tables } = useRadioStore();
 
-  if (!d890Roaming) {
+  if (!tables.roaming) {
     return (
       <div>
         <SectionTitle size="lg" underline>Roaming</SectionTitle>
@@ -27,7 +27,7 @@ export const D890RoamingArea: React.FC = () => {
     );
   }
 
-  const { channels, zones } = d890Roaming;
+  const { channels, zones } = tables.roaming;
 
   return (
     <div>

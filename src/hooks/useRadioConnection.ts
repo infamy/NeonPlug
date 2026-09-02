@@ -4,11 +4,11 @@ import { createDefaultProtocol, createProtocolForModel } from '../radios';
 import { D890UVProtocol } from '../radios/d890uv/protocol';
 import { DM32UVProtocol } from '../radios/dm32uv/protocol';
 import { BaseDigitalProtocol } from '../radios/shared/BaseProtocols';
+import type { OptionalDigitalReads } from '../radios/optionalReads';
+import { CODEPLUG_READS } from '../radios/codeplugReads';
+import type { CodeplugReadSinks } from '../radios/codeplugReads';
 import { getCapabilitiesForModel } from '../radios/capabilities';
 import type { Contact } from '../models/Contact';
-import type { QuickContact } from '../models/QuickContact';
-import type { RXGroup } from '../models/RXGroup';
-import { alignZoneCurrentChannels } from '../radios/d890uv/structures';
 import { useRadioStore } from '../store/radioStore';
 import { useChannelsStore } from '../store/channelsStore';
 import { useZonesStore } from '../store/zonesStore';
@@ -72,7 +72,7 @@ export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setD890PowerOnDisplay, setD890AmZones, setD890Tones, setRadioBusy, setRadioProgress, setConnectionError } = useRadioStore();
+  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setRadioBusy, setRadioProgress, setConnectionError, setTable, clearTables } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -127,6 +127,13 @@ export function useRadioConnection() {
     setBlockData(new Map());
     setCachedMemoryImage(null);
     setRawRadioSettingsData(null);
+    // The optional tables were NOT cleared here before the keyed-store change,
+    // because each was a separately named slot and the ten of them were simply
+    // missed. Reading a DM-32 after a DA-7X2 therefore left the DA-7X2's AM/FM
+    // tables and tone lists in the store, and ChannelsTab shows its AM/FM pills
+    // whenever `tables.broadcast` is present — so the previous radio's channels
+    // stayed on screen.
+    clearTables();
 
     let protocol: RadioProtocol | null = null;
     let tabWentHiddenDuringOperation = false;
@@ -172,10 +179,9 @@ export function useRadioConnection() {
       const dm32 = proto instanceof DM32UVProtocol ? proto : null;
       // Any DMR radio, DM-32 included. `readRXGroups` and `readQuickContacts`
       // are optional on the base, so they are called defensively below.
-      const digital = proto instanceof BaseDigitalProtocol ? (proto as BaseDigitalProtocol & {
-        readRXGroups?: () => Promise<RXGroup[]>;
-        readQuickContacts?: () => Promise<QuickContact[]>;
-      }) : null;
+      const digital = proto instanceof BaseDigitalProtocol
+        ? (proto as BaseDigitalProtocol & Partial<OptionalDigitalReads>)
+        : null;
 
       if (caps?.supportsBulkRead && dm32) {
         onProgress?.(15, 'Reading all memory blocks...', steps[3]);
@@ -186,6 +192,29 @@ export function useRadioConnection() {
       // completion message — a silent failure would leave the UI showing an
       // empty section while the radio still holds data.
       const sectionReadWarnings: string[] = [];
+
+      // Every section below is independent: a section that fails must not cost
+      // the user the sections that already read. Warn, record the name for the
+      // completion message, and carry on.
+      const readSection = async (label: string, read: () => Promise<void>) => {
+        try {
+          await read();
+        } catch (err) {
+          console.warn(`Could not read ${label}:`, err);
+          sectionReadWarnings.push(label);
+        }
+      };
+
+      // Where CODEPLUG_READS puts what it reads. Passed in rather than
+      // imported, so the registry does not depend on this store.
+      const sinks: CodeplugReadSinks = {
+        setTable,
+        setEncryptionKeys,
+        setMessages,
+        setMessagesLoaded,
+        setRXGroups,
+        setQuickContacts,
+      };
 
       onProgress?.(20, 'Parsing channels...', steps[4]);
       // A driver still being brought up can declare channels unreadable instead
@@ -253,234 +282,65 @@ export function useRadioConnection() {
       // The raw block captures stay DM-32-only. Those are its clone-image
       // debugging aids and have no meaning for an address-addressed radio.
       if (digital && !dm32) {
-        try {
-          setRadioIds(await digital.readDMRRadioIDs());
-        } catch (err) { console.warn('Could not read DMR Radio IDs:', err); sectionReadWarnings.push('DMR Radio IDs'); }
+        await readSection('DMR Radio IDs', async () =>
+          setRadioIds(await digital.readDMRRadioIDs())
+        );
 
-        try {
-          const groups = await digital.readRXGroups?.();
-          if (groups) setRXGroups(groups);
-        } catch (err) { console.warn('Could not read RX Groups:', err); sectionReadWarnings.push('RX Groups'); }
-
-        try {
-          const quick = await digital.readQuickContacts?.();
-          if (quick) setQuickContacts(quick);
-        } catch (err) { console.warn('Could not read Talk Groups:', err); sectionReadWarnings.push('Talk Groups'); }
-
-        // Pictures are NOT read here. Three 40 KB regions is the single largest
-        // thing this radio can be asked for, and they are cosmetic and rarely
-        // looked at — paying for them on every codeplug read is a bad trade.
-        // The Settings area reads them on demand instead.
-
-        // The rest of what this radio is known to hold. Each is independent and
-        // optional: none of them should be able to cost the user their channels.
-        const extras = digital as unknown as {
-          readEncryptionKeys?: () => Promise<import('../models/EncryptionKey').EncryptionKey[]>;
-          readRoamingChannels?: () => Promise<import('../radios/d890uv/structures').D890RoamingChannel[]>;
-          readRoamingZones?: () => Promise<import('../radios/d890uv/structures').D890RoamingZone[]>;
-          readSatellites?: () => Promise<import('../radios/d890uv/satellite').D890SatelliteRecord[]>;
-          readQuickMessages?: () => Promise<import('../models/QuickTextMessage').QuickTextMessage[]>;
-          readEmergency?: () => Promise<{
-            settings: import('../radios/d890uv/emergency').D890EmergencySettings | null;
-            contact: import('../radios/d890uv/emergency').D890EmergencyContact | null;
-          }>;
-          readBroadcastChannels?: (
-            band: 'am' | 'fm'
-          ) => Promise<import('../radios/d890uv/broadcastChannels').D890BroadcastChannel[]>;
-          readGpsRoaming?: () => Promise<import('../radios/d890uv/gpsRoaming').D890GpsRoamingEntry[]>;
-          readAmZones?: () => Promise<import('../radios/d890uv/amZones').D890AmZone[]>;
-          readTones?: () => Promise<{
-            fiveTone: import('../radios/d890uv/tones').D890FiveTone[];
-            twoTone: import('../radios/d890uv/tones').D890TwoTone[];
-          }>;
-          readFmVfo?: () => Promise<
-            import('../radios/d890uv/broadcastChannels').D890BroadcastChannel | null
-          >;
-          readZoneCurrentChannels?: () => Promise<{ a: number[]; b: number[] }>;
-          rawZoneIndices?: number[];
-          readPowerOnDisplay?: () => Promise<
-            import('../radios/d890uv/powerOnDisplay').D890PowerOnDisplay
-          >;
-        };
-
-        if (extras.readEncryptionKeys) {
-          try {
-            setEncryptionKeys(await extras.readEncryptionKeys());
-          } catch (err) {
-            console.warn('Could not read encryption keys:', err);
-            sectionReadWarnings.push('Encryption keys');
-          }
-        }
-
-        if (extras.readRoamingChannels && extras.readRoamingZones) {
-          try {
-            setD890Roaming({
-              channels: await extras.readRoamingChannels(),
-              zones: await extras.readRoamingZones(),
-            });
-          } catch (err) {
-            console.warn('Could not read roaming:', err);
-            sectionReadWarnings.push('Roaming');
-          }
-        }
-
-        if (extras.readQuickMessages) {
-          try {
-            setMessages(await extras.readQuickMessages());
-            setMessagesLoaded(true);
-          } catch (err) {
-            console.warn('Could not read pre-defined SMS:', err);
-            sectionReadWarnings.push('Pre-defined SMS');
-          }
-        }
-
-        if (extras.readSatellites) {
-          try {
-            setD890Satellites(await extras.readSatellites());
-          } catch (err) {
-            console.warn('Could not read satellites:', err);
-            sectionReadWarnings.push('Satellites');
-          }
-        }
-
-        if (extras.readEmergency) {
-          try {
-            setD890Emergency(await extras.readEmergency());
-          } catch (err) {
-            console.warn('Could not read emergency:', err);
-            sectionReadWarnings.push('Emergency');
-          }
-        }
-
-        // AM and FM are separate tables from the channel list and from each
-        // other. Read together so a radio with only one of them populated still
-        // shows the one it has rather than nothing.
-        if (extras.readBroadcastChannels) {
-          try {
-            setD890Broadcast({
-              am: await extras.readBroadcastChannels('am'),
-              fm: await extras.readBroadcastChannels('fm'),
-              fmVfo: extras.readFmVfo ? await extras.readFmVfo() : null,
-            });
-          } catch (err) {
-            console.warn('Could not read broadcast channels:', err);
-            sectionReadWarnings.push('AM/FM broadcast');
-          }
-        }
-
-        if (extras.readPowerOnDisplay) {
-          try {
-            setD890PowerOnDisplay(await extras.readPowerOnDisplay());
-          } catch (err) {
-            console.warn('Could not read power-on display:', err);
-            sectionReadWarnings.push('Power-on display');
-          }
-        }
-
-        if (extras.readTones) {
-          try {
-            setD890Tones(await extras.readTones());
-          } catch (err) {
-            console.warn('Could not read tone lists:', err);
-            sectionReadWarnings.push('2-Tone / 5-Tone');
-          }
-        }
-
-        if (extras.readAmZones) {
-          try {
-            setD890AmZones(await extras.readAmZones());
-          } catch (err) {
-            console.warn('Could not read AM zones:', err);
-            sectionReadWarnings.push('AM zones');
-          }
-        }
-
-        if (extras.readGpsRoaming) {
-          try {
-            setD890GpsRoaming(await extras.readGpsRoaming());
-          } catch (err) {
-            console.warn('Could not read GPS roaming:', err);
-            sectionReadWarnings.push('GPS roaming');
-          }
-        }
-
-        // Positions within each zone, so this is only meaningful next to the
-        // zones themselves — read after them, and tolerated as missing.
+        // Everything else this radio may hold is declared in CODEPLUG_READS,
+        // in the order the radio is asked. This hook does not name a table.
         //
-        // The radio's table is indexed by hardware zone SLOT; the zones array
-        // has empty slots dropped. Re-index onto the zones array here so the UI
-        // can use a plain array position and cannot silently misattribute a
-        // zone's A/B channel when a slot in the middle is empty.
-        if (extras.readZoneCurrentChannels) {
-          try {
-            const raw = await extras.readZoneCurrentChannels();
-            const slots = extras.rawZoneIndices;
-            setD890ZoneCurrentChannels(
-              slots && slots.length > 0 ? alignZoneCurrentChannels(raw, slots) : raw
-            );
-          } catch (err) {
-            console.warn('Could not read zone A/B channels:', err);
-            sectionReadWarnings.push('Zone A/B channels');
-          }
+        // Pictures are deliberately NOT among them: three 40 KB regions is the
+        // largest thing this radio can be asked for, and they are cosmetic and
+        // rarely looked at. The Settings area reads them on demand instead.
+        for (const spec of CODEPLUG_READS) {
+          const run = spec.plan(digital);
+          if (run) await readSection(spec.label, () => run(sinks));
         }
       }
 
       if (dm32) {
-        try {
-          const messages = await dm32.readQuickMessages();
-          setMessages(messages);
-          const rawMsgMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
-          for (const [i, raw] of dm32.rawMessageData.entries()) rawMsgMap.set(i, raw);
-          setRawMessageData(rawMsgMap);
-        } catch (err) { console.warn('Could not read Quick Messages:', err); sectionReadWarnings.push('Quick Messages'); }
+        await readSection('Quick Messages', async () => {
+          setMessages(await dm32.readQuickMessages());
+          setRawMessageData(new Map(dm32.rawMessageData));
+        });
 
-        try {
-          const radioIds = await dm32.readDMRRadioIDs();
-          setRadioIds(radioIds);
-          const rawIdMap = new Map<number, { data: Uint8Array; idIndex: number; offset: number }>();
-          for (const [i, raw] of dm32.rawDMRRadioIDData.entries()) rawIdMap.set(i, raw);
-          setRawRadioIdData(rawIdMap);
-        } catch (err) { console.warn('Could not read DMR Radio IDs:', err); sectionReadWarnings.push('DMR Radio IDs'); }
+        await readSection('DMR Radio IDs', async () => {
+          setRadioIds(await dm32.readDMRRadioIDs());
+          setRawRadioIdData(new Map(dm32.rawDMRRadioIDData));
+        });
 
-        try {
-          setCalibration(await dm32.readCalibration());
-        } catch (err) { console.warn('Could not read calibration data:', err); sectionReadWarnings.push('Calibration'); }
+        await readSection('Calibration', async () => setCalibration(await dm32.readCalibration()));
 
-        try {
-          const rxGroups = await dm32.readRXGroups();
-          setRXGroups(rxGroups);
-          const rawGroupMap = new Map<number, { data: Uint8Array; groupIndex: number; offset: number }>();
-          for (const [i, raw] of dm32.rawRXGroupData.entries()) rawGroupMap.set(i, raw);
-          setRawGroupData(rawGroupMap);
-        } catch (err) { console.warn('Could not read RX Groups:', err); sectionReadWarnings.push('RX Groups'); }
+        await readSection('RX Groups', async () => {
+          setRXGroups(await dm32.readRXGroups());
+          setRawGroupData(new Map(dm32.rawRXGroupData));
+        });
 
-        try {
-          setQuickContacts(await dm32.readQuickContacts());
-        } catch (err) { console.warn('Could not read Talk Groups:', err); sectionReadWarnings.push('Talk Groups'); }
+        await readSection('Talk Groups', async () => setQuickContacts(await dm32.readQuickContacts()));
       }
 
       try {
         onProgress?.(90, 'Reading configuration...', 'Reading configuration');
 
-        try {
+        await readSection('Radio Settings', async () => {
           const radioSettings = await proto.readRadioSettings();
           if (radioSettings) setRadioSettings(radioSettings);
           if (dm32?.rawRadioSettingsData) setRawRadioSettingsData(dm32.rawRadioSettingsData);
-        } catch (err) { console.warn('Could not read Radio Settings:', err); sectionReadWarnings.push('Radio Settings'); }
+        });
 
         if (dm32) {
-          try {
+          await readSection('Digital Emergency Systems', async () => {
             const digitalEmergency = await dm32.readDigitalEmergencies();
             if (digitalEmergency) {
               setDigitalEmergencies(digitalEmergency.systems);
               setDigitalEmergencyConfig(digitalEmergency.config);
             }
-          } catch (err) { console.warn('Could not read Digital Emergency Systems:', err); sectionReadWarnings.push('Digital Emergency Systems'); }
+          });
 
-          try {
+          await readSection('Analog Emergency Systems', async () => {
             const analogEmergencies = await dm32.readAnalogEmergencies();
             if (analogEmergencies) setAnalogEmergencies(analogEmergencies);
-          } catch (err) { console.warn('Could not read Analog Emergency Systems:', err); sectionReadWarnings.push('Analog Emergency Systems'); }
+          });
         }
       } catch (err) { console.warn('Error reading configuration blocks:', err); sectionReadWarnings.push('configuration blocks'); }
 
@@ -573,7 +433,7 @@ export function useRadioConnection() {
       setIsConnecting(false);
       setRadioBusy(false);
     }
-  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setD890Images, setD890Roaming, setD890Satellites, setD890Emergency, setD890Broadcast, setD890GpsRoaming, setD890ZoneCurrentChannels, setD890PowerOnDisplay, setD890AmZones, setD890Tones, setEncryptionKeys, setConnectionError]);
+  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setEncryptionKeys, setTable, clearTables, setConnectionError]);
 
   /**
    * Mirror a long operation's progress into the store so it survives the
@@ -678,7 +538,7 @@ export function useRadioConnection() {
    * else this radio holds, and the pictures are cosmetic. Anyone who wants to
    * look at them can wait; nobody should wait for them by default.
    */
-  const readD890Images = useCallback(async (
+  const readPictures = useCallback(async (
     onProgress?: (progress: number, message: string) => void
   ) => {
     setIsConnecting(true);
@@ -689,17 +549,13 @@ export function useRadioConnection() {
     try {
       protocol = createProtocolForModel(selectedRadioModel ?? radioInfo?.model ?? '');
       if (!protocol) throw new Error('No driver for this radio.');
-      const withImages = protocol as unknown as {
-        readImages?: (
-          cb?: (percent: number, label: string) => void
-        ) => Promise<{ boot: Uint8Array | null; bk1: Uint8Array | null; bk2: Uint8Array | null }>;
-      };
+      const withImages = protocol as RadioProtocol & Partial<OptionalDigitalReads>;
       if (!withImages.readImages) throw new Error('This radio has no boot or standby pictures.');
       report(0, 'Connecting to radio...');
       await protocol.connect();
       report(2, 'Reading pictures...');
       // Connecting is a couple of percent; the transfer is the rest.
-      setD890Images(await withImages.readImages((percent, label) => {
+      setTable('pictures', await withImages.readImages((percent, label) => {
         report(2 + percent * 0.98, label);
       }));
       report(100, 'Pictures read.');
@@ -717,7 +573,7 @@ export function useRadioConnection() {
       setIsConnecting(false);
       setRadioBusy(false);
     }
-  }, [selectedRadioModel, radioInfo, setD890Images]);
+  }, [selectedRadioModel, radioInfo, setTable]);
 
   const readBootImage = useCallback(async (
     onProgress?: (progress: number, message: string) => void
@@ -1127,7 +983,7 @@ export function useRadioConnection() {
     readFromRadio,
     readContacts,
     readBootImage,
-    readD890Images,
+    readPictures,
     writeBootImage,
     writeContacts,
     writeChannelsToRadio,

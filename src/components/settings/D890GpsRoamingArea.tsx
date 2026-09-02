@@ -209,11 +209,11 @@ const CoordInput: React.FC<{
 };
 
 export const D890GpsRoamingArea: React.FC = () => {
-  const { d890GpsRoaming, setD890GpsRoaming } = useRadioStore();
+  const { tables, setTable } = useRadioStore();
   const { zones } = useZonesStore();
   const [pickerFor, setPickerFor] = useState<number | null>(null);
 
-  if (!d890GpsRoaming) {
+  if (!tables.gpsRoaming) {
     return (
       <div>
         <SectionTitle size="lg" underline>GPS Roaming</SectionTitle>
@@ -222,10 +222,10 @@ export const D890GpsRoamingArea: React.FC = () => {
     );
   }
 
-  const entries = d890GpsRoaming;
+  const entries = tables.gpsRoaming;
 
   const replace = (index: number, patch: Partial<D890GpsRoamingEntry>) => {
-    setD890GpsRoaming(entries.map((e) => (e.index === index ? { ...e, ...patch } : e)));
+    setTable('gpsRoaming', entries.map((e) => (e.index === index ? { ...e, ...patch } : e)));
   };
 
   const setLatitude = (entry: D890GpsRoamingEntry, decimal: number) => {
@@ -294,11 +294,11 @@ export const D890GpsRoamingArea: React.FC = () => {
       longitude: { degrees: 0, minutes: 0, minuteFraction: 0, west: false },
       radiusMeters: 1000,
     };
-    setD890GpsRoaming([...entries, blank].sort((a, b) => a.index - b.index));
+    setTable('gpsRoaming', [...entries, blank].sort((a, b) => a.index - b.index));
   };
 
   const removeEntry = (index: number) => {
-    setD890GpsRoaming(entries.filter((e) => e.index !== index));
+    setTable('gpsRoaming', entries.filter((e) => e.index !== index));
   };
 
   return (

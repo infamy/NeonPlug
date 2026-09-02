@@ -58,7 +58,7 @@ const ZoneChannelSelect: React.FC<{
  * claim about the radio that is not true.
  */
 const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
-  const { d890ZoneCurrentChannels, setD890ZoneCurrentChannels } = useRadioStore();
+  const { tables, setTable } = useRadioStore();
   const { channels } = useChannelsStore();
   const { zones, updateZone } = useZonesStore();
 
@@ -66,7 +66,7 @@ const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
   // zones, so a render position from there would be the wrong zone.
   const zoneIndex = zones.findIndex((z) => z.id === zone.id);
   const showHidden = zone.hidden !== undefined;
-  const showChannels = !!d890ZoneCurrentChannels && zoneIndex >= 0;
+  const showChannels = !!tables.zoneCurrentChannels && zoneIndex >= 0;
   if (!showHidden && !showChannels) return null;
 
   const label = (number: number): string => {
@@ -76,13 +76,13 @@ const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
 
   const update = (which: 'a' | 'b', position: number) => {
     // Only reachable from the A/B selects, which render only when this is set.
-    if (!d890ZoneCurrentChannels) return;
+    if (!tables.zoneCurrentChannels) return;
     const next = {
-      a: [...d890ZoneCurrentChannels.a],
-      b: [...d890ZoneCurrentChannels.b],
+      a: [...tables.zoneCurrentChannels.a],
+      b: [...tables.zoneCurrentChannels.b],
     };
     next[which][zoneIndex] = position;
-    setD890ZoneCurrentChannels(next);
+    setTable('zoneCurrentChannels', next);
   };
 
   return (
@@ -97,18 +97,18 @@ const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
           appears on the radio at all.
         </p>
       </div>
-      {showChannels && d890ZoneCurrentChannels && (
+      {showChannels && tables.zoneCurrentChannels && (
       <div className="p-4 pt-0 grid grid-cols-2 gap-4">
         <ZoneChannelSelect
           title="Current Channel A"
-          position={d890ZoneCurrentChannels.a[zoneIndex] ?? 0}
+          position={tables.zoneCurrentChannels.a[zoneIndex] ?? 0}
           zone={zone}
           label={label}
           onChange={(p) => update('a', p)}
         />
         <ZoneChannelSelect
           title="Current Channel B"
-          position={d890ZoneCurrentChannels.b[zoneIndex] ?? 0}
+          position={tables.zoneCurrentChannels.b[zoneIndex] ?? 0}
           zone={zone}
           label={label}
           onChange={(p) => update('b', p)}

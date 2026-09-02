@@ -31,10 +31,10 @@ const Row: React.FC<{ label: string; children: React.ReactNode; hint?: string }>
 );
 
 export const D890EmergencyArea: React.FC = () => {
-  const { d890Emergency } = useRadioStore();
+  const { tables } = useRadioStore();
   const { channels } = useChannelsStore();
 
-  if (!d890Emergency) {
+  if (!tables.emergencyAlarm) {
     return (
       <div>
         <SectionTitle size="lg" underline>Emergency Alarm</SectionTitle>
@@ -43,7 +43,7 @@ export const D890EmergencyArea: React.FC = () => {
     );
   }
 
-  const { settings, contact } = d890Emergency;
+  const { settings, contact } = tables.emergencyAlarm;
 
   if (!settings) {
     return (

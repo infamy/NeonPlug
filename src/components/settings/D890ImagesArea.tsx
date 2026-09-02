@@ -209,9 +209,9 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
  * the same tab; it is the radio's power-on lock, not a credential of the user's.
  */
 const PowerOnText: React.FC = () => {
-  const { d890PowerOnDisplay } = useRadioStore();
-  if (!d890PowerOnDisplay) return null;
-  const { line1, line2, password } = d890PowerOnDisplay;
+  const { tables } = useRadioStore();
+  if (!tables.powerOnDisplay) return null;
+  const { line1, line2, password } = tables.powerOnDisplay;
   if (!line1 && !line2 && !password) return null;
 
   return (
@@ -239,8 +239,8 @@ const PowerOnText: React.FC = () => {
 };
 
 export const D890ImagesArea: React.FC = () => {
-  const { d890Images } = useRadioStore();
-  const { readD890Images, isConnecting } = useRadioConnection();
+  const { tables } = useRadioStore();
+  const { readPictures, isConnecting } = useRadioConnection();
   const [readError, setReadError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [percent, setPercent] = useState(0);
@@ -249,7 +249,7 @@ export const D890ImagesArea: React.FC = () => {
     setReadError(null);
     setPercent(0);
     try {
-      await readD890Images((p, message) => {
+      await readPictures((p, message) => {
         setPercent(p);
         setStatus(message);
       });
@@ -313,7 +313,7 @@ export const D890ImagesArea: React.FC = () => {
 
       <div className="flex flex-col gap-4">
         {ORDER.map((kind) => (
-          <ImageSlot key={kind} kind={kind} fromRadio={d890Images?.[kind] ?? null} />
+          <ImageSlot key={kind} kind={kind} fromRadio={tables.pictures?.[kind] ?? null} />
         ))}
       </div>
     </div>

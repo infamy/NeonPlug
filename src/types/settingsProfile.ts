@@ -92,8 +92,31 @@ export interface SettingsSection {
   fields: SettingsFieldDescriptor[];
 }
 
+/**
+ * Settings areas that are rendered by hand in `SettingsTab` rather than
+ * generated from a section's field descriptors — a boot image picker, a
+ * geofence editor, a tone list. A profile opts in by naming them.
+ *
+ * This is a union rather than `string[]` because the string is the ONLY link
+ * between three files: the profile that declares it, the `featureTabs` entry
+ * that puts a chip in the jump nav, and the `features?.includes(...)` that
+ * renders the area. A typo in any one of them silently renders nothing — no
+ * error, no warning, just a missing panel. Adding a member here makes the
+ * compiler check all three agree.
+ */
+export type SettingsFeature =
+  | 'bootImage'
+  | 'oneKeyOperation'
+  | 'gpsAprs'
+  | 'pictures'
+  | 'roaming'
+  | 'gpsRoaming'
+  | 'satellites'
+  | 'toneLists'
+  | 'emergencyAlarm';
+
 export interface SettingsProfile {
   radioType: string;
   sections: SettingsSection[];
-  features?: string[];
+  features?: SettingsFeature[];
 }

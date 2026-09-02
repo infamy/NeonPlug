@@ -28,14 +28,14 @@ export const ChannelsTab: React.FC = () => {
   // AM airband and FM broadcast are separate tables on the radio, not rows in
   // the main list — shown as sibling views so they keep channel-list room
   // without pretending to be channel numbers.
-  const { d890Broadcast, d890AmZones } = useRadioStore();
+  const { tables } = useRadioStore();
   // The FM VFO is the 101st memory — outside the numbered table, so it is
   // appended rather than sorted in, and only for the FM view.
   const broadcast =
     view === 'am'
-      ? d890Broadcast?.am
+      ? tables.broadcast?.am
       : view === 'fm'
-        ? [...(d890Broadcast?.fm ?? []), ...(d890Broadcast?.fmVfo ? [d890Broadcast.fmVfo] : [])]
+        ? [...(tables.broadcast?.fm ?? []), ...(tables.broadcast?.fmVfo ? [tables.broadcast.fmVfo] : [])]
         : undefined;
   const isBroadcast = view !== 'main';
 
@@ -159,12 +159,12 @@ export const ChannelsTab: React.FC = () => {
       <div className="mb-4 flex items-center justify-between shrink-0">
         <h2 className="text-2xl font-bold text-neon-cyan">Channels</h2>
         <div className="flex items-center gap-4">
-          {d890Broadcast && (
+          {tables.broadcast && (
             <div className="flex items-center gap-1">
               {([
                 ['main', 'Main', channels.length],
-                ['am', 'AM Airband', d890Broadcast.am.length],
-                ['fm', 'FM Broadcast', d890Broadcast.fm.length],
+                ['am', 'AM Airband', tables.broadcast.am.length],
+                ['fm', 'FM Broadcast', tables.broadcast.fm.length],
               ] as const).map(([key, title, count]) => (
                 <button
                   key={key}
@@ -251,8 +251,8 @@ export const ChannelsTab: React.FC = () => {
           <BroadcastChannelsTable
             entries={filteredBroadcast}
             decimals={view === 'am' ? 4 : 2}
-            vfoIndex={view === 'fm' ? d890Broadcast?.fmVfo?.index : undefined}
-            zones={view === 'am' ? d890AmZones ?? undefined : undefined}
+            vfoIndex={view === 'fm' ? tables.broadcast?.fmVfo?.index : undefined}
+            zones={view === 'am' ? tables.amZones ?? undefined : undefined}
             emptyMessage={
               view === 'am' ? 'No AM airband memories stored' : 'No FM broadcast memories stored'
             }

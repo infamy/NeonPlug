@@ -25,14 +25,9 @@ import {
 import { formatAddress } from '../../utils/formatHelpers';
 import { getSettingsProfileForModel } from '../../data/settingsProfiles';
 import { SettingsFieldRenderer } from './fields';
-import { D890ImagesArea } from './D890ImagesArea';
-import { D890RoamingArea } from './D890RoamingArea';
-import { D890SatellitesArea } from './D890SatellitesArea';
-import { D890GpsRoamingArea } from './D890GpsRoamingArea';
-import { D890TonesArea } from './D890TonesArea';
-import { D890EmergencyArea } from './D890EmergencyArea';
 import type { RadioSettings } from '../../models/RadioSettings';
-import type { SettingsFieldDescriptor } from '../../types/settingsProfile';
+import type { SettingsFieldDescriptor, SettingsFeature } from '../../types/settingsProfile';
+import { FEATURE_AREAS } from './featureAreas';
 
 /** Get value from settings by key; supports nested path (e.g. menuEnableFlags.zoneList) and lockKey mapping */
 function getFieldValue(settings: RadioSettings | null, key: string): unknown {
@@ -332,6 +327,29 @@ export const SettingsTab: React.FC = () => {
     e.stopPropagation();
     setBootImageDragOver(false);
   };
+
+  // Cards that are their own top-level section today — boot image,
+  // the one-key/button assignments, and the DM-32's GPS & APRS — join
+  // the same chip row as the profile sections. They are settings like
+  // any other, and having them as separate slabs below a tabbed area
+  // meant the page was tabbed AND still a wall.
+  //
+  // Putting GPS & APRS here also lands the DA-7X2's own APRS section
+  // beside it, so both radios' APRS is one chip on one page rather
+  // than two different places to look.
+  const featureTabs = ([
+    { id: 'feature-bootImage', title: 'Boot Image', feature: 'bootImage' },
+    { id: 'feature-oneKeyOperation', title: 'One Key Operation', feature: 'oneKeyOperation' },
+    { id: 'feature-roaming', title: 'Roaming', feature: 'roaming' },
+    { id: 'feature-gpsRoaming', title: 'GPS Roaming', feature: 'gpsRoaming' },
+    { id: 'feature-satellites', title: 'Satellites', feature: 'satellites' },
+    { id: 'feature-toneLists', title: '5-Tone & 2-Tone', feature: 'toneLists' },
+    { id: 'feature-emergencyAlarm', title: 'Emergency Alarm', feature: 'emergencyAlarm' },
+    { id: 'feature-pictures', title: 'Boot & Standby Backgrounds', feature: 'pictures' },
+    { id: 'feature-gpsAprs', title: 'GPS & APRS', feature: 'gpsAprs' },
+  ] satisfies { id: string; title: string; feature: SettingsFeature }[]).filter((t) =>
+    settingsProfile?.features?.includes(t.feature)
+  );
 
   return (
     <div className="h-full overflow-y-auto">
@@ -662,27 +680,6 @@ export const SettingsTab: React.FC = () => {
             }
             if (!radioSettings) return null;
 
-            // Cards that are their own top-level section today — boot image,
-            // the one-key/button assignments, and the DM-32's GPS & APRS — join
-            // the same chip row as the profile sections. They are settings like
-            // any other, and having them as separate slabs below a tabbed area
-            // meant the page was tabbed AND still a wall.
-            //
-            // Putting GPS & APRS here also lands the DA-7X2's own APRS section
-            // beside it, so both radios' APRS is one chip on one page rather
-            // than two different places to look.
-            const featureTabs = [
-              { id: 'feature-bootImage', title: 'Boot Image', feature: 'bootImage' },
-              { id: 'feature-oneKeyOperation', title: 'One Key Operation', feature: 'oneKeyOperation' },
-              { id: 'feature-d890Roaming', title: 'Roaming', feature: 'd890Roaming' },
-              { id: 'feature-d890GpsRoaming', title: 'GPS Roaming', feature: 'd890GpsRoaming' },
-              { id: 'feature-d890Satellites', title: 'Satellites', feature: 'd890Satellites' },
-              { id: 'feature-d890Tones', title: '5-Tone & 2-Tone', feature: 'd890Tones' },
-              { id: 'feature-d890Emergency', title: 'Emergency Alarm', feature: 'd890Emergency' },
-              { id: 'feature-d890Images', title: 'Boot & Standby Backgrounds', feature: 'd890Images' },
-              { id: 'feature-gpsAprs', title: 'GPS & APRS', feature: 'gpsAprs' },
-            ].filter((t) => profile.features?.includes(t.feature));
-
             const query = settingsFilter.trim().toLowerCase();
             // Everything renders. Sections are AREAS, not tabs: a setting behind
             // a tab is a setting nobody finds, and this page's problem was never
@@ -776,45 +773,18 @@ export const SettingsTab: React.FC = () => {
             );
           })()}
 
-          {settingsProfile?.features?.includes('d890Roaming') && (
-            <Card id="settings-section-feature-d890Roaming" className="mt-6">
-              <D890RoamingArea />
-            </Card>
-          )}
-
-          {settingsProfile?.features?.includes('d890GpsRoaming') && (
-            <Card id="settings-section-feature-d890GpsRoaming" className="mt-6">
-              <D890GpsRoamingArea />
-            </Card>
-          )}
-
-          {settingsProfile?.features?.includes('d890Satellites') && (
-            <Card id="settings-section-feature-d890Satellites" className="mt-6">
-              <D890SatellitesArea />
-            </Card>
-          )}
-
-          {settingsProfile?.features?.includes('d890Tones') && (
-            <Card id="settings-section-feature-d890Tones" className="mt-6">
-              <D890TonesArea />
-            </Card>
-          )}
-
-          {settingsProfile?.features?.includes('d890Emergency') && (
-            <Card id="settings-section-feature-d890Emergency" className="mt-6">
-              <D890EmergencyArea />
-            </Card>
-          )}
-
-          {/* DA-7X2 pictures. Read on demand from inside the area — 3 x 40 KB is
-              larger than the rest of this radio combined, so they are not part of
-              the codeplug read. Sits below Radio Configuration: it is the
-              least-edited thing on the page and should not push settings down. */}
-          {settingsProfile?.features?.includes('d890Images') && (
-            <Card id="settings-section-feature-d890Images" className="mt-6">
-              <D890ImagesArea />
-            </Card>
-          )}
+          {/* Areas a radio declared, rendered from FEATURE_AREAS. The anchor id
+              is built from the same tab id the jump-nav chip uses, so the two
+              cannot drift apart. Order follows featureTabs. */}
+          {featureTabs.map((t) => {
+            const Area = FEATURE_AREAS[t.feature];
+            if (!Area) return null;
+            return (
+              <Card key={t.id} id={`settings-section-${t.id}`} className="mt-6">
+                <Area />
+              </Card>
+            );
+          })}
 
           {radioSettings && settingsProfile?.features?.includes('oneKeyOperation') && (
             <Card id="settings-section-feature-oneKeyOperation" className="mt-6">

@@ -248,6 +248,18 @@ export interface RadioCapabilities {
    * is correct for them — the DM-32 and the analog radios all do.
    */
   separateAirbandTable?: boolean;
+  /**
+   * How many airband zones the radio has, when `separateAirbandTable` is set.
+   *
+   * The airband table has its own zone system, separate from the main zones and
+   * with its own (much smaller) slot count. Any generator that creates airband
+   * zones must stop at this many; the channel wizard used to read the DA-7X2's
+   * own `D890_AM_ZONES.SLOTS` constant directly, which meant a shared import
+   * source reached into one radio's driver for a limit.
+   *
+   * Absent means the radio has no airband zones, so none should be created.
+   */
+  maxAirbandZones?: number;
   /** Max zone count when supportsZones is true (e.g. 250 for DM32). */
   maxZones?: number;
   /**

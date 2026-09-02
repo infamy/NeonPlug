@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RADIO_DESCRIPTORS } from '../../src/radios';
 import { BaseDigitalProtocol } from '../../src/radios/shared/BaseProtocols';
+import { CODEPLUG_READS } from '../../src/radios/codeplugReads';
+import type { CodeplugReadSinks } from '../../src/radios/codeplugReads';
 
 const HOOK = readFileSync(join(__dirname, '../../src/hooks/useRadioConnection.ts'), 'utf8');
 
@@ -35,16 +37,74 @@ describe('generic DMR content is read for every digital radio', () => {
   });
 
   it('does not gate those reads on the DM-32', () => {
-    // The specific regression: these three calls must be reachable through the
-    // digital base class, not only through the DM-32 branch. Checked in the
-    // source because the alternative is standing up a fake radio.
+    // `readDMRRadioIDs` is still called explicitly in the hook, through the
+    // digital base class rather than the DM-32 branch.
     const dm32Branch = HOOK.slice(HOOK.indexOf('if (dm32) {'));
-    for (const call of ['readDMRRadioIDs', 'readRXGroups', 'readQuickContacts']) {
-      expect(HOOK, `${call} is never called`).toContain(call);
-      const viaDigital = new RegExp(`digital\\.${call}`).test(HOOK);
-      expect(viaDigital, `${call} is only reachable via the DM-32 branch`).toBe(true);
-    }
+    expect(HOOK).toContain('digital.readDMRRadioIDs');
     // And the DM-32 keeps its own path, because it also captures raw blocks.
     expect(dm32Branch).toContain('dm32.readQuickContacts');
   });
+
+  it('reads RX groups and talkgroups for any radio that implements them', async () => {
+    // This used to be a grep of the hook's source, because the alternative was
+    // standing up a fake radio. The registry makes the real thing cheap: run it
+    // against a protocol that implements only these two reads and check they
+    // actually reached the sinks. No DM-32 involved anywhere.
+    const groups = [{ index: 0, name: 'RX1', talkGroupIndices: [] }];
+    const talkGroups = [{ index: 1, name: 'TG1' }];
+    const proto = {
+      readRXGroups: async () => groups,
+      readQuickContacts: async () => talkGroups,
+    } as unknown as Parameters<(typeof CODEPLUG_READS)[number]['plan']>[0];
+
+    const got: Record<string, unknown> = {};
+    const sinks = {
+      setTable: (id: string, v: unknown) => { got[id] = v; },
+      setEncryptionKeys: (v: unknown) => { got.encryptionKeys = v; },
+      setMessages: (v: unknown) => { got.messages = v; },
+      setMessagesLoaded: () => {},
+      setRXGroups: (v: unknown) => { got.rxGroups = v; },
+      setQuickContacts: (v: unknown) => { got.quickContacts = v; },
+    } as unknown as CodeplugReadSinks;
+
+    for (const spec of CODEPLUG_READS) {
+      const run = spec.plan(proto);
+      if (run) await run(sinks);
+    }
+
+    expect(got.rxGroups, 'RX groups were never read').toBe(groups);
+    expect(got.quickContacts, 'talkgroups were never read').toBe(talkGroups);
+  });
+
+  it('silently skips reads a radio does not implement', async () => {
+    // A radio missing a method is normal, not a failure — the plan must return
+    // null rather than throwing, or one absent table would abort a codeplug read.
+    const bare = {} as Parameters<(typeof CODEPLUG_READS)[number]['plan']>[0];
+    for (const spec of CODEPLUG_READS) {
+      expect(spec.plan(bare), `${spec.label} does not skip cleanly`).toBeNull();
+    }
+  });
+
+  it('asks the radio in the order that has been seen working', () => {
+    // Read order cannot be verified without hardware, so the sequence that has
+    // been watched working against a real DA-7X2 is pinned here. Reordering
+    // this array is a hardware-affecting change, and should fail a test rather
+    // than pass quietly. Zone A/B is genuinely last — it indexes into the zones.
+    expect(CODEPLUG_READS.map((r) => r.label)).toEqual([
+      'RX Groups',
+      'Talk Groups',
+      'Encryption keys',
+      'Roaming',
+      'Pre-defined SMS',
+      'Satellites',
+      'Emergency',
+      'AM/FM broadcast',
+      'Power-on display',
+      '2-Tone / 5-Tone',
+      'AM zones',
+      'GPS roaming',
+      'Zone A/B channels',
+    ]);
+  });
+
 });

@@ -14,6 +14,7 @@
  */
 
 import { BaseDigitalProtocol } from '../shared/BaseProtocols';
+import type { OptionalDigitalReads } from '../optionalReads';
 import type { Channel } from '../../models/Channel';
 import type { Zone } from '../../models/Zone';
 import type { Contact } from '../../models/Contact';
@@ -111,7 +112,7 @@ export class D890NotVerifiedError extends Error {
   }
 }
 
-export class D890UVProtocol extends BaseDigitalProtocol {
+export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigitalReads {
   private connection: D890Connection | null = null;
   private identity: D890Identity | null = null;
 

@@ -10,6 +10,7 @@
 
 import type { RadioCapabilities } from '../../types/radioCapabilities';
 import { D890_ADDR, D890_LIMITS } from './constants';
+import { D890_AM_ZONES } from './amZones';
 
 /**
  * `RadioCapabilitiesDigital` requires these two parsers, but both are DM-32
@@ -113,6 +114,8 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   /** VFO A/B occupy channel slots 4000/4001. */
   supportsVfoChannels: true,
   separateAirbandTable: true,
+  // The CPS's AM Zone node shows 16 rows; D890_AM_ZONES.SLOTS is the same 16.
+  maxAirbandZones: D890_AM_ZONES.SLOTS,
   /**
    * False: "bulk read" means the DM-32's contiguous block read. This radio has
    * no contiguous image — reads are sparse and addressed per region.

@@ -12,13 +12,13 @@ import type { D890BroadcastChannel } from '../../radios/d890uv/broadcastChannels
  * channel number into an AM zone, which the radio has no way to resolve.
  */
 export const AmZonesEditor: React.FC<{ channels: D890BroadcastChannel[] }> = ({ channels }) => {
-  const { d890AmZones, setD890AmZones } = useRadioStore();
+  const { tables, setTable } = useRadioStore();
   const [newName, setNewName] = useState('');
-  if (!d890AmZones) return null;
+  if (!tables.amZones) return null;
 
-  const zones = d890AmZones;
+  const zones = tables.amZones;
   const update = (index: number, patch: Partial<D890AmZone>) =>
-    setD890AmZones(zones.map((z) => (z.index === index ? { ...z, ...patch } : z)));
+    setTable('amZones', zones.map((z) => (z.index === index ? { ...z, ...patch } : z)));
 
   const addZone = () => {
     // Slots are fixed hardware positions, so a new zone takes the lowest free
@@ -28,7 +28,7 @@ export const AmZonesEditor: React.FC<{ channels: D890BroadcastChannel[] }> = ({ 
     while (used.has(index)) index += 1;
     if (index >= D890_AM_ZONES.SLOTS) return;
     const name = newName.trim() || `AM Zone ${index + 1}`;
-    setD890AmZones(
+    setTable('amZones', 
       [...zones, { index, name, members: [], currentChannel: 0 }].sort((a, b) => a.index - b.index)
     );
     setNewName('');
@@ -78,7 +78,7 @@ export const AmZonesEditor: React.FC<{ channels: D890BroadcastChannel[] }> = ({ 
                   {zone.members.length} {zone.members.length === 1 ? 'channel' : 'channels'}
                 </span>
                 <button
-                  onClick={() => setD890AmZones(zones.filter((z) => z.index !== zone.index))}
+                  onClick={() => setTable('amZones', zones.filter((z) => z.index !== zone.index))}
                   className="ml-auto px-1.5 py-0.5 text-red-400 hover:text-red-300 border border-red-600 border-opacity-30 hover:border-opacity-60 rounded text-xs"
                   title="Delete this AM zone"
                 >

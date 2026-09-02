@@ -9,7 +9,6 @@ import {
 } from '../../../services/airportChannels';
 import { useRadioCapabilities } from '../../../hooks/useRadioCapabilities';
 import { useRadioStore } from '../../../store/radioStore';
-import { D890_AM_ZONES } from '../../../radios/d890uv/amZones';
 import { getAirportFrequenciesWithTypes, type AirportData } from '../../../data/airportsData';
 import { SelectAllButtons } from '../SelectAllButtons';
 import { Button } from '../../ui/Button';
@@ -31,7 +30,7 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
 }) => {
   const { channels, setChannels, zones, setZones } = useImportStores();
   const { caps } = useRadioCapabilities();
-  const { d890Broadcast, setD890Broadcast, d890AmZones, setD890AmZones } = useRadioStore();
+  const { tables, setTable } = useRadioStore();
 
   const [selectedAirports, setSelectedAirports] = useState<Set<number>>(new Set());
   const [airportZoneGrouping, setAirportZoneGrouping] = useState<'individual' | 'single'>('individual');
@@ -124,7 +123,7 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
           };
 
       if (routed.airband.length > 0) {
-        const existing = d890Broadcast ?? { am: [], fm: [], fmVfo: null };
+        const existing = tables.broadcast ?? { am: [], fm: [], fmVfo: null };
         // Airband entries are indexed within their own table, not by channel
         // number, so they are renumbered onto the end of it. Keep the mapping —
         // the AM zones below reference these by their NEW index.
@@ -134,21 +133,24 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
           amIndexOf.set(c.number, index);
           return { index, name: c.name, frequency: c.rxFrequency };
         });
-        setD890Broadcast({ ...existing, am: [...existing.am, ...appended] });
+        setTable('broadcast', { ...existing, am: [...existing.am, ...appended] });
 
         // Carry the wizard's grouping across into AM zones. Without this the
         // airband channels arrive loose, on a radio that has 16 zones for
         // exactly this purpose.
-        if (routed.airbandZones.length > 0) {
-          const current = d890AmZones ?? [];
+        // Absent capability means the radio has no airband zones, so none are
+        // created — the channels still land in the airband table.
+        const maxAirbandZones = caps?.maxAirbandZones ?? 0;
+        if (routed.airbandZones.length > 0 && maxAirbandZones > 0) {
+          const current = tables.amZones ?? [];
           const used = new Set(current.map((z) => z.index));
           const created: typeof current = [];
           for (const group of routed.airbandZones) {
             let index = 0;
             while (used.has(index)) index += 1;
-            // 16 slots is the radio's limit; the rest keep their channels but
+            // The radio's zone limit; groups past it keep their channels but
             // lose the grouping, which is reported rather than hidden.
-            if (index >= D890_AM_ZONES.SLOTS) break;
+            if (index >= maxAirbandZones) break;
             used.add(index);
             created.push({
               index,
@@ -160,7 +162,7 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
             });
           }
           if (created.length > 0) {
-            setD890AmZones([...current, ...created].sort((a, b) => a.index - b.index));
+            setTable('amZones', [...current, ...created].sort((a, b) => a.index - b.index));
           }
           amZonesCreated = created.length;
           amZonesSkipped = routed.airbandZones.length - created.length;

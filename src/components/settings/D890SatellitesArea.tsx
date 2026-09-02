@@ -15,7 +15,7 @@ import { D890_SATELLITE, satelliteFreqToMHz } from '../../radios/d890uv/satellit
  * is now confirmed. See `SATELLITE_FREQ_UNIT_HZ`.
  */
 export const D890SatellitesArea: React.FC = () => {
-  const { d890Satellites } = useRadioStore();
+  const { tables } = useRadioStore();
 
   return (
     <div>
@@ -25,9 +25,9 @@ export const D890SatellitesArea: React.FC = () => {
         {' '}{D890_SATELLITE.SLOTS} entries.
       </p>
 
-      {!d890Satellites ? (
+      {!tables.satellites ? (
         <p className="text-sm text-muted">Read the radio to see its satellite table.</p>
-      ) : d890Satellites.length === 0 ? (
+      ) : tables.satellites.length === 0 ? (
         <p className="text-sm text-muted">This radio has no satellites set.</p>
       ) : (
         <>
@@ -43,7 +43,7 @@ export const D890SatellitesArea: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {d890Satellites.map((sat) => (
+                {tables.satellites.map((sat) => (
                   <tr key={sat.slot} className="border-b border-panel">
                     <td className="px-2 py-1.5 text-muted">{sat.slot}</td>
                     <td className="px-2 py-1.5 text-white">{sat.name || '—'}</td>

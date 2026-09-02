@@ -18,9 +18,9 @@ import { D890_TONES } from '../../radios/d890uv/tones';
  * settled.
  */
 export const D890TonesArea: React.FC = () => {
-  const { d890Tones } = useRadioStore();
+  const { tables } = useRadioStore();
 
-  if (!d890Tones) {
+  if (!tables.toneLists) {
     return (
       <div>
         <SectionTitle size="lg" underline>5-Tone &amp; 2-Tone</SectionTitle>
@@ -29,7 +29,7 @@ export const D890TonesArea: React.FC = () => {
     );
   }
 
-  const { fiveTone, twoTone } = d890Tones;
+  const { fiveTone, twoTone } = tables.toneLists;
 
   return (
     <div>
