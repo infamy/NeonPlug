@@ -257,18 +257,38 @@ export function useRadioConnection() {
         onProgress?.(70 + (progress * 0.25), 'Parsing configuration...', steps[5]);
       };
 
-      onProgress?.(70, 'Parsing configuration from cache...', steps[5]);
+      // 70-90% is the configuration phase, and it used to be SILENT.
+      //
+      // The bar is driven either by explicit onProgress calls or by the
+      // `proto.onProgress` bridge above — and the DA-7X2's driver never calls
+      // the latter (the DM-32's calls it 133 times). So on that radio the bar
+      // sat at exactly 70% through zones, scan lists, radio IDs and thirteen
+      // table reads: on a link that moves ~10 KB/s, ten seconds of looking
+      // frozen.
+      //
+      // Every step is planned up front so the denominator is the work that will
+      // actually run, not the work this radio might have had. Planning is just
+      // a method-presence check and is side-effect free.
+      const configSteps: { label: string; run: () => Promise<void> }[] = [];
 
       if (caps?.supportsZones) {
-        const zones = await proto.readZones();
-        setZones(zones);
-        if (dm32) setRawZoneData(dm32.rawZoneData);
+        configSteps.push({
+          label: 'Zones',
+          run: async () => {
+            setZones(await proto.readZones());
+            if (dm32) setRawZoneData(dm32.rawZoneData);
+          },
+        });
       }
 
       if (caps?.supportsScanLists) {
-        const scanLists = await proto.readScanLists();
-        setScanLists(scanLists);
-        if (dm32) setRawScanListData(dm32.rawScanListData);
+        configSteps.push({
+          label: 'Scan lists',
+          run: async () => {
+            setScanLists(await proto.readScanLists());
+            if (dm32) setRawScanListData(dm32.rawScanListData);
+          },
+        });
       }
 
 
@@ -282,9 +302,10 @@ export function useRadioConnection() {
       // The raw block captures stay DM-32-only. Those are its clone-image
       // debugging aids and have no meaning for an address-addressed radio.
       if (digital && !dm32) {
-        await readSection('DMR Radio IDs', async () =>
-          setRadioIds(await digital.readDMRRadioIDs())
-        );
+        configSteps.push({
+          label: 'DMR Radio IDs',
+          run: async () => setRadioIds(await digital.readDMRRadioIDs()),
+        });
 
         // Everything else this radio may hold is declared in CODEPLUG_READS,
         // in the order the radio is asked. This hook does not name a table.
@@ -294,8 +315,24 @@ export function useRadioConnection() {
         // rarely looked at. The Settings area reads them on demand instead.
         for (const spec of CODEPLUG_READS) {
           const run = spec.plan(digital);
-          if (run) await readSection(spec.label, () => run(sinks));
+          if (run) configSteps.push({ label: spec.label, run: () => run(sinks) });
         }
+      }
+
+      // Run them, moving the bar and naming what is being read.
+      //
+      // Zones and scan lists are now inside `readSection` where they used to
+      // throw. That is deliberate and matches what the channel read already
+      // does: a section that cannot be read is reported in the completion
+      // message rather than aborting the whole read and costing the user the
+      // sections that read perfectly well.
+      for (const [i, step] of configSteps.entries()) {
+        onProgress?.(
+          70 + (i / configSteps.length) * 20,
+          `Reading ${step.label}...`,
+          steps[5]
+        );
+        await readSection(step.label, step.run);
       }
 
       if (dm32) {
