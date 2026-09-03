@@ -40,8 +40,8 @@ import { formatPlural } from '../utils/formatPlural';
 import {
   buildD890CodeplugTables,
   buildD890WriteOriginals,
-  d890Zones,
   d890ZoneSlots,
+  d890Zones,
 } from '../services/d890WriteInput';
 import { diffPlanAgainstRead } from '../radios/d890uv/writeDiff';
 
@@ -460,6 +460,23 @@ export function useRadioConnection() {
             ? new Map([...staging.rawReadLog].map(([at, b]) => [at, Uint8Array.from(b)]))
             : undefined,
           zoneSlots: staging.rawZoneIndices ? [...staging.rawZoneIndices] : undefined,
+          // Identity-keyed, because position stops being a key the moment the user
+          // adds or deletes a zone. Built HERE because this is the only point where
+          // the zones array and `rawZoneIndices` are still known to correspond —
+          // the read produced them together, in the same order.
+          ...(() => {
+            const zonesRead = useZonesStore.getState().zones;
+            const slots = staging.rawZoneIndices ?? [];
+            if (zonesRead.length === 0 || zonesRead.length !== slots.length) return {};
+            const current = useRadioStore.getState().tables.zoneCurrentChannels;
+            const zoneSlotById: Record<string, number> = {};
+            const zoneCurrentById: Record<string, { a: number; b: number }> = {};
+            zonesRead.forEach((z, idx) => {
+              zoneSlotById[z.id] = slots[idx]!;
+              zoneCurrentById[z.id] = { a: current?.a?.[idx] ?? 0, b: current?.b?.[idx] ?? 0 };
+            });
+            return { zoneSlotById, zoneCurrentById };
+          })(),
         });
       }
 
@@ -956,7 +973,7 @@ export function useRadioConnection() {
       const wholeCodeplug = !!staged.readLog && staged.readLog.size > 0;
 
       const zones = d890Zones();
-      const zoneSlots = d890ZoneSlots();
+      const zoneSlots = d890ZoneSlots(zones);
       const plan = wholeCodeplug
         ? proto.planCodeplug(
             channelsToWrite, zones, zoneSlots, buildD890CodeplugTables(zones, zoneSlots)
@@ -1183,7 +1200,9 @@ export function useRadioConnection() {
           // Tables absent here are not lost — they fall to the verbatim pass,
           // so the radio keeps exactly what it had. What is passed explicitly is
           // what the UI can actually edit.
-          const zoneSlots = stagedD890?.zoneSlots ?? [];
+          // Resolved from the zones being written, not from the staged array —
+          // an add or a delete makes position and slot disagree.
+          const zoneSlots = d890ZoneSlots(filteredZones);
           onProgress?.(20, 'Writing codeplug to radio...', steps[4]);
           await d890Write.writeCodeplug(
             validChannels,

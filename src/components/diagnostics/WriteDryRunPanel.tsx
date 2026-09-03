@@ -42,7 +42,7 @@ export function WriteDryRunPanel() {
     setDiff(null);
     try {
       const zones = d890Zones();
-      const zoneSlots = d890ZoneSlots();
+      const zoneSlots = d890ZoneSlots(zones);
       // Planning touches no port; a bare instance with the staged originals is
       // all the planner needs.
       const proto = new D890UVProtocol();

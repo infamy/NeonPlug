@@ -44,9 +44,10 @@ export function buildD890CodeplugTables(
     // Position→slot. The read compacts empty slots away, so these two indexings
     // diverge the moment a zone in the middle is empty.
     zoneCurrentChannels:
-      t.zoneCurrentChannels && zoneSlots.length > 0
+      d890ZoneCurrentBySlot(zones, zoneSlots) ??
+      (t.zoneCurrentChannels && zoneSlots.length > 0
         ? zoneCurrentChannelsBySlot(t.zoneCurrentChannels, zoneSlots)
-        : undefined,
+        : undefined),
     // Derived from the zones themselves. The Zones tab's hide checkbox wrote to
     // `zone.hidden` and nothing ever turned that into slots, so it did nothing.
     hiddenZoneSlots: new Set(
@@ -57,9 +58,94 @@ export function buildD890CodeplugTables(
   };
 }
 
-/** Zones and their hardware slots, as the last read staged them. */
-export function d890ZoneSlots(): readonly number[] {
-  return useRadioStore.getState().tables.writeOriginals?.zoneSlots ?? [];
+/**
+ * Hardware slot for each zone in the CURRENT list, resolved by identity.
+ *
+ * A zone that was read keeps the slot it was read from. A zone the user ADDED
+ * gets the lowest slot nothing else claims. A zone that was deleted simply
+ * stops appearing, and its slot falls out — which is what makes the presence
+ * mask clear exactly that bit and nothing else.
+ *
+ * The staged `zoneSlots` array is positional, and position stops being a key as
+ * soon as the list is edited: on 2026-09-03 deleting zone 2 wrote all seven
+ * survivors one slot down (their A/B pointers stayed behind, three ending up
+ * past the end of their new zone), and adding a zone resolved position 8
+ * against 8 staged slots to -1, skipping it silently — no record, no mask bit.
+ *
+ * Falls back to the positional array only when nothing identity-keyed was
+ * staged, so an older staged read still writes exactly as it used to.
+ */
+export function d890ZoneSlots(zones?: readonly Zone[]): readonly number[] {
+  const staged = useRadioStore.getState().tables.writeOriginals;
+  const list = zones ?? useZonesStore.getState().zones;
+  const byId = staged?.zoneSlotById;
+  if (byId) return resolveZoneSlots(list, byId);
+
+  // No identity map: this read was staged before that existed. The positional
+  // array is only safe while the list is UNEDITED — one add or delete and every
+  // later zone lines up against the wrong slot, which is how seven zones got
+  // written a slot down on 2026-09-03. Refuse rather than silently shift; the
+  // fix is a re-read, which costs a minute and stages the map.
+  const positional = staged?.zoneSlots ?? [];
+  if (positional.length !== list.length) {
+    throw new Error(
+      `Refusing to write zones: the loaded read was staged before zone identity ` +
+        `tracking, and the zone list has changed since (${list.length} zones ` +
+        `against ${positional.length} slots). Read the radio again before writing — ` +
+        `writing now would move every zone after the edit into the wrong slot.`
+    );
+  }
+  return positional;
+}
+
+/** The pure half of `d890ZoneSlots`, so the allocation rules can be tested. */
+export function resolveZoneSlots(
+  zones: readonly { id: string }[],
+  slotById: Readonly<Record<string, number>>
+): number[] {
+  // Claim every slot a surviving zone already owns BEFORE allocating, or a new
+  // zone could be handed a slot that a later existing zone still holds.
+  const taken = new Set<number>();
+  for (const z of zones) {
+    const slot = slotById[z.id];
+    if (slot !== undefined) taken.add(slot);
+  }
+  let next = 0;
+  return zones.map((z) => {
+    const known = slotById[z.id];
+    if (known !== undefined) return known;
+    while (taken.has(next)) next += 1;
+    taken.add(next);
+    return next;
+  });
+}
+
+/**
+ * Per-zone current A/B channel, keyed by the slot each zone is being written to.
+ *
+ * Looked up by zone id rather than by array position for the same reason as the
+ * slots: after an edit the store's position-indexed copy no longer lines up
+ * with the zones list, and pairing them by index is what left the A/B pointers
+ * one zone behind.
+ */
+export function d890ZoneCurrentBySlot(
+  zones: readonly Zone[],
+  slots: readonly number[]
+): { a: Map<number, number>; b: Map<number, number> } | undefined {
+  const byId = useRadioStore.getState().tables.writeOriginals?.zoneCurrentById;
+  if (!byId) return undefined;
+  const a = new Map<number, number>();
+  const b = new Map<number, number>();
+  zones.forEach((z, i) => {
+    const slot = slots[i];
+    const v = byId[z.id];
+    // A zone the user just added has no stored current channel; leaving it out
+    // means the encoder does not touch that slot's bytes at all.
+    if (slot === undefined || v === undefined) return;
+    a.set(slot, v.a);
+    b.set(slot, v.b);
+  });
+  return { a, b };
 }
 
 /** Zones exactly as the UI holds them. */

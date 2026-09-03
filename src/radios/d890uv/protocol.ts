@@ -682,6 +682,10 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     readLog?: ReadonlyMap<number, Uint8Array>;
     /** Hardware slot per zone, by array position. */
     zoneSlots?: readonly number[];
+    /** Zone id -> slot, and zone id -> current A/B. Stable across edits, which
+     *  array position is not. */
+    zoneSlotById?: Readonly<Record<string, number>>;
+    zoneCurrentById?: Readonly<Record<string, { a: number; b: number }>>;
   } | null = null;
 
   setWriteOriginals(originals: NonNullable<D890UVProtocol['writeOriginals']>): void {

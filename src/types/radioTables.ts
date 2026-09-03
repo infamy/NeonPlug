@@ -51,6 +51,21 @@ export interface RadioTables {
      *  `rawZoneIndices`. Zones are read compacted (empty slots dropped), so
      *  position and slot diverge and a write MUST place by slot. */
     zoneSlots?: readonly number[];
+    /**
+     * Zone id -> hardware slot, and zone id -> current A/B channel.
+     *
+     * Position is NOT a stable key once the user edits. Deleting one zone
+     * shortens the array, so every later zone lines up against the slot below
+     * it — which on 2026-09-03 wrote seven zones one slot down and left the A/B
+     * pointers behind, three of them past the end of their new zone. Adding a
+     * zone was worse: position 8 against 8 staged slots resolved to -1 and the
+     * zone was skipped silently, with no mask bit and no record.
+     *
+     * Zone ids are regenerated per read, so these maps are valid for the
+     * session that staged them — which is exactly the life of a write.
+     */
+    zoneSlotById?: Readonly<Record<string, number>>;
+    zoneCurrentById?: Readonly<Record<string, { a: number; b: number }>>;
     /** Channel records by 1-based channel number, including VFO A/B at 4001/4002. */
     channelRecords: Map<number, Uint8Array>;
     /** The channel presence mask exactly as read — patched on write, never rebuilt. */
