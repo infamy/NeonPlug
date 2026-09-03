@@ -263,7 +263,7 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
   // Both records come from the read log by SLOT, not by array position: empty
   // slots are dropped on read, so the two diverge as soon as one in the middle
   // is empty, and writing by position would move every later zone.
-  const zoneMask = input.readLog.get(D890_ADDR.ZONE_SET);
+  const zoneMask = sliceFromReadLog(input.readLog, D890_ADDR.ZONE_SET, D890_ADDR.ZONE_SET_SIZE);
   if (!zoneMask) {
     skipped.push({
       region: 'zones',
@@ -277,10 +277,27 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
     const memberOriginals = new Map<number, Uint8Array>();
     const nameOriginals = new Map<number, Uint8Array>();
     for (const slot of input.zoneSlots) {
-      const members = input.readLog.get(
-        D890_ADDR.ZONE_CHANNELS + slot * D890_ADDR.ZONE_CHANNELS_STRIDE
+      // sliceFromReadLog, NOT readLog.get — `get` returns whatever span was
+      // recorded at that address, and a wider read landing on the same start
+      // address replaces the per-slot entry. That made zone 1's "record" 4096
+      // bytes (all eight zones), so writing zone 1 also rewrote zones 2-8 with
+      // their pre-edit bytes, and the radio was sent two conflicting writes for
+      // the same address. Slicing to the stride is what keeps a record a record.
+      const members = sliceFromReadLog(
+        input.readLog,
+        D890_ADDR.ZONE_CHANNELS + slot * D890_ADDR.ZONE_CHANNELS_STRIDE,
+        D890_ADDR.ZONE_CHANNELS_STRIDE
       );
-      const name = input.readLog.get(D890_ADDR.ZONE_NAMES + slot * D890_ADDR.ZONE_NAME_STRIDE);
+      // ZONE_NAME_READ, not ZONE_NAME_STRIDE: the stride is the spacing between
+      // records (0x40), while the read only ever fetches ZONE_NAME_READ bytes of
+      // each. Asking for the stride demands bytes that were never read, and
+      // `sliceFromReadLog` correctly returns undefined — which surfaced as
+      // "its name record was never read" on a codeplug that read perfectly.
+      const name = sliceFromReadLog(
+        input.readLog,
+        D890_ADDR.ZONE_NAMES + slot * D890_ADDR.ZONE_NAME_STRIDE,
+        D890_ADDR.ZONE_NAME_READ
+      );
       if (members) memberOriginals.set(slot, members);
       if (name) nameOriginals.set(slot, name);
     }
@@ -542,6 +559,32 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
   // plans over the same data produce identical frame sequences — which is what
   // makes a dry run comparable against a capture.
   frames.sort((a, b) => a.address - b.address);
+
+  // No address may be written twice in one session.
+  //
+  // Two frames for one address means two different opinions about those bytes,
+  // and which one survives is the radio's choice, not ours. On 2026-09-03 a
+  // zone edit was silently lost exactly this way: an oversized original made
+  // zone 1's write cover all eight zones, so the edited zone was written twice
+  // — stale first, correct second — and the radio kept the stale one. It was
+  // invisible until then because a write-back sends identical bytes both times.
+  //
+  // Throwing beats de-duplicating: a duplicate means some region's original was
+  // the wrong size, and silently keeping one frame would paper over that while
+  // still writing whatever else that oversized record covered.
+  const seen = new Map<number, string>();
+  for (const f of frames) {
+    const prior = seen.get(f.address);
+    if (prior !== undefined) {
+      throw new D890WriteRefusedError(
+        `Refusing to write: two frames both target 0x${f.address.toString(16)} ` +
+          `("${prior}" and "${f.what}"). One of them is built from an original ` +
+          `wider than its record, so writing it would also overwrite its ` +
+          `neighbours. This is a planning bug, not a bad codeplug.`
+      );
+    }
+    seen.set(f.address, f.what);
+  }
 
   return {
     frames,
