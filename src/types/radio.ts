@@ -152,4 +152,8 @@ export interface RadioProtocol {
    *  next writeChannels uploads (Yaesu clone protocol). The connection hook must call
    *  writeRadioSettings BEFORE writeChannels for these protocols. */
   readonly bufferedSettingsWrite?: boolean;
+  /** True when this protocol decodes settings but cannot write them back yet.
+   *  The connection hook refuses the write UP FRONT rather than calling the base
+   *  no-op and then clearing the change flags — see BaseProtocols. */
+  readonly settingsWriteUnsupported?: boolean;
 }

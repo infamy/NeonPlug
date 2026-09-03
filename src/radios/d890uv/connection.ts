@@ -32,6 +32,7 @@ import {
   buildReadCommand,
   parseReadResponse,
   readResponseSize,
+  buildWriteCommand,
 } from './framing';
 import { BaseSerialConnection, type SerialLikePort } from '../shared/BaseSerialConnection';
 import { requestSerialPort } from '../shared/serialPort';
@@ -42,6 +43,12 @@ const END_CMD = new TextEncoder().encode(D890_HANDSHAKE.EXIT);
 
 const HANDSHAKE_TIMEOUT_MS = 8000;
 const READ_TIMEOUT_MS = 5000;
+/**
+ * A write ACK is one byte and the radio answers immediately, so this is short
+ * on purpose. Waiting the read timeout on a radio that has rebooted mid-write
+ * just delays telling the user the session is dead.
+ */
+const WRITE_TIMEOUT_MS = 3000;
 
 export type D890SerialPort = SerialLikePort;
 
@@ -76,6 +83,44 @@ export class D890Connection extends BaseSerialConnection {
   /** Close streams. Does NOT send END — call sendEnd() first on success. */
   async close(): Promise<void> {
     await super.closeStreams();
+  }
+
+  /**
+   * Set when a write failed, and never cleared.
+   *
+   * END is what makes the radio COMMIT the session. The rule has always been
+   * "omit END after a failure", but it was a rule callers had to remember, and
+   * `disconnect()` sends END unconditionally — so any caller that cleaned up in
+   * a `finally` would commit exactly the partial write the rule exists to
+   * prevent. Enforced here instead: once a write fails, this connection cannot
+   * send END no matter who asks.
+   */
+  private sessionAborted = false;
+
+  /** True once a write has failed and this session can no longer be committed. */
+  isAborted(): boolean {
+    return this.sessionAborted;
+  }
+
+  /**
+   * Every span this connection has read, by address.
+   *
+   * A write on this radio patches the bytes the radio gave us — it never builds
+   * a record — so a write needs the originals of every region it touches. They
+   * cannot be re-read at write time: `useRadioConnection` builds a fresh
+   * protocol per operation, and re-reading during a write session is exactly
+   * what reboots this radio.
+   *
+   * Recorded here rather than in each `readX()` because it is free: the bytes
+   * are already in hand, and doing it at the read methods means every new table
+   * has to remember to stage itself. Costs one copy per span, which is nothing
+   * beside the seconds a second read pass would take at ~10 KB/s.
+   */
+  readonly readLog = new Map<number, Uint8Array>();
+
+  /** Bytes previously read at `address`, if any span covered it exactly. */
+  getReadSpan(address: number): Uint8Array | undefined {
+    return this.readLog.get(address);
   }
 
   /** The negotiated read chunk size. */
@@ -276,7 +321,97 @@ export class D890Connection extends BaseSerialConnection {
       offset += aligned;
       onProgress?.(Math.min(offset, length), length);
     }
+    // Keep a copy, not a view: `out` is handed to the caller, which may parse
+    // subarrays of it or keep it alive far longer than this map should.
+    this.readLog.set(address, Uint8Array.from(out));
     return out;
+  }
+
+  /**
+   * One framed write, acknowledged by the radio.
+   *
+   * Shape confirmed from the vendor CPS's own programming session
+   * (`WriteTo7x2.txt`, 8,389 frames):
+   *
+   *     HOST   57 <addr:4 BE> 10 <16 data> <cksum> 06
+   *     RADIO  06
+   *
+   * The radio answers with a bare ACK, not an echo — so unlike a read, there is
+   * nothing in the reply to check the write against. That asymmetry is the
+   * reason `buildWriteCommand` is tested against captured vendor frames: the
+   * arithmetic has to be right before it is sent, because nothing downstream
+   * will catch it.
+   *
+   * **There is no retry, deliberately.** A write the radio does not ACK means
+   * the session is already in an unknown state, and this radio reboots when a
+   * write goes bad — a second attempt would be sent into a radio that may be
+   * part-way through restarting. Fail loudly and let the caller abandon the
+   * session WITHOUT sending END, which is what stops a partial write being
+   * committed.
+   */
+  private async writeChunk(address: number, data: Uint8Array): Promise<void> {
+    // Drop anything stale so a previous timeout cannot be read as this ACK.
+    this.buf = new Uint8Array(0);
+    const cmd = buildWriteCommand(address, data);
+    if (logger.getLevel() >= LogLevel.VERBOSE) {
+      log.verbose(
+        `TX ${Array.from(cmd, (b) => b.toString(16).padStart(2, '0')).join(' ')}`,
+        'D890 frame'
+      );
+    }
+    await this.write(cmd);
+    let ack: Uint8Array;
+    try {
+      ack = await this.readExact(1, WRITE_TIMEOUT_MS);
+    } catch (err) {
+      // A timeout is a failed write too — the radio may be rebooting.
+      this.sessionAborted = true;
+      throw err;
+    }
+    if (ack[0] !== D890_CMD.ACK) {
+      this.sessionAborted = true;
+      throw new Error(
+        `Radio rejected the write at 0x${address.toString(16)} ` +
+          `(got 0x${(ack[0] ?? 0).toString(16)}, expected ACK). ` +
+          `The session has been abandoned without sending END, so the radio ` +
+          `should not commit what was sent.`
+      );
+    }
+  }
+
+  /**
+   * Write a span, one 16-byte frame at a time.
+   *
+   * **Always 16 bytes.** Reads negotiate up to 0xf0, but the vendor never
+   * negotiates a write: all 8,389 frames of its programming session carry
+   * exactly 16 bytes of payload. So a write puts 24 bytes on the wire for every
+   * 16 stored, and there is no larger frame to reach for.
+   *
+   * `onProgress` reports bytes written, not frames — the link is byte-limited.
+   */
+  async writeMemory(
+    address: number,
+    data: Uint8Array,
+    onProgress?: (bytesWritten: number, total: number) => void
+  ): Promise<void> {
+    if (data.length % D890_BLOCK.WRITE_LEN !== 0) {
+      throw new Error(
+        `D890 write span ${data.length} must be a multiple of ${D890_BLOCK.WRITE_LEN} bytes`
+      );
+    }
+    if (address % D890_BLOCK.ALIGNMENT !== 0) {
+      throw new Error(
+        `D890 write address 0x${address.toString(16)} must be ` +
+          `${D890_BLOCK.ALIGNMENT}-byte aligned`
+      );
+    }
+    for (let offset = 0; offset < data.length; offset += D890_BLOCK.WRITE_LEN) {
+      await this.writeChunk(
+        address + offset,
+        data.subarray(offset, offset + D890_BLOCK.WRITE_LEN)
+      );
+      onProgress?.(offset + D890_BLOCK.WRITE_LEN, data.length);
+    }
   }
 
   /**
@@ -284,6 +419,16 @@ export class D890Connection extends BaseSerialConnection {
    * failure is what stops the radio committing a partial write.
    */
   async sendEnd(): Promise<void> {
+    if (this.sessionAborted) {
+      // Not an error the caller has to handle — refusing IS the correct
+      // outcome. Saying so out loud because a silent skip here looks like a
+      // bug to the next person reading a log of a failed write.
+      log.warn(
+        'Not sending END: a write in this session failed, so the radio must not commit it.',
+        'D890'
+      );
+      return;
+    }
     await this.write(END_CMD);
     const ack = await this.readExact(1, HANDSHAKE_TIMEOUT_MS);
     if (ack[0] !== D890_CMD.ACK) {

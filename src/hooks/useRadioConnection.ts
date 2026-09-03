@@ -6,8 +6,16 @@ import { DM32UVProtocol } from '../radios/dm32uv/protocol';
 import { BaseDigitalProtocol } from '../radios/shared/BaseProtocols';
 import type { OptionalDigitalReads } from '../radios/optionalReads';
 import { CODEPLUG_READS } from '../radios/codeplugReads';
+import type { D890IntegrityFinding } from '../radios/d890uv/integrity';
+import { planChannelWrite } from '../radios/d890uv/writePlan';
+import { dryRunWrite } from '../radios/d890uv/writeDryRun';
 import type { CodeplugReadSinks } from '../radios/codeplugReads';
 import { getCapabilitiesForModel } from '../radios/capabilities';
+import { D890_MODEL_IDS } from '../radios/d890uv/constants';
+
+/** True for the DA-7X2 family, which plans its own band check. */
+const protocolIsD890 = (model: string | null) =>
+  model != null && (D890_MODEL_IDS as readonly string[]).includes(model);
 import type { Contact } from '../models/Contact';
 import { useRadioStore } from '../store/radioStore';
 import { useChannelsStore } from '../store/channelsStore';
@@ -28,6 +36,14 @@ import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
 import { isValidChannelFrequency } from '../services/validation/frequencyValidator';
 import { parseBootImageHeader } from '../utils/bootImage';
+import { formatPlural } from '../utils/formatPlural';
+import {
+  buildD890CodeplugTables,
+  buildD890WriteOriginals,
+  d890Zones,
+  d890ZoneSlots,
+} from '../services/d890WriteInput';
+import { diffPlanAgainstRead } from '../radios/d890uv/writeDiff';
 
 /** Augment error message when tab was hidden during a serial operation (better reporting). */
 function withVisibilityContext(message: string, tabWentHidden: boolean): string {
@@ -66,6 +82,48 @@ const WRITE_CHANNELS_STEPS: string[] = [
 export function modelForRead(): string | null {
   const { selectedRadioModel, radioInfo } = useRadioStore.getState();
   return selectedRadioModel ?? radioInfo?.model ?? null;
+}
+
+/**
+ * Everything a DA-7X2 channel write needs, gathered from the stores.
+ *
+ * Shared by the real write and by `previewChannelWrite` on purpose. A preview
+ * built from different inputs than the write is worse than no preview: it would
+ * show a user one plan and send another, and the whole point of showing it is
+ * that clearing a channel must never be a surprise.
+ *
+ * Returns null when nothing has been read, or when what was read came from a
+ * different radio — one radio's bytes must never patch another's.
+ */
+
+export interface D890WritePreview {
+  recordFrames: number;
+  maskFrames: number;
+  totalFrames: number;
+  bytesOnWire: number;
+  estimatedSeconds: number;
+  /** Channel numbers whose bytes actually change, verified against the read. */
+  changedChannels: number[];
+  /** Zone slots this write would mark absent. */
+  clearedZoneSlots?: number[];
+  /** True when this plans the whole codeplug rather than channels alone. */
+  wholeCodeplug?: boolean;
+  /** Bytes that differ from what was read. 0 means a write-back no-op. */
+  bytesChanged?: number;
+  /** Regions whose bytes actually differ, most-changed first. */
+  changedRegions?: { what: string; frames: number; bytes: number }[];
+  /** Channels the radio HAS that this write would remove. Destructive. */
+  clearedChannels: number[];
+  /**
+   * What the plan will NOT write, already rendered.
+   *
+   * The two planners describe skips differently — the channel planner names a
+   * channel, the codeplug planner names a region and address — so they are
+   * flattened to text here rather than leaking a union into the dialog.
+   */
+  skipped: string[];
+  /** Set when the plan refuses outright; nothing can be sent. */
+  refusal?: string;
 }
 
 export function useRadioConnection() {
@@ -236,6 +294,7 @@ export function useRadioConnection() {
           }
         });
         setChannels(channels);
+
       }
 
       // Enrich radioInfo with firmware from cached image (UV5R-Mini and DM-32UV)
@@ -319,6 +378,32 @@ export function useRadioConnection() {
         }
       }
 
+      // Preserve everything the vendor writes that nothing above reads.
+      //
+      // Not for display — a write has to be a whole codeplug, and a region that
+      // was never read cannot be written back, because the planner refuses to
+      // invent bytes. This is what makes a NeonPlug write leave the codeplug
+      // whole rather than only the tables it models.
+      if (digital && !dm32) {
+        const preserver = digital as typeof digital & {
+          readPreserveRegions?: (
+            cb?: (done: number, total: number) => void
+          ) => Promise<{ spans: number; bytes: number }>;
+        };
+        if (preserver.readPreserveRegions) {
+          configSteps.push({
+            label: 'Unmodelled regions',
+            run: async () => {
+              const { spans, bytes } = await preserver.readPreserveRegions!();
+              console.info(
+                `[D890] preserved ${spans} unmodelled region(s), ${bytes.toLocaleString()} bytes, ` +
+                  `so a write can put them back unchanged.`
+              );
+            },
+          });
+        }
+      }
+
       // Run them, moving the bar and naming what is being read.
       //
       // Zones and scan lists are now inside `readSection` where they used to
@@ -333,6 +418,49 @@ export function useRadioConnection() {
           steps[5]
         );
         await readSection(step.label, step.run);
+      }
+
+      // Stage what a write needs — AFTER every read, not after the channels.
+      //
+      // This ran immediately after `readChannels` until 2026-09-02, which meant
+      // the read log it captured held ONLY the channel spans: zones, the
+      // CODEPLUG_READS tables and the ~83 KB preservation pass all run after
+      // it. A whole-codeplug write then skipped every one of them
+      // 'not-read', and the dry run showed it plainly — 10 spans staged, 11
+      // regions skipped, 15,872 bytes planned against the vendor's 134,224.
+      // Nothing was lost on the radio, but the write was a channel write
+      // wearing a codeplug write's name.
+      // Keep the raw records and the presence mask for a later write.
+      //
+      // This hook builds a FRESH protocol instance per operation, so anything
+      // left on this one is gone by the time a write runs — and every encoder
+      // here patches the bytes the radio gave us rather than building a
+      // record, because a 16-byte frame carries fields this driver does not
+      // model. Without this a write plan refuses outright.
+      //
+      // Model-tagged: one radio's bytes must never patch another's, the same
+      // rule the clone radios' cached memory image follows.
+      const staging = proto as typeof proto & {
+        rawChannelRecords?: ReadonlyMap<number, Uint8Array>;
+        rawChannelMask?: Uint8Array | null;
+        integrityFindings?: readonly D890IntegrityFinding[];
+        rawReadLog?: ReadonlyMap<number, Uint8Array>;
+        rawZoneIndices?: readonly number[];
+      };
+      if (staging.rawChannelRecords && staging.rawChannelMask) {
+        setTable('writeOriginals', {
+          channelRecords: new Map(staging.rawChannelRecords),
+          channelMask: Uint8Array.from(staging.rawChannelMask),
+          model: info.model,
+          integrity: staging.integrityFindings ?? [],
+          // Copied, not referenced: the connection this log belongs to is
+          // closed and discarded at the end of the read, and a write runs on a
+          // fresh instance whose own log is empty.
+          readLog: staging.rawReadLog
+            ? new Map([...staging.rawReadLog].map(([at, b]) => [at, Uint8Array.from(b)]))
+            : undefined,
+          zoneSlots: staging.rawZoneIndices ? [...staging.rawZoneIndices] : undefined,
+        });
       }
 
       if (dm32) {
@@ -799,6 +927,102 @@ export function useRadioConnection() {
     }
   }, [setContacts, setRadioInfo, setConnected, radioInfo]);
 
+  /**
+   * What a channel write WOULD send, without opening a port.
+   *
+   * Built from the same inputs as the write itself, so what the user is shown
+   * is what is sent. Returns null for radios that do not plan their writes this
+   * way, and a `refusal` when the plan will not build at all — a refusal is a
+   * result to show, not an error to swallow.
+   */
+  const previewChannelWrite = useCallback((
+    channelsToWrite: Channel[]
+  ): D890WritePreview | null => {
+    const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
+    const staged = buildD890WriteOriginals(effectiveModel);
+    if (!staged) return null;
+
+    try {
+      // Plan the SAME write the button sends.
+      //
+      // This called `planChannelWrite` until 2026-09-02, while the write itself
+      // had moved to `writeCodeplug` — so the confirmation dialog understated
+      // what would be sent by 8.7x (992 frames against 8,635) and named only
+      // channels for a write that touches zones, tones, roaming and 6,943
+      // frames of preserved regions. A confirmation gate that describes a
+      // different operation from the one it authorises is worse than none.
+      const proto = new D890UVProtocol();
+      proto.setWriteOriginals(staged);
+      const wholeCodeplug = !!staged.readLog && staged.readLog.size > 0;
+
+      const zones = d890Zones();
+      const zoneSlots = d890ZoneSlots();
+      const plan = wholeCodeplug
+        ? proto.planCodeplug(
+            channelsToWrite, zones, zoneSlots, buildD890CodeplugTables(zones, zoneSlots)
+          )
+        : planChannelWrite({
+            channels: channelsToWrite,
+            originals: staged.channelRecords,
+            originalMask: staged.channelMask,
+            counts: staged.counts,
+            referencingTables: staged.referencingTables,
+            txBandLimits: staged.txBandLimits,
+          });
+
+      const summary = dryRunWrite(plan.frames);
+      const recordFrames = plan.frames.filter((f) => /^channel \d+$/.test(f.what));
+
+      // What ACTUALLY changes, by comparing against the bytes we read.
+      //
+      // `changedChannels` used to be every channel with a frame in the plan —
+      // but this radio writes what it read, so that is all of them, and the
+      // dialog reported "120 channels changing" for a write that changed
+      // nothing. Diffing against the read log is the same source of truth the
+      // dry-run panel uses, so the two can no longer disagree.
+      const diff = staged.readLog
+        ? diffPlanAgainstRead(plan.frames, staged.readLog)
+        : null;
+      const changedChannels = diff
+        ? [...new Set(
+            diff.diffs
+              .filter((d) => /^channel \d+$/.test(d.what))
+              .map((d) => Number(d.what.split(' ')[1]))
+          )].sort((a, b) => a - b)
+        : [...new Set(recordFrames.map((f) => Number(f.what.split(' ')[1])))];
+
+      return {
+        recordFrames: recordFrames.length,
+        maskFrames: plan.frames.length - recordFrames.length,
+        totalFrames: plan.frames.length,
+        bytesOnWire: summary.wireBytes,
+        estimatedSeconds: summary.estimatedSeconds,
+        changedChannels,
+        clearedChannels: plan.clearedChannelNumbers,
+        clearedZoneSlots: 'clearedZoneSlots' in plan ? plan.clearedZoneSlots : [],
+        skipped: plan.skipped.map((sk) =>
+          'channelNumber' in sk
+            ? `Ch ${sk.channelNumber} — ${sk.reason}`
+            : `${sk.region} @ 0x${sk.address.toString(16)} — ${sk.reason}`
+        ),
+        wholeCodeplug,
+        bytesChanged: diff?.bytesChanged,
+        changedRegions: diff
+          ? diff.regions
+              .filter((r) => r.differing > 0)
+              .map((r) => ({ what: r.what, frames: r.differing, bytes: r.bytesChanged }))
+          : undefined,
+      };
+    } catch (err) {
+      return {
+        recordFrames: 0, maskFrames: 0, totalFrames: 0, bytesOnWire: 0,
+        estimatedSeconds: 0, changedChannels: [], clearedChannels: [],
+        clearedZoneSlots: [], skipped: [],
+        refusal: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }, [radioInfo, selectedRadioModel]);
+
   const writeChannelsToRadio = useCallback(async (
     channels: Channel[],
     zones: Zone[],
@@ -822,9 +1046,25 @@ export function useRadioConnection() {
       // Filter channels to only include those with valid frequencies (use effective model for capabilities)
       const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
       const bandLimits = getCapabilitiesForModel(effectiveModel)?.bandLimits;
-      const validChannels = channels.filter(ch => isValidChannelFrequency(ch, bandLimits));
+      //
+      // ⚠️ NOT applied to the DA-7X2.
+      //
+      // On that radio the presence mask is computed from the channels this
+      // write plans, so a channel filtered out here is a channel DELETED from
+      // the radio — silently, behind a console.warn. And the filter fires on
+      // exactly the channels a real DA-7X2 carries: one was read from hardware
+      // with an airband entry at 118 MHz and an FM broadcast entry at 98.5 MHz
+      // sitting in the main list. Filtering them would have wiped both.
+      //
+      // `planChannelWrite` does this check properly instead: it refuses loudly,
+      // and only for a channel whose TX frequency was CHANGED to something out
+      // of band. One already on the radio is left alone.
+      const isD890 = protocolIsD890(radioInfo?.model ?? selectedRadioModel ?? null);
+      const validChannels = isD890
+        ? channels
+        : channels.filter(ch => isValidChannelFrequency(ch, bandLimits));
       const filteredCount = channels.length - validChannels.length;
-      
+
       if (filteredCount > 0) {
         console.warn(`Filtered out ${filteredCount} channel(s) with frequencies outside supported ranges`);
       }
@@ -873,6 +1113,17 @@ export function useRadioConnection() {
           protocol.setMemoryImage(cachedMemoryImage.image);
         }
       }
+
+      // DA-7X2: restore the raw records and presence mask the read staged.
+      //
+      // Same rule as the two branches above, different shape. This radio is not
+      // a clone image and has no block cache — its writes patch individual
+      // records, so what has to survive the read is the records themselves. A
+      // fresh protocol instance has none of them, and `writeChannels` refuses
+      // rather than building records from zeros.
+      const d890Write = protocol instanceof D890UVProtocol ? protocol : null;
+      const stagedD890 = d890Write ? buildD890WriteOriginals(effectiveModel) : null;
+      if (d890Write && stagedD890) d890Write.setWriteOriginals(stagedD890);
       
       // Set up progress callback that forwards to our callback
       protocol.onProgress = (progress, message) => {
@@ -901,6 +1152,19 @@ export function useRadioConnection() {
       const changedFields = radioSettingsStore.getChangedFields();
       const hasSettingsToWrite = radioSettings != null && changedFields.length > 0;
 
+      // Refuse BEFORE the channel write, not after it. Protocols that cannot
+      // write settings used to inherit a no-op base, so this ran to completion
+      // and then called clearChanges() — the edits vanished and the UI reported
+      // success. Failing here leaves the pending changes intact, so nothing is
+      // lost and the user can decide what to do with them.
+      if (hasSettingsToWrite && protocol.settingsWriteUnsupported) {
+        throw new Error(
+          `This radio cannot write settings yet, so nothing was written. Revert the ` +
+          `${formatPlural(changedFields.length, 'changed setting')} ` +
+          `(${changedFields.join(', ')}) to write channels.`
+        );
+      }
+
       // Step 4: Write channels (and zones/scan lists for DM-32; analog radios use writeChannels only)
       if (dm32) {
         onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
@@ -910,8 +1174,28 @@ export function useRadioConnection() {
           onProgress?.(15, `Staging ${changedFields.length} changed setting(s)...`, steps[4]);
           await protocol.writeRadioSettings(radioSettings, { changedFields });
         }
-        onProgress?.(20, 'Writing channels to radio...', steps[4]);
-        await protocol.writeChannels(validChannels);
+        if (d890Write) {
+          // The WHOLE codeplug, not the changes. Regions this driver can encode
+          // are patched from the read's own bytes; everything else it read is
+          // written back verbatim. A change-only write would leave the rest to
+          // whatever the last writer put there.
+          //
+          // Tables absent here are not lost — they fall to the verbatim pass,
+          // so the radio keeps exactly what it had. What is passed explicitly is
+          // what the UI can actually edit.
+          const zoneSlots = stagedD890?.zoneSlots ?? [];
+          onProgress?.(20, 'Writing codeplug to radio...', steps[4]);
+          await d890Write.writeCodeplug(
+            validChannels,
+            filteredZones,
+            zoneSlots,
+            buildD890CodeplugTables(filteredZones, zoneSlots),
+            (percent, message) => onProgress?.(20 + percent * 0.7, message, steps[4])
+          );
+        } else {
+          onProgress?.(20, 'Writing channels to radio...', steps[4]);
+          await protocol.writeChannels(validChannels);
+        }
         if (hasSettingsToWrite && protocol.bufferedSettingsWrite) {
           // The channel write uploaded the image containing the staged settings.
           radioSettingsStore.clearChanges();
@@ -1060,6 +1344,7 @@ export function useRadioConnection() {
     writeBootImage,
     writeContacts,
     writeChannelsToRadio,
+    previewChannelWrite,
     readSteps: READ_STEPS,
     writeChannelsSteps: WRITE_CHANNELS_STEPS,
     /** Model the next/current read is attempted as — for display, see modelForRead. */

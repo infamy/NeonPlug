@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseChannel, decodeOccupancyMask, occupiedIndices } from '../../src/radios/d890uv/structures';
 import { planChannelWrite, D890WriteRefusedError } from '../../src/radios/d890uv/writePlan';
+import { applyChannelToRecord } from '../../src/radios/d890uv/channelWrite';
 import type { Channel } from '../../src/models/Channel';
 import { NO_TX_FREQUENCY } from '../../src/services/validation/frequencyValidator';
 
@@ -200,17 +201,18 @@ describe('the reverse-reference gate', () => {
     ).toThrow(/no zone or scan-list membership/);
   });
 
-  it('records VFO channels as skipped rather than dropping them silently', () => {
-    // readChannels prepends VFO A/B as 4001/4002. They are real records outside
-    // the storable range; this planner does not write them, but it must say so.
+  it('refuses a VFO whose original was never read, like any other record', () => {
+    // readChannels prepends VFO A/B as 4001/4002 and caches their originals
+    // under the same keys. Without one there is nothing to patch, and building
+    // a VFO from zeros would overwrite the fields this driver does not decode.
     const { channels, originals, counts } = setup(2);
     const vfo = { ...channels[0], number: 4001 } as Channel;
-    const plan = planChannelWrite({
-      channels: [...channels, vfo], originals, originalMask: REAL_MASK, counts,
-      referencingTables: [],
-    });
-    expect(plan.skipped.map((s) => s.channelNumber)).toContain(4001);
-    expect(plan.channelNumbers).not.toContain(4001);
+    expect(() =>
+      planChannelWrite({
+        channels: [...channels, vfo], originals, originalMask: REAL_MASK, counts,
+        referencingTables: [],
+      }),
+    ).toThrow(/no original record for channel/);
   });
 });
 
@@ -263,5 +265,161 @@ describe('transmit band limits', () => {
         channels: [bad], originals, originalMask: REAL_MASK, counts, referencingTables: [],
       }),
     ).not.toThrow();
+  });
+});
+
+/**
+ * VFO A and VFO B ARE written — settled from the vendor's own capture.
+ *
+ * An earlier version of this suite pinned them as read-only, reasoning by
+ * analogy with the DM-32. That was wrong twice over: the DM-32 writes its VFO
+ * records too (only its VFO TX Contact is read-only, for want of a verified
+ * block structure), and more importantly the DA-7X2's own CPS writes both
+ * records in full — 8 of 8 frames each at 0x1f81000 and 0x1f81080.
+ *
+ * The mask is the subtle part. The CPS leaves byte 500 as 0x03 — both VFO bits
+ * SET — even in a session where it wrote the records as erased 0xFF. So the
+ * VFO bits are not "a record is present" in the usual sense; they are simply
+ * always set, and must be preserved rather than recomputed.
+ */
+describe('VFO A and B', () => {
+  const vfo = (number: number): Channel => ({
+    ...parseChannel(rec(0), 0).channel,
+    number,
+    name: `VFO ${number}`,
+  });
+
+  const withVfos = () => {
+    const base = setup(2);
+    const originals = new Map(base.originals);
+    // The read caches VFO originals under the same 1-based keys, precisely so a
+    // writer does not have to special-case them.
+    originals.set(4001, rec(0));
+    originals.set(4002, rec(1));
+    return {
+      ...base,
+      originals,
+      channels: [...base.channels, vfo(4001), vfo(4002)],
+    };
+  };
+
+  it('writes both VFO records, all eight frames each', () => {
+    const plan = planChannelWrite(withVfos());
+    expect(plan.channelNumbers).toEqual([1, 2, 4001, 4002]);
+    expect(plan.frames.filter((f) => f.what === 'channel 4001')).toHaveLength(8);
+    expect(plan.frames.filter((f) => f.what === 'channel 4002')).toHaveLength(8);
+  });
+
+  it('writes them at the addresses the CPS used', () => {
+    const plan = planChannelWrite(withVfos());
+    const first = (what: string) =>
+      plan.frames.find((f) => f.what === what)!.address;
+    expect(first('channel 4001')).toBe(0x01f81000);
+    expect(first('channel 4002')).toBe(0x01f81080);
+  });
+
+  it('leaves both VFO mask bits set, as the CPS does', () => {
+    // Byte 500, bits 0 and 1 — slots 4000 and 4001. The CPS writes 0x03 here
+    // even when the records themselves are erased.
+    const plan = planChannelWrite(withVfos());
+    expect(plan.mask[500] & 0x03).toBe(0x03);
+  });
+
+  it('does not recompute the VFO bits from what was written', () => {
+    // A write that includes NO VFOs must still leave their bits alone — the
+    // mask loop covers slots 0..3999 and must not reach past them.
+    const plan = planChannelWrite(setup(2));
+    expect(plan.mask[500] & 0x03).toBe(0x03);
+  });
+
+  it('still refuses a VFO that was never read', () => {
+    // Same rule as every other record: patch what the radio gave us, never
+    // build one. A VFO built from zeros would overwrite the fields this driver
+    // does not decode.
+    const base = setup(2);
+    expect(() =>
+      planChannelWrite({ ...base, channels: [...base.channels, vfo(4001)] })
+    ).toThrow(D890WriteRefusedError);
+  });
+
+  it('still skips a channel number genuinely out of range', () => {
+    const base = setup(2);
+    const plan = planChannelWrite({ ...base, channels: [...base.channels, vfo(5000)] });
+    expect(plan.skipped.map((x) => x.channelNumber)).toEqual([5000]);
+    expect(plan.skipped[0].reason).toMatch(/outside the 4000 storable channels/);
+  });
+});
+
+describe('a write always sends every record it plans', () => {
+  /**
+   * There is no "only what changed" mode, and that is deliberate.
+   *
+   * One existed for a single session. The sparse write it produced committed
+   * and the edited record read back byte-perfect — but that only proved the
+   * bytes SENT arrived, never that the regions NOT sent survived, and the radio
+   * was in a bad state afterwards. The vendor CPS writes every region every
+   * time; until there is evidence this radio tolerates less, so do we.
+   */
+  it('writes all eight frames per channel even when nothing changed', () => {
+    const base = setup(4);
+    const plan = planChannelWrite(base);
+    expect(plan.frames.filter((f) => /^channel \d+$/.test(f.what))).toHaveLength(32);
+  });
+
+  it('writes the untouched channels too when one is edited', () => {
+    const base = setup(4);
+    const edited = base.channels.map((c) => (c.number === 2 ? { ...c, name: 'RENAMED' } : c));
+    const plan = planChannelWrite({ ...base, channels: edited });
+    for (const n of [1, 2, 3, 4]) {
+      expect(plan.frames.filter((f) => f.what === `channel ${n}`), `channel ${n}`).toHaveLength(8);
+    }
+  });
+
+  it('offers no way to ask for a partial write', () => {
+    // Guards the rule itself: a future edit that reintroduces the option would
+    // make this compile-time-legal again, and this is the reminder of why not.
+    const base = setup(2) as Record<string, unknown>;
+    expect('onlyChangedRecords' in base).toBe(false);
+  });
+});
+
+describe('transmit band gate', () => {
+  it('allows an out-of-band channel that is written back unchanged', () => {
+    // Found on hardware: a real DA-7X2 carried an airband entry at 118 MHz in
+    // its MAIN channel list. Refusing to rewrite it made every write
+    // impossible, while protecting nothing — the channel is already there.
+    const base = setup(2);
+    const originals = new Map(base.originals);
+    // Build the record first, then read the channel back OUT of it, so the
+    // channel and its original agree by construction — exactly the situation a
+    // read from the radio produces.
+    const record = applyChannelToRecord(rec(0), {
+      ...base.channels[0], number: 92, name: 'Airband AM', rxFrequency: 118, txFrequency: 118,
+    });
+    const outOfBand = { ...parseChannel(record, 91).channel, number: 92, name: 'Airband AM' };
+    originals.set(92, record);
+    // The test is only meaningful if this really is out of band.
+    expect(outOfBand.txFrequency).toBeLessThan(136);
+
+    expect(() =>
+      planChannelWrite({
+        ...base,
+        channels: [...base.channels, outOfBand],
+        originals,
+        txBandLimits: { vhfMin: 136, vhfMax: 174, uhfMin: 400, uhfMax: 480 },
+      })
+    ).not.toThrow();
+  });
+
+  it('still refuses a channel GIVEN an out-of-band transmit frequency', () => {
+    const base = setup(2);
+    const edited = base.channels.map((c) => (c.number === 1 ? { ...c, txFrequency: 98.5 } : c));
+    expect(() =>
+      planChannelWrite({
+        ...base,
+        channels: edited,
+        txBandLimits: { vhfMin: 136, vhfMax: 174, uhfMin: 400, uhfMax: 480 },
+      })
+    ).toThrow(/transmit outside this radio/);
   });
 });

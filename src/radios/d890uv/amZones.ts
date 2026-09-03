@@ -23,7 +23,8 @@ export const D890_AM_ZONES = {
    * Presence mask, SET = PRESENT. Lives in the AM mask block at 0x3884xxx
    * rather than beside the zone records.
    *
-   * CONFIRMED 2026-09-01 from the vendor CPS's serial capture: request #2379
+   * CONFIRMED ON HARDWARE 2026-09-01 — the AM zone still lists its members when
+   * read through this path. Found in the vendor CPS's capture first: request #2379
    * reads `01` here, and request #5206 then reads exactly 128 bytes at
    * 0x3888000 — one record, matching the single AM zone on the radio.
    */

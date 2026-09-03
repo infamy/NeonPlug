@@ -217,3 +217,77 @@ export const D890_APRS_PROFILE_FIELDS = [
   { key: 'aprsLonMinuteFraction', label: 'Longitude — hundredths of a minute', type: 'number', min: 0, max: 99 },
   { key: 'aprsLonWest', label: 'Longitude — western hemisphere', type: 'checkbox' },
 ] as const;
+
+/** Fixed-width ASCII, NUL-padded to `length`. The inverse of `fixedAscii`. */
+function writeFixedAscii(out: Uint8Array, offset: number, text: string, length: number): void {
+  out.fill(0, offset, offset + length);
+  const clipped = text.slice(0, length);
+  for (let i = 0; i < clipped.length; i += 1) {
+    const c = clipped.charCodeAt(i);
+    // The reader stops at anything outside printable ASCII, so writing one
+    // would produce a field it could not read back.
+    out[offset + i] = c >= 32 && c <= 126 ? c : 0x20;
+  }
+}
+
+/**
+ * Encode the APRS region, patching what the radio gave us.
+ *
+ * ⚠️ Two fields are stored SCALED and both scales rest on a single observation:
+ * `txDelayMs` is ×20 (60 read back as 1200 ms) and `prewaveMs` is ×10 (150 as
+ * 1500 ms). Encoding divides by the same factor the parser multiplied by, so a
+ * round trip holds either way — what is unproven is whether the millisecond
+ * figure shown to the user is right. Do not "fix" one side alone.
+ *
+ * Everything between the mapped fields is preserved, which matters here more
+ * than most: this region is 0x100 bytes and only about 0x50 of it is decoded.
+ */
+export function encodeD890AprsSettings(
+  original: Uint8Array,
+  aprs: D890AprsSettings
+): Uint8Array {
+  if (original.length < 0x50) {
+    throw new Error(`APRS region must be at least 0x50 bytes to patch, got ${original.length}`);
+  }
+  const out = Uint8Array.from(original);
+  const byte = (at: number, v: number) => { out[at] = v & 0xff; };
+
+  byte(0x05, Math.round(aprs.txDelayMs / 20));
+  byte(0x07, aprs.ctcssIndex);
+  byte(0x08, aprs.dcs);
+  byte(0x0a, aprs.manualTxIntervalS);
+  byte(0x0b, aprs.fixTime);
+  byte(0x0c, aprs.beep);
+  byte(0x0d, aprs.fixedLocationBeacon ? 1 : 0);
+
+  byte(0x0e, aprs.latitude.degrees);
+  byte(0x0f, aprs.latitude.minutes);
+  byte(0x10, aprs.latitude.minuteFraction);
+  byte(0x11, aprs.latitude.south ? 1 : 0);
+  byte(0x12, aprs.longitude.degrees);
+  byte(0x13, aprs.longitude.minutes);
+  byte(0x14, aprs.longitude.minuteFraction);
+  byte(0x15, aprs.longitude.west ? 1 : 0);
+
+  writeFixedAscii(out, 0x16, aprs.destinationCall, 6);
+  byte(0x1c, aprs.destinationSsid);
+  writeFixedAscii(out, 0x1d, aprs.sourceCall, 6);
+  byte(0x23, aprs.sourceSsid);
+  writeFixedAscii(out, 0x24, aprs.digipeaterPath, 8);
+
+  // A single character each. The parser trims, so an empty string means the
+  // radio held a space — write one back rather than a NUL.
+  byte(0x39, (aprs.symbolTable || ' ').charCodeAt(0));
+  byte(0x3a, (aprs.mapIcon || ' ').charCodeAt(0));
+  byte(0x3b, aprs.txPower);
+  byte(0x3c, Math.round(aprs.prewaveMs / 10));
+  byte(0x3d, aprs.aprsUpKind);
+  byte(0x3e, aprs.digitalAprsUpdate);
+
+  for (let i = 0; i < D890_APRS_UPLOAD_SLOTS; i += 1) {
+    const v = aprs.digitalUploadChannels[i] ?? D890_APRS_NO_CHANNEL;
+    out[0x40 + i * 2] = v & 0xff;
+    out[0x40 + i * 2 + 1] = (v >> 8) & 0xff;
+  }
+  return out;
+}

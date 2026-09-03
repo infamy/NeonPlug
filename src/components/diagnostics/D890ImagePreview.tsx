@@ -21,7 +21,7 @@ interface D890ImagePreviewProps {
  * them back. See `bootImage.ts` for what each capture established.
  *
  * Read-only: `encodeD890Image` can build the bytes, but NeonPlug has never
- * written to this radio and an image write lands in a 256 KB erase unit whose
+ * written to this radio and an image write lands in a region whose
  * other contents are unknown.
  */
 export const D890ImagePreview: React.FC<D890ImagePreviewProps> = ({ kind, data, hideHeading }) => {

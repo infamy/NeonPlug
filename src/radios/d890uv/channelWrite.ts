@@ -1,7 +1,11 @@
 import type { Channel } from '../../models/Channel';
 import { D890_LIMITS, D890_CTCSS_TONES } from './constants';
-import { D890_SQUELCH_MODE, D890_OPTIONAL_SIGNAL } from './structures';
-import { decodeBcdAsHexU32 } from './structures';
+import {
+  D890_SQUELCH_MODE,
+  D890_OPTIONAL_SIGNAL,
+  decodeWideCharString,
+  decodeBcdAsHexU32,
+} from './structures';
 
 /**
  * Turn an edited `Channel` back into the radio's 128-byte record.
@@ -329,10 +333,29 @@ export function applyChannelToRecord(original: Uint8Array, channel: Channel): Ui
         `this radio stores at most ${D890_CHANNEL_NAME_MAX}. Truncating silently would hide the loss.`
     );
   }
-  rec.set(
-    encodeWideCharString(channel.name ?? '', OFF.NAME_END - OFF.NAME),
-    OFF.NAME
+  // The name is rewritten ONLY when it actually changed.
+  //
+  // The radio does not use one padding convention. A named channel is
+  // NUL-padded, but an untouched record — VFO A on a real radio, for one — is
+  // erased 0xFF right through the name field. Both decode to the same string,
+  // so re-encoding an unchanged name would rewrite 0xFF as 0x00 and report a
+  // record as "changed" when nothing about it is.
+  //
+  // That is not cosmetic even though a write now sends every record regardless:
+  // a record that re-encodes differently from what the radio holds is a record
+  // this driver cannot prove it round-trips, and the write path's whole safety
+  // argument rests on that property. Found on hardware — VFO A came back as 12
+  // changed bytes on a write that only renamed channel 9.
+  const currentName = decodeWideCharString(
+    original.subarray(OFF.NAME, OFF.NAME_END),
+    D890_LIMITS.NAME_MAX_CHARS
   );
+  if ((channel.name ?? '') !== currentName) {
+    rec.set(
+      encodeWideCharString(channel.name ?? '', OFF.NAME_END - OFF.NAME),
+      OFF.NAME
+    );
+  }
 
   // ── byte 0x09 ────────────────────────────────────────────────────────────
   // NOT a tone byte. Bits 0-3 are the tone kind/direction flags; bits 4-7 are

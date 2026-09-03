@@ -14,7 +14,9 @@ export const D890_TONES = {
     /**
      * Presence mask, one bit per slot, SET = PRESENT.
      *
-     * CONFIRMED 2026-09-01 from the vendor CPS's serial capture: request #221
+     * CONFIRMED ON HARDWARE 2026-09-01 — read off a radio through this path,
+     * with both tone lists still showing their entries. Found in the vendor
+     * CPS's serial capture first: request #221
      * reads this address and gets `03`, and request #5088 then reads exactly
      * 128 bytes at 0x3480000 — two records. Popcount matches record count, and
      * the mask is read first. Same shape as the AM airband mask.
@@ -32,7 +34,10 @@ export const D890_TONES = {
   },
   twoTone: {
     address: 0x3482000,
-    /** Presence mask — CPS request #297 reads `03` here, then two records. */
+    /**
+     * Presence mask — CPS request #297 reads `03` here, then two records.
+     * CONFIRMED ON HARDWARE 2026-09-01 through this driver's own read.
+     */
     mask: 0x3482800,
     stride: 0x20,
     /**
@@ -95,13 +100,28 @@ export function parseFiveTone(bytes: Uint8Array, index: number): D890FiveTone | 
  * floating point. A different divisor would still decode, so treat the exact
  * values as unconfirmed until one is set to a known frequency.
  */
+/**
+ * The 2-Tone name field: `+0x08` to the end of the 32-byte record.
+ *
+ * 24 bytes, i.e. 12 UTF-16 characters — NOT the 16 this parser used to ask for.
+ * It read `subarray(0x08, 0x28)`, which runs 8 bytes past the record; JS clamps
+ * a subarray silently so the read looked fine, and the mistake only surfaced
+ * when the encoder tried to WRITE 32 bytes into 24 and threw. Exported so the
+ * encoder cannot drift from the parser again.
+ */
+export const TWO_TONE_NAME_AT = 0x08;
+export const TWO_TONE_NAME_BYTES = D890_TONES.twoTone.stride - TWO_TONE_NAME_AT;
+
 export function parseTwoTone(bytes: Uint8Array, index: number): D890TwoTone | null {
   const first = (bytes[0x00] ?? 0) | ((bytes[0x01] ?? 0) << 8);
   const second = (bytes[0x02] ?? 0) | ((bytes[0x03] ?? 0) << 8);
   if (first === 0 || first === 0xffff) return null;
   return {
     index,
-    name: decodeWideCharString(bytes.subarray(0x08, 0x28), 16),
+    name: decodeWideCharString(
+      bytes.subarray(TWO_TONE_NAME_AT, TWO_TONE_NAME_AT + TWO_TONE_NAME_BYTES),
+      TWO_TONE_NAME_BYTES / 2
+    ),
     firstTone: first / 10,
     secondTone: second / 10,
   };

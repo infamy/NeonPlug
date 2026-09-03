@@ -229,11 +229,16 @@ describe('assertWritableAddress', () => {
   });
 });
 
-describe('flash erase-unit safety', () => {
-  // The 256 KB erase unit is the defining hazard of writing to this radio:
-  // one 16-byte write erases the whole unit. Two offsets per unit belong to the
-  // radio's own flash management and must never be touched.
-  it('refuses the management offsets in every erase unit, not just the first', () => {
+describe('protected flash-management offsets', () => {
+  // Two offsets belong to the radio's own flash management and must never be
+  // written. They repeat at every D890_FLASH_MARKER_STRIDE, which is the only
+  // reason that stride exists.
+  //
+  // Kept out because they hold structured data in otherwise-erased flash
+  // (0x103FBF4 reads `22 33 44 55`, 0x103FFFC reads `55 55 AA AA`) AND the
+  // vendor CPS writes them zero times across all 8,389 frames of its own
+  // programming session. Two independent reasons.
+  it('refuses the management offsets at every stride, not just the first', () => {
     for (const unit of [0, 1, 13, 200]) {
       for (const off of [0x3fbf0, 0x3fff0]) {
         const addr = unit * 0x40000 + off;
@@ -243,7 +248,7 @@ describe('flash erase-unit safety', () => {
     }
   });
 
-  it('still allows ordinary addresses inside those same units', () => {
+  it('still allows ordinary addresses at those same strides', () => {
     expect(() => assertWritableAddress(13 * 0x40000)).not.toThrow();
     expect(() => assertWritableAddress(13 * 0x40000 + 0x3fbe0)).not.toThrow();
     expect(() => assertWritableAddress(13 * 0x40000 + 0x3fc00)).not.toThrow();

@@ -20,6 +20,7 @@ import { QuickContactsBlockDetails } from './QuickContactsBlockDetails';
 import { TalkGroupsBlockDetails } from './TalkGroupsBlockDetails';
 import { RegionDumpPanel } from './RegionDumpPanel';
 import { RecordLayoutPanel } from './RecordLayoutPanel';
+import { WriteDryRunPanel } from './WriteDryRunPanel';
 import { MemoryImagePanel } from './MemoryImagePanel';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
@@ -110,6 +111,7 @@ export const DiagnosticsTab: React.FC = () => {
               radio with no contiguous image, which is what left this tab nearly
               empty for the DA-7X2. */}
           <RecordLayoutPanel />
+          <WriteDryRunPanel />
 
           {!hasGenericTools && (
             <Card className="!border-yellow-600/30">

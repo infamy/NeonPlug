@@ -15,6 +15,23 @@
 
 import { BaseDigitalProtocol } from '../shared/BaseProtocols';
 import type { OptionalDigitalReads } from '../optionalReads';
+import type {
+  D890WriteFrame,
+  D890ChannelWritePlan,
+  D890ReferencingTables,
+} from './writePlan';
+import { planChannelWrite, D890WriteRefusedError } from './writePlan';
+import type { D890TableCounts } from './references';
+import {
+  D890_MASK_CHECKS,
+  checkMaskAgainstRecords,
+  blocksWriting,
+  describeFindings,
+  type D890IntegrityFinding,
+} from './integrity';
+import { dryRunWrite, type D890WriteDryRun } from './writeDryRun';
+import { VENDOR_WRITE_RUNS, sliceFromReadLog, planCodeplugWrite } from './codeplugWrite';
+import type { D890CodeplugWriteInput, D890CodeplugWritePlan } from './codeplugWrite';
 import type { Channel } from '../../models/Channel';
 import type { Zone } from '../../models/Zone';
 import type { Contact } from '../../models/Contact';
@@ -24,6 +41,7 @@ import type { DMRRadioID } from '../../models/DMRRadioID';
 import type { RadioInfo } from '../../types/radio';
 import type { RadioSettings } from '../../models/RadioSettings';
 import { parseD890Settings } from './settingsFormat';
+import type { D890Settings } from './settingsFormat';
 import type { EncryptionKey } from '../../models/EncryptionKey';
 import { log } from '../../utils/protocolLogger';
 import { D890_IMAGE, D890_IMAGE_ADDRESS, D890_IMAGE_LABEL, type D890ImageKind } from './bootImage';
@@ -116,6 +134,18 @@ export class D890NotVerifiedError extends Error {
 }
 
 export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigitalReads {
+  /**
+   * Settings are folded into the whole-codeplug write, not sent on their own.
+   *
+   * Same contract as the Yaesu clone protocol: `writeRadioSettings` STAGES, and
+   * the write that follows carries the bytes. The hook relies on this to call it
+   * BEFORE the codeplug write and to clear the change flags only afterwards.
+   */
+  readonly bufferedSettingsWrite = true;
+
+  /** Settings staged by `writeRadioSettings`, consumed by `writeCodeplug`. */
+  private stagedSettings: Partial<D890Settings> | null = null;
+
   private connection: D890Connection | null = null;
   private identity: D890Identity | null = null;
 
@@ -190,6 +220,98 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     };
   }
 
+  /**
+   * Send a planned write to the radio, as one session.
+   *
+   * The session envelope is identical to a read's, confirmed from the vendor
+   * CPS's own captures of both:
+   *
+   *     PROGRAM -> "QX" + ACK
+   *     02      -> "DMR-7X2\0V100\0" + ACK
+   *     ... R frames (read) or W frames (write), each acknowledged ...
+   *     END     -> ACK
+   *
+   * `connect()` has already done the handshake by the time this runs; END is
+   * sent by `disconnect()`. What this adds is the part that matters:
+   *
+   * **Every frame is built and guarded BEFORE the first one is sent.** A bad
+   * address or a wrong payload length then costs nothing — it throws with the
+   * radio untouched, rather than half-way through a codeplug. This is the same
+   * `dryRunWrite` the offline tooling uses, so what a dry run validated is
+   * exactly what gets sent.
+   *
+   * On failure the connection is poisoned and can no longer send END, so the
+   * radio does not commit a partial write. Nothing is retried: this radio
+   * reboots when a write goes bad, and a retry would be aimed at a radio that
+   * may already be restarting.
+   */
+  async runWriteSession(
+    frames: readonly D890WriteFrame[],
+    onProgress?: (percent: number, message: string) => void
+  ): Promise<D890WriteDryRun> {
+    const conn = this.requireConnection();
+
+    // Validate the whole plan first — nothing has been sent at this point.
+    const plan = dryRunWrite(frames);
+
+    let written = 0;
+    for (const frame of frames) {
+      await conn.writeMemory(frame.address, frame.data);
+      written += frame.data.length;
+      onProgress?.((written / plan.payloadBytes) * 100, `Writing ${frame.what}...`);
+    }
+    return plan;
+  }
+
+  /**
+   * Read every region the vendor writes that nothing else here reads.
+   *
+   * Not for parsing — for PRESERVING. A write on this radio has to be a whole
+   * codeplug, and a region that was never read cannot be written back: the
+   * planner refuses to invent bytes. So the only way to leave the codeplug
+   * whole is to have the originals in hand, whether or not this driver
+   * understands them.
+   *
+   * Driven off the vendor's own 74 write runs rather than a hand-kept list, so
+   * a region the CPS writes can never be silently missing from ours. Spans
+   * already in the read log are skipped, which is why this stays cheap as more
+   * tables become properly modelled — it shrinks on its own.
+   *
+   * ⚠️ Costs real time: roughly 83 KB at ~10 KB/s, so about 8 seconds on top of
+   * a codeplug read. That is the price of being able to write at all, and it is
+   * charged once per read rather than per write.
+   */
+  async readPreserveRegions(
+    onProgress?: (done: number, total: number) => void
+  ): Promise<{ spans: number; bytes: number }> {
+    const conn = this.requireConnection();
+    const missing = VENDOR_WRITE_RUNS.filter(
+      (run) => sliceFromReadLog(conn.readLog, run.address, run.bytes) === undefined
+    );
+    const total = missing.reduce((n, r) => n + r.bytes, 0);
+
+    let bytes = 0;
+    for (const run of missing) {
+      // Read lengths must be 16-aligned; the vendor's runs already are, but
+      // round up rather than assume — a short read would stage a partial span
+      // and the write would then refuse it for the wrong reason.
+      const length = Math.ceil(run.bytes / D890_BLOCK.ALIGNMENT) * D890_BLOCK.ALIGNMENT;
+      try {
+        await conn.readMemory(run.address, length);
+        bytes += run.bytes;
+      } catch (err) {
+        // A region that will not read is not fatal to the READ — it only means
+        // a later write cannot preserve it, and the write plan says so.
+        log.warn(
+          `DA-7X2 could not preserve 0x${run.address.toString(16)}: ${String(err)}`,
+          'D890'
+        );
+      }
+      onProgress?.(bytes, total);
+    }
+    return { spans: missing.length, bytes };
+  }
+
   private requireConnection(): D890Connection {
     if (!this.connection) throw new Error('Not connected to the radio');
     return this.connection;
@@ -262,6 +384,18 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
   readonly rawChannelRecords = new Map<number, Uint8Array>();
 
   /**
+   * Every span this instance read, for staging into the next one.
+   *
+   * A write patches originals, so it needs the bytes the read saw — and the
+   * write runs on a DIFFERENT protocol instance, whose connection has an empty
+   * log. Without this the whole-codeplug plan skips every flat region
+   * 'not-read' and the ~83 KB preservation pass is spent for nothing.
+   */
+  get rawReadLog(): ReadonlyMap<number, Uint8Array> | undefined {
+    return this.connection?.readLog;
+  }
+
+  /**
    * The raw presence mask, as read.
    *
    * Kept because a write must PATCH it, not rebuild it: a mask rebuilt over the
@@ -287,6 +421,8 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     const conn = this.requireConnection();
     const mask = await conn.readMemory(D890_ADDR.CHANNEL_SET, D890_ADDR.CHANNEL_SET_SIZE);
     this.rawChannelMask = Uint8Array.from(mask);
+    const channelMaskFinding = D890_MASK_CHECKS.channels(mask);
+    if (channelMaskFinding) this.integrityFindings.push(channelMaskFinding);
     this.rawChannelRecords.clear();
     const present = occupiedIndices(
       decodeOccupancyMask(mask, D890_LIMITS.CHANNELS_MAX)
@@ -328,33 +464,258 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
    * NOT IMPLEMENTED, and the bar for implementing it is high.
    *
    * The read path is hardware-verified now, but writing to this radio is a
-   * different problem: the flash erase unit is 256 KB, and writing a single
-   * 16-byte block can erase the entire unit containing it. A correct write path
-   * must therefore read back every co-resident byte of each affected unit and
-   * re-stage it, while never touching the two flash-management blocks at
-   * +0x3fbf0 and +0x3fff0 of each unit (see D890_FORBIDDEN_UNIT_OFFSETS).
+   * different problem: nothing has ever been written to this radio by this
+   * software, and `planChannelWrite` — which does exist, and is thorough — has
+   * never been wired to `runWriteSession` or exercised against hardware.
    *
-   * Until that read-modify-write staging exists, writing would risk erasing a
-   * working codeplug.
    */
-  async writeChannels(_channels: Channel[]): Promise<void> {
-    throw new D890NotVerifiedError(
-      'Writing to the radio',
-      'the 256 KB flash erase unit means one 16-byte write can erase 256 KB. ' +
-        'A read-modify-write staging layer is required first and does not exist yet.'
-    );
+  /**
+   * Write channels. **Nothing has ever been written to this radio.**
+   *
+   * The originals and the presence mask must be staged first, via
+   * `setWriteOriginals` — they come from the last read and cannot be
+   * reconstructed. Every record is patched, never built, and the mask is
+   * patched, never rebuilt.
+   *
+   * `planChannelWrite` refuses before a byte is sent when a channel points at a
+   * table entry that will not exist, when an original is missing, or when a
+   * channel transmits outside the radio's bands. `runWriteSession` then builds
+   * and guards every frame before sending the first, so an address fault costs
+   * nothing.
+   *
+   * ⚠️ No read-back. Comparing during a write session compares against
+   * pre-write contents and passes while proving nothing, and a read mid-write
+   * reboots the radio. Verification is a separate session, a minute later.
+   */
+  /** The plan the last `writeChannels` sent, for reporting what happened. */
+  lastWritePlan: D890ChannelWritePlan | null = null;
+
+  async writeChannels(
+    channels: Channel[],
+    onProgress?: (percent: number, message: string) => void
+  ): Promise<void> {
+    // Refuse before planning. A corrupt read produces a plan that passes every
+    // other gate — those check references and originals, not whether the read
+    // itself was credible — and writing it back is how corruption sticks.
+    if (blocksWriting(this.writeOriginals?.integrity ?? [])) {
+      throw new D890WriteRefusedError(
+        `Refusing to write: this codeplug did not read cleanly.\n\n` +
+          describeFindings(this.writeOriginals?.integrity ?? []) +
+          `\n\nRead the radio again. If it reads the same way, the codeplug on the ` +
+          `radio is damaged — restore it from a backup before writing.`
+      );
+    }
+    if (!this.writeOriginals) {
+      throw new D890NotVerifiedError(
+        'Writing channels',
+        'the radio has not been read in this session. Every record is patched ' +
+          'rather than built, so the original bytes and the presence mask must ' +
+          'be read first — otherwise the fields this driver does not decode ' +
+          'would be overwritten with zeros.'
+      );
+    }
+    const plan = planChannelWrite({
+      channels,
+      originals: this.writeOriginals.channelRecords,
+      originalMask: this.writeOriginals.channelMask,
+      counts: this.writeOriginals.counts,
+      referencingTables: this.writeOriginals.referencingTables,
+      txBandLimits: this.writeOriginals.txBandLimits,
+    });
+    this.lastWritePlan = plan;
+    await this.runWriteSession(plan.frames, onProgress);
   }
+
+
+  /** The plan the last `writeCodeplug` sent, for reporting what happened. */
+  lastCodeplugPlan: D890CodeplugWritePlan | null = null;
+
+  /**
+   * Write the WHOLE codeplug — every region the read saw, not only what changed.
+   *
+   * "We write what we read" is the rule this implements. A change-only write
+   * looks safer and is not: the radio's regions are interdependent, and a plan
+   * assembled from diffs leaves the rest to whatever the last writer put there.
+   * Regions this driver cannot encode are written back verbatim from the read
+   * log rather than skipped, so the result is the codeplug that was read.
+   *
+   * Everything `writeChannels` refuses on, this refuses on too, and for the same
+   * reasons — plus one more: a region missing from the read log is SKIPPED, not
+   * zero-filled. That is why the read log is staged rather than rebuilt.
+   *
+   * ⚠️ No read-back. Same as `writeChannels`: a read mid-write reboots the
+   * radio, and comparing inside the session proves nothing. Verify in a separate
+   * session, a minute later.
+   */
+  /**
+   * Stage settings for the codeplug write that follows.
+   *
+   * Sends nothing itself. The settings region is a read-modify-write — many
+   * settings share a byte, so the byte must be patched, not rebuilt — and the
+   * original comes from the staged read log, which only `writeCodeplug` has.
+   *
+   * APRS is refused rather than silently dropped. Its fields are folded into
+   * `radioSpecific` on READ by `aprsToRadioSpecific`, and that mapping has no
+   * inverse: there is no way to turn `aprsSourceCall` back into the
+   * `D890AprsSettings` the encoder needs. Passing them through would let the
+   * encoder ignore them while the UI reported success.
+   */
+  override async writeRadioSettings(
+    settings: RadioSettings,
+    options?: { changedFields?: string[] }
+  ): Promise<void> {
+    const changed = options?.changedFields ?? [];
+    const aprsChanged = changed
+      .map((f) => f.replace(/^radioSpecific\./, ''))
+      .filter((f) => f.startsWith('aprs'));
+    if (aprsChanged.length > 0) {
+      throw new D890NotVerifiedError(
+        'Writing settings',
+        `APRS settings cannot be written yet (${aprsChanged.join(', ')}). They are ` +
+          'read into the settings list through a one-way mapping, so there is ' +
+          'nothing to encode from. Revert them to write the rest.'
+      );
+    }
+    const raw = (settings as unknown as { radioSpecific?: Record<string, unknown> }).radioSpecific;
+    if (!raw) return;
+    const staged: Record<string, number> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (key.startsWith('aprs')) continue;
+      // Checkbox fields arrive as booleans — the profile renders any field with
+      // max <= 1 as a checkbox — and `encodeD890Settings` skips anything that is
+      // not a number. Two real fields land here (dateDisplayFormat,
+      // simpRepeaterVoiceEnable), and skipping them silently is the same class
+      // of bug as the no-op write this replaced.
+      if (typeof value === 'boolean') staged[key] = value ? 1 : 0;
+      else if (typeof value === 'number' && Number.isFinite(value)) staged[key] = value;
+    }
+    this.stagedSettings = staged as Partial<D890Settings>;
+  }
+
+  async writeCodeplug(
+    channels: Channel[],
+    zones: Zone[],
+    zoneSlots: readonly number[],
+    tables: D890CodeplugWriteInput['tables'],
+    onProgress?: (percent: number, message: string) => void
+  ): Promise<D890CodeplugWritePlan> {
+    if (!this.writeOriginals) {
+      throw new D890NotVerifiedError(
+        'Writing the codeplug',
+        'the radio has not been read in this session. Every record is patched ' +
+          'rather than built, so the original bytes must be read first.'
+      );
+    }
+    if (!this.writeOriginals.readLog || this.writeOriginals.readLog.size === 0) {
+      throw new D890NotVerifiedError(
+        'Writing the codeplug',
+        'the read log from the last read is missing, so the regions this driver ' +
+          'does not decode have no original bytes to write back. Read the radio ' +
+          'again before writing.'
+      );
+    }
+
+    const plan = this.planCodeplug(channels, zones, zoneSlots, tables);
+    this.lastCodeplugPlan = plan;
+    await this.runWriteSession(plan.frames, onProgress);
+    return plan;
+  }
+
+  /**
+   * Build the write plan WITHOUT sending it.
+   *
+   * Same code path the real write takes — same guards, same encoders, same
+   * frames — so a dry run is a promise about the bytes a write would send
+   * rather than a separate approximation of them. Diff it against the read log
+   * with `diffPlanAgainstRead`: on an unmodified codeplug every frame should
+   * come back identical, and anything that does not is a bug or a lossy decode.
+   */
+  planCodeplug(
+    channels: Channel[],
+    zones: Zone[],
+    zoneSlots: readonly number[],
+    tables: D890CodeplugWriteInput['tables']
+  ): D890CodeplugWritePlan {
+    if (!this.writeOriginals?.readLog) {
+      throw new D890NotVerifiedError(
+        'Planning a codeplug write',
+        'the radio has not been read in this session, so there are no original ' +
+          'bytes to patch.'
+      );
+    }
+    // planCodeplugWrite runs the integrity gate itself, before building anything.
+    return planCodeplugWrite({
+      channels,
+      zones,
+      zoneSlots,
+      readLog: this.writeOriginals.readLog,
+      integrity: this.writeOriginals.integrity,
+      channelInput: {
+        originals: this.writeOriginals.channelRecords,
+        originalMask: this.writeOriginals.channelMask,
+        counts: this.writeOriginals.counts,
+        referencingTables: this.writeOriginals.referencingTables,
+        txBandLimits: this.writeOriginals.txBandLimits,
+      },
+      tables: this.stagedSettings ? { ...tables, settings: this.stagedSettings } : tables,
+    });
+  }
+
+  /**
+   * Stage what a write needs from the last read.
+   *
+   * Separate from the write itself because the two happen on DIFFERENT protocol
+   * instances — `useRadioConnection` builds a fresh one per operation, so the
+   * read's raw records are gone by the time a write starts. The caller restores
+   * them from the store.
+   */
+  private writeOriginals: {
+    channelRecords: ReadonlyMap<number, Uint8Array>;
+    channelMask: Uint8Array;
+    counts: D890TableCounts;
+    referencingTables: D890ReferencingTables;
+    txBandLimits?: { vhfMin: number; vhfMax: number; uhfMin?: number; uhfMax?: number };
+    /** Findings from the read these originals came from. A blocker stops the write. */
+    integrity?: readonly D890IntegrityFinding[];
+    /** Every span the read saw. Required by the whole-codeplug write, which
+     *  patches regions this driver does not model and must have their bytes. */
+    readLog?: ReadonlyMap<number, Uint8Array>;
+    /** Hardware slot per zone, by array position. */
+    zoneSlots?: readonly number[];
+  } | null = null;
+
+  setWriteOriginals(originals: NonNullable<D890UVProtocol['writeOriginals']>): void {
+    this.writeOriginals = originals;
+  }
+
+  /**
+   * Findings from the last read. Empty on a healthy codeplug.
+   *
+   * Populated as regions are read rather than in a separate pass, because the
+   * masks are already in hand there and a second read to re-check them would
+   * cost seconds on a link that moves ~10 KB/s.
+   */
+  readonly integrityFindings: D890IntegrityFinding[] = [];
 
   /** Zones: occupancy mask, then name + membership per occupied slot. */
   async readZones(): Promise<Zone[]> {
     const conn = this.requireConnection();
     const mask = await conn.readMemory(D890_ADDR.ZONE_SET, D890_ADDR.ZONE_SET_SIZE);
+
+    // An all-0xFF mask is erased flash, not 250 zones. Reported rather than
+    // silently normalised: a read that quietly "fixes" a corrupt radio hides
+    // the corruption, and the next write would send the fiction back.
+    const maskFinding = D890_MASK_CHECKS.zones(mask);
+    if (maskFinding) this.integrityFindings.push(maskFinding);
+
     const present = occupiedIndices(decodeOccupancyMask(mask, D890_LIMITS.ZONES_MAX));
 
     // A second, independent mask over the same slots — NOT a variant of the
     // presence one. A hidden zone is still a present zone: it keeps its channels
     // and must still be read, it is just absent from the radio's zone menu.
     const hideBytes = await conn.readMemory(D890_ADDR.ZONE_HIDE, D890_ADDR.ZONE_HIDE_SIZE);
+    const hideFinding = D890_MASK_CHECKS.hiddenZones(hideBytes);
+    if (hideFinding) this.integrityFindings.push(hideFinding);
     const hidden = decodeOccupancyMask(hideBytes, D890_LIMITS.ZONES_MAX);
 
 
@@ -372,6 +733,15 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
       );
       zones.push(parseZone(nameBytes, memberBytes, index, hidden[index] === true));
     }
+
+    // Even an intact mask can disagree with the records behind it. A record is
+    // self-describing; a bit is not, so the records are the ones to believe.
+    const withContent = zones.filter(
+      (z) => (z.channels?.length ?? 0) > 0 || !/^Zone \d+$/.test(z.name)
+    ).length;
+    const crossCheck = checkMaskAgainstRecords('zone', zones.length, withContent);
+    if (crossCheck) this.integrityFindings.push(crossCheck);
+
     return zones;
   }
 
@@ -710,10 +1080,11 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
   /**
    * Read a strided table by asking its presence mask which slots are stored.
    *
-   * This is the shape the vendor CPS uses for every such table, confirmed
-   * 2026-09-01 from its own serial capture (`7x2_read_new.txt`). In every case
-   * it reads the mask first and then fetches exactly as many records as the
-   * mask has bits set:
+   * This is the shape the vendor CPS uses for every such table. Found in its
+   * own serial capture (`7x2_read_new.txt`) and **CONFIRMED ON HARDWARE
+   * 2026-09-01** — AM, FM, AM zones and both tone lists all read correctly off
+   * a radio through this path. In every case the mask is read first and then
+   * exactly as many records are fetched as the mask has bits set:
    *
    *   AM channels  mask 0x3884200 = 07  ->  192 B / 0x40 = 3 records
    *   AM zones     mask 0x3884400 = 01  ->  128 B / 0x80 = 1 record
@@ -1080,8 +1451,9 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
    * Read-only: `writeRadioSettings` is deliberately not implemented, so the
    * Settings tab shows the radio's state but cannot push it back. The offsets
    * are hardware-derived (DA7X2-RDT-TO-RADIO.md) but nothing has been written
-   * back to a radio through this path, and a settings write on this family is a
-   * read-modify-write inside a 256 KB erase unit — see D890_ERASE_UNIT.
+   * back to a radio through this path. A settings write is a read-modify-write
+   * of the RECORD — many settings share a byte, so the byte must be preserved
+   * and patched, not rebuilt.
    *
    * Returns null on a short or failed read rather than a zeroed object, so the
    * UI cannot mistake a truncated read for a radio with everything switched off.

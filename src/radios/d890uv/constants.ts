@@ -18,12 +18,6 @@
  *   - There is no `setMemoryImage`. `useRadioConnection` guards that call behind
  *     an optional-method check, so this protocol simply doesn't implement it and
  *     skips the clone-image restore path entirely.
- *   - ⚠️ Writes are NOT safer here, despite the sparse addressing — an earlier
- *     version of this comment claimed they were, and that was dangerously wrong.
- *     The flash erase unit is 256 KB: writing a single 16-byte block can erase
- *     the ENTIRE unit it lives in. So write-path invariant #1 applies with more
- *     force than on the DM-32, not less — every co-resident byte in the unit
- *     must be read back and re-staged before touching any part of it.
  *   - Writes are also *slower*: the wire format allows only 16 bytes per frame.
  *     A full codeplug write would need on the order of 10,000 frames — a figure
  *     derived from the read set's total size, NOT measured. No write has ever
@@ -153,20 +147,12 @@ export const D890_BLOCK = {
 export const D890_FORBIDDEN_WRITE_ADDRESS = 0x2fa0010;
 
 /**
- * Assumed flash erase unit, 256 KB.
+ * The stride at which the two flash-management markers below repeat.
  *
- * ⚠️ PROVENANCE CORRECTED. This is NOT derived from the vendor CPS. A full
- * decompilation of `DA_7X2.exe` shows the only `0x40000` in that binary is the
- * **talkgroup bank stride** — `talkgroupAddr = 0x3a00000 + bank * 0x40000 +
- * index * 0xC8`, at three identical sites. Nothing in the CPS declares, checks
- * or works around an erase granularity, and the size match is coincidence.
- *
- * The value rests on radio-family knowledge and on the address sweep in
- * D890UV-HARDWARE-CHECKLIST.md, not on the vendor software. A null result in the
- * CPS is not evidence the hazard is absent from the hardware, so the guard
- * stays — do not relax it on the strength of the decompilation.
+ * That is all this is. It is used for `address % D890_FLASH_MARKER_STRIDE` in
+ * `assertWritableAddress` and for nothing else.
  */
-export const D890_ERASE_UNIT = 0x40000;
+export const D890_FLASH_MARKER_STRIDE = 0x40000;
 
 /**
  * Per-unit offsets belonging to the radio's own flash management. These must
@@ -176,7 +162,7 @@ export const D890_ERASE_UNIT = 0x40000;
  * `22 33 44 55` and 0x103FFFC holds `55 55 AA AA`, both surrounded by 0xFF.
  * 0x55/0xAA is the classic flash-management signature pattern.
  *
- * This also corroborates the 256 KB erase unit itself: the two markers sit at
+ * The two markers sit at
  * exactly the documented offsets within the first unit of the channel region.
  *
  * (An earlier version of this comment cited "a full-codeplug capture of 9,976
@@ -186,7 +172,7 @@ export const D890_ERASE_UNIT = 0x40000;
  * deletion until the radio was read.)
  *
  * Unlike D890_FORBIDDEN_WRITE_ADDRESS (a single address), these repeat in EVERY
- * erase unit, so the check is `address % D890_ERASE_UNIT` against each entry.
+ * stride, so the check is `address % D890_FLASH_MARKER_STRIDE` against each.
  */
 // ⚠️ Neither 0x3fbf0 nor 0x3fff0 appears as an immediate anywhere in the vendor
 // CPS's code section. Whatever protects them, it is not a literal comparison in
@@ -438,8 +424,9 @@ export const D890_ADDR = {
    *     it: 0xF9AE = rgb(248,52,112) pink in all three captures, at an identical
    *     305 pixels; an R/B swap would read rgb(112,52,248).
    *
-   * ⚠️ All three are 256 KB-aligned and hold only 40 KB, so the rest of each
-   * erase unit is unknown territory. NeonPlug has still never written to a radio.
+   * ⚠️ Each image is 40 KB and the regions are spaced far wider than that, so
+   * what follows each one is unknown territory. NeonPlug has still never
+   * written to a radio.
    */
   BOOT_IMAGE: 0x3f80000,
   STANDBY_BK1: 0x4000000,

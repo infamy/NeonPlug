@@ -542,6 +542,7 @@ export function parseScanList(bytes: Uint8Array, index: number): ScanListDecoded
     0x30
   );
   return {
+    slot: index,
     name: name || `Scan ${index + 1}`,
     channels: members.map((wireIndex) => wireIndex + 1),
     prioritySelect: bytes[0x01] ?? 0,
@@ -578,6 +579,16 @@ export function parseScanList(bytes: Uint8Array, index: number): ScanListDecoded
  * means nothing is silently lost at the byte level.
  */
 export interface ScanListDecoded {
+  /**
+   * Hardware slot this list occupies, 0-based.
+   *
+   * Kept because array position is NOT the slot: the read walks the presence
+   * mask and skips empty slots, so the two diverge the moment one in the middle
+   * is unused. A write that placed lists back by array position would relocate
+   * every list after the gap — the same hazard zones have, which is why zones
+   * carry their slots too.
+   */
+  slot: number;
   name: string;
   /** 1-based channel numbers. */
   channels: number[];
@@ -1284,6 +1295,31 @@ export function planChannelReads(indices: number[]): ChannelReadSpan[] {
  *
  * `slots` is the hardware index of each returned zone, in the same order.
  */
+/**
+ * Turn the position-indexed form the UI edits back into slot-keyed maps.
+ *
+ * The exact inverse of `alignZoneCurrentChannels`, and the step that was simply
+ * missing: the read maps slot→position, the UI edits by position, and the
+ * encoder writes by slot — so handing the read's output straight to the encoder
+ * wrote each zone's current channel into the WRONG slot as soon as any zone
+ * below it was empty. With zones at slots [0, 2, 5], zone 2's channel landed in
+ * slot 1.
+ */
+export function zoneCurrentChannelsBySlot(
+  aligned: { a: readonly number[]; b: readonly number[] },
+  slots: readonly number[]
+): { a: Map<number, number>; b: Map<number, number> } {
+  const a = new Map<number, number>();
+  const b = new Map<number, number>();
+  slots.forEach((slot, position) => {
+    const av = aligned.a[position];
+    const bv = aligned.b[position];
+    if (av !== undefined) a.set(slot, av);
+    if (bv !== undefined) b.set(slot, bv);
+  });
+  return { a, b };
+}
+
 export function alignZoneCurrentChannels(
   raw: { a: number[]; b: number[] },
   slots: readonly number[]

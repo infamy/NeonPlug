@@ -65,7 +65,11 @@ export interface D890GpsRoamingEntry {
  * differently, so an APRS-shaped parser would silently read longitude degrees as
  * a latitude minute.
  */
-const OFF = {
+/**
+ * Exported so the encoder in `tableWrite.ts` cannot drift from the parser.
+ * Two hand-kept copies of a byte layout is how a write silently corrupts one.
+ */
+export const GPS_ROAMING_OFFSETS = {
   ONOFF: 0x00,
   ZONE: 0x01,
   LAT_DEG: 0x02,
@@ -79,6 +83,8 @@ const OFF = {
   /** 4-byte Long. VERIFIED by four __vbaUI1I4 conversions against four stores. */
   RADIUS: 0x0c,
 } as const;
+
+const OFF = GPS_ROAMING_OFFSETS;
 
 export function gpsRoamingAddress(index: number): number {
   return D890_GPS_ROAMING.DATA + index * D890_GPS_ROAMING.STRIDE;

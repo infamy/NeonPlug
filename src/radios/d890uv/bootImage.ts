@@ -45,11 +45,9 @@ export const D890_IMAGE_LABEL: Record<D890ImageKind, string> = {
  * away from the code that needs it.
  */
 export const IMAGE_WRITE_RISK =
-  'No image has ever been written to a DA-7X2 by this software. All three image ' +
-  'regions are 256 KB-aligned while the image itself is only 40 KB, so a failed ' +
-  'or partial write could take out the whole surrounding erase unit, not just the ' +
-  'picture. The erase granularity is assumed from radio-family knowledge and does ' +
-  'not appear anywhere in the vendor software.';
+  'No image has ever been written to a DA-7X2 by this software. A failed or ' +
+  'partial write leaves the picture region half-updated, which the radio may ' +
+  'render as garbage until it is rewritten.';
 
 /**
  * Byte index of pixel (x, y). Column-major: x strides by the full height.

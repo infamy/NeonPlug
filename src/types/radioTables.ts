@@ -30,6 +30,43 @@ import type { D890PowerOnDisplay } from '../radios/d890uv/powerOnDisplay';
 
 export interface RadioTables {
   /**
+   * The raw bytes a WRITE has to patch, kept from the last read.
+   *
+   * Every encoder on this radio patches the record the radio gave us rather
+   * than building one, because a 16-byte write frame carries bytes the driver
+   * does not model. That only works if those bytes survive from the read to the
+   * write — and `useRadioConnection` builds a FRESH protocol instance per
+   * operation, so anything left on the old instance is gone.
+   *
+   * This is the DA-7X2's form of the cache-restore rule the DM-32 and the clone
+   * radios already follow (CLAUDE.md, write-path invariant 1). Without it a
+   * write plan refuses outright: no original, nothing to patch.
+   */
+  writeOriginals: {
+    /** Every span the read saw, keyed by address — the originals a whole-codeplug
+     *  write patches. Held here because read and write use different protocol
+     *  instances and the connection's own log dies with the read. */
+    readLog?: ReadonlyMap<number, Uint8Array>;
+    /** Hardware slot per zone, by position in the zones array — from
+     *  `rawZoneIndices`. Zones are read compacted (empty slots dropped), so
+     *  position and slot diverge and a write MUST place by slot. */
+    zoneSlots?: readonly number[];
+    /** Channel records by 1-based channel number, including VFO A/B at 4001/4002. */
+    channelRecords: Map<number, Uint8Array>;
+    /** The channel presence mask exactly as read — patched on write, never rebuilt. */
+    channelMask: Uint8Array;
+    /** Which radio these came from, so one radio's bytes can never patch another's. */
+    model: string;
+    /**
+     * Integrity findings from the read these bytes came from.
+     *
+     * Carried with the originals rather than stored separately so they cannot
+     * drift apart: a write is refused on the basis of the read it is patching,
+     * and pairing them makes it impossible to check the wrong read's findings.
+     */
+    integrity: readonly import('../radios/d890uv/integrity').D890IntegrityFinding[];
+  };
+  /**
    * Boot image and standby pictures. Separate from `bootImageRaw` because a
    * radio may have several of them in a different format from the DM-32's
    * single image (the DA-7X2 has three, 160x128 RGB565).

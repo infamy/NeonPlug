@@ -194,7 +194,7 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
  * Sending is deliberately disabled. The format is confirmed on hardware in both
  * directions and `encodeD890Image` produces the exact bytes, so everything up to
  * the final step works and can be checked by eye — but NeonPlug has never
- * written to this radio, and an image write lands in a 256 KB erase unit whose
+ * written to this radio, and an image write lands in a region whose
  * other contents are unknown. Staging without sending is the useful half: it
  * exercises the encoder and shows the user precisely what would go out.
  */

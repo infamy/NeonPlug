@@ -59,3 +59,45 @@ export function parsePowerOnDisplay(bytes: Uint8Array): D890PowerOnDisplay {
     password: decodeAscii(at(0x40), D890_POWER_ON.PASSWORD_CHARS),
   };
 }
+
+/**
+ * Encode the 0x60-byte power-on span.
+ *
+ * ⚠️ **Mixed encoding in one region.** The two lines are UTF-16LE; the password
+ * is ASCII. Writing the password as wide characters would give the radio a
+ * password whose every other byte is a NUL — accepted by a write, and then the
+ * user cannot unlock their radio. That is why this takes the original: the
+ * bytes past each field's text are the radio's, not ours.
+ */
+export function encodePowerOnDisplay(
+  original: Uint8Array,
+  display: D890PowerOnDisplay
+): Uint8Array {
+  if (original.length < D890_POWER_ON.SPAN) {
+    throw new Error(
+      `Power-on display span must be at least ${D890_POWER_ON.SPAN} bytes to patch, ` +
+        `got ${original.length}`
+    );
+  }
+  const out = Uint8Array.from(original);
+
+  const wide = (text: string, at: number) => {
+    const clipped = Array.from(text).slice(0, D890_POWER_ON.TEXT_CHARS);
+    out.fill(0, at, at + D890_POWER_ON.STRIDE);
+    clipped.forEach((ch, i) => {
+      const code = ch.charCodeAt(0);
+      out[at + i * 2] = code & 0xff;
+      out[at + i * 2 + 1] = (code >> 8) & 0xff;
+    });
+  };
+  wide(display.line1 ?? '', 0x00);
+  wide(display.line2 ?? '', 0x20);
+
+  // ASCII, one byte per character — NOT the wide encoding above.
+  const password = (display.password ?? '').slice(0, D890_POWER_ON.PASSWORD_CHARS);
+  out.fill(0, 0x40, 0x40 + D890_POWER_ON.STRIDE);
+  for (let i = 0; i < password.length; i += 1) {
+    out[0x40 + i] = password.charCodeAt(i) & 0xff;
+  }
+  return out;
+}
