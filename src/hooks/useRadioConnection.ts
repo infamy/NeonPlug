@@ -328,7 +328,14 @@ export function useRadioConnection() {
       // Every step is planned up front so the denominator is the work that will
       // actually run, not the work this radio might have had. Planning is just
       // a method-presence check and is side-effect free.
-      const configSteps: { label: string; run: () => Promise<void> }[] = [];
+      // `run` may report progress WITHIN its own slice of the bar. Only the
+      // long steps bother: the preserve pass is over half the bytes of a whole
+      // read, so without this the bar sits on one number through the slowest
+      // stage and looks hung.
+      const configSteps: {
+        label: string;
+        run: (report?: (fraction: number) => void) => Promise<void>;
+      }[] = [];
 
       if (caps?.supportsZones) {
         configSteps.push({
@@ -393,8 +400,10 @@ export function useRadioConnection() {
         if (preserver.readPreserveRegions) {
           configSteps.push({
             label: 'Unmodelled regions',
-            run: async () => {
-              const { spans, bytes } = await preserver.readPreserveRegions!();
+            run: async (report) => {
+              const { spans, bytes } = await preserver.readPreserveRegions!(
+                (done, total) => report?.(total > 0 ? done / total : 0)
+              );
               console.info(
                 `[D890] preserved ${spans} unmodelled region(s), ${bytes.toLocaleString()} bytes, ` +
                   `so a write can put them back unchanged.`
@@ -417,7 +426,15 @@ export function useRadioConnection() {
           `Reading ${step.label}...`,
           steps[5]
         );
-        await readSection(step.label, step.run);
+        // Each step owns one slice of 70-90%; a step that reports progress
+        // moves the bar inside its own slice rather than jumping at the end.
+        const base = 70 + (i / configSteps.length) * 20;
+        const slice = 20 / configSteps.length;
+        await readSection(step.label, () =>
+          step.run((fraction) =>
+            onProgress?.(base + fraction * slice, `Reading ${step.label}...`, steps[5])
+          )
+        );
       }
 
       // Stage what a write needs — AFTER every read, not after the channels.
@@ -776,6 +793,36 @@ export function useRadioConnection() {
       report(2 + percent * 0.98, label);
     }));
   }), [runOnDemandRead, setTable]);
+
+  /**
+   * Send ONE picture to the radio.
+   *
+   * Its own operation rather than part of the codeplug write: 2,560 frames is
+   * about 28 s on this link, four times any codeplug write, and a picture that
+   * fails part way must not leave a codeplug half-sent.
+   *
+   * Reuses `runOnDemandRead` because the lifecycle is identical — connect, run,
+   * report, and disconnect on success as well as failure so the next
+   * `port.open()` does not throw. Only the verb differs.
+   */
+  const writePicture = useCallback((
+    kind: 'boot' | 'bk1' | 'bk2',
+    image: Uint8Array,
+    onProgress?: (progress: number, message: string) => void
+  ) => runOnDemandRead('Writing image', onProgress, async (proto, report) => {
+    const writer = proto as typeof proto & {
+      writeImage?: (
+        k: 'boot' | 'bk1' | 'bk2',
+        img: Uint8Array,
+        cb?: (percent: number, message: string) => void
+      ) => Promise<void>;
+    };
+    if (!writer.writeImage) throw new Error('This radio cannot write pictures.');
+    report(2, 'Sending picture...');
+    await writer.writeImage(kind, image, (percent, label) => {
+      report(2 + percent * 0.98, label);
+    });
+  }), [runOnDemandRead]);
 
   /**
    * The satellite table, on demand.
@@ -1359,6 +1406,7 @@ export function useRadioConnection() {
     readContacts,
     readBootImage,
     readPictures,
+    writePicture,
     readSatellites,
     writeBootImage,
     writeContacts,

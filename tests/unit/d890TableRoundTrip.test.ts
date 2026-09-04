@@ -180,9 +180,13 @@ describe('GPS roaming encoder', () => {
     for (let i = 0x10; i < 0x20; i += 1) expect(out[i], `byte 0x${i.toString(16)}`).toBe(0x5a);
   });
 
-  it('writes degrees and hemisphere for both axes before the minutes', () => {
-    // The layout is NOT grouped per axis the way APRS is. Pin it: an
-    // APRS-shaped encoder would put longitude degrees at 0x03.
+  it('writes each axis contiguously: degrees, minutes, hundredths, hemisphere', () => {
+    // CORRECTED 2026-09-03. This test previously pinned an interleaved layout
+    // taken from GPSRoaming.CSV's COLUMN order — which is presentation order,
+    // not storage order. The vendor CPS's own GPS Roaming grid shows the true
+    // order: Latitude Degree | Latitude Minute | LatiMinMark | North or South |
+    // Longtitude Degree | ... and a captured record reads
+    // `31 2c 0b 00 77 21 16 01` for 49 deg 44.11' N, 119 deg 33.22' W.
     const original = new Uint8Array(32);
     const out = applyGpsRoamingToRecord(original, {
       index: 0, enabled: true, zone: 2,
@@ -191,13 +195,29 @@ describe('GPS roaming encoder', () => {
       radiusMeters: 500,
     });
     expect(out[0x02]).toBe(51);   // LAT_DEG
-    expect(out[0x03]).toBe(0);    // LAT_SOUTH
-    expect(out[0x04]).toBe(0);    // LON_DEG
-    expect(out[0x05]).toBe(1);    // LON_WEST
-    expect(out[0x06]).toBe(30);   // LAT_MIN
-    expect(out[0x08]).toBe(7);    // LON_MIN
+    expect(out[0x03]).toBe(30);   // LAT_MIN
+    expect(out[0x04]).toBe(25);   // LAT_MIN_FRAC
+    expect(out[0x05]).toBe(0);    // LAT_SOUTH
+    expect(out[0x06]).toBe(0);    // LON_DEG
+    expect(out[0x07]).toBe(7);    // LON_MIN
+    expect(out[0x08]).toBe(39);   // LON_MIN_FRAC
+    expect(out[0x09]).toBe(1);    // LON_WEST
     expect(out[0x0c]).toBe(500 & 0xff);
     expect(out[0x0d]).toBe((500 >> 8) & 0xff);
+  });
+
+  it('reproduces the exact bytes the vendor CPS wrote', () => {
+    // The end-to-end check the old layout could never have passed.
+    const out = applyGpsRoamingToRecord(new Uint8Array(32), {
+      index: 0, enabled: true, zone: 5,
+      latitude: { degrees: 49, minutes: 44, minuteFraction: 11, south: false },
+      longitude: { degrees: 119, minutes: 33, minuteFraction: 22, west: true },
+      radiusMeters: 500,
+    });
+    expect(Array.from(out.subarray(0, 16))).toEqual([
+      0x01, 0x05, 0x31, 0x2c, 0x0b, 0x00, 0x77, 0x21,
+      0x16, 0x01, 0x00, 0x00, 0xf4, 0x01, 0x00, 0x00,
+    ]);
   });
 });
 

@@ -66,6 +66,17 @@ export interface OptionalDigitalReads {
   readZoneCurrentChannels(): Promise<{ a: number[]; b: number[] }>;
   /** Hardware slot number for each zone in the zones array, in order. */
   rawZoneIndices: number[];
+  /** The radio's own DMR ID ("MastID"), or null when the record is empty. */
+  /** Auto-repeater offsets in MHz, by slot; null for an unused slot. */
+  readAutoRepeaterOffsets?(): Promise<(number | null)[]>;
+  /** The AM airband receiver's own tuning record. */
+  readAmVfo?(): Promise<import('./d890uv/broadcastChannels').D890BroadcastChannel | null>;
+  readMasterRadioId?(): Promise<{
+    id: import('../models/DMRRadioID').DMRRadioID;
+    /** Override the TX ID of every channel with this one. The vendor CPS calls
+     *  this checkbox "Used"; it is its own byte, not "the record is non-empty". */
+    overrideAllTxIds: boolean;
+  } | null>;
   /** Boot and standby pictures. Large and read on demand, never with a codeplug. */
   readImages(
     onProgress?: (percent: number, label: string) => void

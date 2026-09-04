@@ -25,6 +25,8 @@ import { D890SatellitesArea } from './D890SatellitesArea';
 import { D890TonesArea } from './D890TonesArea';
 import { D890EmergencyArea } from './D890EmergencyArea';
 import { D890ImagesArea } from './D890ImagesArea';
+import { D890PowerOnArea } from './D890PowerOnArea';
+import { AutoRepeaterOffsets } from './AutoRepeaterOffsets';
 
 export const FEATURE_AREAS: Partial<Record<SettingsFeature, ComponentType>> = {
   roaming: D890RoamingArea,
@@ -32,6 +34,8 @@ export const FEATURE_AREAS: Partial<Record<SettingsFeature, ComponentType>> = {
   satellites: D890SatellitesArea,
   toneLists: D890TonesArea,
   emergencyAlarm: D890EmergencyArea,
+  powerOnScreen: D890PowerOnArea,
+  autoRepeaterOffsets: AutoRepeaterOffsets,
   // Read on demand from inside the area — 3 x 40 KB is larger than the rest of
   // this radio combined, so pictures are not part of the codeplug read.
   pictures: D890ImagesArea,

@@ -1,5 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
+import { useRadioSettingsStore } from '../../store/radioSettingsStore';
+import { POWER_ON_INTERFACE } from './D890PowerOnArea';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { D890ImagePreview } from '../diagnostics/D890ImagePreview';
 import { SectionTitle } from '../ui/SectionTitle';
@@ -7,7 +9,6 @@ import {
   D890_IMAGE,
   D890_IMAGE_LABEL,
   encodeD890Image,
-  IMAGE_WRITE_RISK,
   type D890ImageKind,
   type D890ImageFit,
 } from '../../radios/d890uv/bootImage';
@@ -57,6 +58,10 @@ interface ImageSlotProps {
 }
 
 const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
+  const { writePicture, isConnecting } = useRadioConnection();
+  const [sending, setSending] = useState(false);
+  const [sendStatus, setSendStatus] = useState<string | null>(null);
+  const [sendPercent, setSendPercent] = useState(0);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [staged, setStaged] = useState<Uint8Array | null>(null);
   const [fit, setFit] = useState<D890ImageFit>('cover');
@@ -73,6 +78,26 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
     } catch (e) {
       setStaged(null);
       setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const onSend = async () => {
+    if (!staged) return;
+    setSending(true);
+    setError(null);
+    try {
+      await writePicture(kind, staged, (percent, label) => {
+        setSendPercent(percent);
+        setSendStatus(label);
+      });
+      // No read-back: reading mid-write reboots this radio, and comparing
+      // inside the same session compares against pre-write contents anyway.
+      setSendStatus('Sent. Read the radio in a moment to confirm.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setSendStatus(null);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -157,24 +182,44 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
           <>
             <button
               type="button"
-              disabled
-              title={IMAGE_WRITE_RISK}
-              className="px-3 py-1.5 text-xs border border-panel text-muted rounded opacity-50 cursor-not-allowed"
+              onClick={() => void onSend()}
+              disabled={sending || isConnecting}
+              title={`Write this picture to the radio (${D890_IMAGE.BYTES.toLocaleString()} bytes)`}
+              className="px-3 py-1.5 text-xs border border-neon-cyan text-neon-cyan rounded
+                         hover:bg-neon-cyan hover:text-black disabled:opacity-40
+                         disabled:cursor-not-allowed transition-colors"
             >
-              Send to radio
+              {sending ? 'Sending…' : 'Send to radio'}
             </button>
             <button
               type="button"
-              onClick={() => { setStaged(null); setSource(null); }}
+              disabled={sending}
+              onClick={() => { setStaged(null); setSource(null); setSendStatus(null); }}
               className="px-3 py-1.5 text-xs text-muted hover:text-neon-cyan transition-colors"
             >
               Clear
             </button>
+            {sendStatus && <span className="text-xs text-muted">{sendStatus}</span>}
           </>
         )}
       </div>
 
-      {source && (
+      {sending && (
+        <div className="mt-3">
+          <div className="h-1.5 bg-black bg-opacity-40 rounded overflow-hidden">
+            <div
+              className="h-full bg-neon-cyan transition-[width] duration-200"
+              style={{ width: `${Math.max(0, Math.min(100, sendPercent))}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted mt-1 tabular-nums">
+            {Math.round(sendPercent)}% — {Math.round((sendPercent / 100) * D890_IMAGE.FRAMES)}
+            {' of '}{D890_IMAGE.FRAMES} frames
+          </p>
+        </div>
+      )}
+
+      {source && !sending && (
         <p className="text-xs text-muted mt-2">
           {source.width}×{source.height} → {D890_IMAGE.WIDTH}×{D890_IMAGE.HEIGHT}. {FIT_HELP[fit]}
         </p>
@@ -199,41 +244,40 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
  * exercises the encoder and shows the user precisely what would go out.
  */
 /**
- * The custom power-on text — the alternative the boot image replaces.
+ * Whether the radio will actually SHOW what is written here.
  *
- * Lives here rather than in the settings grid for two reasons: it is the other
- * half of "what the radio shows at power on", and it sits at 0x3500900, outside
- * the settings block that `settingsMap.ts` covers.
- *
- * Read-only for now. The password is shown because the CPS shows it in clear on
- * the same tab; it is the radio's power-on lock, not a credential of the user's.
+ * A picture can be written perfectly and still never appear, because two
+ * settings-block bytes decide what the screen displays. Writing a boot image
+ * and seeing no change is otherwise indistinguishable from a failed write, so
+ * the state of those bytes belongs next to the button.
  */
-const PowerOnText: React.FC = () => {
-  const { tables } = useRadioStore();
-  if (!tables.powerOnDisplay) return null;
-  const { line1, line2, password } = tables.powerOnDisplay;
-  if (!line1 && !line2 && !password) return null;
+const PowerOnDestination: React.FC = () => {
+  const { settings } = useRadioSettingsStore();
+  const specific = settings?.radioSpecific as Record<string, unknown> | undefined;
+  if (!specific) return null;
+
+  const iface = specific.powerOnInterface;
+  const showsPicture = iface === POWER_ON_INTERFACE.CUSTOM_PICTURE;
 
   return (
-    <div className="mb-6 bg-neon-cyan bg-opacity-5 border border-neon-cyan border-opacity-30 rounded-lg p-4">
-      <h4 className="text-neon-cyan font-medium mb-1">Power-on Text</h4>
-      <p className="text-cool-gray text-xs mb-3">
-        Shown instead of the boot image when <em>Power On</em> is set to custom text.
+    <div className="mb-6 space-y-2">
+      {iface !== undefined && !showsPicture && (
+        <p className="text-xs text-amber-400">
+          <span className="font-semibold">The boot picture will not be shown.</span>{' '}
+          Power-on Interface is set to{' '}
+          {iface === POWER_ON_INTERFACE.CUSTOM_CHAR
+            ? 'Custom Char, so the radio shows the Power-on Screen text instead'
+            : 'Default Interface'}
+          . Change it in Display to <em>Custom Picture</em> to use the image below.
+        </p>
+      )}
+      {/* Deliberately not saying which of this byte's three values means what:
+          the option labels were never swept, and guessing them here would put
+          an invented claim in front of the user. */}
+      <p className="text-xs text-muted">
+        Which standby background is shown, if any, is set by{' '}
+        <span className="text-cool-gray">Standby BK Picture</span> in Display.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-        <div>
-          <div className="text-cool-gray mb-1">Line 1</div>
-          <div className="text-white font-mono">{line1 || <span className="text-muted">—</span>}</div>
-        </div>
-        <div>
-          <div className="text-cool-gray mb-1">Line 2</div>
-          <div className="text-white font-mono">{line2 || <span className="text-muted">—</span>}</div>
-        </div>
-        <div>
-          <div className="text-cool-gray mb-1">Power-on Password</div>
-          <div className="text-white font-mono">{password || <span className="text-muted">Not set</span>}</div>
-        </div>
-      </div>
     </div>
   );
 };
@@ -272,7 +316,7 @@ export const D890ImagesArea: React.FC = () => {
         than custom text.
       </p>
 
-      <PowerOnText />
+      <PowerOnDestination />
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <button
@@ -302,14 +346,6 @@ export const D890ImagesArea: React.FC = () => {
         </div>
       )}
 
-      <div className="mb-6 p-3 bg-panel rounded border-panel">
-        <p className="text-xs text-amber-400">
-          Sending images to the radio is not enabled yet. You can choose a picture and
-          see exactly how it would look, but NeonPlug has never written to this radio
-          and these regions sit inside a 256&nbsp;KB erase block whose other contents
-          are unknown — so the last step stays switched off until that is settled.
-        </p>
-      </div>
 
       <div className="flex flex-col gap-4">
         {ORDER.map((kind) => (

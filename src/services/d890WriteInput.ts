@@ -34,11 +34,15 @@ export function buildD890CodeplugTables(
     roamingChannels: t.roaming?.channels,
     amChannels: t.broadcast?.am,
     fmChannels: t.broadcast?.fm,
+    amVfo: t.broadcast?.amVfo,
+    fmVfo: t.broadcast?.fmVfo,
     amZones: t.amZones,
     fiveTone: t.toneLists?.fiveTone,
     twoTone: t.toneLists?.twoTone,
     gpsRoaming: t.gpsRoaming,
     powerOnDisplay: t.powerOnDisplay,
+    autoRepeaterOffsets: t.autoRepeaterOffsets,
+    masterRadioId: t.masterRadioId,
     emergencySettings: t.emergencyAlarm?.settings ?? undefined,
     emergencyContact: t.emergencyAlarm?.contact ?? undefined,
     // Position→slot. The read compacts empty slots away, so these two indexings
@@ -75,6 +79,24 @@ export function buildD890CodeplugTables(
  * Falls back to the positional array only when nothing identity-keyed was
  * staged, so an older staged read still writes exactly as it used to.
  */
+/**
+ * Zone slots for DISPLAY — never throws.
+ *
+ * `d890ZoneSlots` refuses when the staged read predates identity tracking,
+ * because writing then would move zones into the wrong slots. That guard is
+ * right for a write and wrong for a render: it took down the whole Settings tab
+ * on 2026-09-03 when a component called it in its body. A label that falls back
+ * to positions is worse than a correct one and far better than a blank page.
+ */
+export function d890ZoneSlotsForDisplay(zones?: readonly Zone[]): readonly number[] {
+  try {
+    return d890ZoneSlots(zones);
+  } catch {
+    const list = zones ?? useZonesStore.getState().zones;
+    return list.map((_, i) => i);
+  }
+}
+
 export function d890ZoneSlots(zones?: readonly Zone[]): readonly number[] {
   const staged = useRadioStore.getState().tables.writeOriginals;
   const list = zones ?? useZonesStore.getState().zones;

@@ -241,7 +241,11 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'callSignDisplayColor',            label: 'Call Sign Display Color',             cpsLabel: 'Call Sign Display Color',             group: 'Display',         offset: 0x0bc, max: 6, listLength: 7, options: ['Orange', 'Red', 'Yellow', 'Green', 'Turquoise', 'Blue', 'White'], vendorField: 'CallSignColour' },
   { key: 'roamingEffectWaitTimeS',          label: 'Roaming Effect Wait Time[s]',         cpsLabel: 'Roaming Effect Wait Tme[s]',          group: 'Auto repeater',   offset: 0x0bf, max: 30, listLength: 31, vendorField: 'WanderEffectWait', valueRule: { scale: 1, offset: 0, unit: 's', zeroLabel: 'None', basis: 'range-forced' } },
   { key: 'standbyCharColor',                label: 'Standby Char Color',                  cpsLabel: 'Standby Char Color',                  group: 'Display',         offset: 0x0c0, max: 7, listLength: 8, options: ['White', 'Black', 'Orange', 'Red', 'Yellow', 'Green', 'Turquoise', 'Blue'], vendorField: 'WorkCharDisColour' },
-  { key: 'standbyBkPicture',                label: 'Standby BK Picture',                  cpsLabel: 'Standby BK Picture',                  group: 'Display',         offset: 0x0c1, max: 2, listLength: 3, vendorField: 'bkpic' },
+  // 0 and 2 are VERIFIED from the CPS sweep (rdt 0x011a6, Default -> Custom2
+  // wrote 00 -> 02). Index 1 was never observed — {END} jumped straight to the
+  // last item — so 'Custom1' is filled in by elimination, not swept. Custom1/2
+  // select Background image 1/2; both were written and seen on the radio.
+  { key: 'standbyBkPicture',                label: 'Standby BK Picture',                  cpsLabel: 'Standby BK Picture',                  group: 'Display',         offset: 0x0c1, max: 2, listLength: 3, options: ['Default', 'Custom1', 'Custom2'], vendorField: 'bkpic' },
   { key: 'showLastCallOnLaunch',            label: 'Show Last Call On Launch',            cpsLabel: 'Show Last Call On Launch',            group: 'Display',         offset: 0x0c2, max: 1, listLength: 2, options: ['Off', 'On'], vendorField: 'Ext_Opt2' },
   { key: 'smsFormat',                       label: 'SMS Format',                          cpsLabel: 'SMS Format',                          group: 'Digital Func',    offset: 0x0c3, max: 2, listLength: 3, vendorField: 'SmsFormat' },
   { key: 'autoRepeaterB',                   label: 'Auto Repeater B',                     cpsLabel: 'Auto Repeater B',                     group: 'Auto repeater',   offset: 0x0d4, max: 2, listLength: 3, vendorField: 'AutoRepeaterB' },

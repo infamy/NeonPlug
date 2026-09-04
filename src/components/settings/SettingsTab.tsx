@@ -345,10 +345,17 @@ export const SettingsTab: React.FC = () => {
     { id: 'feature-satellites', title: 'Satellites', feature: 'satellites' },
     { id: 'feature-toneLists', title: '5-Tone & 2-Tone', feature: 'toneLists' },
     { id: 'feature-emergencyAlarm', title: 'Emergency Alarm', feature: 'emergencyAlarm' },
+    // Its own chip rather than a block inside the Auto repeater settings
+    // section: it is a 250-slot table, not a field, and the section is built
+    // from the settings profile.
+    { id: 'feature-autoRepeaterOffsets', title: 'Auto-Repeater Offsets', feature: 'autoRepeaterOffsets' },
     { id: 'feature-pictures', title: 'Boot & Standby Backgrounds', feature: 'pictures' },
     { id: 'feature-gpsAprs', title: 'GPS & APRS', feature: 'gpsAprs' },
   ] satisfies { id: string; title: string; feature: SettingsFeature }[]).filter((t) =>
-    settingsProfile?.features?.includes(t.feature)
+    settingsProfile?.features?.includes(t.feature) &&
+    // A section that owns an area renders it itself; listing it here too would
+    // draw it twice and give it a second, competing anchor.
+    !settingsProfile.sections.some((sec) => sec.area === t.feature)
   );
 
   return (
@@ -766,6 +773,11 @@ export const SettingsTab: React.FC = () => {
                           />
                         ))}
                       </div>
+                      {/* An area the section owns, below its own fields. */}
+                      {(() => {
+                        const Area = section.area ? FEATURE_AREAS[section.area] : undefined;
+                        return Area ? <div className="mt-6"><Area /></div> : null;
+                      })()}
                     </Card>
                   ))}
                 </div>

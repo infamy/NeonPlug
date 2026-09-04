@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { planZoneWrite, D890WriteRefusedError } from '../../src/radios/d890uv/writePlan';
 import { D890_ADDR, D890_LIMITS } from '../../src/radios/d890uv/constants';
+import { ZONE_NAME_WRITE_BYTES } from '../../src/radios/d890uv/tableWrite';
 import { parseZone } from '../../src/radios/d890uv/structures';
 import type { Zone } from '../../src/models/Zone';
 
@@ -88,12 +89,40 @@ describe('zone write plan', () => {
     expect(plan.cleared).toEqual([1, 2]);
   });
 
-  it('refuses when either record was never read', () => {
+  it('builds a NEW zone from a blank when the slot was never read', () => {
+    // A slot with no original is a slot the radio has never held — the read is
+    // mask-first, so only occupied slots come back. This used to refuse, which
+    // made adding a zone impossible; both zone records are fully accounted for
+    // by their layouts, so the baseline is known rather than guessed.
     const base = setup([0]);
-    expect(() => planZoneWrite({ ...base, nameOriginals: new Map() }))
-      .toThrow(D890WriteRefusedError);
-    expect(() => planZoneWrite({ ...base, memberOriginals: new Map() }))
-      .toThrow(/membership record was never read/);
+    const fresh = planZoneWrite({ ...base, memberOriginals: new Map(), nameOriginals: new Map() });
+    expect(fresh.written).toEqual([0]);
+
+    // 0xFF-filled, not zeros. The vendor's own record is `00 00 ff ff ff…`, and
+    // zero-filling would leave channel index 0 repeated 250 times behind the
+    // terminator — harmless only while the terminator is believed, which is not
+    // a bet worth taking on a record the radio walks.
+    const memberFrames = fresh.frames
+      .filter((f) => f.what === 'zone 1 members')
+      .sort((a, b) => a.address - b.address);
+    const flat = new Uint8Array(memberFrames.flatMap((f) => Array.from(f.data)));
+    const zoneMembers = base.zones[0]!.channels;
+    // members, then the terminator, then 0xFF to the end of the record.
+    const termAt = zoneMembers.length * 2;
+    expect(Array.from(flat.subarray(termAt, termAt + 2))).toEqual([0xff, 0xff]);
+    expect(flat.subarray(termAt).every((b) => b === 0xff)).toBe(true);
+
+    const name = fresh.frames.find((f) => f.what === 'zone 1 name')!;
+    expect(name.data.length).toBe(0x10);
+  });
+
+  it('writes a new zone at the vendor name width, not the record stride', () => {
+    // The vendor sends only the first 0x20 of the 0x40 name record and never
+    // touches 0x20-0x3f. An added zone must match an edited one exactly.
+    const base = setup([0]);
+    const fresh = planZoneWrite({ ...base, nameOriginals: new Map() });
+    const nameFrames = fresh.frames.filter((f) => f.what === 'zone 1 name');
+    expect(nameFrames.length * 0x10).toBe(ZONE_NAME_WRITE_BYTES);
   });
 
   it('writes every zone it plans, changed or not', () => {

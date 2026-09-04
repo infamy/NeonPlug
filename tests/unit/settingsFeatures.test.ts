@@ -57,11 +57,39 @@ describe('settings feature areas', () => {
   it('registers an area for every feature that is not inline', () => {
     // Guards the other direction: a registered area whose feature no longer
     // appears in the nav would render with no way to reach it.
+    //
+    // An area a SECTION owns is the second legal way to be reachable — it draws
+    // inside that section's card, under the section's own chip, and deliberately
+    // has no chip of its own. Both routes are checked; having neither is the bug.
+    const owned = new Set(
+      RADIO_DESCRIPTORS.flatMap((d) =>
+        (getSettingsProfileForModel(d.modelIds[0])?.sections ?? [])
+          .map((sec) => sec.area)
+          .filter((a): a is SettingsFeature => a !== undefined)
+      )
+    );
     for (const feature of Object.keys(FEATURE_AREAS)) {
       expect(
-        navIds.includes(`feature-${feature}`),
-        `FEATURE_AREAS has "${feature}" but no jump-nav chip points at it`
+        navIds.includes(`feature-${feature}`) || owned.has(feature as SettingsFeature),
+        `FEATURE_AREAS has "${feature}" but nothing reaches it: no jump-nav chip, ` +
+          'and no settings section claims it via `area`'
       ).toBe(true);
+    }
+  });
+
+  it('does not render a section-owned area a second time as a standalone chip', () => {
+    // Both render paths are live at once. A feature listed in featureTabs AND
+    // claimed by a section would draw twice, with two competing anchors — the
+    // SettingsTab filter prevents it, and this pins that it keeps doing so.
+    for (const d of RADIO_DESCRIPTORS) {
+      const profile = getSettingsProfileForModel(d.modelIds[0]);
+      for (const sec of profile?.sections ?? []) {
+        if (!sec.area) continue;
+        expect(
+          navIds.includes(`feature-${sec.area}`),
+          `"${sec.area}" is owned by section "${sec.title}" and also has a jump-nav chip`
+        ).toBe(false);
+      }
     }
   });
 

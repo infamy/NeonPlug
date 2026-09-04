@@ -35,6 +35,7 @@ import {
 } from './constants';
 import { encodeBcdAsHexU32, encodeFrequencyMHz, encodeWideCharString } from './channelWrite';
 import { D890_BROADCAST, type D890BroadcastBand, type D890BroadcastChannel } from './broadcastChannels';
+import { blankBroadcastChannel, blankAmZone } from './blankRecords';
 import {
   D890_TONES,
   TWO_TONE_NAME_AT,
@@ -211,7 +212,9 @@ export function applyAmZoneToRecord(original: Uint8Array, zone: D890AmZone): Uin
   rec[D890_AM_ZONES.CURRENT_AT] = zone.currentChannel & 0xff;
   rec[D890_AM_ZONES.CURRENT_AT + 1] = (zone.currentChannel >> 8) & 0xff;
 
-  const capacity = (rec.length - D890_AM_ZONES.MEMBERS_AT) >> 1;
+  // From MEMBERS_END, not the record length: the list stops at 0x62 and the
+  // bytes above it belong to something the radio uses and we do not model.
+  const capacity = (D890_AM_ZONES.MEMBERS_END - D890_AM_ZONES.MEMBERS_AT) >> 1;
   if (zone.members.length >= capacity) {
     throw new Error(
       `AM zone "${zone.name}" has ${zone.members.length} members; the record holds ` +
@@ -224,7 +227,13 @@ export function applyAmZoneToRecord(original: Uint8Array, zone: D890AmZone): Uin
     rec[at + 1] = (member >> 8) & 0xff;
     at += 2;
   }
-  // Terminate. Without this a shortened list keeps reading into its own tail.
+  // Terminate, and leave the rest of the record exactly as it was.
+  //
+  // The vendor fills 0xFF from here to MEMBERS_END, and a BLANK record matches
+  // that (see blankRecords.ts). An existing record is left alone on purpose:
+  // rewriting the tail would change bytes on every radio NeonPlug has already
+  // written with a 0x00 fill, breaking read->write byte-identity to normalise
+  // padding the terminator already makes unreachable.
   rec[at] = 0xff;
   rec[at + 1] = 0xff;
   return rec;
@@ -259,6 +268,9 @@ export const D890_MASKED_TABLES = {
     maskAddress: D890_BROADCAST.am.mask,
     stride: D890_BROADCAST.am.stride,
     slots: D890_BROADCAST.am.channels,
+    // Fully accounted for: BCD frequency, UTF-16LE name, zeros to the end —
+    // confirmed against the vendor's own AM slot 0. Nothing is left to guess.
+    blank: () => blankBroadcastChannel('am'),
   },
   fmChannels: {
     label: 'FM broadcast channel',
@@ -266,6 +278,7 @@ export const D890_MASKED_TABLES = {
     maskAddress: D890_BROADCAST.fm.mask,
     stride: D890_BROADCAST.fm.stride,
     slots: D890_BROADCAST.fm.channels,
+    blank: () => blankBroadcastChannel('fm'),
   },
   fiveTone: {
     label: '5-Tone entry',
@@ -335,6 +348,9 @@ export const D890_MASKED_TABLES = {
     maskAddress: D890_AM_ZONES.MASK,
     stride: D890_AM_ZONES.STRIDE,
     slots: D890_AM_ZONES.SLOTS,
+    // Name 0x00-0x1f, current channel 0x20-0x21, members 0x22 to the end —
+    // the layout covers all 0x80 bytes, so a fresh record is fully determined.
+    blank: () => blankAmZone(),
   },
 } as const;
 

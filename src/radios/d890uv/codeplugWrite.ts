@@ -66,6 +66,9 @@ import type { EncryptionKey } from '../../models/EncryptionKey';
 import type { ScanListDecoded, D890RoamingChannel } from './structures';
 import type { D890BroadcastChannel } from './broadcastChannels';
 import type { D890AmZone } from './amZones';
+import { D890_AM_ZONES, encodeAmZoneAChannels, encodeAmZoneScan } from './amZones';
+import { D890_BROADCAST, encodeBroadcastScanMask } from './broadcastChannels';
+import { encodeAutoRepeaterOffsets } from './autoRepeater';
 import type { D890FiveTone, D890TwoTone } from './tones';
 
 /** A region the plan deliberately did not write, and why. */
@@ -138,6 +141,19 @@ export interface D890CodeplugWriteInput {
       a: ReadonlyMap<number, number>;
       b: ReadonlyMap<number, number>;
     };
+    /** Auto-repeater offsets in MHz by slot; null clears a slot. Index is
+     *  identity — the autoRepeater1Uhf/Vhf settings select by it. */
+    autoRepeaterOffsets?: readonly (number | null)[];
+    /** Each band's tuning record — what the receiver is on in VFO mode. Not a
+     *  memory: neither has a presence-mask bit, so neither is in a masked table. */
+    amVfo?: D890BroadcastChannel | null;
+    fmVfo?: D890BroadcastChannel | null;
+    /** The radio's own DMR ID ("MastID"). Null means the record is empty, which
+     *  is how the radio represents "not used" — it has no separate flag. */
+    masterRadioId?: {
+      id: import('../../models/DMRRadioID').DMRRadioID;
+      overrideAllTxIds: boolean;
+    } | null;
     /** Hardware slots of the zones that are hidden. */
     hiddenZoneSlots?: ReadonlySet<number>;
     /** Slot-indexed, NOT positional — `readQuickMessages` compacts empty slots
@@ -364,7 +380,118 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
     (o, c) => applyBroadcastToRecord(o, c, 'am'));
   maskedTable('FM channels', D890_MASKED_TABLES.fmChannels, T.fmChannels,
     (o, c) => applyBroadcastToRecord(o, c, 'fm'));
+  // The radio's own DMR ID. Byte-for-byte a Radio ID record, so it reuses that
+  // encoder rather than duplicating the BCD/UTF-16 handling.
+  if (T.masterRadioId) {
+    const address = D890_ADDR.MASTER_ID_DATA;
+    const original = sliceFromReadLog(input.readLog, address, D890_ADDR.MASTER_ID_SIZE);
+    if (original) {
+      // The ID/name reuse the Radio ID encoder. The override flag is this
+      // record's own byte with no counterpart in a Radio ID — all four regular
+      // records carry 0 there — so it is set separately.
+      const encoded = applyRadioIdToRecord(original, T.masterRadioId.id);
+      encoded[D890_ADDR.MASTER_ID_OVERRIDE_TX_AT] = T.masterRadioId.overrideAllTxIds ? 1 : 0;
+      take('master radio ID', address,
+        Array.from({ length: Math.ceil(encoded.length / 0x10) }, (_, i) => ({
+          address: address + i * 0x10,
+          data: encoded.slice(i * 0x10, (i + 1) * 0x10),
+          what: 'master radio ID',
+        })));
+    } else {
+      skipped.push({
+        region: 'master radio ID', address, reason: 'not-read',
+        detail: 'the master radio ID record is not in the read log.',
+      });
+    }
+  }
+
+  // The two VFO tuning records. Written like any other broadcast record, but
+  // individually rather than through a masked table — they have no presence bit
+  // and no slot, so there is no mask to plan alongside them.
+  for (const [label, band, entry] of [
+    ['AM VFO', 'am', T.amVfo],
+    ['FM VFO', 'fm', T.fmVfo],
+  ] as const) {
+    if (!entry) continue;
+    const address = D890_BROADCAST[band].vfo;
+    const original = sliceFromReadLog(input.readLog, address, D890_BROADCAST[band].stride);
+    if (!original) {
+      skipped.push({ region: label, address, reason: 'not-read',
+        detail: `${label} is not in the read log.` });
+      continue;
+    }
+    const encoded = applyBroadcastToRecord(original, entry, band);
+    take(label, address, Array.from({ length: Math.ceil(encoded.length / 0x10) }, (_, i) => ({
+      address: address + i * 0x10,
+      data: encoded.slice(i * 0x10, (i + 1) * 0x10),
+      what: label,
+    })));
+  }
+
+  if (T.autoRepeaterOffsets) {
+    const address = D890_ADDR.AUTO_REPEATER_DATA;
+    const original = sliceFromReadLog(input.readLog, address, D890_ADDR.AUTO_REPEATER_READ);
+    if (original) {
+      const encoded = encodeAutoRepeaterOffsets(original, T.autoRepeaterOffsets);
+      take('auto-repeater offsets', address,
+        Array.from({ length: Math.ceil(encoded.length / 0x10) }, (_, i) => ({
+          address: address + i * 0x10,
+          data: encoded.slice(i * 0x10, (i + 1) * 0x10),
+          what: 'auto-repeater offsets',
+        })));
+    } else {
+      skipped.push({ region: 'auto-repeater offsets', address, reason: 'not-read',
+        detail: 'the auto-repeater table is not in the read log.' });
+    }
+  }
+
   maskedTable('AM zones', D890_MASKED_TABLES.amZones, T.amZones, applyAmZoneToRecord);
+
+  // FM's scan mask is flat — one bit per channel index — and lives at its own
+  // address inside a verbatim preserve run. Planning it explicitly is what
+  // stops the verbatim pass from writing the pre-edit bytes back over an edit.
+  if (T.fmChannels && 'scanMask' in D890_BROADCAST.fm) {
+    const address = D890_BROADCAST.fm.scanMask;
+    const original = sliceFromReadLog(input.readLog, address, 0x10);
+    if (original) {
+      take('FM scan mask', address, [{
+        address,
+        data: encodeBroadcastScanMask(original, T.fmChannels),
+        what: 'FM scan mask',
+      }]);
+    } else {
+      skipped.push({
+        region: 'FM scan mask', address, reason: 'not-read',
+        detail: 'the FM scan mask is not in the read log.',
+      });
+    }
+  }
+
+  // A Channel and the per-zone scan bitmaps sit OUTSIDE the zone records, in
+  // the AM mask block. Both are patched from the read rather than rebuilt: they
+  // are indexed by zone slot, and a rebuild would clear the slots belonging to
+  // zones this write does not carry.
+  //
+  // Until 2026-09-03 neither was read or written at all, so every NeonPlug
+  // write left them erased and the radio fell back to member 0 for every zone —
+  // which is what made one AM channel appear as the active one everywhere.
+  if (T.amZones) {
+    for (const [label, address, encode] of [
+      ['AM zone A channel', D890_AM_ZONES.A_CHANNEL_TABLE, encodeAmZoneAChannels],
+      ['AM zone scan', D890_AM_ZONES.SCAN_TABLE, encodeAmZoneScan],
+    ] as const) {
+      const original = sliceFromReadLog(input.readLog, address, 0x10);
+      if (!original) {
+        skipped.push({
+          region: label, address, reason: 'not-read',
+          detail: `${label} is not in the read log.`,
+        });
+        continue;
+      }
+      const encoded = encode(original, T.amZones);
+      take(label, address, [{ address, data: encoded, what: label }]);
+    }
+  }
   maskedTable('5-Tone', D890_MASKED_TABLES.fiveTone, T.fiveTone, applyFiveToneToRecord);
   maskedTable('2-Tone', D890_MASKED_TABLES.twoTone, T.twoTone, applyTwoToneToRecord);
 

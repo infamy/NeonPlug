@@ -12,13 +12,14 @@ const rec = (over: Partial<Record<number, number>> = {}) => {
   const b = new Uint8Array(0x20);
   b[0x00] = 1;    // OnOff
   b[0x01] = 3;    // Zone
+  // PER AXIS — degrees, whole minutes, hundredths, hemisphere.
   b[0x02] = 34;   // Lat degrees
-  b[0x03] = 0;    // North
-  b[0x04] = 108;  // Lon degrees
-  b[0x05] = 0;    // East
-  b[0x06] = 12;   // Lat minutes
-  b[0x07] = 73;   // Lat hundredths
-  b[0x08] = 50;   // Lon minutes
+  b[0x03] = 12;   // Lat minutes
+  b[0x04] = 73;   // Lat hundredths
+  b[0x05] = 0;    // North
+  b[0x06] = 108;  // Lon degrees
+  b[0x07] = 50;   // Lon minutes
+  b[0x08] = 0;    // Lon hundredths
   b[0x09] = 0;    // Lon hundredths
   b[0x0c] = 0xe8; b[0x0d] = 0x03; // radius 1000, u32 LE
   for (const [k, v] of Object.entries(over)) b[Number(k)] = v as number;
@@ -45,20 +46,40 @@ describe('DA-7X2 GPS Roaming table', () => {
     expect(parseGpsRoamingEntry(big, 0)!.radiusMeters).toBe(200000);
   });
 
-  it('does NOT group position per axis the way APRS does', () => {
-    // The trap: APRS at 0x3501000 stores a whole position contiguously. Here the
-    // degrees and hemispheres of BOTH axes come first, then both sets of minutes.
-    // An APRS-shaped parser would read longitude degrees (108) as a latitude
-    // minute — a plausible-looking number in a wrong field.
-    const e = parseGpsRoamingEntry(rec(), 0)!;
-    expect(e.latitude).toEqual({ degrees: 34, minutes: 12, minuteFraction: 73, south: false });
-    expect(e.longitude).toEqual({ degrees: 108, minutes: 50, minuteFraction: 0, west: false });
-    // byte 0x04 is longitude degrees, NOT a latitude minute
-    expect(rec()[0x04]).toBe(108);
+  it('groups position PER AXIS, like APRS', () => {
+    // CORRECTED 2026-09-03 against a real populated table. The previous layout
+    // put both axes' degrees and hemispheres first, then both sets of minutes —
+    // taken from GPSRoaming.CSV's COLUMN order, which for this table is
+    // presentation order and not storage order.
+    //
+    // These are the exact bytes the vendor CPS wrote for
+    // 49 deg 44.11' N, 119 deg 33.22' W, radius 500 m, zone 5:
+    const hw = new Uint8Array(0x20);
+    hw.set([0x01, 0x05, 0x31, 0x2c, 0x0b, 0x00, 0x77, 0x21, 0x16, 0x01,
+            0x00, 0x00, 0xf4, 0x01, 0x00, 0x00], 0);
+    const e = parseGpsRoamingEntry(hw, 0)!;
+    expect(e.latitude).toEqual({ degrees: 49, minutes: 44, minuteFraction: 11, south: false });
+    expect(e.longitude).toEqual({ degrees: 119, minutes: 33, minuteFraction: 22, west: true });
+    expect(e.radiusMeters).toBe(500);
+    expect(e.zone).toBe(5);
+  });
+
+  it('rejects the old interleaved layout on its own terms', () => {
+    // The old offsets are not merely unverified against these bytes — they are
+    // impossible. Byte 0x03 (44) was read as the SOUTH boolean and byte 0x06
+    // (119) as latitude MINUTES, which only run 0-59. Two of ten bytes landed
+    // outside the range of the field they were assigned to.
+    const hw = new Uint8Array(0x20);
+    hw.set([0x01, 0x05, 0x31, 0x2c, 0x0b, 0x00, 0x77, 0x21, 0x16, 0x01,
+            0x00, 0x00, 0xf4, 0x01, 0x00, 0x00], 0);
+    expect(hw[0x06]).toBeGreaterThan(59);   // cannot be whole minutes
+    const e = parseGpsRoamingEntry(hw, 0)!;
+    expect(e.latitude.minutes).toBeLessThan(60);
+    expect(e.longitude.minutes).toBeLessThan(60);
   });
 
   it('converts to decimal degrees with hemisphere sign', () => {
-    const e = parseGpsRoamingEntry(rec({ 0x03: 1, 0x05: 1 }), 0)!;
+    const e = parseGpsRoamingEntry(rec({ 0x05: 1, 0x09: 1 }), 0)!;
     expect(gpsRoamingPositionToDecimal(e.latitude)).toBeCloseTo(-(34 + 12.73 / 60), 6);
     expect(gpsRoamingPositionToDecimal(e.longitude)).toBeCloseTo(-(108 + 50 / 60), 6);
   });

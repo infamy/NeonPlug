@@ -19,6 +19,7 @@ import {
   type DanglingReference,
   type D890TableCounts,
 } from './references';
+import { blankZoneMembers, blankZoneName } from './blankRecords';
 
 /**
  * Build — and refuse to build — the frames a channel write would send.
@@ -438,6 +439,16 @@ export interface D890MaskedTableSpec {
   stride: number;
   slots: number;
   /**
+   * A baseline for a slot the radio has never held, when one is KNOWN.
+   *
+   * Omitted means adding to an empty slot is refused rather than guessed — the
+   * right answer for any record with bytes this driver does not decode, because
+   * there is nothing to derive the missing values from. Supplied only where the
+   * record is fully accounted for and the vendor capture says what a fresh one
+   * contains. See `blankRecords.ts`.
+   */
+  blank?: () => Uint8Array;
+  /**
    * True when a SET bit means the slot is EMPTY. The talkgroup mask is
    * inverted; the AM, AM-zone, 5-Tone and 2-Tone masks are not. Getting this
    * backwards yields either an empty table or every slot occupied, so it is
@@ -532,12 +543,16 @@ export function planMaskedTableWrite<T extends { index: number }>(
       });
       continue;
     }
-    const original = originals.get(entry.index);
+    // A slot the read never fetched is a slot the radio has never held — the
+    // read is mask-first, so only occupied slots come back. That is an ADD, and
+    // it needs a baseline rather than an original to patch.
+    const original = originals.get(entry.index) ?? spec.blank?.();
     if (!original) {
       throw new D890WriteRefusedError(
         `Refusing to write ${spec.label} slot ${entry.index}: it was never read from the ` +
-          `radio. Every record must be read before it is written, or the fields this ` +
-          `driver does not decode would be overwritten with zeros.`
+          `radio, and this record has no known blank to build from. Some of its bytes ` +
+          `are not decoded by this driver, so a new one cannot be built without ` +
+          `inventing values the radio has never been observed to hold.`
       );
     }
     const record = encode(original, entry);
@@ -758,15 +773,13 @@ export function planZoneWrite(input: {
       skipped.push({ index: slot, reason: `outside the ${D890_LIMITS.ZONES_MAX} zone slots` });
       return;
     }
-    const members = memberOriginals.get(slot);
-    const name = nameOriginals.get(slot);
-    if (!members || !name) {
-      throw new D890WriteRefusedError(
-        `Refusing to write zone "${zone.name}" (slot ${slot}): its ` +
-          `${!members ? 'membership' : 'name'} record was never read. Both records are ` +
-          `patched, not built, so both must come from the radio.`
-      );
-    }
+    // A slot with no original is a slot the radio has never held — the read is
+    // mask-first. That is an ADD, and both zone records are fully accounted for
+    // by their layouts, so a blank baseline is known rather than guessed:
+    // membership is 0xFF-filled (the vendor's own record is `00 00 ff ff ff…`)
+    // and the name is zero-padded UTF-16LE at the vendor's 0x20 width.
+    const members = memberOriginals.get(slot) ?? blankZoneMembers();
+    const name = nameOriginals.get(slot) ?? blankZoneName();
 
     emit(
       D890_ADDR.ZONE_CHANNELS + slot * D890_ADDR.ZONE_CHANNELS_STRIDE,

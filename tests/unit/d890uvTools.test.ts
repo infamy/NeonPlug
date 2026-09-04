@@ -11,6 +11,7 @@ import {
   planImageWrite,
   D890_IMAGE_ADDRESS,
 } from '../../src/radios/d890uv/bootImage';
+import { dryRunWrite } from '../../src/radios/d890uv/writeDryRun';
 import { D890_ADDR, D890_LIMITS } from '../../src/radios/d890uv/constants';
 import { D890_APRS_NO_CHANNEL } from '../../src/radios/d890uv/aprs';
 import { decodeFrequencyMHz, decodeOccupancyMask, occupiedIndices } from '../../src/radios/d890uv/structures';
@@ -114,6 +115,42 @@ describe('DA-7X2 boot / BK image format', () => {
   it('refuses to plan a write from a wrongly sized buffer', () => {
     expect(() => planImageWrite('boot', new Uint8Array(100))).toThrow(/exactly/);
   });
+
+  /**
+   * The plan as hardware actually receives it.
+   *
+   * The test above pins the endpoints; this pins everything between them. A
+   * gap, a repeat or a reordering inside the run would leave both endpoints
+   * correct and still put the wrong bytes on the radio — and on this radio a
+   * duplicate address is silently WRONG rather than merely wasteful, because it
+   * keeps the FIRST write and discards the second.
+   */
+  it.each(['boot', 'bk1', 'bk2'] as const)(
+    'plans %s as one contiguous, non-repeating run that reassembles exactly',
+    (kind) => {
+      const img = new Uint8Array(D890_IMAGE.BYTES).map((_, i) => (i * 7) & 0xff);
+      const frames = planImageWrite(kind, img);
+      const base = D890_IMAGE_ADDRESS[kind];
+
+      expect(dryRunWrite(frames).payloadBytes).toBe(D890_IMAGE.BYTES);
+
+      const seen = new Set<number>();
+      frames.forEach((f, i) => {
+        expect(f.address).toBe(base + i * 0x10);
+        expect(f.address % 0x10).toBe(0);
+        expect(seen.has(f.address)).toBe(false);
+        seen.add(f.address);
+      });
+
+      const back = new Uint8Array(D890_IMAGE.BYTES);
+      for (const f of frames) back.set(f.data, f.address - base);
+      expect(Array.from(back)).toEqual(Array.from(img));
+
+      // Nothing lands outside the picture's own region.
+      expect(Math.min(...frames.map((f) => f.address))).toBe(base);
+      expect(Math.max(...frames.map((f) => f.address)) + 0x10).toBe(base + D890_IMAGE.BYTES);
+    }
+  );
 });
 
 describe('DA-7X2 satellite table', () => {

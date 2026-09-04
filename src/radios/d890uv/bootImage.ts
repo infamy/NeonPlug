@@ -7,11 +7,20 @@ import { D890_ADDR } from './constants';
  * (`Frm_Pic`) with a selector global. 40960 bytes, 160x128, RGB565, big-endian,
  * column-major, no header and no palette.
  *
- * ⚠️ WRITE PATH IS UNVALIDATED. The format below is verified in both directions
- * from the vendor disassembly — decoder loop bounds and encoder divisors agree
- * independently — but **no image has ever been written to a radio** by this
- * project or by the analysis it came from. The encode/decode functions here are
- * pure and safe; sending their output to hardware is not. See `IMAGE_WRITE_RISK`.
+ * The format is verified in both directions from the vendor disassembly —
+ * decoder loop bounds and encoder divisors agree independently — and the write
+ * shape is now confirmed against a capture of the vendor CPS writing a boot
+ * image twice (`7x2_bootreadand2xwrite.txt`, 2026-09-03): 2560 ordinary 16-byte
+ * frames covering exactly 40960 bytes at one address, no header, no trailer, no
+ * erase step, and nothing else touched in the session. Column-major was
+ * confirmed from the same capture statistically — mean neighbour delta is 9.2
+ * across a column-major row against 49.7 down a row-major column.
+ *
+ * HARDWARE-CONFIRMED 2026-09-03: a boot image written from here rendered on the
+ * radio's own screen as the intended picture. That confirms the whole chain at
+ * once — frame shape, address, RGB565 and column-major order — because a wrong
+ * pixel order would still have written and read back cleanly while displaying
+ * as noise. bk1 and bk2 share this code path and differ only in address.
  */
 
 /** Every image is exactly this, in both directions. */
@@ -37,17 +46,6 @@ export const D890_IMAGE_LABEL: Record<D890ImageKind, string> = {
   bk1: 'Standby Background',
   bk2: 'Standby Background Alternate',
 };
-
-/**
- * Why writing one of these is riskier than its size suggests.
- *
- * Shown to the user before any image write, and stated here so it cannot drift
- * away from the code that needs it.
- */
-export const IMAGE_WRITE_RISK =
-  'No image has ever been written to a DA-7X2 by this software. A failed or ' +
-  'partial write leaves the picture region half-updated, which the radio may ' +
-  'render as garbage until it is rewritten.';
 
 /**
  * Byte index of pixel (x, y). Column-major: x strides by the full height.

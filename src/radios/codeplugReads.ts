@@ -127,6 +127,7 @@ export const CODEPLUG_READS: CodeplugRead[] = [
       ? async () => ({
           am: await p.readBroadcastChannels!('am'),
           fm: await p.readBroadcastChannels!('fm'),
+          amVfo: p.readAmVfo ? await p.readAmVfo() : null,
           fmVfo: p.readFmVfo ? await p.readFmVfo() : null,
         })
       : null
@@ -136,6 +137,9 @@ export const CODEPLUG_READS: CodeplugRead[] = [
   table('toneLists', '2-Tone / 5-Tone', (p) => p.readTones?.bind(p) ?? null),
   table('amZones', 'AM zones', (p) => p.readAmZones?.bind(p) ?? null),
   table('gpsRoaming', 'GPS roaming', (p) => p.readGpsRoaming?.bind(p) ?? null),
+  table('masterRadioId', 'Master radio ID', (p) => p.readMasterRadioId?.bind(p) ?? null),
+  table('autoRepeaterOffsets', 'Auto-repeater offsets',
+    (p) => p.readAutoRepeaterOffsets?.bind(p) ?? null),
 
   // Last deliberately: the radio's table is indexed by hardware zone SLOT, and
   // the zones array has empty slots dropped. Aligning them needs the zones to

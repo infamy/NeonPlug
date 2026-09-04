@@ -269,8 +269,39 @@ export const D890_ADDR = {
   RADIO_ID_SET_SIZE: 0x20,
   RADIO_ID_DATA: 0x3680000,
   RADIO_ID_STRIDE: 0x40,
+  /**
+   * Auto-repeater offset table — 250 u32 LE values in units of 10 Hz.
+   *
+   * CONFIRMED ON HARDWARE 2026-09-03: 5 MHz and 0.6 MHz set in the vendor CPS
+   * wrote `20 a1 07 00` (500000) and `60 ea 00 00` (60000).
+   */
+  AUTO_REPEATER_DATA: 0x3483200,
+  /** The table's own size: 250 * 4. NOT 16-aligned, so it is not a read length. */
+  AUTO_REPEATER_SIZE: 0x3e8,
+  /** What to actually ask the radio for — reads must be 16-byte aligned, and
+   *  0x3e8 is not. The extra 8 bytes are past the table and simply ignored. */
+  AUTO_REPEATER_READ: alignRead(0x3e8),
   MASTER_ID_DATA: 0x3684000,
   MASTER_ID_SIZE: 0x40,
+  /**
+   * Override All TX IDs — 1 = on, 0 = off.
+   *
+   * The vendor CPS labels this checkbox **"Used"**, which is what to search for
+   * when matching against its UI. The name here describes what it DOES: with it
+   * on, the master ID overrides the TX ID of every channel rather than each
+   * channel using its own.
+   *
+   * LOCATED ON HARDWARE 2026-09-03 by toggling it while KEEPING the ID and
+   * name: exactly one span changed across a 133-span read, and within it
+   * exactly this byte. The record itself stayed `16 77 64 15` + "MASTERX"
+   * either way, which is what disproved the earlier guess that "Used" simply
+   * meant the record was non-empty.
+   *
+   * Specific to the MASTER record: all four regular Radio ID records carry 0x00
+   * here with everything past the name zero, so the two share a layout but not
+   * this field. Existence for a regular Radio ID comes from the presence mask.
+   */
+  MASTER_ID_OVERRIDE_TX_AT: 0x26,
 
   /** Scan lists. */
   SCAN_LIST_SET: 0x3482c60,

@@ -97,7 +97,14 @@ export interface RadioTables {
   /** Emergency / alarm settings and the contact they call. */
   emergencyAlarm: { settings: D890EmergencySettings | null; contact: D890EmergencyContact | null };
   /** AM airband and FM broadcast channels — separate tables from the main list. */
-  broadcast: { am: D890BroadcastChannel[]; fm: D890BroadcastChannel[]; fmVfo: D890BroadcastChannel | null };
+  broadcast: {
+    am: D890BroadcastChannel[];
+    fm: D890BroadcastChannel[];
+    /** Each band's own tuning record — what the receiver is on in VFO mode.
+     *  Not a memory: neither has a presence-mask bit. */
+    amVfo: D890BroadcastChannel | null;
+    fmVfo: D890BroadcastChannel | null;
+  };
   /** Zones over the AM airband table. */
   amZones: D890AmZone[];
   /** 5-Tone and 2-Tone signalling code lists. */
@@ -109,8 +116,26 @@ export interface RadioTables {
    * list — not channel numbers. Index is the zone number.
    */
   zoneCurrentChannels: { a: number[]; b: number[] };
+  /**
+   * Auto-repeater offsets in MHz, by slot. Null is an unused slot.
+   *
+   * Index is identity: the `autoRepeater1Uhf` / `autoRepeater1Vhf` settings are
+   * u8 selectors into this table, so a slot cannot be moved without repointing
+   * whatever selects it.
+   */
+  autoRepeaterOffsets: (number | null)[];
   /** Power-on screen text and password. */
   powerOnDisplay: D890PowerOnDisplay;
+  /**
+   * The radio's OWN DMR ID — the vendor CPS calls it "MastID". Null when the
+   * record is empty, which is how the radio stores "not used".
+   */
+  masterRadioId: {
+    id: import('../models/DMRRadioID').DMRRadioID;
+    /** Override the TX ID of every channel with this one — a byte of its own in
+     *  the record. Labelled "Used" in the vendor CPS. */
+    overrideAllTxIds: boolean;
+  } | null;
 }
 
 /** A table id. Use this rather than a bare string so a typo cannot compile. */

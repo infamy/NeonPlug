@@ -123,6 +123,12 @@ describe('generic DMR content is read for every digital radio', () => {
       '2-Tone / 5-Tone',
       'AM zones',
       'GPS roaming',
+      // Appended after GPS roaming rather than inserted earlier: the order
+      // above is the one seen working on hardware, and nothing about it has
+      // been derived from first principles. A new read goes at the end of the
+      // sequence it is safe to append to, not into the middle of it.
+      'Master radio ID',
+      'Auto-repeater offsets',
       'Zone A/B channels',
     ]);
   });

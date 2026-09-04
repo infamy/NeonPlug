@@ -123,15 +123,20 @@ export const D890UV_SETTINGS_PROFILE: SettingsProfile = {
   // of their own rather than the DM-32's read-on-demand card.
   features: [
     'pictures',
+    'powerOnScreen',
     'roaming',
     'gpsRoaming',
     'satellites',
     'toneLists',
+    'autoRepeaterOffsets',
     'emergencyAlarm',
   ],
   sections: SECTION_ORDER.map((title) => ({
     id: title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
     title,
+    // The power-on text and password live at 0x3500900, outside the settings
+    // block, so they cannot be profile fields — but they belong to this group.
+    ...(title === 'Power-on' ? { area: 'powerOnScreen' as const } : {}),
     fields: [
       ...D890_SETTINGS_FIELDS.filter((f) => f.group === title).map(fieldFor),
       ...D890_SETTINGS_FREQUENCIES.filter((f) => f.group === title).map(

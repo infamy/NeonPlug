@@ -11,6 +11,7 @@ import type { Channel } from '../../models/Channel';
 import { isVFOChannel } from '../../utils/vfoChannels';
 import { useRadioStore } from '../../store/radioStore';
 import { BroadcastChannelsTable } from './BroadcastChannelsTable';
+import { D890_BROADCAST } from '../../radios/d890uv/broadcastChannels';
 
 /** Which channel table the tab is showing. */
 type ChannelView = 'main' | 'am' | 'fm';
@@ -35,7 +36,7 @@ export const ChannelsTab: React.FC = () => {
     view === 'am'
       ? tables.broadcast?.am
       : view === 'fm'
-        ? [...(tables.broadcast?.fm ?? []), ...(tables.broadcast?.fmVfo ? [tables.broadcast.fmVfo] : [])]
+        ? tables.broadcast?.fm
         : undefined;
   const isBroadcast = view !== 'main';
 
@@ -250,8 +251,10 @@ export const ChannelsTab: React.FC = () => {
         {isBroadcast ? (
           <BroadcastChannelsTable
             entries={filteredBroadcast}
+            band={view === 'am' ? 'am' : 'fm'}
+            maxChannels={D890_BROADCAST[view === 'am' ? 'am' : 'fm'].channels}
             decimals={view === 'am' ? 4 : 2}
-            vfoIndex={view === 'fm' ? tables.broadcast?.fmVfo?.index : undefined}
+            vfo={view === 'am' ? tables.broadcast?.amVfo : tables.broadcast?.fmVfo}
             zones={view === 'am' ? tables.amZones ?? undefined : undefined}
             emptyMessage={
               view === 'am' ? 'No AM airband memories stored' : 'No FM broadcast memories stored'

@@ -69,10 +69,12 @@ export interface D890BroadcastChannel {
   /**
    * Included when scanning this band — the vendor's `Scan` column, CPS "Add".
    *
-   * Undefined where we cannot know rather than false: FM keeps it in a flat mask
-   * we read, but AM's lives in `AmChannelList_CH_Scan`, keyed by AM zone, inside
-   * the AM zone table we do not read yet. Defaulting AM to false would assert
-   * every airband memory is excluded from scan, which we have not established.
+   * FM only. Undefined for AM, and now for a known reason rather than an
+   * unknown one: `AmChannelList_CH_Scan` was located on 2026-09-03 at
+   * `D890_AM_ZONES.SCAN_TABLE`, and it is per (zone, MEMBER POSITION) — so an
+   * AM channel has no single scan state. The same channel in two zones can be
+   * scanned in one and not the other. It is edited on the zone's members (see
+   * `AmZonesEditor`), and putting it here would force a lie either way.
    */
   scanAdd?: boolean;
 }
@@ -137,4 +139,36 @@ export function broadcastChannelAddress(band: D890BroadcastBand, index: number):
 /** True when a slot holds nothing: no name and no decodable frequency. */
 export function isVacantBroadcastChannel(ch: D890BroadcastChannel): boolean {
   return ch.name === '' && ch.frequency === null;
+}
+
+/**
+ * Encode the FM broadcast scan mask — one bit per CHANNEL INDEX, set = scanned.
+ *
+ * FM's scan is flat, unlike AM's, which is a bitmap per zone over member
+ * POSITIONS (`D890_AM_ZONES.SCAN_TABLE`). The difference is not cosmetic: an FM
+ * channel has exactly one scan state, so it belongs as a column on the channel
+ * table, while an AM channel's depends on which zone you are scanning.
+ *
+ * Patched, never rebuilt. Only bits for channels in `channels` are touched, so
+ * bits belonging to slots this write does not carry survive — the same rule the
+ * presence masks follow.
+ *
+ * Until 2026-09-03 this was read into `scanAdd`, shown in the UI, and never
+ * written. The region also sits inside a verbatim preserve run, so an edit was
+ * actively overwritten with its pre-edit bytes on every write.
+ */
+export function encodeBroadcastScanMask(
+  original: Uint8Array,
+  channels: readonly D890BroadcastChannel[]
+): Uint8Array {
+  const out = Uint8Array.from(original);
+  for (const ch of channels) {
+    if (ch.scanAdd === undefined) continue;   // nothing known; leave the bit alone
+    const byte = ch.index >> 3;
+    if (byte >= out.length) continue;
+    const bit = 1 << (ch.index & 7);
+    if (ch.scanAdd) out[byte] |= bit;
+    else out[byte] &= ~bit & 0xff;
+  }
+  return out;
 }

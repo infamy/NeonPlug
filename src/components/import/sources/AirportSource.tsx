@@ -123,7 +123,7 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
           };
 
       if (routed.airband.length > 0) {
-        const existing = tables.broadcast ?? { am: [], fm: [], fmVfo: null };
+        const existing = tables.broadcast ?? { am: [], fm: [], amVfo: null, fmVfo: null };
         // Airband entries are indexed within their own table, not by channel
         // number, so they are renumbered onto the end of it. Keep the mapping —
         // the AM zones below reference these by their NEW index.
@@ -158,7 +158,15 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
               members: group.channelNumbers
                 .map((n) => amIndexOf.get(n))
                 .filter((i): i is number => i !== undefined),
-              currentChannel: 0,
+              // The zone's FIRST member, not 0. This is an absolute index into
+              // the AM table, so a literal 0 points at AM channel 1 — which is
+              // usually not in the zone and may not exist at all. On a radio
+              // whose airband started at index 3, every imported zone pointed
+              // at a deleted slot and the radio displayed its stale name.
+              currentChannel:
+                group.channelNumbers
+                  .map((n) => amIndexOf.get(n))
+                  .find((i): i is number => i !== undefined) ?? 0,
             });
           }
           if (created.length > 0) {

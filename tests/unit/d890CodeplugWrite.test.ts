@@ -9,6 +9,7 @@ import {
 import { D890WriteRefusedError } from '../../src/radios/d890uv/writePlan';
 import { D890_ADDR } from '../../src/radios/d890uv/constants';
 import { parseChannel, parseZone, parseScanList } from '../../src/radios/d890uv/structures';
+import { parsePowerOnDisplay } from '../../src/radios/d890uv/powerOnDisplay';
 import type { Channel } from '../../src/models/Channel';
 
 const DIR = join(__dirname, '../fixtures/d890uv');
@@ -243,5 +244,70 @@ describe('regions that were mislabelled as unmodelled', () => {
         },
       })
     ).toThrow();
+  });
+});
+
+/**
+ * The power-on screen became user-editable when it moved out of the pictures
+ * block and into its own settings area. That makes the path from a typed
+ * character to a frame worth pinning: the password is the radio's power-on
+ * lock, so a write that silently drops it, or writes it in the lines' UTF-16
+ * instead of ASCII, locks the user out of their own radio.
+ */
+describe('power-on screen edits reach the radio', () => {
+  const ORIGINAL = (() => {
+    const b = new Uint8Array(0x60);
+    // "HI" / "YO" as UTF-16LE, "1234" as ASCII — the mixed encoding is the point.
+    b[0x00] = 0x48; b[0x02] = 0x49;
+    b[0x20] = 0x59; b[0x22] = 0x4f;
+    b.set([0x31, 0x32, 0x33, 0x34], 0x40);
+    return b;
+  })();
+
+  const withPowerOn = (display: { line1: string; line2: string; password: string }) => {
+    const s = setup();
+    s.readLog.set(0x3500900, ORIGINAL);
+    return planCodeplugWrite({ ...s, tables: { powerOnDisplay: display } });
+  };
+
+  const framesAt = (plan: ReturnType<typeof planCodeplugWrite>, base: number, span: number) =>
+    plan.frames.filter((f) => f.address >= base && f.address < base + span);
+
+  // This is a whole-codeplug write: every claimed region is written on every
+  // write, changed or not. So the invariant is not "no frames" — it is that an
+  // unedited screen reproduces the radio's own bytes exactly.
+  it('writes the original bytes back unchanged when nothing was edited', () => {
+    const plan = withPowerOn({ line1: 'HI', line2: 'YO', password: '1234' });
+    const frames = framesAt(plan, 0x3500900, 0x60);
+    expect(frames).toHaveLength(0x60 / 0x10);
+
+    const span = new Uint8Array(0x60);
+    for (const f of frames) span.set(f.data, f.address - 0x3500900);
+    expect(Array.from(span)).toEqual(Array.from(ORIGINAL));
+  });
+
+  it('writes an edited line as UTF-16LE and the password as ASCII', () => {
+    const plan = withPowerOn({ line1: 'NEONPLUG', line2: 'YO', password: 'abcd' });
+    const frames = framesAt(plan, 0x3500900, 0x60);
+    expect(frames.length).toBeGreaterThan(0);
+
+    // Reassemble the patched span and read it back through the parser.
+    const span = Uint8Array.from(ORIGINAL);
+    for (const f of frames) span.set(f.data, f.address - 0x3500900);
+    expect(parsePowerOnDisplay(span)).toEqual({
+      line1: 'NEONPLUG', line2: 'YO', password: 'abcd',
+    });
+
+    // The trap this guards: a wide-encoded password. 'a' at 0x40 and a NUL at
+    // 0x41 would parse back as 'a' and still look right above.
+    expect(Array.from(span.subarray(0x40, 0x44))).toEqual([0x61, 0x62, 0x63, 0x64]);
+  });
+
+  it('clears a line the user emptied rather than leaving the old text', () => {
+    const plan = withPowerOn({ line1: '', line2: 'YO', password: '1234' });
+    const span = Uint8Array.from(ORIGINAL);
+    for (const f of framesAt(plan, 0x3500900, 0x60)) span.set(f.data, f.address - 0x3500900);
+    expect(parsePowerOnDisplay(span).line1).toBe('');
+    expect(parsePowerOnDisplay(span).line2).toBe('YO');
   });
 });

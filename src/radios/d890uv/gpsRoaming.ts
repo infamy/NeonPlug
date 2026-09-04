@@ -72,14 +72,23 @@ export interface D890GpsRoamingEntry {
 export const GPS_ROAMING_OFFSETS = {
   ONOFF: 0x00,
   ZONE: 0x01,
+  // PER-AXIS: degrees, whole minutes, hundredths, hemisphere — the same shape
+  // as APRS at 0x3501000, which is hardware-confirmed.
+  //
+  // CORRECTED 2026-09-03 against a populated table. The interleaved layout used
+  // before came from `GPSRoaming.CSV`'s COLUMN order, which for this table is
+  // presentation order, not storage order. It was self-refuting the moment real
+  // bytes appeared: `01 05 31 2c 0b 00 77 21 16 01 00 00 f4 01 00 00` gave
+  // latSouth = 44 for a boolean and latMinutes = 119 for a 0-59 field, and
+  // rendered a geofence in British Columbia as a point in the South Atlantic.
   LAT_DEG: 0x02,
-  LAT_SOUTH: 0x03,
-  LON_DEG: 0x04,
-  LON_WEST: 0x05,
-  LAT_MIN: 0x06,
-  LAT_MIN_FRAC: 0x07,
-  LON_MIN: 0x08,
-  LON_MIN_FRAC: 0x09,
+  LAT_MIN: 0x03,
+  LAT_MIN_FRAC: 0x04,
+  LAT_SOUTH: 0x05,
+  LON_DEG: 0x06,
+  LON_MIN: 0x07,
+  LON_MIN_FRAC: 0x08,
+  LON_WEST: 0x09,
   /** 4-byte Long. VERIFIED by four __vbaUI1I4 conversions against four stores. */
   RADIUS: 0x0c,
 } as const;

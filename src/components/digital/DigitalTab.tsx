@@ -5,6 +5,7 @@ import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
+import { MasterRadioIdCard } from './MasterRadioIdCard';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
@@ -235,6 +236,10 @@ export const DigitalTab: React.FC = () => {
           Manage encryption keys, digital emergency systems, DMR radio IDs, talk groups, RX groups, and quick messages.
         </p>
       </div>
+
+      {/* The radio's OWN id, above the list of IDs it can transmit with —
+          same family, but a separate record with a field they do not have. */}
+      <MasterRadioIdCard />
 
       {/* DMR Radio IDs Section */}
       <div className="mb-8">

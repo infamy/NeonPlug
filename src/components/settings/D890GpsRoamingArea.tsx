@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { useZonesStore } from '../../store/zonesStore';
+import { d890ZoneSlotsForDisplay } from '../../services/d890WriteInput';
 import { SectionTitle } from '../ui/SectionTitle';
 import {
   D890_GPS_ROAMING,
@@ -176,18 +177,55 @@ const LocationPicker: React.FC<{
   );
 };
 
+/**
+ * Render a signed decimal degree as the radio's own `ddd mm.mm H` form.
+ *
+ * The radio stores degrees, whole minutes and hundredths of a minute, so this
+ * is the format it actually holds — decimal degrees are the convenient view,
+ * not the stored one. The vendor CPS offers the same choice as two tabs
+ * (`ddd.mm.mm` and `ddd.ddddd`).
+ */
+export function toDms(value: number, axis: 'lat' | 'lon'): string {
+  const hemi = value < 0 ? (axis === 'lat' ? 'S' : 'W') : axis === 'lat' ? 'N' : 'E';
+  const abs = Math.abs(value);
+  const degrees = Math.floor(abs);
+  // Rounded to hundredths BEFORE splitting, so 44.999 minutes shows as 45.00
+  // rather than 44 and a fraction that rounds up separately.
+  const minutes = Math.round((abs - degrees) * 60 * 100) / 100;
+  return `${degrees} ${minutes.toFixed(2)} ${hemi}`;
+}
+
+/** Parse `ddd mm.mm H` back to signed decimal. Returns null if it is not that. */
+export function fromDms(raw: string): number | null {
+  const m = raw.trim().match(/^(-?\d+)[^\d-]+(\d+(?:\.\d+)?)\s*([NSEWnsew])?$/);
+  if (!m) return null;
+  const degrees = Math.abs(Number(m[1]));
+  const minutes = Number(m[2]);
+  if (minutes >= 60) return null;          // 60+ minutes is not a coordinate
+  const hemi = (m[3] ?? '').toUpperCase();
+  const negative = hemi === 'S' || hemi === 'W' || m[1]!.startsWith('-');
+  const value = degrees + minutes / 60;
+  return negative ? -value : value;
+}
+
 const CoordInput: React.FC<{
   value: number;
   min: number;
   max: number;
+  axis: 'lat' | 'lon';
+  /** Which notation to show. The stored bytes are the same either way. */
+  format: 'decimal' | 'dms';
   onChange: (value: number) => void;
-}> = ({ value, min, max, onChange }) => {
+}> = ({ value, min, max, axis, format, onChange }) => {
   const [draft, setDraft] = useState<string | null>(null);
 
   const commit = (raw: string) => {
     setDraft(null);
-    const parsed = parseFloat(raw);
-    if (Number.isNaN(parsed)) return;
+    // Accept EITHER notation whatever the display is set to — someone pasting
+    // "49 44.11 N" into a decimal field means it, and refusing would be pedantry.
+    const dms = fromDms(raw);
+    const parsed = dms ?? parseFloat(raw);
+    if (parsed === null || Number.isNaN(parsed)) return;
     onChange(Math.min(max, Math.max(min, parsed)));
   };
 
@@ -197,12 +235,13 @@ const CoordInput: React.FC<{
       inputMode="decimal"
       // Held as a draft while typing so an intermediate "-" or "51." is not
       // parsed, clamped and written back under the cursor.
-      value={draft ?? value.toFixed(5)}
+      value={draft ?? (format === 'dms' ? toDms(value, axis) : value.toFixed(5))}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={(e) => commit(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
       }}
+      title="Accepts either 49.73517 or 49 44.11 N"
       className={`${INPUT} font-mono`}
     />
   );
@@ -211,6 +250,23 @@ const CoordInput: React.FC<{
 export const D890GpsRoamingArea: React.FC = () => {
   const { tables, setTable } = useRadioStore();
   const { zones } = useZonesStore();
+  // Which notation the coordinate columns show. The stored bytes are identical
+  // either way — the radio holds degrees/minutes/hundredths regardless, and
+  // decimal is just the convenient view. The vendor CPS offers the same choice
+  // as two tabs on its ZONE_BARS editor.
+  const [coordFormat, setCoordFormat] = useState<'decimal' | 'dms'>('decimal');
+  // Zone slots as the last read staged them: the stored zone byte is a HARDWARE
+  // SLOT, not a position in the zones array. Confirmed 2026-09-03 — a record
+  // holding 05 displays as "Z7 Digital" in the CPS, and Z7 sits at slot 5.
+  // Display variant: the throwing one is for the write path only.
+  const zoneSlots = d890ZoneSlotsForDisplay(zones);
+  // Zone names are NOT unique — a real radio came back with two "Z3 Boundary"
+  // and two "Zone Eight Long" on different slots. Showing the bare name is
+  // cleaner when they are unique and useless when they are not, so the slot is
+  // appended only where it is needed to tell two entries apart.
+  const duplicateNames = new Set(
+    zones.map((z) => z.name).filter((n, i, all) => all.indexOf(n) !== i)
+  );
   const [pickerFor, setPickerFor] = useState<number | null>(null);
 
   if (!tables.gpsRoaming) {
@@ -310,6 +366,25 @@ export const D890GpsRoamingArea: React.FC = () => {
             Switches the radio to a zone when you enter a circle on the map. Needs GPS turned on.
           </p>
         </div>
+        {/* Display only — the radio stores degrees/minutes/hundredths either
+            way, and both notations are accepted on input regardless of this. */}
+        <div className="flex items-center gap-1 text-xs">
+          {(['decimal', 'dms'] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setCoordFormat(f)}
+              className={
+                'px-2 py-1 rounded border ' +
+                (coordFormat === f
+                  ? 'border-neon-cyan text-neon-cyan bg-neon-cyan bg-opacity-10'
+                  : 'border-panel text-muted hover:text-white')
+              }
+              title={f === 'decimal' ? '49.73517' : "49 44.11 N"}
+            >
+              {f === 'decimal' ? 'ddd.ddddd' : 'ddd mm.mm'}
+            </button>
+          ))}
+        </div>
         <button
           onClick={addEntry}
           disabled={entries.length >= D890_GPS_ROAMING.ENTRIES}
@@ -368,16 +443,23 @@ export const D890GpsRoamingArea: React.FC = () => {
                         }
                         className={`${INPUT} max-w-[14rem]`}
                       >
-                        {/* The stored value is the vendor's own and is not
-                            offset here. A value with no matching zone is kept
-                            and shown as its raw number rather than snapped to
-                            zone 1, which would silently retarget the fence. */}
-                        {entry.zone >= zones.length && (
-                          <option value={entry.zone}>{entry.zone} (no such zone)</option>
+                        {/* Values are HARDWARE SLOTS, not positions in this
+                            array — the two diverge as soon as a zone in the
+                            middle is deleted. Storing the array index would
+                            have retargeted the fence at whichever zone happened
+                            to sit at that position.
+
+                            A slot with no matching zone is kept and labelled
+                            rather than snapped to the first zone, which would
+                            silently move the fence. */}
+                        {!zoneSlots.includes(entry.zone) && (
+                          <option value={entry.zone}>Slot {entry.zone} (no such zone)</option>
                         )}
                         {zones.map((zone, i) => (
-                          <option key={zone.id} value={i}>
-                            {i} · {zone.name}
+                          <option key={zone.id} value={zoneSlots[i] ?? i}>
+                            {duplicateNames.has(zone.name)
+                              ? `${zone.name} (slot ${zoneSlots[i] ?? i})`
+                              : zone.name}
                           </option>
                         ))}
                       </select>
@@ -387,12 +469,16 @@ export const D890GpsRoamingArea: React.FC = () => {
                         value={latitude}
                         min={-90}
                         max={90}
+                        axis="lat"
+                        format={coordFormat}
                         onChange={(v) => setLatitude(entry, v)}
                       />
                     </td>
                     <td className="px-2 py-1">
                       <CoordInput
                         value={longitude}
+                        axis="lon"
+                        format={coordFormat}
                         min={-180}
                         max={180}
                         onChange={(v) => setLongitude(entry, v)}

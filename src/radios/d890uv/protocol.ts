@@ -44,7 +44,7 @@ import { parseD890Settings } from './settingsFormat';
 import type { D890Settings } from './settingsFormat';
 import type { EncryptionKey } from '../../models/EncryptionKey';
 import { log } from '../../utils/protocolLogger';
-import { D890_IMAGE, D890_IMAGE_ADDRESS, D890_IMAGE_LABEL, type D890ImageKind } from './bootImage';
+import { D890_IMAGE, D890_IMAGE_ADDRESS, D890_IMAGE_LABEL, planImageWrite, type D890ImageKind } from './bootImage';
 import { D890_ENCRYPTION_TYPE } from './constants';
 import { predefinedSmsAddress, parsePredefinedSms } from './predefinedSms';
 import { D890_EMERGENCY, parseEmergencySettings, parseEmergencyContact } from './emergency';
@@ -57,7 +57,8 @@ import {
 } from './broadcastChannels';
 import { D890_GPS_ROAMING, parseGpsRoamingTable } from './gpsRoaming';
 import { D890_POWER_ON, parsePowerOnDisplay } from './powerOnDisplay';
-import { D890_AM_ZONES, parseAmZone, type D890AmZone } from './amZones';
+import { D890_AM_ZONES, parseAmZone, applyAmZoneTables, type D890AmZone } from './amZones';
+import { D890_AUTO_REPEATER, parseAutoRepeaterOffsets } from './autoRepeater';
 import {
   D890_TONES,
   parseFiveTone,
@@ -291,6 +292,11 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     const total = missing.reduce((n, r) => n + r.bytes, 0);
 
     let bytes = 0;
+    // Progress counts what was ATTEMPTED, not what succeeded. A region that
+    // fails still consumed its share of the work, and advancing only on success
+    // makes the bar freeze precisely when something is going wrong — which is
+    // the least helpful moment for it to look hung.
+    let attempted = 0;
     for (const run of missing) {
       // Read lengths must be 16-aligned; the vendor's runs already are, but
       // round up rather than assume — a short read would stage a partial span
@@ -307,7 +313,8 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
           'D890'
         );
       }
-      onProgress?.(bytes, total);
+      attempted += run.bytes;
+      onProgress?.(attempted, total);
     }
     return { spans: missing.length, bytes };
   }
@@ -461,16 +468,12 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
   }
 
   /**
-   * NOT IMPLEMENTED, and the bar for implementing it is high.
+   * Write channels.
    *
-   * The read path is hardware-verified now, but writing to this radio is a
-   * different problem: nothing has ever been written to this radio by this
-   * software, and `planChannelWrite` — which does exist, and is thorough — has
-   * never been wired to `runWriteSession` or exercised against hardware.
-   *
-   */
-  /**
-   * Write channels. **Nothing has ever been written to this radio.**
+   * Hardware-verified by changed-field round trip: an edited channel written
+   * from here read back changed in a later session, with its neighbours
+   * untouched. That is the only proof that counts — a write-back comparison
+   * inside the same session passes even when the radio kept nothing.
    *
    * The originals and the presence mask must be staged first, via
    * `setWriteOriginals` — they come from the last read and cannot be
@@ -526,6 +529,42 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     await this.runWriteSession(plan.frames, onProgress);
   }
 
+
+  /**
+   * Write one 160x128 picture — boot screen or a standby background.
+   *
+   * ITS OWN OPERATION, deliberately not folded into the codeplug write. An
+   * image is 2,560 frames on a link that moves ~10 KB/s, roughly 28 seconds and
+   * four times any codeplug write we do; a picture that fails part way should
+   * not leave a codeplug half-sent, and a codeplug write should not take a
+   * minute and a half because three pictures rode along with it.
+   *
+   * NO ORIGINAL IS NEEDED, unlike every other write on this radio. The region
+   * is pixels end to end — CONFIRMED 2026-09-03 from a vendor CPS capture of a
+   * boot-image write: exactly 40,960 bytes at 0x3f80000, no header, no trailer,
+   * nothing else in the session, and no erase step. So there is nothing
+   * unmodelled to preserve and nothing to patch.
+   *
+   * The same capture confirmed the column-major pixel order (`x * HEIGHT + y`)
+   * that `bootImage.ts` assumes: reading those bytes row-major scrambles the
+   * vertical axis, column-major is smooth on both.
+   *
+   * ⚠️ No read-back, same rule as the codeplug write: reading mid-write reboots
+   * the radio. Verify in a separate session.
+   */
+  async writeImage(
+    kind: D890ImageKind,
+    image: Uint8Array,
+    onProgress?: (percent: number, message: string) => void
+  ): Promise<void> {
+    // planImageWrite validates the exact byte count and refuses anything else,
+    // so a short buffer cannot become a partially written picture.
+    const frames = planImageWrite(kind, image).map((f) => ({
+      ...f,
+      what: `${D890_IMAGE_LABEL[kind]} image`,
+    }));
+    await this.runWriteSession(frames, onProgress);
+  }
 
   /** The plan the last `writeCodeplug` sent, for reporting what happened. */
   lastCodeplugPlan: D890CodeplugWritePlan | null = null;
@@ -1173,6 +1212,26 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
    * calls it the AM VFO, and that disagreement is unresolved. Reading a wrong
    * region would invent an airband memory.
    */
+  /**
+   * The AM airband receiver's own tuning record — what the radio is on in VFO
+   * mode, as opposed to a stored memory.
+   *
+   * Same shape as an AM channel (BCD frequency at +0x00, UTF-16LE name at
+   * +0x04), CONFIRMED 2026-09-03 from a vendor CPS write capture where this
+   * record's name changed to "AM-256" while its frequency bytes stayed put.
+   * `recordLayout.ts` had called it a VFO/tuning record on inference; the
+   * capture made it an observation.
+   *
+   * It has no presence-mask bit — it is tuning state, not a memory — so
+   * vacancy is decided by the record's own contents, exactly as for FM.
+   */
+  async readAmVfo(): Promise<D890BroadcastChannel | null> {
+    const spec = D890_BROADCAST.am;
+    const bytes = await this.requireConnection().readMemory(spec.vfo, spec.stride);
+    const ch = parseBroadcastChannel(bytes, spec.channels, 'am');
+    return isVacantBroadcastChannel(ch) ? null : ch;
+  }
+
   async readFmVfo(): Promise<D890BroadcastChannel | null> {
     const spec = D890_BROADCAST.fm;
     const bytes = await this.requireConnection().readMemory(spec.vfo, spec.stride);
@@ -1275,7 +1334,73 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
       const zone = parseAmZone(slot.bytes, slot.index);
       if (zone) out.push(zone);
     }
-    return out;
+    if (out.length === 0) return out;
+
+    // A Channel and the per-zone scan bitmaps live OUTSIDE the zone record, in
+    // the AM mask block. Read here rather than as separate tables because both
+    // are indexed by zone slot and their values are member POSITIONS — they
+    // only mean anything beside the zone they belong to.
+    //
+    // Two 16-byte reads. Cheap, and skipping them is what left both fields
+    // invisible: a NeonPlug write never touched them, so they stayed erased and
+    // the radio fell back to member 0 for every zone.
+    // SEQUENTIAL, never Promise.all.
+    //
+    // The connection is one serial port with one request/reply stream: two
+    // reads in flight interleave their frames and each consumes the other's
+    // reply. Issuing these concurrently on 2026-09-03 desynchronised the
+    // framing for the REST of the read — every later preserve region failed
+    // with "needed 248 bytes, have 140" and the read stalled at 89%.
+    const conn = this.requireConnection();
+    const aChannels = await conn.readMemory(D890_AM_ZONES.A_CHANNEL_TABLE, 0x10);
+    const scan = await conn.readMemory(D890_AM_ZONES.SCAN_TABLE, 0x10);
+    return applyAmZoneTables(out, aChannels, scan);
+  }
+
+  /**
+   * The radio's OWN DMR ID — the CPS's "MastID".
+   *
+   * Byte-for-byte a Radio ID record (BCD-as-hex id at +0x00, UTF-16LE name at
+   * +0x04), CONFIRMED ON HARDWARE 2026-09-03: setting MastID to 16776415 /
+   * "MASTERX" in the vendor CPS produced `16 77 64 15 4d 00 41 00 53 00 54 00
+   * 45 00 52 00 58 00` here.
+   *
+   * `overrideAllTxIds` is a single byte at `MASTER_ID_OVERRIDE_TX_AT` — the
+   * checkbox the vendor CPS labels **"Used"**. With it on, this ID overrides
+   * the TX ID of every channel instead of each channel using its own.
+   *
+   * It is NOT "the record is non-empty", which is what a first look suggested:
+   * with the box unticked and the values kept, the ID and name stayed exactly
+   * as written and only that one byte moved.
+   *
+   * An all-zero record still reports null: an ID of 0 with a blank name is not
+   * a radio ID, whatever the flag says.
+   */
+  async readMasterRadioId(): Promise<{ id: DMRRadioID; overrideAllTxIds: boolean } | null> {
+    const bytes = await this.requireConnection().readMemory(
+      D890_ADDR.MASTER_ID_DATA,
+      D890_ADDR.MASTER_ID_SIZE
+    );
+    if (bytes.every((b) => b === 0)) return null;
+    return {
+      id: parseRadioId(bytes, 0),
+      overrideAllTxIds: bytes[D890_ADDR.MASTER_ID_OVERRIDE_TX_AT] === 1,
+    };
+  }
+
+  /**
+   * Auto-repeater offsets — 250 u32 LE values in units of 10 Hz.
+   *
+   * The slot INDEX is meaningful: the settings fields `autoRepeater1Uhf` and
+   * `autoRepeater1Vhf` are u8 selectors into this table, so compacting or
+   * reordering it would silently repoint them at a different offset.
+   */
+  async readAutoRepeaterOffsets(): Promise<(number | null)[]> {
+    const bytes = await this.requireConnection().readMemory(
+      D890_AUTO_REPEATER.ADDRESS,
+      D890_ADDR.AUTO_REPEATER_READ
+    );
+    return parseAutoRepeaterOffsets(bytes);
   }
 
   /** The GPS Roaming geofence table. */

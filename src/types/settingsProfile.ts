@@ -90,6 +90,15 @@ export interface SettingsSection {
   id: string;
   title: string;
   fields: SettingsFieldDescriptor[];
+  /**
+   * An area rendered inside this section, below its fields.
+   *
+   * For a block that belongs WITH a group of settings rather than beside them —
+   * the power-on text sits under Power-on Interface because that field decides
+   * whether the text is shown at all. An area named here gets no jump-nav chip
+   * of its own; the section's chip already points at it.
+   */
+  area?: SettingsFeature;
 }
 
 /**
@@ -109,10 +118,12 @@ export type SettingsFeature =
   | 'oneKeyOperation'
   | 'gpsAprs'
   | 'pictures'
+  | 'powerOnScreen'
   | 'roaming'
   | 'gpsRoaming'
   | 'satellites'
   | 'toneLists'
+  | 'autoRepeaterOffsets'
   | 'emergencyAlarm';
 
 export interface SettingsProfile {
