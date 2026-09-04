@@ -2,6 +2,7 @@ import React from 'react';
 import { TabNavigation } from './TabNavigation';
 import { StatusBar } from './StatusBar';
 import { Toolbar } from './Toolbar';
+import { RadioProgressBar } from './RadioProgressBar';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -18,6 +19,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
     <div className="h-screen overflow-hidden bg-dark-charcoal flex flex-col">
       <StatusBar />
       <Toolbar />
+      <RadioProgressBar />
       <TabNavigation activeTab={activeTab} onTabChange={onTabChange} />
       {/* Single scroll surface for tabs that overflow; tabs that manage their
           own height (Channels) fit exactly and produce no scrollbar here. */}

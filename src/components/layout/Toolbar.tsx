@@ -8,6 +8,7 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import { useRadioStore } from '../../store/radioStore';
+import { blocksWriting, describeFindings } from '../../radios/d890uv/integrity';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
@@ -18,6 +19,7 @@ import { getRadioPickerOptions, getMigrationTargetModels } from '../../radios';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 import { migrateCodeplug, type MigrationLoss } from '../../services/codeplugMigration';
 import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
+import { formatPlural } from '../../utils/formatPlural';
 // Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { useAlert } from '../../hooks/useAlert';
@@ -41,7 +43,10 @@ export const Toolbar: React.FC = () => {
   const { groups: rxGroups, setGroups: setRXGroups } = useRXGroupsStore();
   const { keys: encryptionKeys, setKeys: setEncryptionKeys } = useEncryptionKeysStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { readFromRadio, writeChannelsToRadio, isConnecting, error, readSteps, writeChannelsSteps } = useRadioConnection();
+  const { readFromRadio, writeChannelsToRadio, previewChannelWrite, isConnecting, error, readSteps, writeChannelsSteps, readModel, writeModel } = useRadioConnection();
+  // Any operation anywhere owns the port; a second port.open() throws AND
+  // leaves it locked for the next attempt.
+  const { radioBusy } = useRadioStore();
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
   const [currentStep, setCurrentStep] = useState('');
@@ -154,6 +159,10 @@ export const Toolbar: React.FC = () => {
     if (loss.quickContactsLost > 0) parts.push(`${loss.quickContactsLost} quick contact(s) removed`);
     if (loss.rxGroupsLost > 0) parts.push(`${loss.rxGroupsLost} RX group(s) removed`);
     if (loss.encryptionKeysLost > 0) parts.push(`${loss.encryptionKeysLost} encryption key(s) removed`);
+    if (loss.powerLevelsDowngraded > 0)
+      parts.push(
+        `${formatPlural(loss.powerLevelsDowngraded, 'channel')} stepped down to the strongest power this radio supports`,
+      );
     if (loss.settingsCleared) parts.push('Radio settings cleared (do not map between radios)');
     return parts.length > 0 ? parts.join('. ') : 'No data removed.';
   };
@@ -374,7 +383,89 @@ export const Toolbar: React.FC = () => {
     }
     // Run radio-specific validations only when model is known; combine with experimental warning in one modal
     const { warnings } = validateCodeplugForWrite(channels, zones, caps?.writeValidations, dmrRadioIds);
+    // What this write will ACTUALLY send, shown before it is sent.
+    //
+    // On a radio that has no retry and ACKs a write without echoing it, "click
+    // Write and hope" is not good enough — and the destructive part is not the
+    // bytes going out but the channels a plan would CLEAR, which is silent
+    // otherwise. Null for radios that do not plan their writes this way.
+    // A codeplug that did not read cleanly must not be written back — that is
+    // how a corrupt radio becomes a permanently corrupt radio. Checked before
+    // anything else, because the rest of the preview describes a plan built on
+    // a read we do not trust.
+    const integrity = useRadioStore.getState().tables.writeOriginals?.integrity ?? [];
+    if (blocksWriting(integrity)) {
+      showAlert(
+        'This codeplug did not read cleanly, so writing is blocked.\n\n' +
+          describeFindings(integrity) +
+          '\n\nRead the radio again. If it reads the same way, the codeplug on the ' +
+          'radio is damaged — restore it from a backup before writing.'
+      );
+      return;
+    }
+
+    const preview = previewChannelWrite(channels);
     let message = EXPERIMENTAL_WRITE_WARNING;
+    if (integrity.length > 0) {
+      // Warnings do not block, but they must not be invisible either.
+      message = `THIS READ HAD WARNINGS\n\n${describeFindings(integrity)}\n\n${'─'.repeat(40)}\n\n${message}`;
+    }
+    if (preview) {
+      if (preview.refusal) {
+        // A refusal is the answer, not an error: nothing can be sent, and the
+        // reason is the useful part.
+        showAlert(`This write cannot be planned:\n\n${preview.refusal}`);
+        return;
+      }
+      const lines = [
+        preview.wholeCodeplug
+          ? 'Writing the WHOLE codeplug — every region that was read, not only what changed.'
+          : 'Writing channels only — no read log staged, so other regions are left alone.',
+        `Frames: ${preview.totalFrames.toLocaleString()} (${preview.recordFrames.toLocaleString()} channel, ${preview.maskFrames.toLocaleString()} other)`,
+        `On the wire: ${preview.bytesOnWire.toLocaleString()} bytes, about ${preview.estimatedSeconds < 1 ? 'under a second' : `${preview.estimatedSeconds.toFixed(1)} s`}`,
+      ];
+      // Lead with what actually CHANGES, measured against the bytes we read.
+      //
+      // The old dialog derived this from every channel in the plan, so a write
+      // that altered nothing announced "Channels changing (120)". Since this
+      // radio writes back what it read, that number was structurally guaranteed
+      // to be alarming and wrong.
+      if (preview.bytesChanged === 0) {
+        lines.push(
+          '\nNothing changes: every byte matches what was read. This is a write-back,',
+          'so a failure mid-write would put the radio\'s own bytes back over themselves.'
+        );
+      } else if (preview.bytesChanged !== undefined) {
+        lines.push(`\nChanges: ${preview.bytesChanged.toLocaleString()} byte(s)`);
+        for (const r of (preview.changedRegions ?? []).slice(0, 8)) {
+          lines.push(`  • ${r.what}: ${r.bytes} byte(s) in ${r.frames} frame(s)`);
+        }
+        if ((preview.changedRegions?.length ?? 0) > 8) {
+          lines.push(`  • …and ${preview.changedRegions!.length - 8} more region(s)`);
+        }
+      } else if (preview.changedChannels.length > 0) {
+        lines.push(
+          `Channels written (${preview.changedChannels.length}): ${preview.changedChannels.slice(0, 12).join(', ')}${preview.changedChannels.length > 12 ? ` and ${preview.changedChannels.length - 12} more` : ''}`
+        );
+      }
+      if (preview.clearedZoneSlots && preview.clearedZoneSlots.length > 0) {
+        lines.push(
+          `\n⚠️ REMOVES ${preview.clearedZoneSlots.length} zone(s) from the radio ` +
+            `(slots ${preview.clearedZoneSlots.slice(0, 12).join(', ')})`
+        );
+      }
+      if (preview.clearedChannels.length > 0) {
+        lines.push(
+          `\n⚠️ REMOVES ${preview.clearedChannels.length} channel(s) from the radio: ` +
+            `${preview.clearedChannels.slice(0, 12).join(', ')}${preview.clearedChannels.length > 12 ? ' and more' : ''}`
+        );
+      }
+      if (preview.skipped.length > 0) {
+        lines.push(`\nNot written (${preview.skipped.length}): ` +
+          preview.skipped.slice(0, 5).join('; '));
+      }
+      message = `WHAT THIS WRITE WILL SEND\n\n${lines.join('\n')}\n\n${'─'.repeat(40)}\n\n${message}`;
+    }
     if (warnings.length > 0) {
       const validationLines = warnings.map((w) => {
         if (w.id === 'channels_not_in_zones' && w.channels && w.channels.length > 0) {
@@ -502,7 +593,7 @@ export const Toolbar: React.FC = () => {
                 variant="primary"
                 data-action="read-from-radio"
                 onClick={() => handleRead()}
-                disabled={isConnecting || !webSerialSupported}
+                disabled={isConnecting || radioBusy || !webSerialSupported}
                 className={`rounded-r-none border-r border-white border-opacity-20 ${!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Read codeplug from current radio type'}
               >
@@ -511,7 +602,7 @@ export const Toolbar: React.FC = () => {
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setReadDropdownOpen((v) => !v); }}
-                disabled={isConnecting || isWriting}
+                disabled={isConnecting || isWriting || radioBusy}
                 title="Switch to a different radio type"
                 className="px-2 py-2 bg-neon-cyan text-dark-charcoal hover:bg-opacity-90 border-l border-white border-opacity-20 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none transition-all"
                 aria-expanded={readDropdownOpen}
@@ -537,7 +628,7 @@ export const Toolbar: React.FC = () => {
           <Button
             variant="primary"
             onClick={handleWrite}
-            disabled={isConnecting || isWriting || (channels.length === 0 && zones.length === 0 && scanLists.length === 0) || !webSerialSupported || !!connectionError}
+            disabled={isConnecting || isWriting || radioBusy || (channels.length === 0 && zones.length === 0 && scanLists.length === 0) || !webSerialSupported || !!connectionError}
             className={!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}
             title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Write codeplug to connected radio'}
             glow={webSerialSupported}
@@ -560,6 +651,7 @@ export const Toolbar: React.FC = () => {
         onChangePort={!isWriting ? handleChangePort : undefined}
         onClose={handleCloseModal}
         mode={isWriting ? 'write' : 'read'}
+        model={isWriting ? writeModel : readModel}
       />
       <ConfirmModal
         isOpen={writeWarningOpen}

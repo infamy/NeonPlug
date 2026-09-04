@@ -31,7 +31,25 @@ export abstract class BaseAnalogProtocol implements RadioProtocol {
   async readContacts(): Promise<Contact[]> { return []; }
   async writeContacts(_contacts: Contact[]): Promise<void> {}
   async readRadioSettings(): Promise<RadioSettings | null> { return null; }
-  async writeRadioSettings(_settings: RadioSettings, _options?: { changedFields?: string[] }): Promise<void> {}
+  /**
+   * Deliberately NOT a no-op.
+   *
+   * It was one until 2026-09-02, and that silently discarded every DA-7X2
+   * settings edit: the hook called this, got a resolved promise, and then ran
+   * `clearChanges()` — so the UI reported success, advanced the baseline, and
+   * the radio kept its old values. That is write-path invariant #2 in CLAUDE.md,
+   * and a no-op base is what made it invisible.
+   *
+   * A protocol that cannot write settings must say so with
+   * `settingsWriteUnsupported`, which the hook checks BEFORE sending any bytes.
+   * Reaching this throw means that flag is missing.
+   */
+  async writeRadioSettings(_settings: RadioSettings, _options?: { changedFields?: string[] }): Promise<void> {
+    throw new Error(
+      'This radio cannot write settings. The protocol must either implement ' +
+      'writeRadioSettings or declare settingsWriteUnsupported.'
+    );
+  }
 }
 
 /**

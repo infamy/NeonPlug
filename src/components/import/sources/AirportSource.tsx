@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 import { formatPlural } from '../../../utils/formatPlural';
 import { useImportStores } from '../../../hooks/useImportStores';
 import { getNextChannelNumber, selectionCardClass } from '../../../utils/importHelpers';
-import { generateAirportChannels, COMMON_AIRCRAFT_FREQUENCIES } from '../../../services/airportChannels';
+import {
+  generateAirportChannels,
+  splitAirbandChannels,
+  COMMON_AIRCRAFT_FREQUENCIES,
+} from '../../../services/airportChannels';
+import { useRadioCapabilities } from '../../../hooks/useRadioCapabilities';
+import { useRadioStore } from '../../../store/radioStore';
 import { getAirportFrequenciesWithTypes, type AirportData } from '../../../data/airportsData';
 import { SelectAllButtons } from '../SelectAllButtons';
 import { Button } from '../../ui/Button';
@@ -13,7 +19,7 @@ interface AirportSourceProps {
   airports: (AirportData & { distance?: number })[];
   isSearching: boolean;
   onError: (msg: string) => void;
-  onGenerationResult: (r: { channels: number; zones: number }) => void;
+  onGenerationResult: (r: { channels: number; zones: number; airband?: number; amZones?: number; amZonesSkipped?: number }) => void;
 }
 
 export const AirportSource: React.FC<AirportSourceProps> = ({
@@ -23,6 +29,8 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
   onGenerationResult,
 }) => {
   const { channels, setChannels, zones, setZones } = useImportStores();
+  const { caps } = useRadioCapabilities();
+  const { tables, setTable } = useRadioStore();
 
   const [selectedAirports, setSelectedAirports] = useState<Set<number>>(new Set());
   const [airportZoneGrouping, setAirportZoneGrouping] = useState<'individual' | 'single'>('individual');
@@ -99,17 +107,90 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
         return;
       }
 
+      // On radios that keep AM airband in its own table, airband frequencies
+      // must NOT enter the main channel list — that record cannot express an AM
+      // receive-only channel and writing one there corrupts the codeplug. Every
+      // other radio keeps its airband in the ordinary list, unchanged.
+      let amZonesCreated = 0;
+      let amZonesSkipped = 0;
+      const routed = caps?.separateAirbandTable
+        ? splitAirbandChannels(result.channels, result.zones)
+        : {
+            channels: result.channels,
+            zones: result.zones,
+            airband: [] as typeof result.channels,
+            airbandZones: [] as { name: string; channelNumbers: number[] }[],
+          };
+
+      if (routed.airband.length > 0) {
+        const existing = tables.broadcast ?? { am: [], fm: [], amVfo: null, fmVfo: null };
+        // Airband entries are indexed within their own table, not by channel
+        // number, so they are renumbered onto the end of it. Keep the mapping —
+        // the AM zones below reference these by their NEW index.
+        const amIndexOf = new Map<number, number>();
+        const appended = routed.airband.map((c, i) => {
+          const index = existing.am.length + i;
+          amIndexOf.set(c.number, index);
+          return { index, name: c.name, frequency: c.rxFrequency };
+        });
+        setTable('broadcast', { ...existing, am: [...existing.am, ...appended] });
+
+        // Carry the wizard's grouping across into AM zones. Without this the
+        // airband channels arrive loose, on a radio that has 16 zones for
+        // exactly this purpose.
+        // Absent capability means the radio has no airband zones, so none are
+        // created — the channels still land in the airband table.
+        const maxAirbandZones = caps?.maxAirbandZones ?? 0;
+        if (routed.airbandZones.length > 0 && maxAirbandZones > 0) {
+          const current = tables.amZones ?? [];
+          const used = new Set(current.map((z) => z.index));
+          const created: typeof current = [];
+          for (const group of routed.airbandZones) {
+            let index = 0;
+            while (used.has(index)) index += 1;
+            // The radio's zone limit; groups past it keep their channels but
+            // lose the grouping, which is reported rather than hidden.
+            if (index >= maxAirbandZones) break;
+            used.add(index);
+            created.push({
+              index,
+              name: group.name.slice(0, 16),
+              members: group.channelNumbers
+                .map((n) => amIndexOf.get(n))
+                .filter((i): i is number => i !== undefined),
+              // The zone's FIRST member, not 0. This is an absolute index into
+              // the AM table, so a literal 0 points at AM channel 1 — which is
+              // usually not in the zone and may not exist at all. On a radio
+              // whose airband started at index 3, every imported zone pointed
+              // at a deleted slot and the radio displayed its stale name.
+              currentChannel:
+                group.channelNumbers
+                  .map((n) => amIndexOf.get(n))
+                  .find((i): i is number => i !== undefined) ?? 0,
+            });
+          }
+          if (created.length > 0) {
+            setTable('amZones', [...current, ...created].sort((a, b) => a.index - b.index));
+          }
+          amZonesCreated = created.length;
+          amZonesSkipped = routed.airbandZones.length - created.length;
+        }
+      }
+
       // Add channels
-      const updatedChannels = [...channels, ...result.channels];
+      const updatedChannels = [...channels, ...routed.channels];
       setChannels(updatedChannels);
 
       // Add zones (one per airport)
-      const updatedZones = [...zones, ...result.zones];
+      const updatedZones = [...zones, ...routed.zones];
       setZones(updatedZones);
 
       onGenerationResult({
-        channels: result.channels.length,
-        zones: result.zones.length,
+        channels: routed.channels.length,
+        zones: routed.zones.length,
+        airband: routed.airband.length,
+        amZones: amZonesCreated,
+        amZonesSkipped,
       });
 
       // Clear selection

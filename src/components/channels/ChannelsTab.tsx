@@ -8,7 +8,13 @@ import { createDefaultChannel } from '../../utils/channelHelpers';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import type { Channel } from '../../models/Channel';
 
-const isVFOChannel = (n: number) => n === 4001 || n === 4002;
+import { isVFOChannel } from '../../utils/vfoChannels';
+import { useRadioStore } from '../../store/radioStore';
+import { BroadcastChannelsTable } from './BroadcastChannelsTable';
+import { D890_BROADCAST } from '../../radios/d890uv/broadcastChannels';
+
+/** Which channel table the tab is showing. */
+type ChannelView = 'main' | 'am' | 'fm';
 
 export const ChannelsTab: React.FC = () => {
   const { channels, addChannel, deleteChannels } = useChannelsStore();
@@ -18,6 +24,33 @@ export const ChannelsTab: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [scrollToChannel, setScrollToChannel] = useState<number | null>(null);
   const [selectedChannelNumbers, setSelectedChannelNumbers] = useState<Set<number>>(new Set());
+  const [view, setView] = useState<ChannelView>('main');
+
+  // AM airband and FM broadcast are separate tables on the radio, not rows in
+  // the main list — shown as sibling views so they keep channel-list room
+  // without pretending to be channel numbers.
+  const { tables } = useRadioStore();
+  // The FM VFO is the 101st memory — outside the numbered table, so it is
+  // appended rather than sorted in, and only for the FM view.
+  const broadcast =
+    view === 'am'
+      ? tables.broadcast?.am
+      : view === 'fm'
+        ? tables.broadcast?.fm
+        : undefined;
+  const isBroadcast = view !== 'main';
+
+  const filteredBroadcast = useMemo(() => {
+    if (!broadcast) return [];
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return broadcast;
+    return broadcast.filter(
+      (ch) =>
+        ch.name.toLowerCase().includes(query) ||
+        (ch.frequency !== null && ch.frequency.toFixed(4).includes(query)) ||
+        String(ch.index + 1).includes(query)
+    );
+  }, [broadcast, searchQuery]);
 
   const handleAddChannel = () => {
     // Find the next available channel number
@@ -127,16 +160,43 @@ export const ChannelsTab: React.FC = () => {
       <div className="mb-4 flex items-center justify-between shrink-0">
         <h2 className="text-2xl font-bold text-neon-cyan">Channels</h2>
         <div className="flex items-center gap-4">
+          {tables.broadcast && (
+            <div className="flex items-center gap-1">
+              {([
+                ['main', 'Main', channels.length],
+                ['am', 'AM Airband', tables.broadcast.am.length],
+                ['fm', 'FM Broadcast', tables.broadcast.fm.length],
+              ] as const).map(([key, title, count]) => (
+                <button
+                  key={key}
+                  onClick={() => setView(key)}
+                  className={`px-3 py-1 text-xs rounded border transition-colors ${
+                    view === key
+                      ? 'bg-neon-cyan bg-opacity-20 border-neon-cyan text-neon-cyan'
+                      : 'border-neon-cyan border-opacity-20 text-cool-gray hover:text-neon-cyan hover:border-opacity-50'
+                  }`}
+                >
+                  {title} <span className="opacity-70">{count}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="text-cool-gray">
-            {filteredChannels.length - vfoChannels.length} {formatPlural(filteredChannels.length - vfoChannels.length, 'channel')} {vfoChannels.length > 0 && `(${vfoChannels.length} ${formatPlural(vfoChannels.length, 'VFO')})`}
+            {isBroadcast
+              ? `${filteredBroadcast.length} ${formatPlural(filteredBroadcast.length, 'channel')}`
+              : `${filteredChannels.length - vfoChannels.length} ${formatPlural(filteredChannels.length - vfoChannels.length, 'channel')}${vfoChannels.length > 0 ? ` (${vfoChannels.length} ${formatPlural(vfoChannels.length, 'VFO')})` : ''}`}
           </div>
-          <button
-            onClick={handleAddChannel}
-            className="px-2 py-1 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-20 hover:border-opacity-50 rounded transition-colors focus:outline-none"
-            title="Add new channel"
-          >
-            + Add
-          </button>
+          {/* Add applies to the main list only: broadcast slots are fixed
+              hardware positions, and nothing writes them back yet. */}
+          {!isBroadcast && (
+            <button
+              onClick={handleAddChannel}
+              className="px-2 py-1 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-20 hover:border-opacity-50 rounded transition-colors focus:outline-none"
+              title="Add new channel"
+            >
+              + Add
+            </button>
+          )}
         </div>
       </div>
       <div className="mb-3 flex items-center gap-3 shrink-0">
@@ -145,7 +205,7 @@ export const ChannelsTab: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search channels by name, frequency, mode, number..."
+            placeholder={isBroadcast ? 'Search by name, frequency, number...' : 'Search channels by name, frequency, mode, number...'}
             className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-4 py-2 pl-10 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
           />
           <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-cool-gray text-sm">
@@ -161,7 +221,7 @@ export const ChannelsTab: React.FC = () => {
             </button>
           )}
         </div>
-        {selectedCount > 0 ? (
+        {selectedCount > 0 && !isBroadcast ? (
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-cool-gray text-sm whitespace-nowrap">{selectedCount} selected</span>
             <button
@@ -180,12 +240,27 @@ export const ChannelsTab: React.FC = () => {
             </button>
           </div>
         ) : (
-          <p className="text-cool-gray text-xs shrink-0 whitespace-nowrap" title="Channel selection shortcuts">
-            Click row = one · Shift+click = range · Alt+click = add/remove
-          </p>
+          !isBroadcast && (
+            <p className="text-cool-gray text-xs shrink-0 whitespace-nowrap" title="Channel selection shortcuts">
+              Click row = one · Shift+click = range · Alt+click = add/remove
+            </p>
+          )
         )}
       </div>
       <div className="flex-1 min-h-0">
+        {isBroadcast ? (
+          <BroadcastChannelsTable
+            entries={filteredBroadcast}
+            band={view === 'am' ? 'am' : 'fm'}
+            maxChannels={D890_BROADCAST[view === 'am' ? 'am' : 'fm'].channels}
+            decimals={view === 'am' ? 4 : 2}
+            vfo={view === 'am' ? tables.broadcast?.amVfo : tables.broadcast?.fmVfo}
+            zones={view === 'am' ? tables.amZones ?? undefined : undefined}
+            emptyMessage={
+              view === 'am' ? 'No AM airband memories stored' : 'No FM broadcast memories stored'
+            }
+          />
+        ) : (
         <ChannelsTable
           channels={filteredChannels}
           scrollToChannel={scrollToChannel}
@@ -193,6 +268,7 @@ export const ChannelsTab: React.FC = () => {
           selectedChannelNumbers={selectedChannelNumbers}
           onSelectionChange={setSelectedChannelNumbers}
         />
+        )}
       </div>
       <ConfirmModal
         isOpen={deleteSelectedOpen}

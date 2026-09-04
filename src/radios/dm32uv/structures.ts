@@ -259,6 +259,14 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
   const scanBw = data[0x19];
   const bandwidth: Channel['bandwidth'] = (scanBw & 0x80) !== 0 ? '25kHz' : '12.5kHz';
   const scanAdd = (scanBw & 0x40) !== 0;
+  // ⚠️ KNOWN WRONG on this branch — fixed in PR #156 (`bug/scanlist2`), which is
+  // OPEN and unmerged. Byte 0x19 holds the scan list ref in bits 5-0
+  // (`scanBw & 0x3F`), not bits 5-2; hardware-verified 2026-08-07 via live
+  // CPS<->NeonPlug round-trips and recorded in CLAUDE.md.
+  //
+  // Deliberately NOT patched here: cherry-picking half of #156 onto feat/da7x2
+  // would conflict with it and split a hardware-verified fix across two branches.
+  // It lands when #156 merges.
   const scanListId = (scanBw >> 2) & 0x0F;
 
   // Talkaround & APRS (0x1A)
@@ -596,6 +604,8 @@ export function encodeChannel(channel: Channel): Uint8Array {
     modeFlags &= 0xF7;  // Clear bit 3 (0xF7 = ~0x08)
   }
   // Power is stored at bits 2-1 (NOT busy lock!)
+  // This radio has three levels. 'Turbo' only ever arrives from a D890-family
+  // codeplug (via Convert) and clamps to High — the closest this radio can do.
   const powerValue = channel.power === 'Low' ? 0 : channel.power === 'Medium' ? 1 : 2;
   modeFlags |= (powerValue << 1) & 0x06;
   if (channel.loneWorker) modeFlags |= 0x01;
@@ -605,6 +615,7 @@ export function encodeChannel(channel: Channel): Uint8Array {
   let scanBw = 0;
   if (channel.bandwidth === '25kHz') scanBw |= 0x80; // Bit 7: 1=25kHz, 0=12.5kHz
   if (channel.scanAdd) scanBw |= 0x40; // Bit 6
+  // ⚠️ See the note on the decode side: fixed in PR #156, not on this branch.
   scanBw |= (channel.scanListId << 2) & 0x3C; // Bits 5-2
   data[0x19] = scanBw;
 
@@ -699,13 +710,16 @@ export function encodeChannel(channel: Channel): Uint8Array {
   data[0x25] = additionalFlags;
 
   // RX Squelch & PTT ID (0x26)
-  const rxSquelchModeMap: Record<Channel['rxSquelchMode'], number> = {
+  // Partial on purpose: 'CTCSS/DCS' is a DA-7X2 option with no DM-32 equivalent.
+  // A channel converted from that radio falls back to Carrier rather than being
+  // silently encoded as some other mode.
+  const rxSquelchModeMap: Partial<Record<Channel['rxSquelchMode'], number>> = {
     'Carrier/CTC': 0,
     'Optional': 1,
     'CTC&Opt': 2,
     'CTC|Opt': 3,
   };
-  const rxSquelchValue = rxSquelchModeMap[channel.rxSquelchMode] || 0;
+  const rxSquelchValue = rxSquelchModeMap[channel.rxSquelchMode] ?? 0;
   let rxSquelchPtt = (rxSquelchValue << 4) & 0x70; // Bits 6-4
   if (channel.pttIdDisplay2) rxSquelchPtt |= 0x80; // Bit 7
   rxSquelchPtt |= ((channel.unknown26_3_1 & 0x07) << 1) & 0x0E; // Bits 3-1

@@ -3,6 +3,7 @@ import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
 import { createPortal } from 'react-dom';
 import { useScanListsStore } from '../../store/scanListsStore';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { ScanList } from '../../models/ScanList';
 import type { Channel } from '../../models/Channel';
@@ -15,6 +16,7 @@ import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
 
 export const ScanListsList: React.FC = () => {
+  const { caps } = useRadioCapabilities();
   const { scanLists, selectedScanList, setSelectedScanList, addScanList, deleteScanList, renameScanList } = useScanListsStore();
   const [newScanListName, setNewScanListName] = useState('');
   const [editingScanList, setEditingScanList] = useState<string | null>(null);
@@ -25,8 +27,9 @@ export const ScanListsList: React.FC = () => {
   const selectedScanListData = scanLists.find(sl => sl.name === selectedScanList);
 
   const handleAddScanList = () => {
-    if (scanLists.length >= 32) {
-      showAlert('Maximum of 32 scan lists allowed.');
+    const maxLists = caps?.maxScanLists ?? 32;
+    if (scanLists.length >= maxLists) {
+      showAlert(`Maximum of ${maxLists} scan lists allowed.`);
       return;
     }
     if (!newScanListName.trim()) {
@@ -402,6 +405,9 @@ interface ScanListEditorProps {
 }
 
 const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) => {
+  // Per-radio, never hardcoded: the DM-32 holds 15 channels per scan list, the
+  // D890UV family 50. This was `maxItems={15}` and silently truncated the D890.
+  const { caps } = useRadioCapabilities();
   const { updateScanList } = useScanListsStore();
   const { channels } = useChannelsStore();
   const [showSettings, setShowSettings] = useState(true);
@@ -558,7 +564,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
           return ch ? channelPickerItem(ch) : undefined;
         }}
         onChange={(ids) => updateScanList(scanList.name, { channels: ids })}
-        maxItems={15}
+        maxItems={caps?.maxScanListChannels ?? 15}
         itemNoun="channel"
         containerNoun="scan list"
         onAlert={onAlert}

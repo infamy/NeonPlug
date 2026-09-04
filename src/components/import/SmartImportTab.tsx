@@ -7,6 +7,7 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { formatPlural } from '../../utils/formatPlural';
 import { ChirpSource } from './sources/ChirpSource';
 import { AirportSource } from './sources/AirportSource';
 import { TaflSource } from './sources/TaflSource';
@@ -35,7 +36,7 @@ export const SmartImportTab: React.FC = () => {
   const [isSearchingAll, setIsSearchingAll] = useState(false);
 
   // Generation result
-  const [generationResult, setGenerationResult] = useState<{ channels: number; zones: number } | null>(null);
+  const [generationResult, setGenerationResult] = useState<{ channels: number; zones: number; airband?: number; amZones?: number; amZonesSkipped?: number } | null>(null);
 
   // Airport search results
   const [airports, setAirports] = useState<(AirportData & { distance?: number })[]>([]);
@@ -421,11 +422,52 @@ export const SmartImportTab: React.FC = () => {
       />
 
       {/* 8. Generation result success banner */}
-      {generationResult && (
-        <div className="bg-deep-gray border border-neon-cyan rounded p-3 mb-4 text-neon-cyan">
-          Successfully generated {generationResult.channels} channels and {generationResult.zones} zones!
-        </div>
-      )}
+      {generationResult && (() => {
+        // Built from what actually happened, rather than a fixed sentence.
+        //
+        // It used to read "Successfully generated 0 channels and 0 zones!"
+        // followed by news of 29 airband frequencies — technically true, since
+        // airband is neither an ordinary channel nor an ordinary zone on this
+        // radio, but it leads with two zeros and an exclamation mark for an
+        // import that worked. List what was added; explain the routing after.
+        const r = generationResult;
+        const added: string[] = [];
+        if (r.channels) added.push(`${r.channels} ${formatPlural(r.channels, 'channel')}`);
+        if (r.zones) added.push(`${r.zones} ${formatPlural(r.zones, 'zone')}`);
+        if (r.airband) {
+          added.push(
+            `${r.airband} AM airband ${formatPlural(r.airband, 'frequency', 'frequencies')}`
+          );
+        }
+        if (r.amZones) added.push(`${r.amZones} AM ${formatPlural(r.amZones, 'zone')}`);
+        const list =
+          added.length === 0
+            ? null
+            : added.length === 1
+              ? added[0]
+              : `${added.slice(0, -1).join(', ')} and ${added[added.length - 1]}`;
+
+        return (
+          <div className="bg-deep-gray border border-neon-cyan rounded p-3 mb-4">
+            <div className="text-neon-cyan">
+              {list ? `Added ${list}.` : 'Nothing was added — those frequencies are already in the codeplug.'}
+            </div>
+            {r.airband ? (
+              <div className="text-muted text-sm mt-1">
+                Airband lives in its own table on this radio, so those entries appear
+                under AM Airband rather than with your channels.
+              </div>
+            ) : null}
+            {r.amZonesSkipped ? (
+              <div className="text-yellow-400 text-sm mt-1">
+                {r.amZonesSkipped} more {formatPlural(r.amZonesSkipped, 'group')} could not
+                be grouped — this radio has only {caps?.maxAirbandZones ?? 16} AM zone slots.
+                Those frequencies were still added, just not grouped into a zone.
+              </div>
+            ) : null}
+          </div>
+        );
+      })()}
 
       {/* 9. MmdvmSource (only if supportsDigital) */}
       {supportsDigital && (

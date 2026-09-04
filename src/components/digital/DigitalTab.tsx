@@ -5,6 +5,7 @@ import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
+import { MasterRadioIdCard } from './MasterRadioIdCard';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
@@ -15,7 +16,15 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import type { EncryptionKey } from '../../models/EncryptionKey';
 import { LIMITS } from '../../radios/dm32uv/constants';
+import {
+  ENCRYPTION_TYPES,
+  clearEncryptionKey,
+  editEncryptionKey,
+  encryptionTypeLabel,
+  isEncryptionTypeLocked,
+} from '../../utils/encryptionKeys';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
@@ -27,6 +36,13 @@ export const DigitalTab: React.FC = () => {
   const talkGroupsMax = limits?.TALK_GROUPS_MAX ?? DEFAULT_TALK_GROUPS_MAX;
   const dmrRadioIdsMax = limits?.DMR_RADIO_IDS_MAX ?? DEFAULT_DMR_RADIO_IDS_MAX;
   const { keys, keysLoaded, setKeys, updateKey } = useEncryptionKeysStore();
+  // Driven by the data, not by the model: whichever radio supplies an ID gets
+  // the column. Gating on a model string would be golden-rule #3 all over again.
+  const showEncryptionId = keys.some((k) => k.encryptionId !== undefined);
+  // 128 was the DM-32's limit, hardcoded here before a second radio had quick
+  // messages. It is not universal: the DA-7X2 accepts 200.
+  const messageCharsMax = limits?.QUICK_MESSAGE_CHARS_MAX ?? 128;
+  const messagesMax = limits?.QUICK_MESSAGES_MAX ?? 20;
   const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem, addSystem: addDigitalEmergency, deleteSystem: deleteDigitalEmergency } = useDigitalEmergencyStore();
   const { radioIds, radioIdsLoaded, updateRadioId, addRadioId, deleteRadioId } = useDMRRadioIDsStore();
   const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact, setMaxTalkGroups } = useQuickContactsStore();
@@ -77,7 +93,24 @@ export const DigitalTab: React.FC = () => {
     }
   }, [block10Data, caps?.digital, setDigitalEmergencies, setDigitalEmergencyConfig]);
 
-  const handleKeyChange = (entryNumber: number, field: keyof typeof keys[0], value: any) => {
+  const handleKeyChange = (
+    entryNumber: number,
+    field: keyof EncryptionKey,
+    value: string | number,
+  ) => {
+    // Checked here and not only in the control: a disabled select is a
+    // suggestion, and this rule protects channel references from being silently
+    // redirected on radios that store a separate key table per type.
+    const existing = keys.find((k) => k.entryNumber === entryNumber);
+    if (existing) {
+      const result = editEncryptionKey(existing, field, value);
+      if (!result.ok) {
+        showAlert(result.reason, 'Encryption key');
+        return;
+      }
+      updateKey(entryNumber, result.updates);
+      return;
+    }
     updateKey(entryNumber, { [field]: value });
   };
 
@@ -203,6 +236,10 @@ export const DigitalTab: React.FC = () => {
           Manage encryption keys, digital emergency systems, DMR radio IDs, talk groups, RX groups, and quick messages.
         </p>
       </div>
+
+      {/* The radio's OWN id, above the list of IDs it can transmit with —
+          same family, but a separate record with a field they do not have. */}
+      <MasterRadioIdCard />
 
       {/* DMR Radio IDs Section */}
       <div className="mb-8">
@@ -438,7 +475,11 @@ export const DigitalTab: React.FC = () => {
         )}
       </div>
 
-      {/* Digital Emergency Systems Section */}
+      {/* Digital Emergency Systems — DM-32 shaped, gated on the capability.
+          The DA-7X2 has emergency features but stores them completely
+          differently and has no block 0x10, so the section is hidden rather
+          than shown empty. */}
+      {caps?.supportsDigitalEmergency && (
       <div className="mb-8">
         <div className="mb-4 flex items-start justify-between">
           <div>
@@ -633,13 +674,16 @@ export const DigitalTab: React.FC = () => {
           </Card>
         )}
       </div>
+      )}
 
       {/* Encryption Keys Section */}
       <div className="mb-8">
         <div className="mb-4">
           <SectionTitle as="h3" size="xl">Encryption Keys</SectionTitle>
           <p className="text-cool-gray text-sm">
-            Manage encryption keys from metadata block 0x10. Up to 8 keys can be configured.
+            {caps?.supportsBulkRead
+              ? 'Manage encryption keys from metadata block 0x10. Up to 8 keys can be configured.'
+              : 'Encryption keys read from the radio. Type cannot be changed once a key exists — create a new key of the right type instead.'}
           </p>
           {block10Address !== null && (
             <p className="text-cool-gray text-xs mt-1">
@@ -660,8 +704,16 @@ export const DigitalTab: React.FC = () => {
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-dark-charcoal border-b border-neon-cyan">
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
+                      {/* Only radios whose table carries an ID separate from the
+                          slot get this column — a channel points at the ID, so
+                          hiding it would leave the user unable to match a key to
+                          the channel using it. */}
+                      {showEncryptionId && (
+                        <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[90px]">Encryption ID</th>
+                      )}
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Encryption Type</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[300px]">Key (Hex)</th>
+                      <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -680,18 +732,37 @@ export const DigitalTab: React.FC = () => {
                             placeholder="Enter name"
                           />
                         </td>
+                        {showEncryptionId && (
+                          <td className="px-2 py-2 font-mono text-cool-gray">
+                            {key.encryptionId ?? '—'}
+                          </td>
+                        )}
                         <td className="px-2 py-2">
-                          <select
-                            value={key.encryptionType ?? 0}
-                            onChange={(e) => handleKeyChange(key.entryNumber, 'encryptionType', parseInt(e.target.value) || 0)}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
-                          >
-                            <option value={0}>None</option>
-                            <option value={1}>Custom</option>
-                            <option value={2}>ARC4</option>
-                            <option value={3}>AES128</option>
-                            <option value={4}>AES256</option>
-                          </select>
+                          {isEncryptionTypeLocked(key) ? (
+                            // Fixed for the key's lifetime. On a radio that keeps a
+                            // separate table per type, retyping is a MOVE between
+                            // tables — it changes the key's slot and silently
+                            // redirects every channel that referenced the old one.
+                            // Clear the slot and create a new key instead.
+                            <span
+                              className="text-xs text-white"
+                              title="A key's type is fixed once set. Use Clear to empty the slot, then choose a type for the new key."
+                            >
+                              {encryptionTypeLabel(key.encryptionType)}
+                              <span className="text-cool-gray ml-1">(fixed)</span>
+                            </span>
+                          ) : (
+                            <select
+                              value={key.encryptionType ?? 0}
+                              onChange={(e) => handleKeyChange(key.entryNumber, 'encryptionType', parseInt(e.target.value) || 0)}
+                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                              title="Choosing a type creates the key in this slot. It cannot be changed afterwards."
+                            >
+                              {ENCRYPTION_TYPES.map((label, value) => (
+                                <option key={label} value={value}>{label}</option>
+                              ))}
+                            </select>
+                          )}
                         </td>
                         <td className="px-2 py-2">
                           <input
@@ -707,6 +778,17 @@ export const DigitalTab: React.FC = () => {
                             className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono"
                             placeholder="Enter hex key"
                           />
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          {isEncryptionTypeLocked(key) && (
+                            <button
+                              onClick={() => updateKey(key.entryNumber, clearEncryptionKey())}
+                              className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-red-400 border border-red-600 border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+                              title="Empty this slot — clears the type, name and key material. The slot can then hold a new key of any type."
+                            >
+                              Clear
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -724,7 +806,8 @@ export const DigitalTab: React.FC = () => {
           <div>
             <SectionTitle as="h3" size="xl">Quick Text Messages</SectionTitle>
             <p className="text-cool-gray text-sm">
-              Manage quick text messages. Maximum 128 bytes per message, up to 20 messages.
+              Manage quick text messages. Up to {messageCharsMax} characters each,
+              {' '}{messagesMax} messages.
             </p>
           </div>
           {messagesLoaded && messages.length < 20 && (
@@ -770,11 +853,11 @@ export const DigitalTab: React.FC = () => {
                               type="text"
                               value={message.text}
                               onChange={(e) => {
-                                const newText = e.target.value.slice(0, 128);
+                                const newText = e.target.value.slice(0, messageCharsMax);
                                 const textLength = new TextEncoder().encode(newText).length;
                                 updateMessage(arrayIndex, { text: newText, flag: textLength });
                               }}
-                              maxLength={128}
+                              maxLength={messageCharsMax}
                               className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
                               placeholder="Enter message text"
                             />

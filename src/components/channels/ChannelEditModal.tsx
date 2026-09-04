@@ -1,4 +1,5 @@
 import React from 'react';
+import { isVFOChannel, getVFOIdentifier } from '../../utils/vfoChannels';
 import { Modal } from '../ui/Modal';
 import type { Channel } from '../../models/Channel';
 import type { RXGroup } from '../../models/RXGroup';
@@ -9,6 +10,14 @@ import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } fro
 import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
 import { validateChannel, type ValidationError } from '../../services/validation/channelValidator';
 import type { RadioBandLimits } from '../../types/radioCapabilities';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { powerLevelsFor } from '../../utils/powerLevels';
+import type { ChannelColumnGroup } from '../../types/radioCapabilities';
+import {
+  extraColumnsFor,
+  extraColumnTitle,
+  extraColumnMarker,
+} from './extraChannelColumns';
 
 // Frequency input component that only updates parent on blur
 interface FrequencyInputProps {
@@ -79,6 +88,15 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   analogEmergencySystems = [],
 }) => {
   const [editedChannel, setEditedChannel] = React.useState<Channel>(channel);
+  const { caps } = useRadioCapabilities();
+  const powerLevels = powerLevelsFor(caps);
+  // Same capability gate the grid uses. The editor showing a field the grid
+  // hides is the worse half of the bug: the grid merely omits a column, but the
+  // editor writes whatever its control holds back onto the channel, so an
+  // ungated control silently sets a field the radio has no equivalent for.
+  const declaredColumns = new Set(caps?.channelColumns ?? []);
+  const hasColumn = (g: ChannelColumnGroup) => declaredColumns.has(g);
+  const extraColumns = extraColumnsFor(declaredColumns);
   const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
 
   React.useEffect(() => {
@@ -115,16 +133,6 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
 
   const isDigitalMode = (mode: Channel['mode']): boolean => {
     return mode === 'Digital' || mode === 'Fixed Digital';
-  };
-
-  const isVFOChannel = (channelNumber: number): boolean => {
-    return channelNumber === 4001 || channelNumber === 4002;
-  };
-
-  const getVFOIdentifier = (channelNumber: number): string => {
-    if (channelNumber === 4001) return 'A';
-    if (channelNumber === 4002) return 'B';
-    return channelNumber.toString();
   };
 
   const vfoName = isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : null;
@@ -278,9 +286,11 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   onChange={(e) => handleChange('power', e.target.value)}
                   className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
                 >
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
+                  {powerLevels.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
                 </select>
                 <p className="text-xs text-cool-gray mt-0.5">Transmit power level</p>
               </div>
@@ -540,81 +550,91 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-cool-gray mb-1">
-                      Encryption ID
-                    </label>
-                    <select
-                      value={editedChannel.encryptionId ?? 0}
-                      onChange={(e) => handleChange('encryptionId', parseInt(e.target.value) || 0)}
-                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                    >
-                      <option value={0}>None</option>
-                      {encryptionKeys
-                        .filter(key => key.id >= 1 && key.id <= 8 && key.name.trim() !== '')
-                        .map((key) => (
-                          <option key={key.entryNumber} value={key.id}>
-                            {key.name || `Key ${key.id}`}
-                          </option>
-                        ))}
-                    </select>
-                    <p className="text-xs text-cool-gray mt-0.5">Encryption key (0-8)</p>
+                {hasColumn('encryption') && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-cool-gray mb-1">
+                        Encryption ID
+                      </label>
+                      <select
+                        value={editedChannel.encryptionId ?? 0}
+                        onChange={(e) => handleChange('encryptionId', parseInt(e.target.value) || 0)}
+                        className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      >
+                        <option value={0}>None</option>
+                        {encryptionKeys
+                          .filter(key => key.id >= 1 && key.id <= 8 && key.name.trim() !== '')
+                          .map((key) => (
+                            <option key={key.entryNumber} value={key.id}>
+                              {key.name || `Key ${key.id}`}
+                            </option>
+                          ))}
+                      </select>
+                      <p className="text-xs text-cool-gray mt-0.5">Encryption key (0-8)</p>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={editedChannel.encryption ?? false}
-                      onChange={(e) => handleChange('encryption', e.target.checked)}
-                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                    />
-                    <div>
-                      <span className="text-sm text-white font-medium">Encryption</span>
-                      <p className="text-xs text-cool-gray">Enable encryption</p>
-                    </div>
-                  </label>
+                  {hasColumn('encryption') && (
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={editedChannel.encryption ?? false}
+                        onChange={(e) => handleChange('encryption', e.target.checked)}
+                        className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                      />
+                      <div>
+                        <span className="text-sm text-white font-medium">Encryption</span>
+                        <p className="text-xs text-cool-gray">Enable encryption</p>
+                      </div>
+                    </label>
+                  )}
 
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={editedChannel.tdmaDirectMode ?? false}
-                      onChange={(e) => handleChange('tdmaDirectMode', e.target.checked)}
-                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                    />
-                    <div>
-                      <span className="text-sm text-white font-medium">TDMA Direct Mode</span>
-                      <p className="text-xs text-cool-gray">Enable TDMA direct mode</p>
-                    </div>
-                  </label>
+                  {hasColumn('tdma') && (
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={editedChannel.tdmaDirectMode ?? false}
+                        onChange={(e) => handleChange('tdmaDirectMode', e.target.checked)}
+                        className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                      />
+                      <div>
+                        <span className="text-sm text-white font-medium">TDMA Direct Mode</span>
+                        <p className="text-xs text-cool-gray">Enable TDMA direct mode</p>
+                      </div>
+                    </label>
+                  )}
 
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={editedChannel.shortDataConfirm ?? false}
-                      onChange={(e) => handleChange('shortDataConfirm', e.target.checked)}
-                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                    />
-                    <div>
-                      <span className="text-sm text-white font-medium">Short Data Confirm</span>
-                      <p className="text-xs text-cool-gray">Enable short data confirmation</p>
-                    </div>
-                  </label>
+                  {hasColumn('confirmations') && (
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={editedChannel.shortDataConfirm ?? false}
+                        onChange={(e) => handleChange('shortDataConfirm', e.target.checked)}
+                        className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                      />
+                      <div>
+                        <span className="text-sm text-white font-medium">Short Data Confirm</span>
+                        <p className="text-xs text-cool-gray">Enable short data confirmation</p>
+                      </div>
+                    </label>
+                  )}
 
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={editedChannel.privateConfirm ?? false}
-                      onChange={(e) => handleChange('privateConfirm', e.target.checked)}
-                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                    />
-                    <div>
-                      <span className="text-sm text-white font-medium">Private Confirm</span>
-                      <p className="text-xs text-cool-gray">Enable private confirmation</p>
-                    </div>
-                  </label>
+                  {hasColumn('confirmations') && (
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={editedChannel.privateConfirm ?? false}
+                        onChange={(e) => handleChange('privateConfirm', e.target.checked)}
+                        className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                      />
+                      <div>
+                        <span className="text-sm text-white font-medium">Private Confirm</span>
+                        <p className="text-xs text-cool-gray">Enable private confirmation</p>
+                      </div>
+                    </label>
+                  )}
                 </div>
               </div>
             </section>
@@ -656,243 +676,284 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 <p className="text-xs text-cool-gray mt-0.5">Scan list to add this channel to (0-15)</p>
               </div>
 
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={editedChannel.loneWorker}
-                  onChange={(e) => handleChange('loneWorker', e.target.checked)}
-                  className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                />
-                <div>
-                  <span className="text-sm text-white font-medium">Lone Worker</span>
-                  <p className="text-xs text-cool-gray">Enable lone worker monitoring</p>
-                </div>
-              </label>
+              {hasColumn('loneWorker') && (
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={editedChannel.loneWorker}
+                    onChange={(e) => handleChange('loneWorker', e.target.checked)}
+                    className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                  />
+                  <div>
+                    <span className="text-sm text-white font-medium">Lone Worker</span>
+                    <p className="text-xs text-cool-gray">Enable lone worker monitoring</p>
+                  </div>
+                </label>
+              )}
 
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={editedChannel.forbidTalkaround}
-                  onChange={(e) => handleChange('forbidTalkaround', e.target.checked)}
-                  className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                />
-                <div>
-                  <span className="text-sm text-white font-medium">Forbid Talkaround</span>
-                  <p className="text-xs text-cool-gray">Prevent direct communication without repeater</p>
-                </div>
-              </label>
+              {hasColumn('freeToAir') && (
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={editedChannel.forbidTalkaround}
+                    onChange={(e) => handleChange('forbidTalkaround', e.target.checked)}
+                    className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                  />
+                  <div>
+                    <span className="text-sm text-white font-medium">Forbid Talkaround</span>
+                    <p className="text-xs text-cool-gray">Prevent direct communication without repeater</p>
+                  </div>
+                </label>
+              )}
             </div>
           </section>
 
           {/* Analog Features */}
-          {!isDigitalMode(editedChannel.mode) && (
+          {!isDigitalMode(editedChannel.mode) &&
+            (hasColumn('vox') || hasColumn('audioProcessing') || hasColumn('squelch')) && (
             <section>
               <h3 className="text-neon-cyan font-bold mb-2 text-sm">Analog Features</h3>
               <div className="space-y-2">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editedChannel.voxFunction}
-                    onChange={(e) => handleChange('voxFunction', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                  />
-                  <div>
-                    <span className="text-sm text-white font-medium">VOX Function</span>
-                    <p className="text-xs text-cool-gray">Voice-operated transmit</p>
-                  </div>
-                </label>
-
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editedChannel.scramble}
-                    onChange={(e) => handleChange('scramble', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                  />
-                  <div>
-                    <span className="text-sm text-white font-medium">Scramble</span>
-                    <p className="text-xs text-cool-gray">Enable voice scrambling</p>
-                  </div>
-                </label>
-
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editedChannel.compander}
-                    onChange={(e) => handleChange('compander', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                  />
-                  <div>
-                    <span className="text-sm text-white font-medium">Compander</span>
-                    <p className="text-xs text-cool-gray">Enable compander for better audio</p>
-                  </div>
-                </label>
-
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editedChannel.talkback}
-                    onChange={(e) => handleChange('talkback', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                  />
-                  <div>
-                    <span className="text-sm text-white font-medium">Talkback</span>
-                    <p className="text-xs text-cool-gray">Monitor own transmission</p>
-                  </div>
-                </label>
-
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editedChannel.companderDup}
-                    onChange={(e) => handleChange('companderDup', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                  />
-                  <div>
-                    <span className="text-sm text-white font-medium">Compander Dup</span>
-                    <p className="text-xs text-cool-gray">Enable compander on duplex</p>
-                  </div>
-                </label>
-
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editedChannel.voxRelated}
-                    onChange={(e) => handleChange('voxRelated', e.target.checked)}
-                    className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                  />
-                  <div>
-                    <span className="text-sm text-white font-medium">VOX Related</span>
-                    <p className="text-xs text-cool-gray">VOX-related function</p>
-                  </div>
-                </label>
-
-                <div>
-                  <label className="block text-xs font-medium text-cool-gray mb-1">
-                    Squelch Level
+                {hasColumn('vox') && (
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editedChannel.voxFunction}
+                      onChange={(e) => handleChange('voxFunction', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                    />
+                    <div>
+                      <span className="text-sm text-white font-medium">VOX Function</span>
+                      <p className="text-xs text-cool-gray">Voice-operated transmit</p>
+                    </div>
                   </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="255"
-                    value={editedChannel.squelchLevel}
-                    onChange={(e) => handleChange('squelchLevel', parseInt(e.target.value) || 0)}
-                    className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                  />
-                  <p className="text-xs text-cool-gray mt-0.5">Squelch threshold (0-255)</p>
-                </div>
+                )}
 
-                <div>
-                  <label className="block text-xs font-medium text-cool-gray mb-1">
-                    Receive Squelch Mode
+                {hasColumn('audioProcessing') && (
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editedChannel.scramble}
+                      onChange={(e) => handleChange('scramble', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                    />
+                    <div>
+                      <span className="text-sm text-white font-medium">Scramble</span>
+                      <p className="text-xs text-cool-gray">Enable voice scrambling</p>
+                    </div>
                   </label>
-                  <select
-                    value={editedChannel.rxSquelchMode}
-                    onChange={(e) => handleChange('rxSquelchMode', e.target.value)}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                  >
-                    <option value="Carrier/CTC">Carrier/CTC</option>
-                    <option value="Optional">Optional</option>
-                    <option value="CTC&Opt">CTC&Opt</option>
-                    <option value="CTC|Opt">CTC|Opt</option>
-                  </select>
-                  <p className="text-xs text-cool-gray mt-0.5">Squelch opening method</p>
-                </div>
+                )}
+
+                {hasColumn('audioProcessing') && (
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editedChannel.compander}
+                      onChange={(e) => handleChange('compander', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                    />
+                    <div>
+                      <span className="text-sm text-white font-medium">Compander</span>
+                      <p className="text-xs text-cool-gray">Enable compander for better audio</p>
+                    </div>
+                  </label>
+                )}
+
+                {hasColumn('audioProcessing') && (
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editedChannel.talkback}
+                      onChange={(e) => handleChange('talkback', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                    />
+                    <div>
+                      <span className="text-sm text-white font-medium">Talkback</span>
+                      <p className="text-xs text-cool-gray">Monitor own transmission</p>
+                    </div>
+                  </label>
+                )}
+
+                {hasColumn('audioProcessing') && (
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editedChannel.companderDup}
+                      onChange={(e) => handleChange('companderDup', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                    />
+                    <div>
+                      <span className="text-sm text-white font-medium">Compander Dup</span>
+                      <p className="text-xs text-cool-gray">Enable compander on duplex</p>
+                    </div>
+                  </label>
+                )}
+
+                {hasColumn('vox') && (
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editedChannel.voxRelated}
+                      onChange={(e) => handleChange('voxRelated', e.target.checked)}
+                      className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                    />
+                    <div>
+                      <span className="text-sm text-white font-medium">VOX Related</span>
+                      <p className="text-xs text-cool-gray">VOX-related function</p>
+                    </div>
+                  </label>
+                )}
+
+                {hasColumn('squelch') && (
+                  <div>
+                    <label className="block text-xs font-medium text-cool-gray mb-1">
+                      Squelch Level
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="255"
+                      value={editedChannel.squelchLevel}
+                      onChange={(e) => handleChange('squelchLevel', parseInt(e.target.value) || 0)}
+                      className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    />
+                    <p className="text-xs text-cool-gray mt-0.5">Squelch threshold (0-255)</p>
+                  </div>
+                )}
+
+                {hasColumn('squelch') && (
+                  <div>
+                    <label className="block text-xs font-medium text-cool-gray mb-1">
+                      Receive Squelch Mode
+                    </label>
+                    <select
+                      value={editedChannel.rxSquelchMode}
+                      onChange={(e) => handleChange('rxSquelchMode', e.target.value)}
+                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    >
+                      <option value="Carrier/CTC">Carrier/CTC</option>
+                      {/* The DA-7X2's own second option. Without it a channel
+                          read as CTCSS/DCS shows the first entry instead — a
+                          select with no matching option silently displays, and
+                          then saves, the wrong value. */}
+                      <option value="CTCSS/DCS">CTCSS/DCS</option>
+                      <option value="Optional">Optional</option>
+                      <option value="CTC&Opt">CTC&Opt</option>
+                      <option value="CTC|Opt">CTC|Opt</option>
+                    </select>
+                    <p className="text-xs text-cool-gray mt-0.5">Squelch opening method</p>
+                  </div>
+                )}
               </div>
             </section>
           )}
 
-          {/* Advanced Settings */}
+          {/* Advanced Settings — every field in here is gated, so the heading
+              would otherwise render alone on a radio that declares none. */}
+          {(hasColumn('stepFrequency') || hasColumn('signalType') || hasColumn('pttId')) && (
           <section>
             <h3 className="text-neon-cyan font-bold mb-2 text-sm">Advanced Settings</h3>
             <div className="space-y-2">
-              <div>
-                <label className="block text-xs font-medium text-cool-gray mb-1">
-                  Step Frequency
-                </label>
-                <select
-                  value={editedChannel.stepFrequency}
-                  onChange={(e) => handleChange('stepFrequency', parseInt(e.target.value) || 0)}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                >
-                  <option value={0}>2.5K</option>
-                  <option value={1}>5K</option>
-                  <option value={2}>6.25K</option>
-                  <option value={3}>10K</option>
-                  <option value={4}>12.5K</option>
-                  <option value={5}>25K</option>
-                  <option value={6}>50K</option>
-                  <option value={7}>100K</option>
-                </select>
-                <p className="text-xs text-cool-gray mt-0.5">Frequency step size</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-cool-gray mb-1">
-                  Signaling Type
-                </label>
-                <select
-                  value={editedChannel.signalingType}
-                  onChange={(e) => handleChange('signalingType', e.target.value)}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                >
-                  <option value="None">None</option>
-                  <option value="DTMF">DTMF</option>
-                  <option value="Two Tone">2Tone</option>
-                  <option value="Five Tone">5Tone</option>
-                  <option value="MDC1200">MDC</option>
-                </select>
-                <p className="text-xs text-cool-gray mt-0.5">Signaling system type</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-cool-gray mb-1">
-                  PTT ID Type
-                </label>
-                <select
-                  value={editedChannel.pttIdType}
-                  onChange={(e) => handleChange('pttIdType', e.target.value)}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                >
-                  <option value="Off">Off</option>
-                  <option value="BOT">BOT</option>
-                  <option value="EOT">EOT</option>
-                  <option value="Both">Both</option>
-                </select>
-                <p className="text-xs text-cool-gray mt-0.5">When to send PTT ID</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-cool-gray mb-1">
-                  PTT ID
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="63"
-                  value={editedChannel.pttId}
-                  onChange={(e) => handleChange('pttId', parseInt(e.target.value) || 0)}
-                  className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                />
-                <p className="text-xs text-cool-gray mt-0.5">PTT ID number (0-63)</p>
-              </div>
-
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={editedChannel.pttIdDisplay}
-                  onChange={(e) => handleChange('pttIdDisplay', e.target.checked)}
-                  className="w-4 h-4 accent-neon-cyan flex-shrink-0"
-                />
+              {hasColumn('stepFrequency') && (
                 <div>
-                  <span className="text-sm text-white font-medium">PTT ID Display</span>
-                  <p className="text-xs text-cool-gray">Show PTT ID on display</p>
+                  <label className="block text-xs font-medium text-cool-gray mb-1">
+                    Step Frequency
+                  </label>
+                  <select
+                    value={editedChannel.stepFrequency}
+                    onChange={(e) => handleChange('stepFrequency', parseInt(e.target.value) || 0)}
+                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                  >
+                    <option value={0}>2.5K</option>
+                    <option value={1}>5K</option>
+                    <option value={2}>6.25K</option>
+                    <option value={3}>10K</option>
+                    <option value={4}>12.5K</option>
+                    <option value={5}>25K</option>
+                    <option value={6}>50K</option>
+                    <option value={7}>100K</option>
+                  </select>
+                  <p className="text-xs text-cool-gray mt-0.5">Frequency step size</p>
                 </div>
-              </label>
+              )}
+
+              {hasColumn('signalType') && (
+                <div>
+                  <label className="block text-xs font-medium text-cool-gray mb-1">
+                    Signaling Type
+                  </label>
+                  <select
+                    value={editedChannel.signalingType}
+                    onChange={(e) => handleChange('signalingType', e.target.value)}
+                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                  >
+                    <option value="None">None</option>
+                    <option value="DTMF">DTMF</option>
+                    <option value="Two Tone">2Tone</option>
+                    <option value="Five Tone">5Tone</option>
+                    <option value="MDC1200">MDC</option>
+                  </select>
+                  <p className="text-xs text-cool-gray mt-0.5">Signaling system type</p>
+                </div>
+              )}
+
+              {hasColumn('pttId') && (
+                <div>
+                  <label className="block text-xs font-medium text-cool-gray mb-1">
+                    PTT ID Type
+                  </label>
+                  <select
+                    value={editedChannel.pttIdType}
+                    onChange={(e) => handleChange('pttIdType', e.target.value)}
+                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                  >
+                    <option value="Off">Off</option>
+                    <option value="BOT">BOT</option>
+                    <option value="EOT">EOT</option>
+                    <option value="Both">Both</option>
+                  </select>
+                  <p className="text-xs text-cool-gray mt-0.5">When to send PTT ID</p>
+                </div>
+              )}
+
+              {hasColumn('pttId') && (
+                <div>
+                  <label className="block text-xs font-medium text-cool-gray mb-1">
+                    PTT ID
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="63"
+                    value={editedChannel.pttId}
+                    onChange={(e) => handleChange('pttId', parseInt(e.target.value) || 0)}
+                    className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                  />
+                  <p className="text-xs text-cool-gray mt-0.5">PTT ID number (0-63)</p>
+                </div>
+              )}
+
+              {hasColumn('pttId') && (
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={editedChannel.pttIdDisplay}
+                    onChange={(e) => handleChange('pttIdDisplay', e.target.checked)}
+                    className="w-4 h-4 accent-neon-cyan flex-shrink-0"
+                  />
+                  <div>
+                    <span className="text-sm text-white font-medium">PTT ID Display</span>
+                    <p className="text-xs text-cool-gray">Show PTT ID on display</p>
+                  </div>
+                </label>
+              )}
             </div>
           </section>
+          )}
 
-          {/* Emergency Settings */}
+          {/* Emergency Settings — DM-32 wire fields; the DA-7X2's vendor schema
+              has no equivalent, so it does not declare this group. */}
+          {hasColumn('emergency') && (
           <section>
             <h3 className="text-neon-cyan font-bold mb-2 text-sm">Emergency Settings</h3>
             <div className="space-y-2">
@@ -939,8 +1000,10 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
               </div>
             </div>
           </section>
+          )}
 
           {/* APRS Settings */}
+          {hasColumn('aprs') && (
           <section>
             <h3 className="text-neon-cyan font-bold mb-2 text-sm">APRS Settings</h3>
             <div className="space-y-2">
@@ -974,6 +1037,82 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
               </div>
             </div>
           </section>
+          )}
+
+          {/* Radio-specific channel fields, from the same declaration the grid
+              renders its extra columns from. A * marks a field whose byte offset
+              is known from the vendor CPS but whose value range has not been
+              confirmed against a radio — see DA7X2-NEEDS-CONFIRMING.md. */}
+          {extraColumns.length > 0 && (
+            <section>
+              <h3 className="text-neon-cyan font-bold mb-2 text-sm">Radio-specific</h3>
+              <div className="space-y-2">
+                {extraColumns.map((c) => {
+                  const disabled =
+                    (c.digitalOnly === true && !isDigitalMode(editedChannel.mode)) ||
+                    (c.analogOnly === true && isDigitalMode(editedChannel.mode));
+                  const raw = editedChannel[c.field];
+                  const title = extraColumnTitle(c);
+                  if (c.editor.kind === 'boolean') {
+                    return (
+                      <label key={c.field} className="flex items-center gap-2" title={title}>
+                        <input
+                          type="checkbox"
+                          checked={raw === true}
+                          disabled={disabled}
+                          onChange={(e) => handleChange(c.field, e.target.checked)}
+                          className="w-4 h-4 accent-neon-cyan flex-shrink-0 disabled:opacity-40"
+                        />
+                        <div>
+                          <span className="text-sm text-white font-medium">
+                            {c.label}
+                            {extraColumnMarker(c)}
+                          </span>
+                          <p className="text-xs text-cool-gray">{c.offset}</p>
+                        </div>
+                      </label>
+                    );
+                  }
+                  return (
+                    <div key={c.field} title={title}>
+                      <label className="block text-xs font-medium text-cool-gray mb-1">
+                        {c.label}
+                        {extraColumnMarker(c)}
+                      </label>
+                      {c.editor.kind === 'select' ? (
+                        <select
+                          value={String(typeof raw === 'number' ? raw : 0)}
+                          disabled={disabled}
+                          onChange={(e) => handleChange(c.field, parseInt(e.target.value) || 0)}
+                          className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan disabled:opacity-40"
+                        >
+                          {c.editor.options.map((label, i) => (
+                            <option key={label} value={String(i)}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="number"
+                          min={c.editor.min}
+                          max={c.editor.max}
+                          value={typeof raw === 'number' ? raw : 0}
+                          disabled={disabled}
+                          onChange={(e) => {
+                            const parsed = parseInt(e.target.value);
+                            handleChange(c.field, Number.isNaN(parsed) ? 0 : parsed);
+                          }}
+                          className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan disabled:opacity-40"
+                        />
+                      )}
+                      <p className="text-xs text-cool-gray mt-0.5">{c.offset}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
           </div>
         </div>
 

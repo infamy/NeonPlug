@@ -7,6 +7,7 @@ import type { RadioDescriptor } from './types';
 import { DM32UV_DESCRIPTOR } from './dm32uv/descriptor';
 import { UV5RMINI_DESCRIPTOR } from './uv5rmini/descriptor';
 import { FT65_DESCRIPTOR, FT4_DESCRIPTOR, FT4VR_DESCRIPTOR, FT25R_DESCRIPTOR } from './ft65/descriptor';
+import { D890UV_DESCRIPTOR } from './d890uv/descriptor';
 
 export type ProtocolFactory = () => RadioProtocol;
 
@@ -18,6 +19,10 @@ export const RADIO_DESCRIPTORS: readonly RadioDescriptor[] = [
   FT4_DESCRIPTOR,
   FT4VR_DESCRIPTOR,
   FT25R_DESCRIPTOR,
+  // ⚠️ Work in progress, not hardware verified. Reading channels and all writing
+  // throw D890NotVerifiedError by design; zones, scan lists, talkgroups and RX
+  // groups read from the documented layout. See D890UV-HARDWARE-CHECKLIST.md.
+  D890UV_DESCRIPTOR,
 ];
 
 /** Backward compatibility: same radio, multiple model IDs. */

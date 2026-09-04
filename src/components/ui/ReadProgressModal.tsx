@@ -29,6 +29,16 @@ interface ReadProgressModalProps {
   onChangePort?: () => void;
   onClose?: () => void;
   mode?: 'read' | 'write';
+  /**
+   * Radio model this operation is running as.
+   *
+   * Shown because picking the wrong radio type fails the same way a bad cable
+   * does — the user retries indefinitely with no indication of what is being
+   * attempted. Must be the model the operation ACTUALLY uses (see
+   * `useRadioConnection`'s readModel/writeModel), not a UI-preferred one; a
+   * label naming the wrong radio is worse than no label here.
+   */
+  model?: string | null;
 }
 
 const DEBUG_LOGS_COUNT = 50;
@@ -44,6 +54,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
   onChangePort,
   onClose,
   mode = 'read',
+  model,
 }) => {
   const [debugExpanded, setDebugExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -55,12 +66,13 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
       'NeonPlug Connection Debug',
       `Timestamp: ${new Date().toISOString()}`,
       `Error: ${error}`,
+      `Radio type: ${model ?? 'not selected'}`,
       '',
       '--- Recent logs ---',
     ].join('\n');
     const recentLogs = logs.slice(-DEBUG_LOGS_COUNT).map(formatLogEntry).join('\n');
     return `${header}\n${recentLogs}`;
-  }, [error, logs]);
+  }, [error, logs, model]);
 
   const handleCopyDebug = useCallback(async () => {
     if (!debugText) return;
@@ -94,6 +106,13 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
         }`}>
           {isError ? 'Connection Error' : isWriting ? 'Writing to Radio' : 'Reading from Radio'}
         </h2>
+
+        {model && (
+          <p className="text-sm text-cool-gray -mt-2 mb-4">
+            {isWriting ? 'Writing as' : 'Reading as'}{' '}
+            <span className="text-neon-cyan font-medium">{model}</span>
+          </p>
+        )}
         
         {isError ? (
           <div className="mb-6">
@@ -110,6 +129,12 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
             <div className="bg-deep-gray border border-neon-cyan border-opacity-20 rounded-lg p-4 mb-4">
               <p className="text-white text-sm font-medium mb-2">Troubleshooting:</p>
               <ul className="text-cool-gray text-xs space-y-1 list-disc list-inside">
+                {model && (
+                  <li>
+                    Confirm this is a <span className="text-neon-cyan">{model}</span> — a
+                    mismatched radio type fails exactly like a bad cable
+                  </li>
+                )}
                 <li>Ensure radio is powered on</li>
                 <li>Check USB cable connection</li>
                 <li>Verify radio is in programming mode</li>

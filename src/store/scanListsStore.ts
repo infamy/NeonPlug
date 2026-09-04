@@ -1,3 +1,5 @@
+import { getCapabilitiesForModel } from '../radios/capabilities';
+import { useRadioStore } from './radioStore';
 import { create } from 'zustand';
 import type { ScanList } from '../models/ScanList';
 
@@ -20,12 +22,16 @@ export const useScanListsStore = create<ScanListsState>((set) => ({
   rawScanListData: new Map(),
   setScanLists: (scanLists) => set({ scanLists }),
   addScanList: (scanList) => set((state) => {
-    if (state.scanLists.length >= 32) {
+    if (state.scanLists.length >= (getCapabilitiesForModel(useRadioStore.getState().selectedRadioModel ?? '')?.maxScanLists ?? 32)) {
       console.warn('Maximum of 32 scan lists allowed');
       return state;
     }
-    // Enforce limit: max 15 channels per scan list
-    const channels = scanList.channels ? scanList.channels.slice(0, 15) : [];
+    // Enforce the per-radio limit rather than the DM-32's 15. Reading a D890
+    // scan list (up to 50 members) through here used to silently drop the tail.
+    const maxChannels = getCapabilitiesForModel(
+      useRadioStore.getState().selectedRadioModel ?? ''
+    )?.maxScanListChannels ?? 15;
+    const channels = scanList.channels ? scanList.channels.slice(0, maxChannels) : [];
     return {
       scanLists: [...state.scanLists, { ...scanList, channels }]
     };
@@ -35,7 +41,7 @@ export const useScanListsStore = create<ScanListsState>((set) => ({
       if (sl.name === name) {
         // Enforce limit: max 15 channels per scan list
         if (updates.channels && updates.channels.length > 15) {
-          updates.channels = updates.channels.slice(0, 15);
+          updates.channels = updates.channels.slice(0, getCapabilitiesForModel(useRadioStore.getState().selectedRadioModel ?? '')?.maxScanListChannels ?? 15);
         }
         return { ...sl, ...updates };
       }

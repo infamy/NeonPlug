@@ -45,10 +45,32 @@ export abstract class BaseSerialConnection {
   protected async readExact(n: number, timeoutMs: number): Promise<Uint8Array<ArrayBuffer>> {
     const deadline = Date.now() + timeoutMs;
     while (this.buf.length < n) {
-      if (Date.now() > deadline) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
         throw new Error(`Timeout: needed ${n} bytes, have ${this.buf.length}`);
       }
-      const { value, done } = await this.reader!.read();
+
+      // The deadline check above is not enough on its own: `reader.read()` never
+      // resolves while the radio sends nothing, so a silent radio used to hang
+      // the whole operation forever instead of timing out. Racing the read
+      // against the remaining time is what turns "the app froze" into
+      // "Timeout: needed 3 bytes, have 0" — which is the difference between a
+      // debuggable failure and a mystery.
+      const TIMED_OUT = Symbol('timeout');
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const result = await Promise.race([
+        this.reader!.read(),
+        new Promise<typeof TIMED_OUT>((resolve) => {
+          timer = setTimeout(() => resolve(TIMED_OUT), remaining);
+        }),
+      ]);
+      clearTimeout(timer);
+
+      if (result === TIMED_OUT) {
+        throw new Error(`Timeout: needed ${n} bytes, have ${this.buf.length}`);
+      }
+
+      const { value, done } = result;
       if (done) throw new Error('Serial port closed unexpectedly');
       if (value && value.length > 0) {
         const next = new Uint8Array(this.buf.length + value.length);

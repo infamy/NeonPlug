@@ -208,6 +208,10 @@ export const ContactsTab: React.FC = () => {
   const { contacts, setContacts } = useContactsStore();
   const { radioInfo } = useRadioStore();
   const { readContacts, writeContacts, isConnecting } = useRadioConnection();
+  // The store keeps a long operation's progress alive across this tab
+  // unmounting, so coming back mid-read shows the bar again rather than a
+  // stale idle screen. Local state still drives the write path.
+  const { radioProgress, radioBusy } = useRadioStore();
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
   const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
@@ -241,36 +245,45 @@ export const ContactsTab: React.FC = () => {
     setProgress(0);
     setProgressMessage('');
     setDownloadError(null);
-    const startTime = Date.now();
-    
+
+    /**
+     * ETA is measured from the FIRST progress report, not from the button
+     * press. The gap before that covers connecting, identifying the radio and
+     * reading the first block — real time, but not time that scales with the
+     * rest of the job, so including it inflates every estimate that follows.
+     */
+    let firstTick: { at: number; progress: number } | null = null;
+    let ticks = 0;
+    /** Ticks to see before quoting a number. Two gives a rate, three steadies it. */
+    const TICKS_BEFORE_ETA = 3;
+
     try {
       await readContacts((progress, message) => {
         setProgress(progress);
-        
-        // Calculate ETA based on progress, or use initial estimate if no progress yet
-        const elapsed = (Date.now() - startTime) / 1000; // seconds
+
         let etaMessage = message;
-        
         if (progress > 0 && progress < 100) {
-          // Use actual progress-based ETA
-          const estimatedTotal = elapsed / (progress / 100);
-          const remaining = estimatedTotal - elapsed;
-          
-          if (remaining > 0) {
+          ticks += 1;
+          if (!firstTick) firstTick = { at: Date.now(), progress };
+
+          const elapsed = (Date.now() - firstTick.at) / 1000;
+          const advanced = progress - firstTick.progress;
+
+          if (ticks < TICKS_BEFORE_ETA || advanced <= 0 || elapsed <= 0) {
+            // Say nothing rather than quote a number from one sample. The
+            // previous version guessed up front and was out by an order of
+            // magnitude, which is worse than an honest ellipsis.
+            etaMessage = `${message} - ETA: …`;
+          } else {
+            const remaining = ((100 - progress) / advanced) * elapsed;
             const minutes = Math.floor(remaining / 60);
             const seconds = Math.floor(remaining % 60);
-            
-            if (minutes > 0) {
-              etaMessage = `${message} - ETA: ${minutes}m ${seconds}s`;
-            } else {
-              etaMessage = `${message} - ETA: ${seconds}s`;
-            }
+            etaMessage = minutes > 0
+              ? `${message} - ETA: ${minutes}m ${seconds}s`
+              : `${message} - ETA: ${seconds}s`;
           }
-        } else if (progress === 0) {
-          // Show initial estimate before progress starts
-          etaMessage = `${message} - Estimated time: ${estimateTime(contactCapacity)}`;
         }
-        
+
         setProgressMessage(etaMessage);
       });
     } catch (err) {
@@ -553,7 +566,7 @@ export const ContactsTab: React.FC = () => {
         <div className="flex items-center gap-4">
           <button
             onClick={handleReadContacts}
-            disabled={isReading || isWriting || isConnecting}
+            disabled={isReading || isWriting || isConnecting || radioBusy}
             className="px-4 py-2 bg-yellow-600 text-dark-charcoal font-semibold rounded hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isReading ? 'Reading from Radio...' : 'Read Contacts from Radio'}
@@ -561,7 +574,7 @@ export const ContactsTab: React.FC = () => {
           
           <button
             onClick={handleWriteContacts}
-            disabled={isReading || isWriting || isConnecting || contacts.length === 0}
+            disabled={isReading || isWriting || isConnecting || radioBusy || contacts.length === 0}
             className="px-4 py-2 bg-yellow-600 text-dark-charcoal font-semibold rounded hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             title={contacts.length === 0 ? 'No contacts to write' : ''}
           >
@@ -569,11 +582,16 @@ export const ContactsTab: React.FC = () => {
           </button>
         </div>
 
-        {(isReading || isWriting) && progressMessage && (
-          <div className="mt-3">
-            <ProgressBar progress={progress} message={progressMessage} />
-          </div>
-        )}
+        {(() => {
+          const live = radioProgress && radioProgress.label === 'Reading contacts';
+          const showProgress = live ? radioProgress.percent : progress;
+          const showMessage = live ? radioProgress.message : progressMessage;
+          return (isReading || isWriting || live) && showMessage ? (
+            <div className="mt-3">
+              <ProgressBar progress={showProgress} message={showMessage} />
+            </div>
+          ) : null;
+        })()}
 
         {downloadError && (
           <div className="mt-3 p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-red-400 text-sm">

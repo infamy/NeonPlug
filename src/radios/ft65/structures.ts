@@ -219,6 +219,8 @@ export function encodeChannel(image: Uint8Array, ch: Channel, offsetFactor: numb
   encodeBCDFreq(ch.rxFrequency, image, slotBase + SLOT.FREQ);
 
   // Power
+  // Three levels only; a 'Turbo' arriving from a D890-family codeplug (via
+  // Convert) is not in the map and clamps to High via the ?? below.
   const pwrMap: Record<string, number> = { Low: 0, Medium: 1, High: 2 };
   image[slotBase + SLOT.TX_PWR] = pwrMap[ch.power] ?? 2;
 

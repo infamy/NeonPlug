@@ -1,3 +1,4 @@
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import React, { useState } from 'react';
 import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
@@ -12,6 +13,7 @@ import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
 
 export const RXGroupsList: React.FC = () => {
+  const { caps } = useRadioCapabilities();
   const { groups, selectedGroup, setSelectedGroup, addGroup, deleteGroup, updateGroup } = useRXGroupsStore();
   const [newGroupName, setNewGroupName] = useState('');
   const [editingName, setEditingName] = useState<number | null>(null);
@@ -20,8 +22,9 @@ export const RXGroupsList: React.FC = () => {
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
 
   const handleAddGroup = () => {
-    if (groups.length >= 32) {
-      showAlert('Maximum of 32 RX groups allowed.');
+    const maxGroups = caps?.digital?.limits?.RX_GROUPS_MAX ?? 32;
+    if (groups.length >= maxGroups) {
+      showAlert(`Maximum of ${maxGroups} RX groups allowed.`);
       return;
     }
     if (newGroupName.trim()) {
@@ -240,6 +243,8 @@ interface RXGroupEditorProps {
 }
 
 const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group, onAlert }) => {
+  // Per-radio limit, not a hardcoded DM-32 value.
+  const { caps } = useRadioCapabilities();
   const { updateGroup } = useRXGroupsStore();
   const { contacts: talkGroups } = useQuickContactsStore();
 
@@ -279,7 +284,7 @@ const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group, onAlert }) => {
           return tg ? talkGroupItem(tg) : undefined;
         }}
         onChange={(ids) => updateGroup(group.index, { talkGroupIndices: ids })}
-        maxItems={32}
+        maxItems={caps?.maxRxGroupMembers ?? 32}
         itemNoun="talk group"
         containerNoun="RX group"
         onAlert={onAlert}

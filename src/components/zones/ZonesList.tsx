@@ -1,8 +1,10 @@
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import React, { useState } from 'react';
 import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
 import { useZonesStore } from '../../store/zonesStore';
 import { useChannelsStore } from '../../store/channelsStore';
+import { useRadioStore } from '../../store/radioStore';
 import type { Zone } from '../../models/Zone';
 import { ListDetailLayout } from '../ui/ListDetailLayout';
 import { OrderedItemPicker } from '../ui/OrderedItemPicker';
@@ -11,6 +13,128 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+
+/** One of the two per-zone VFO channel pickers. Hoisted, not nested in its
+ *  parent's render: a component defined inside a render is a new type on every
+ *  pass, so React unmounts and remounts the <select> and the dropdown closes
+ *  the moment the store updates. */
+const ZoneChannelSelect: React.FC<{
+  title: string;
+  position: number;
+  zone: Zone;
+  label: (number: number) => string;
+  onChange: (position: number) => void;
+}> = ({ title, position, zone, label, onChange }) => (
+  <div>
+    <label className="block text-cool-gray text-xs mb-1">{title}</label>
+    <select
+      value={position}
+      onChange={(e) => onChange(parseInt(e.target.value, 10))}
+      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+    >
+      {position >= zone.channels.length && <option value={position}>Not set</option>}
+      {zone.channels.map((number, index) => (
+        <option key={`${number}-${index}`} value={index}>
+          {label(number)}
+        </option>
+      ))}
+    </select>
+  </div>
+);
+
+/**
+ * The zone's current A and B channel — what the radio has tuned on each VFO
+ * when this zone is selected.
+ *
+ * Stored per zone as a POSITION within that zone's own member list, not as a
+ * channel number, so it must be resolved through `zone.channels` and is
+ * meaningless against any other zone. Editing therefore writes a position back,
+ * not a channel number, and reordering the zone's channels moves what A and B
+ * point at — which is how the radio itself behaves.
+ *
+ * A position past the end of the member list renders as "Not set" rather than
+ * being clamped to a real channel: the radio can hold one (a zone shrunk since
+ * the value was written), and quietly showing channel 1 instead would be a
+ * claim about the radio that is not true.
+ */
+const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
+  const { tables, setTable } = useRadioStore();
+  const { channels } = useChannelsStore();
+  const { zones, updateZone } = useZonesStore();
+
+  // Index against the store's own array: the list pane filters out unnamed
+  // zones, so a render position from there would be the wrong zone.
+  const zoneIndex = zones.findIndex((z) => z.id === zone.id);
+  const showHidden = zone.hidden !== undefined;
+  const showChannels = !!tables.zoneCurrentChannels && zoneIndex >= 0;
+  if (!showHidden && !showChannels) return null;
+
+  const label = (number: number): string => {
+    const channel = channels.find((c) => c.number === number);
+    return channel ? `${number} · ${channel.name}` : `${number}`;
+  };
+
+  const update = (which: 'a' | 'b', position: number) => {
+    // Only reachable from the A/B selects, which render only when this is set.
+    if (!tables.zoneCurrentChannels) return;
+    const next = {
+      a: [...tables.zoneCurrentChannels.a],
+      b: [...tables.zoneCurrentChannels.b],
+    };
+    next[which][zoneIndex] = position;
+    setTable('zoneCurrentChannels', next);
+  };
+
+  return (
+    // shrink-0: this sits in a flex column beside a fillHeight picker, which
+    // otherwise compresses it below its own content and the overflow-hidden
+    // above clips the last row — the hide checkbox.
+    <div className="m-4 mb-0 shrink-0 bg-neon-cyan bg-opacity-5 border border-neon-cyan border-opacity-30 rounded-lg overflow-hidden">
+      <div className="p-3 pb-2">
+        <h4 className="text-neon-cyan font-medium">Zone Settings</h4>
+        <p className="text-cool-gray text-xs mt-0.5">
+          The channel each VFO tunes to when this zone is selected, and whether the zone
+          appears on the radio at all.
+        </p>
+      </div>
+      {showChannels && tables.zoneCurrentChannels && (
+      <div className="p-4 pt-0 grid grid-cols-2 gap-4">
+        <ZoneChannelSelect
+          title="Current Channel A"
+          position={tables.zoneCurrentChannels.a[zoneIndex] ?? 0}
+          zone={zone}
+          label={label}
+          onChange={(p) => update('a', p)}
+        />
+        <ZoneChannelSelect
+          title="Current Channel B"
+          position={tables.zoneCurrentChannels.b[zoneIndex] ?? 0}
+          zone={zone}
+          label={label}
+          onChange={(p) => update('b', p)}
+        />
+      </div>
+      )}
+      {/* Buried several levels down in the vendor CPS's zone editor. Surfaced
+          plainly here — it changes whether the zone appears on the radio at
+          all, which is not a thing to make people hunt for. */}
+      {showHidden && (
+        <div className="px-4 pb-3 pt-1 flex items-center gap-2">
+          <input
+            id={`zone-hidden-${zone.id}`}
+            type="checkbox"
+            checked={zone.hidden === true}
+            onChange={(e) => updateZone(zone.id, { hidden: e.target.checked })}
+            className="checkbox-theme"
+          />
+          <label htmlFor={`zone-hidden-${zone.id}`} className="text-cool-gray text-xs">
+            Hide this zone from the radio&apos;s zone menu
+          </label>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const ZonesList: React.FC = () => {
   const { zones, selectedZoneId, setSelectedZoneId, addZone, deleteZone, renameZone } = useZonesStore();
@@ -119,7 +243,21 @@ export const ZonesList: React.FC = () => {
                   </div>
                 ) : (
                   <>
-                    <span className="text-white font-medium">{zone.name}</span>
+                    <span className={`font-medium ${zone.hidden ? 'text-cool-gray italic' : 'text-white'}`}>
+                      {zone.name}
+                    </span>
+                    {/* Hidden zones still exist and still hold their channels —
+                        they are simply absent from the radio's zone menu. Dimmed
+                        and badged rather than removed, so the list still matches
+                        the codeplug. */}
+                    {zone.hidden && (
+                      <span
+                        className="text-[10px] uppercase tracking-wide text-amber-400 border border-amber-400 border-opacity-40 rounded px-1 py-px"
+                        title="Hidden from the radio's zone menu — the zone and its channels still exist"
+                      >
+                        hidden
+                      </span>
+                    )}
                     <span className="text-cool-gray text-xs">
                       {zone.channels.length} {formatPlural(zone.channels.length, 'channel')}
                     </span>
@@ -228,6 +366,8 @@ interface ZoneEditorProps {
 }
 
 const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone, onAlert }) => {
+  // Per-radio limit, not a hardcoded DM-32 value.
+  const { caps } = useRadioCapabilities();
   const { updateZone } = useZonesStore();
   const { channels } = useChannelsStore();
 
@@ -237,7 +377,9 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone, onAlert }) => {
     .map(channelPickerItem);
 
   return (
-    <OrderedItemPicker
+    <div className="flex flex-col h-full">
+      <ZoneCurrentChannels zone={zone} />
+      <OrderedItemPicker
       selectedIds={zone.channels}
       availableItems={availableItems}
       resolveItem={(num) => {
@@ -245,11 +387,12 @@ const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone, onAlert }) => {
         return ch ? channelPickerItem(ch) : undefined;
       }}
       onChange={(ids) => updateZone(zone.id, { channels: ids })}
-      maxItems={64}
+      maxItems={caps?.maxZoneChannels ?? 64}
       itemNoun="channel"
       containerNoun="zone"
       onAlert={onAlert}
       fillHeight
-    />
+      />
+    </div>
   );
 };

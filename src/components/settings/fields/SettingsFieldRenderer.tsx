@@ -14,7 +14,31 @@ interface Props {
   onChange: (value: unknown) => void;
 }
 
+/**
+ * Renders one settings control, with the field's documented explanation beneath
+ * it when there is one.
+ *
+ * The hint is wrapped around the control rather than passed into each field
+ * component: there are seven of those, and threading an optional line of text
+ * through all of them to render it identically is the kind of duplication that
+ * drifts.
+ */
 export const SettingsFieldRenderer: React.FC<Props> = ({ field, value, onChange }) => {
+  const control = renderControl(field, value, onChange);
+  if (!field.hint) return control;
+  return (
+    <div>
+      {control}
+      <p className="text-muted text-xs mt-0.5 leading-snug">{field.hint}</p>
+    </div>
+  );
+};
+
+function renderControl(
+  field: SettingsFieldDescriptor,
+  value: unknown,
+  onChange: (value: unknown) => void
+) {
   switch (field.type) {
     case 'text':
       return (
@@ -75,4 +99,4 @@ export const SettingsFieldRenderer: React.FC<Props> = ({ field, value, onChange 
     default:
       return null;
   }
-};
+}

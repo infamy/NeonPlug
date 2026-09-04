@@ -31,9 +31,19 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   },
   bandLimits: DEFAULT_BAND_LIMITS,
   isFirmware049OrNewer,
+  expectedFirmware: 'DM32.01.L01.048',
   writeValidations: {
     channelsMustBeInZones: true,
   },
+  /**
+   * The DM-32 is the radio this grid was originally built around, so it declares
+   * every optional column. Anything absent here would vanish from its UI.
+   */
+  channelColumns: [
+    'loneWorker', 'freeToAir', 'emergency', 'aprs', 'vox',
+    'audioProcessing', 'squelch', 'pttId', 'stepFrequency', 'signalType',
+    'encryption', 'tdma', 'confirmations',
+  ],
   maxChannels: 4000,
   supportsVfoChannels: true,
   supportsZones: true,
@@ -41,8 +51,12 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   analogOnly: false,
   supportsBulkRead: true,
   maxZones: LIMITS.ZONES_MAX,
+  maxZoneChannels: LIMITS.ZONE_CHANNELS_MAX,
+  maxRxGroupMembers: LIMITS.RX_GROUPS_MAX,
   maxScanLists: LIMITS.SCAN_LISTS_MAX,
+  maxScanListChannels: LIMITS.SCAN_LIST_CHANNELS_MAX,
   supportsBootImage: true,
   supportsQuickMessages: true,
   supportsAnalogEmergency: true,
+  supportsDigitalEmergency: true,
 };

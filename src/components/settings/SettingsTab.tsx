@@ -26,7 +26,8 @@ import { formatAddress } from '../../utils/formatHelpers';
 import { getSettingsProfileForModel } from '../../data/settingsProfiles';
 import { SettingsFieldRenderer } from './fields';
 import type { RadioSettings } from '../../models/RadioSettings';
-import type { SettingsFieldDescriptor } from '../../types/settingsProfile';
+import type { SettingsFieldDescriptor, SettingsFeature } from '../../types/settingsProfile';
+import { FEATURE_AREAS } from './featureAreas';
 
 /** Get value from settings by key; supports nested path (e.g. menuEnableFlags.zoneList) and lockKey mapping */
 function getFieldValue(settings: RadioSettings | null, key: string): unknown {
@@ -68,6 +69,18 @@ function handleFieldChange(
 export const SettingsTab: React.FC = () => {
   const { radioInfo, bootImageRaw } = useRadioStore();
   const { readBootImage, writeBootImage, isConnecting } = useRadioConnection();
+  /**
+   * Which profile section is on screen, and a free-text filter across all of
+   * them.
+   *
+   * The DA-7X2 profile carries 241 fields across 19 sections — one of which
+   * ("Unmapped bytes") is 118 inputs on its own. Rendering every section at once
+   * made the page a wall with no way to find anything. The vendor CPS solves the
+   * same problem with tabs, and our sections already ARE its tabs, so this shows
+   * one at a time. The filter is the escape hatch: it searches every section, so
+   * "where is X" does not require knowing which tab X lives on.
+   */
+  const [settingsFilter, setSettingsFilter] = useState('');
   const [bootImageProgress, setBootImageProgress] = useState(0);
   const [bootImageMessage, setBootImageMessage] = useState('');
   const [bootImageError, setBootImageError] = useState<string | null>(null);
@@ -92,10 +105,13 @@ export const SettingsTab: React.FC = () => {
   const { caps, model: effectiveModel } = useRadioCapabilities();
   const settingsProfile = getSettingsProfileForModel(effectiveModel);
 
-  const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
   const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
   const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));
-  const needsFirmwareUpdate = hasRealFirmware && radioInfo!.firmware !== EXPECTED_FIRMWARE && !isNewerFirmware;
+  // Only warn when the radio declares a known-good firmware. No declaration
+  // means no opinion — not 'wrong firmware'.
+  const expectedFirmware = caps?.expectedFirmware;
+  const needsFirmwareUpdate = !!expectedFirmware && hasRealFirmware &&
+    radioInfo!.firmware !== expectedFirmware && !isNewerFirmware;
 
   /** Display value for device info fields; show "-" when unknown (e.g. after convert). */
   const deviceValue = (v: string | undefined) => (v && v.trim() && v !== '-' ? v : '-');
@@ -312,6 +328,36 @@ export const SettingsTab: React.FC = () => {
     setBootImageDragOver(false);
   };
 
+  // Cards that are their own top-level section today — boot image,
+  // the one-key/button assignments, and the DM-32's GPS & APRS — join
+  // the same chip row as the profile sections. They are settings like
+  // any other, and having them as separate slabs below a tabbed area
+  // meant the page was tabbed AND still a wall.
+  //
+  // Putting GPS & APRS here also lands the DA-7X2's own APRS section
+  // beside it, so both radios' APRS is one chip on one page rather
+  // than two different places to look.
+  const featureTabs = ([
+    { id: 'feature-bootImage', title: 'Boot Image', feature: 'bootImage' },
+    { id: 'feature-oneKeyOperation', title: 'One Key Operation', feature: 'oneKeyOperation' },
+    { id: 'feature-roaming', title: 'Roaming', feature: 'roaming' },
+    { id: 'feature-gpsRoaming', title: 'GPS Roaming', feature: 'gpsRoaming' },
+    { id: 'feature-satellites', title: 'Satellites', feature: 'satellites' },
+    { id: 'feature-toneLists', title: '5-Tone & 2-Tone', feature: 'toneLists' },
+    { id: 'feature-emergencyAlarm', title: 'Emergency Alarm', feature: 'emergencyAlarm' },
+    // Its own chip rather than a block inside the Auto repeater settings
+    // section: it is a 250-slot table, not a field, and the section is built
+    // from the settings profile.
+    { id: 'feature-autoRepeaterOffsets', title: 'Auto-Repeater Offsets', feature: 'autoRepeaterOffsets' },
+    { id: 'feature-pictures', title: 'Boot & Standby Backgrounds', feature: 'pictures' },
+    { id: 'feature-gpsAprs', title: 'GPS & APRS', feature: 'gpsAprs' },
+  ] satisfies { id: string; title: string; feature: SettingsFeature }[]).filter((t) =>
+    settingsProfile?.features?.includes(t.feature) &&
+    // A section that owns an area renders it itself; listing it here too would
+    // draw it twice and give it a second, competing anchor.
+    !settingsProfile.sections.some((sec) => sec.area === t.feature)
+  );
+
   return (
     <div className="h-full overflow-y-auto">
       {/* Boot image crop modal */}
@@ -507,7 +553,7 @@ export const SettingsTab: React.FC = () => {
 
           {/* Boot / Startup Image Section - only when profile declares bootImage feature */}
           {settingsProfile?.features?.includes('bootImage') && (
-          <Card>
+          <Card id="settings-section-feature-bootImage">
             <SectionTitle size="lg" underline>Boot / Startup Image</SectionTitle>
             <p className="text-cool-gray text-sm mb-6">
               Optionally read from the radio to see the current image, then import your image (drag and drop or click Import). It will be resized to 240×320 portrait. When it looks right, send it to the radio.
@@ -640,14 +686,84 @@ export const SettingsTab: React.FC = () => {
               ) : null;
             }
             if (!radioSettings) return null;
+
+            const query = settingsFilter.trim().toLowerCase();
+            // Everything renders. Sections are AREAS, not tabs: a setting behind
+            // a tab is a setting nobody finds, and this page's problem was never
+            // that it showed too much — it was that there was no way to navigate
+            // it. So the chips below jump to a section rather than swapping it in,
+            // and the filter narrows what is on screen without hiding a section
+            // the user has not thought to click.
+            const visible = query
+              ? profile.sections
+                  .map((sec) => ({
+                    ...sec,
+                    fields: sec.fields.filter((f) => f.label.toLowerCase().includes(query)),
+                  }))
+                  .filter((sec) => sec.fields.length > 0)
+              : profile.sections;
+            const matchCount = visible.reduce((n, sec) => n + sec.fields.length, 0);
+            const total = profile.sections.reduce((n, sec) => n + sec.fields.length, 0);
+
             return (
               <Card>
                 <SectionTitle underline>Radio Configuration</SectionTitle>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
-                  {profile.sections.map((section) => (
-                    <Card key={section.id} variant="subdued" padding="tight">
+
+                <div className="mt-3 mb-4 space-y-3">
+                  <input
+                    type="text"
+                    value={settingsFilter}
+                    onChange={(e) => setSettingsFilter(e.target.value)}
+                    placeholder={`Search ${total} settings by name…`}
+                    className="w-full max-w-md bg-transparent border border-neon-cyan border-opacity-30 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                  />
+                  {query ? (
+                    <p className="text-xs text-cool-gray">
+                      {matchCount} of {total} settings match “{settingsFilter.trim()}”
+                      {matchCount === 0 && ' — try part of the label the vendor CPS uses'}
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        ...profile.sections.map((sec) => ({
+                          id: sec.id,
+                          title: sec.title,
+                          count: sec.fields.length,
+                        })),
+                        ...featureTabs.map((t) => ({ id: t.id, title: t.title, count: null })),
+                      ].map((tab) => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() =>
+                            document
+                              .getElementById(`settings-section-${tab.id}`)
+                              ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          }
+                          className="px-2 py-0.5 text-xs border rounded transition-colors border-neon-cyan border-opacity-25 text-cool-gray hover:text-neon-cyan hover:border-opacity-60"
+                        >
+                          {tab.title}
+                          {tab.count !== null && <span className="ml-1 opacity-50">{tab.count}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* One section fills the width and columnises its own fields;
+                    a filter can match several, so those stack as cards. Keeping
+                    the old 4-across section grid for a single section left three
+                    empty columns and a very tall thin strip of inputs. */}
+                <div className="space-y-4">
+                  {visible.map((section) => (
+                    <Card
+                      key={section.id}
+                      id={`settings-section-${section.id}`}
+                      variant="subdued"
+                      padding="tight"
+                    >
                       <SectionTitle as="h4" size="md">{section.title}</SectionTitle>
-                      <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-3">
                         {section.fields.map((field) => (
                           <SettingsFieldRenderer
                             key={field.key}
@@ -657,6 +773,11 @@ export const SettingsTab: React.FC = () => {
                           />
                         ))}
                       </div>
+                      {/* An area the section owns, below its own fields. */}
+                      {(() => {
+                        const Area = section.area ? FEATURE_AREAS[section.area] : undefined;
+                        return Area ? <div className="mt-6"><Area /></div> : null;
+                      })()}
                     </Card>
                   ))}
                 </div>
@@ -664,9 +785,21 @@ export const SettingsTab: React.FC = () => {
             );
           })()}
 
-          {/* One Key Operation - only when profile declares the feature */}
+          {/* Areas a radio declared, rendered from FEATURE_AREAS. The anchor id
+              is built from the same tab id the jump-nav chip uses, so the two
+              cannot drift apart. Order follows featureTabs. */}
+          {featureTabs.map((t) => {
+            const Area = FEATURE_AREAS[t.feature];
+            if (!Area) return null;
+            return (
+              <Card key={t.id} id={`settings-section-${t.id}`} className="mt-6">
+                <Area />
+              </Card>
+            );
+          })}
+
           {radioSettings && settingsProfile?.features?.includes('oneKeyOperation') && (
-            <Card className="mt-6">
+            <Card id="settings-section-feature-oneKeyOperation" className="mt-6">
               <SectionTitle underline>One Key Operation</SectionTitle>
 
               {/* Analog Call */}
@@ -939,7 +1072,7 @@ export const SettingsTab: React.FC = () => {
 
           {/* GPS & APRS Settings */}
           {radioSettings && settingsProfile?.features?.includes('gpsAprs') && (
-            <Card className="mt-6">
+            <Card id="settings-section-feature-gpsAprs" className="mt-6">
               <SectionTitle underline>GPS & APRS</SectionTitle>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
@@ -1229,7 +1362,7 @@ export const SettingsTab: React.FC = () => {
                 <>
                   <p className="text-white mb-2">
                     Your radio firmware version is <span className="font-mono text-neon-cyan">{radioInfo?.firmware}</span>, 
-                    but the recommended version is <span className="font-mono text-neon-cyan">{EXPECTED_FIRMWARE}</span>.
+                    but the recommended version is <span className="font-mono text-neon-cyan">{expectedFirmware}</span>.
                   </p>
                   <p className="text-cool-gray">
                     We recommend updating your firmware to ensure compatibility with all features and bug fixes. 

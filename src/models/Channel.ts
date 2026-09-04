@@ -1,6 +1,15 @@
 export type ChannelMode = 'Analog' | 'Digital' | 'Fixed Analog' | 'Fixed Digital';
 export type Bandwidth = '12.5kHz' | '25kHz';
-export type PowerLevel = 'Low' | 'Medium' | 'High';
+/**
+ * Transmit power. 'Turbo' is a genuine fourth level above High, not an alias:
+ * the D890UV family exposes all four in its menu and encodes them in a 2-bit
+ * field (0=Low, 1=Mid, 2=High, 3=Turbo), confirmed on hardware 2026-08-25.
+ *
+ * Radios with only three levels clamp Turbo to High when encoding — see each
+ * radio's structures.ts. Decoding never produces 'Turbo' on those radios, so
+ * nothing changes for them.
+ */
+export type PowerLevel = 'Low' | 'Medium' | 'High' | 'Turbo';
 
 export interface CTCSSDCS {
   type: 'CTCSS' | 'DCS' | 'None';
@@ -41,7 +50,7 @@ export interface Channel {
   digitalEmergencySystemId: number; // 0=None, 1-77=Index into Digital Emergency Systems list (1-based)
   
   // Power & APRS (0x1C)
-  power: PowerLevel;           // Bits 7-4: 0=Low, 1=Medium, 2=High
+  power: PowerLevel;           // Bits 7-4: 0=Low, 1=Medium, 2=High (DM-32); D890 adds 3=Turbo
   aprsReportMode: 'Off' | 'Digital' | 'Analog'; // Bits 3-2: 0=Off, 1=Digital, 2=Analog
   unknown1C_1_0: number;       // Bits 1-0: Unknown
   
@@ -74,7 +83,9 @@ export interface Channel {
   
   // RX Squelch & PTT ID (0x26)
   pttIdDisplay2: boolean;      // Bit 7: PTT ID Display (duplicate of 0x1F bit 6?)
-  rxSquelchMode: 'Carrier/CTC' | 'Optional' | 'CTC&Opt' | 'CTC|Opt'; // Bits 6-4
+  // 'CTCSS/DCS' is the DA-7X2's own second option, read off the radio and
+  // confirmed against the vendor CSV export. The other members are DM-32 names.
+  rxSquelchMode: 'Carrier/CTC' | 'CTCSS/DCS' | 'Optional' | 'CTC&Opt' | 'CTC|Opt'; // Bits 6-4
   unknown26_3_1: number;       // Bits 3-1: Unknown (0-7)
   unknown26_0: boolean;        // Bit 0: Unknown
   
@@ -109,6 +120,104 @@ export interface Channel {
   // These fields reuse bytes 0x1D, 0x1E, 0x1F which are used for analog features in analog mode
   rxGroupListId?: number;      // Byte 0x1F, bits 5-0 (mask 0x3F): RX Group List ID (0-63, 0=None)
   slotOperation?: number;      // Byte 0x1D, bits 3-0: Slot Operation (0-15)
+  // ---- DA-7X2 channel fields -------------------------------------------
+  // All optional: radios that do not decode them leave them undefined, which is
+  // distinguishable from a decoded false. Offsets confirmed against the vendor
+  // CPS's own export of a 118-channel codeplug built to vary each one.
+  /** Vendor "Reverse" — swap RX and TX. Byte 0x09 bit 4. */
+  reverse?: boolean;
+  /** Vendor "Call Confirmation". Byte 0x09 bit 6. */
+  callConfirmation?: boolean;
+  /** Vendor "Slot Suit". Byte 0x21 bit 4. */
+  slotSuit?: boolean;
+  /** Vendor "Ranging". Byte 0x34 bit 0. */
+  ranging?: boolean;
+  /** Vendor "Custom CTCSS" in Hz. Stored as a u16 of tenths at byte 0x10. */
+  customCtcssHz?: number;
+  /** Vendor "2TONE Decode" index, 1-based. Byte 0x12, stored zero-based. */
+  twoToneDecode?: number;
+  /** Vendor "2Tone ID", 1-based. Byte 0x1d, stored zero-based. */
+  twoToneId?: number;
+  /** Vendor "5Tone ID", 1-based. Byte 0x1e, stored zero-based. */
+  fiveToneId?: number;
+  /** Vendor "DTMF ID", 1-based. Byte 0x1f, stored zero-based. */
+  dtmfId?: number;
+  /**
+   * Signed extension to the TX offset, byte 0x39 ("Offset_Fre_Ex").
+   *
+   * Decoded but NOT yet folded into the TX frequency: it read 0 on every one of
+   * the 118 channels captured, so how it combines with Offset_Fre is unverified
+   * and guessing would be worse than exposing the raw value.
+   */
+  offsetFrequencyEx?: number;
+  // ---- DA-7X2 fields recovered from the vendor channel marshaller ------
+  // Offsets and bit weights from `sub_005af490` / `sub_005b1750`, whose writer
+  // and reader touch exactly the same 54 record offsets. Every one of these
+  // read a single constant value across the 102-channel hardware capture, so
+  // the offsets are decompilation-derived and the value ranges are unobserved —
+  // except `txColorCode`, which varies across all 16 values.
+  /** Vendor "txcc" — TX colour code, separate from the RX colour code. */
+  txColorCode?: number;
+  /**
+   * Vendor "Busy Lock/TX Permit" (`RepLock`), raw index.
+   *
+   * The CPS's exported column is DERIVED from the channel type (analog shows
+   * Off, digital shows Always) — the stored byte read 0 on every channel of a
+   * codeplug built specifically to vary it. The vocabulary is not established.
+   */
+  busyLock?: number;
+  /** Vendor "Emergency System" index (`EMG_Key`). */
+  emergencySystemIndex?: number;
+  /** Vendor "DMR MODE" (`TDMA`), 2 bits. */
+  dmrMode?: number;
+  /** Vendor "DataACK Disable" (`Response`). */
+  dataAckDisable?: boolean;
+  /** Vendor "Digital Duplex" — stored as `simplex`, so this is its inverse. */
+  digitalDuplex?: boolean;
+  /** Vendor "Exclude channel from roaming" (`roam_forbid`). */
+  excludeFromRoaming?: boolean;
+  /** Vendor `rec_only` — receive-only channel. */
+  /**
+   * ⚠️ DA-7X2: this radio HAS NO RECEIVE-ONLY SETTING, so the field is never
+   * populated for it. Three independent checks agree: the vendor's 77-column
+   * channel export has no such column, the radio's own menu has no such entry,
+   * and byte 0x34 bit 3 — which the marshaller names `rec_only` — was proved on
+   * hardware to be DataACK forbid.
+   *
+   * `rec_only` survives in the vendor's internal strings but is not a column,
+   * not a menu item and not a feature; it reads as a leftover from code shared
+   * with a sibling model. Do not "restore" it by pointing this at bit 3 — that
+   * would let a user ask for receive-only and get a channel that still
+   * transmits. Other radios are unaffected.
+   */
+  receiveOnly?: boolean;
+  /** DA-7X2 "DataACK forbid" — byte 0x34 bit 3, confirmed on hardware. */
+  dataAckForbid?: boolean;
+  /** Vendor "Auto Scan" (`auto_scan`). */
+  autoScan?: boolean;
+  /** Vendor "Idle TX" (`idle_tx`). */
+  idleTx?: boolean;
+  /** Vendor `dmr_crc_ignore`. */
+  dmrCrcIgnore?: boolean;
+  /** Vendor "Analog APRS PTT Mode" (`AprsUpDate`), raw index. */
+  analogAprsPttMode?: number;
+  /** Vendor "Digital APRS PTT Mode" (`DigiAprsUpDate`), raw index. */
+  digitalAprsPttMode?: number;
+  /** Vendor "Digital APRS Report Channel" (`DigiAprsUpNum`). */
+  digitalAprsReportChannel?: number;
+  /** Vendor `NormalEmgCode`. */
+  normalEmergencyCode?: number;
+  /** Vendor "SMS Confirmation" (`sms_rec`). */
+  smsConfirmation?: boolean;
+  /** Vendor "Ana APRS Mute" (`ana_aprs_mute`). */
+  analogAprsMute?: boolean;
+  /** Vendor "Send Talker Alias DMR/NX" (`tx_talkalaes`). */
+  sendTalkerAlias?: boolean;
+  /** Vendor `AnaAprsTxPath`. */
+  analogAprsTxPath?: number;
+  /** Vendor "ARC4" (`Arc4EmgCode`). */
+  arc4Code?: number;
+
   encryption?: boolean;        // Byte 0x1D, bit 7 (0x80): Encryption enabled
   encryptionId?: number;       // Byte 0x1E: Encryption ID (0-8, 0=None)
   tdmaDirectMode?: boolean;    // Byte 0x1D, bit 5 (0x20): TDMA Direct Mode
