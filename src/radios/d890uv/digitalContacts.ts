@@ -23,6 +23,20 @@ export const D890_CONTACT_FRIEND_FLAG = 0x1000;
 
 export const D890_DIGITAL_CONTACTS = {
   /**
+   * The database header — count and end pointer — at its own address, well
+   * below the banks.
+   *
+   * FOUND 2026-09-07 in `7x2_read_contacts.txt`. Of 85 read runs in that
+   * capture, only two are outside the banks, and the CPS issues both BEFORE it
+   * starts walking: 0x04f80020 (16 bytes, all 0xFF) and this one.
+   *
+   * This is what makes a write tractable. Without it, "how does the radio know
+   * how many contacts there are" had no answer, and removing contacts would
+   * have meant blanking 16 MB of trailing banks.
+   */
+  HEADER: 0x07000000,
+  HEADER_SIZE: 16,
+  /**
    * First bank. The CPS walks 83 of these at 0x80000 stride, reading 200,000
    * bytes of each — 16.4 MB over about a million frames, which is why this is
    * never part of a codeplug read.
@@ -33,6 +47,99 @@ export const D890_DIGITAL_CONTACTS = {
   BANK_BYTES: 200000,
   BANKS: 83,
 } as const;
+
+/**
+ * The 8 bytes at +0x08, and what they are not.
+ *
+ * One sample exists — `00 00 00 00 00 00 00 00`, alongside count 163,467 and
+ * end pointer 0x0a201e1c — so nothing here is settled. What CAN be said is
+ * which meanings are excluded, because every quantity this database could
+ * plausibly describe is nonzero in that same sample:
+ *
+ *   byte length of the records   16,407,708   not zero -> not here
+ *   friends flagged (0x1000)              2   not zero -> not here
+ *   populated bank count                 83   not zero -> not here
+ *   base / tail / span addresses    various   not zero -> not here
+ *
+ * So it is not a length, and not a friend count — the two most natural guesses.
+ *
+ * MOST LIKELY: padding forced by the frame size. This radio's writes are always
+ * 16-byte payloads and are never negotiated (see writeDryRun.ts), so an 8-byte
+ * header cannot be written at all — the smallest thing anyone can put at this
+ * address is one 16-byte frame. Two u32 fields plus 8 bytes of slack is exactly
+ * what that constraint produces, and the CPS read exactly 16 bytes here.
+ *
+ * STILL OPEN, and the only structurally tidy alternative: a SECOND
+ * (count, endAddress) pair for a second database that is currently empty. That
+ * would read all-zero for the same reason a blank contact header does.
+ *
+ * HOW TO TELL: load a contact list of a different size and re-read this block.
+ * Both known fields must change; if the second 8 stay zero across databases of
+ * different sizes, padding is the working answer. A second pair appearing when
+ * some other table is populated would point at the alternative instead.
+ */
+export interface D890ContactHeader {
+  /** Number of records in the database. */
+  count: number;
+  /** Address one past the last record — NOT a length. */
+  endAddress: number;
+}
+
+/**
+ * Parse the 16-byte header at `D890_DIGITAL_CONTACTS.HEADER`.
+ *
+ * Both fields are u32 LE. CONFIRMED twice over from one capture: the count read
+ * 163,467, which is exactly the number of records our own walker finds in the
+ * same capture; and the end pointer 0x0a201e1c predicts the CPS's final read
+ * length to the byte — it fetched ceil(7708/16)*16 = 7712 bytes of the tail
+ * bank, stopping at the pointer rounded up to a frame boundary. The last bytes
+ * before it are `S t a t e s \0`, the Country field of the final record.
+ */
+export function parseDigitalContactHeader(bytes: Uint8Array): D890ContactHeader | null {
+  if (bytes.length < 8) return null;
+  const u32 = (at: number) =>
+    ((bytes[at] ?? 0) |
+      ((bytes[at + 1] ?? 0) << 8) |
+      ((bytes[at + 2] ?? 0) << 16) |
+      ((bytes[at + 3] ?? 0) << 24)) >>> 0;
+  const count = u32(0);
+  const endAddress = u32(4);
+  // An erased or absent header is not a database of 4 billion contacts.
+  if (count === 0xffffffff || endAddress === 0xffffffff) return null;
+  if (endAddress !== 0 && endAddress < D890_DIGITAL_CONTACTS.BASE) return null;
+  return { count, endAddress };
+}
+
+/**
+ * Build the 16-byte header, patching the original so the 8 bytes past the two
+ * known fields stay the radio's own.
+ *
+ * ⚠️ NOTHING HAS EVER WRITTEN THIS BLOCK. The header was recovered from a READ
+ * capture, which evidences the read and nothing else — never-write and
+ * never-read are separate claims. That a contact write would need these two
+ * fields updated is inference from how the CPS *reads* them, not evidence that
+ * writing them is safe or sufficient. A write capture of the vendor CPS
+ * uploading a contact list is what would settle it.
+ */
+export function encodeDigitalContactHeader(
+  original: Uint8Array,
+  header: D890ContactHeader
+): Uint8Array {
+  const out = Uint8Array.from(
+    original.length >= D890_DIGITAL_CONTACTS.HEADER_SIZE
+      ? original
+      : new Uint8Array(D890_DIGITAL_CONTACTS.HEADER_SIZE)
+  );
+  const put = (at: number, value: number) => {
+    out[at] = value & 0xff;
+    out[at + 1] = (value >>> 8) & 0xff;
+    out[at + 2] = (value >>> 16) & 0xff;
+    out[at + 3] = (value >>> 24) & 0xff;
+  };
+  put(0, header.count);
+  put(4, header.endAddress);
+  return out;
+}
 
 export interface D890DigitalContact {
   /** DMR ID. Not fixed-width: 30233 and 3027042 are both real, both valid. */

@@ -197,6 +197,30 @@ export function sliceFromReadLog(
 }
 
 /**
+ * ⚠️ RUN SIZES ARE CONTENT-DEPENDENT — this list is one codeplug's snapshot.
+ *
+ * FOUND 2026-09-07 by parsing four vendor write captures instead of one. The
+ * CPS emitted 74 runs for the codeplug this list came from, 77 for another and
+ * 80 for a third: a run grows as the feature behind it gains entries. Adding
+ * one analog address-book record took 0x3801000 from 64 to 128 bytes, and AM
+ * zones took 0x3880000 from 64 to 1,856.
+ *
+ * Consequence, and it is staleness rather than corruption: the preserve pass
+ * reads exactly these spans, and the planner refuses to invent bytes it never
+ * read, so a region larger on the user's radio than in this list is preserved
+ * only as far as the declared size and its tail keeps whatever was there. It is
+ * not zeroed, and nothing outside is touched — but it is also not the user's
+ * data being written back.
+ *
+ * Every span in the union IS covered by something — either this list or a
+ * decoder that reads the region directly — EXCEPT the two MDC1200 regions,
+ * which nothing reads at all.
+ *
+ * Before widening these numbers, note the cost is real: the preserve pass
+ * already spends ~8 s of a codeplug read, and a size that does not exist on a
+ * given radio is a read that may not answer.
+ */
+/**
  * The minimal set of 16-byte frames covering whatever an encoder CHANGED.
  *
  * Writes go out in 16-byte frames, but records do not respect that grid: the

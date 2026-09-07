@@ -5,6 +5,10 @@ import {
   STANDBY_BK_PICTURE,
 } from '../../src/radios/d890uv/displaySelectors';
 import { D890_SETTINGS_FIELDS } from '../../src/radios/d890uv/settingsMap';
+import {
+  parseDigitalContactHeader,
+  encodeDigitalContactHeader,
+} from '../../src/radios/d890uv/digitalContacts';
 
 describe('DA-7X2 picture display selectors', () => {
   /**
@@ -69,5 +73,49 @@ describe('DA-7X2 picture display selectors', () => {
   it('points at the setting that decides, not a generic one', () => {
     expect(imageDisplayState('boot', { powerOnInterface: 0 })?.setting).toBe('Power-on Interface');
     expect(imageDisplayState('bk1', { standbyBkPicture: 0 })?.setting).toBe('Standby BK Picture');
+  });
+});
+
+describe('DA-7X2 digital contact header', () => {
+  /** The exact 16 bytes the vendor CPS read at 0x07000000 before walking the banks. */
+  const REAL = Uint8Array.from([
+    0x8b, 0x7e, 0x02, 0x00, 0x1c, 0x1e, 0x20, 0x0a,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ]);
+
+  it('reads the captured count and end pointer', () => {
+    const h = parseDigitalContactHeader(REAL);
+    expect(h?.count).toBe(163467);
+    expect(h?.endAddress).toBe(0x0a201e1c);
+  });
+
+  /**
+   * The end pointer is what let this be identified at all: it predicts the
+   * CPS's final read length exactly, so a regression that swapped endianness
+   * or treated it as a LENGTH would break this arithmetic.
+   */
+  it('predicts the tail read the CPS actually performed', () => {
+    const h = parseDigitalContactHeader(REAL)!;
+    const offsetInTail = h.endAddress - 0xa200000;
+    expect(offsetInTail).toBe(7708);
+    expect(Math.ceil(offsetInTail / 16) * 16).toBe(7712);
+  });
+
+  it('refuses erased flash rather than reporting four billion contacts', () => {
+    expect(parseDigitalContactHeader(new Uint8Array(16).fill(0xff))).toBeNull();
+    // An end pointer below the first bank cannot be one.
+    const bogus = Uint8Array.from(REAL);
+    bogus.set([0x00, 0x00, 0x00, 0x00], 4);
+    bogus.set([0x10, 0x00, 0x00, 0x00], 4);
+    expect(parseDigitalContactHeader(bogus)).toBeNull();
+  });
+
+  it('round-trips, and leaves the bytes past the two fields alone', () => {
+    const original = Uint8Array.from(REAL);
+    original[12] = 0xa5;
+    const out = encodeDigitalContactHeader(original, { count: 42, endAddress: 0x7900100 });
+    expect(parseDigitalContactHeader(out)).toEqual({ count: 42, endAddress: 0x7900100 });
+    expect(out[12]).toBe(0xa5);
+    expect(encodeDigitalContactHeader(REAL, parseDigitalContactHeader(REAL)!)).toEqual(REAL);
   });
 });

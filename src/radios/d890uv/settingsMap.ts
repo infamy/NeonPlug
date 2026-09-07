@@ -351,7 +351,21 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'priorityZoneB', label: 'Priority Zone B', group: 'Other', offset: 0x070, max: 255, vendorField: 'PriZoneB', confidence: 'vendor-name' },
   { key: 'smsConfirmation', label: 'SMS Confirmation', group: 'Digital Func', offset: 0x071, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'MsgOacsuSet', confidence: 'vendor-name' },
   { key: 'callDisplayMode', label: 'Call Display Mode', cpsLabel: 'Call Display Mode', group: 'Display', offset: 0x0af, max: 2, options: ['Turn off Talker Alias', 'Call Sign Based', 'Name Based'], listLength: 3, vendorField: 'CallModeDisKind', confidence: 'swept' },
-  { key: 'btOnOff', label: 'BT On/Off', group: 'Vox/BT', offset: 0x0b1, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'BlueToothOn', confidence: 'vendor-name' },
+  // ⚠️ THE OPTION LIST WAS INVENTED, and it made this a checkbox that corrupts.
+  //
+  // The OFFSET is sound — 'BlueToothOn' is marshaller raw 0x0a5 +12 = 0x0b1 —
+  // but ['Off','On'] with max:1 was asserted, never swept, and the byte reads
+  // 0x02 on a real radio (tests/fixtures/d890uv/settings.bin). A checkbox can
+  // only write 0 or 1, so editing anything on the Settings tab wrote 1 over a
+  // 2 and silently changed a setting the user never touched.
+  //
+  // Widened rather than demoted, unlike btPttHold at 0x0f0: there the offset
+  // itself is unproven, whereas here only the vocabulary was wrong. Dropping
+  // `options` and `listLength` renders a number field instead of a checkbox,
+  // which is honest about not knowing the labels. Nine other fields share this
+  // exact risk — their option lists come from dialogs the sweep never covered.
+  // Restore a list here only from a real sweep.
+  { key: 'btOnOff', label: 'BT On/Off', group: 'Vox/BT', offset: 0x0b1, max: 2, vendorField: 'BlueToothOn', confidence: 'vendor-name' },
   { key: 'btInternalSpeaker', label: 'BT + int spk', group: 'Vox/BT', offset: 0x0b3, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'SpkInBlueTooth', confidence: 'vendor-name' },
   { key: 'plugInRecordingTone', label: 'Plug-in Recording Tone', group: 'Record', offset: 0x0b4, max: 255, vendorField: 'WtRecordNote', confidence: 'vendor-name' },
   { key: 'rangingIntervalS', label: 'Ranging Interval[s]', group: 'GPS/Ranging', offset: 0x0b5, max: 255, vendorField: 'MeasurePeriod', confidence: 'vendor-name' },
@@ -382,7 +396,6 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'btRxDelay', label: 'BT RX Delay', group: 'Vox/BT', offset: 0x0ec, max: 255, vendorField: 'BhtHoldDelay', confidence: 'vendor-name' },
   { key: 'aliasDisplayPriority', label: 'Alias Display Priority', group: 'Digital Func', offset: 0x0ed, max: 2, options: ['Off', 'Contact Alias', 'Air Alias DMR/NX'], listLength: 3, vendorField: 'SctRxTalkAliasDis', confidence: 'vendor-name' },
   { key: 'aliasDataFormat', label: 'Alias Data Format', group: 'Digital Func', offset: 0x0ee, max: 2, options: ['ISO 8', 'ISO 7', 'Unicode'], listLength: 3, vendorField: 'SctTalkAliasForm', confidence: 'vendor-name' },
-  { key: 'btPttHold', label: 'BT PTT Hold', group: 'Vox/BT', offset: 0x0f0, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'BhtPttHold', confidence: 'vendor-name' },
   { key: 'btSleepTime', label: 'Ptt Sleep Time', group: 'Vox/BT', offset: 0x104, max: 255, vendorField: 'PttSleepTime', confidence: 'vendor-name' },
   { key: 'manualDialGroupHoldTime', label: 'Manual Dial - Group TG Hold Time', group: 'Digital Func', offset: 0x107, max: 255, vendorField: 'DialGroupHold', confidence: 'vendor-name' },
   { key: 'manualDialPrivateHoldTime', label: 'Manual Dial - Private TG Hold Time', group: 'Digital Func', offset: 0x108, max: 255, vendorField: 'DialPrivateHold', confidence: 'vendor-name' },
@@ -534,7 +547,11 @@ export const D890_UNMAPPED_BYTES: readonly D890UnmappedByte[] = [
   // distance-unit control anywhere (GPS/Ranging has four controls, none of them
   // it). The same `rec_only` pattern — a real vendor name belonging to a
   // sibling model. See [[da7x2-cps-is-multi-model]].
-  { offset: 0x0bd, observedChanging: false, vendorName: 'BookOwnId' },
+  // vendorName 'BookOwnId' removed 2026-09-07: it came from an UNCORRECTED
+  // marshaller address and really belongs at 0x0d5, where it is already
+  // correctly assigned. A stale name here reads as a decode and is worse
+  // than no name.
+  { offset: 0x0bd, observedChanging: false },
   { offset: 0x054, observedChanging: false, structure: 'computed' },
   { offset: 0x055, observedChanging: false, structure: 'computed' },
   { offset: 0x056, observedChanging: false, structure: 'computed' },
@@ -544,7 +561,11 @@ export const D890_UNMAPPED_BYTES: readonly D890UnmappedByte[] = [
   { offset: 0x06b, observedChanging: false, structure: 'array-element' },
   { offset: 0x06c, observedChanging: false, structure: 'array-element' },
   { offset: 0x06d, observedChanging: false, structure: 'array-element' },
-  { offset: 0x0b0, observedChanging: false, vendorName: 'CallSignColour' },
+  // vendorName 'CallSignColour' removed 2026-09-07: it came from an UNCORRECTED
+  // marshaller address and really belongs at 0x0bc, where it is already
+  // correctly assigned. A stale name here reads as a decode and is worse
+  // than no name.
+  { offset: 0x0b0, observedChanging: false },
   { offset: 0x0b2, observedChanging: false, structure: 'computed' },
   // Last byte of the 0x0b8-0x0bb group, same 0..3 loop shape as 0x0e7.
   { offset: 0x0bb, observedChanging: false, structure: 'loop-group' },
@@ -553,9 +574,39 @@ export const D890_UNMAPPED_BYTES: readonly D890UnmappedByte[] = [
   // __vbaUI1I4 — a Long truncated to bytes. The name almost certainly belongs to
   // the group, not to this byte alone.
   { offset: 0x0e7, observedChanging: false, vendorName: 'RoamEffectChanDis', structure: 'loop-group' },
-  { offset: 0x0f1, observedChanging: false, vendorName: 'ChanNameColourB' },
-  { offset: 0x0f2, observedChanging: false, vendorName: 'DigiEmgKind' },
-  { offset: 0x0f3, observedChanging: false, vendorName: 'TotPreEn' },
+  // 0x0f0-0x0f2 are a TRIO that only ever holds 0x00 or 0xFF.
+  //
+  // 0x0f0 was a field, `btPttHold` / 'BT PTT Hold', declared max:1 with options
+  // ['Off','On'] — which made the Settings tab render it as a CHECKBOX a user
+  // could toggle, writing 0 or 1 over the byte. Demoted here 2026-09-07.
+  //
+  // Evidence it was mis-mapped: across six independent read captures plus one
+  // vendor write, these three bytes take ONLY 0x00 or 0xFF and never 0x01,
+  // which a two-option field cannot produce. Every OTHER settings byte that
+  // varies across those captures holds a small sensible value — displayMode,
+  // vfMrA, memZoneA, amFmFunction, amVfoMem, amWorkZone are 0, 1, 2 or 4. These
+  // three are the only outliers, and they move together: one captured write
+  // flipped 0x0f0 0x00 -> 0xFF while 0x0f2 went 0xFF -> 0x00 in the same pass.
+  //
+  // The name came from the vendor marshaller and was never swept (its
+  // confidence was 'vendor-name'). A name is not a decode — see the doc comment
+  // above. If a sweep later identifies the byte, promote it back with evidence.
+  { offset: 0x0f0, observedChanging: true, vendorName: 'BhtPttHold' },
+  // vendorName 'ChanNameColourB' removed 2026-09-07: it came from an UNCORRECTED
+  // marshaller address and really belongs at 0x109, where it is already
+  // correctly assigned. A stale name here reads as a decode and is worse
+  // than no name.
+  { offset: 0x0f1, observedChanging: true },
+  // vendorName 'DigiEmgKind' removed 2026-09-07: it came from an UNCORRECTED
+  // marshaller address and really belongs at 0x10a, where it is already
+  // correctly assigned. A stale name here reads as a decode and is worse
+  // than no name.
+  { offset: 0x0f2, observedChanging: true },
+  // vendorName 'TotPreEn' removed 2026-09-07: it came from an UNCORRECTED
+  // marshaller address and really belongs at 0x10b, where it is already
+  // correctly assigned. A stale name here reads as a decode and is worse
+  // than no name.
+  { offset: 0x0f3, observedChanging: false },
   // Inside a 40-byte / 8-store tile; an array slot, and an array has one name.
   { offset: 0x115, observedChanging: false, structure: 'array-element' },
   // OUTSIDE the settings marshaller's coverage entirely — it traces

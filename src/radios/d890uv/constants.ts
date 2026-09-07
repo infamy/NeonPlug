@@ -342,7 +342,8 @@ export const D890_ADDR = {
    * computes `0x3a00000 + bank * 0x40000 + index * 0xc8` at three identical
    * sites. Flat addressing is correct only inside the first bank.
    */
-  TALKGROUP_BANK_STRIDE: 0x40000,
+  /** 0x80000, like every other banked table here. See D890_TALKGROUPS_PER_BANK. */
+  TALKGROUP_BANK_STRIDE: 0x80000,
 
   /**
    * Roaming — located by reading the radio 2026-08-30, not from the RE bundle.

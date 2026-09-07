@@ -580,13 +580,41 @@ describe('record parsing', () => {
 
 describe('talkgroup banking', () => {
   it('matches flat addressing inside the first bank', () => {
-    for (const i of [0, 1, 200, 1249]) {
+    // 1249 used to be here, from the old 1250-per-bank guess. Any index below
+    // the bank size must stay flat under either reading, so this list is
+    // derived rather than written out — it cannot silently pin a stale value.
+    for (const i of [0, 1, 200, D890_TALKGROUPS_PER_BANK - 1]) {
       expect(talkgroupAddress(i)).toBe(D890_ADDR.TALKGROUP_DATA + i * D890_ADDR.TALKGROUP_STRIDE);
     }
   });
 
+  /**
+   * The bank geometry is NOT hardware-confirmed, and this test says so out loud
+   * rather than pretending the numbers are settled.
+   *
+   * Every codeplug ever seen here held six talkgroups, so no capture can
+   * arbitrate: the old 1250/0x40000 and the current 1000/0x80000 agree for
+   * every index below 1000. What decides it is a codeplug with more than 1000
+   * talkgroups written through the vendor CPS and one read captured — talkgroup
+   * 1000 lands at 0x3a80000 under the current reading, 0x3a30d40 under the old.
+   *
+   * What IS checked here is structural consistency: this radio banks every
+   * other table it has at 0x80000, and talkgroups were the lone exception.
+   */
+  it('banks talkgroups the same way this radio banks everything else', () => {
+    expect(D890_ADDR.TALKGROUP_BANK_STRIDE).toBe(0x80000);
+    expect(D890_ADDR.CHANNEL_BLOCK_STRIDE).toBe(D890_ADDR.TALKGROUP_BANK_STRIDE);
+    expect(D890_ADDR.SCAN_LIST_BLOCK_STRIDE).toBe(D890_ADDR.TALKGROUP_BANK_STRIDE);
+    expect(D890_ADDR.PREDEFINED_SMS_BANK_STRIDE).toBe(D890_ADDR.TALKGROUP_BANK_STRIDE);
+    // 10 banks of 1000 covers the documented 10,000 capacity exactly.
+    expect(D890_TALKGROUPS_PER_BANK * 10).toBe(10000);
+    // And a bank still physically holds its records with room to spare.
+    expect(D890_TALKGROUPS_PER_BANK * D890_ADDR.TALKGROUP_STRIDE)
+      .toBeLessThan(D890_ADDR.TALKGROUP_BANK_STRIDE);
+  });
+
   it('starts a new bank rather than running past the bank stride', () => {
-    // Flat addressing would put index 1250 at 0x3a3d090, inside bank 0. The
+    // Flat addressing would put the first index of bank 1 inside bank 0. The
     // vendor CPS puts it at the base of bank 1.
     expect(talkgroupAddress(D890_TALKGROUPS_PER_BANK)).toBe(
       D890_ADDR.TALKGROUP_DATA + D890_ADDR.TALKGROUP_BANK_STRIDE,

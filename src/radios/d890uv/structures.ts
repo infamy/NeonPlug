@@ -151,23 +151,43 @@ export function scanListAddress(index: number): number {
 /**
  * Talkgroups per bank.
  *
- * ⚠️ INFERRED, and untested — the only codeplug ever loaded onto a radio here
- * held six talkgroups, so nothing past bank 0 has been observed.
+ * CORRECTED 2026-09-07 from 1250 to 1000, and the bank stride from 0x40000 to
+ * 0x80000. STILL NOT HARDWARE-CONFIRMED — see the test below — but the previous
+ * value was a pure arithmetic guess and this one has two independent supports.
  *
- * 1250 is chosen because 8 banks x 1250 is exactly the documented 10,000
- * capacity, and 1250 * 0xc8 = 0x3d090 fits inside the 0x40000 bank. The bank
- * would physically hold 1310 records, so if the radio packs them tightly this
- * is wrong for indices 1250-1309. Both candidates agree below 1250.
+ * The old reasoning was: 8 banks x 1250 is exactly the documented 10,000
+ * capacity, and 1250 * 0xc8 fits inside a 0x40000 bank. Both true, and neither
+ * is evidence about what the radio does.
+ *
+ * What replaced it:
+ *
+ *  1. The vendor CPS computes `0x3a00000 + (V / 1000) * 0x80000 + (V % 1000) *
+ *     0xc8` in the talkgroup reader, the talkgroup writer AND the whole-radio
+ *     transfer driver whose output goes on the wire. The 0x40000 sites that the
+ *     old comment cited as "three identical call sites" are in DIFFERENT
+ *     functions, and one of them uses 0x80000 in its body and 0x40000 in a tail
+ *     block — internally inconsistent, so at least one is not this radio's path.
+ *  2. EVERY other banked table on this radio uses 0x80000: channels, scan
+ *     lists, predefined SMS, and the digital contact database, whose 0x80000
+ *     stride is confirmed against a live capture. Talkgroups at 0x40000 was the
+ *     sole outlier, and the only stride nobody had observed.
+ *
+ * Both readings agree below index 1000, which is why no capture here can
+ * arbitrate: every codeplug seen has held six talkgroups.
+ *
+ * THE ONE TEST THAT SETTLES IT: load a codeplug with more than 1000 talkgroups
+ * through the vendor CPS and capture one read. Talkgroup 1000 lands at
+ * 0x3a80000 under this reading and 0x3a30d40 under the old one — the first
+ * record above 999 decides it in a single frame.
  */
-export const D890_TALKGROUPS_PER_BANK = 1250;
+export const D890_TALKGROUPS_PER_BANK = 1000;
 
 /**
  * Address of one talkgroup record.
  *
- * Banked, not flat: the vendor CPS computes
- * `0x3a00000 + bank * 0x40000 + index * 0xc8` at three identical call sites.
- * This read flat until 2026-08-29, which is correct inside bank 0 and silently
- * wrong beyond it.
+ * Banked, not flat: `0x3a00000 + bank * 0x80000 + indexInBank * 0xc8`. This
+ * read flat until 2026-08-29, which is correct inside bank 0 and silently wrong
+ * beyond it. See D890_TALKGROUPS_PER_BANK for why the bank size changed.
  */
 export function talkgroupAddress(index: number): number {
   const bank = Math.floor(index / D890_TALKGROUPS_PER_BANK);
