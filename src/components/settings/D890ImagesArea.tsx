@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
-import { POWER_ON_INTERFACE } from './D890PowerOnArea';
+import { imageDisplayState } from '../../radios/d890uv/displaySelectors';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { D890ImagePreview } from '../diagnostics/D890ImagePreview';
 import { SectionTitle } from '../ui/SectionTitle';
@@ -56,6 +56,51 @@ interface ImageSlotProps {
   kind: D890ImageKind;
   fromRadio: Uint8Array | null;
 }
+
+/** Scroll to a settings section, the same way the jump-nav chips do. */
+function jumpToSettingsSection(id: string) {
+  document
+    .getElementById(`settings-section-${id}`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/**
+ * Whether the radio is currently set to show THIS picture, and where to change it.
+ *
+ * Renders nothing when settings have not been read: "we do not know" must not
+ * look like "not shown", or someone with no codeplug loaded is told their
+ * picture is disabled.
+ */
+const DisplayBadge: React.FC<{ kind: D890ImageKind }> = ({ kind }) => {
+  const { settings } = useRadioSettingsStore();
+  const state = imageDisplayState(
+    kind,
+    settings?.radioSpecific as Record<string, unknown> | undefined
+  );
+  if (!state) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span
+        className={
+          state.shown
+            ? 'px-2 py-0.5 text-[11px] rounded-full bg-neon-cyan text-black font-medium'
+            : 'px-2 py-0.5 text-[11px] rounded-full border border-panel text-muted'
+        }
+      >
+        {state.shown ? state.role : 'Not shown'}
+      </span>
+      {state.reason && <span className="text-[11px] text-muted">{state.reason}</span>}
+      <button
+        type="button"
+        onClick={() => jumpToSettingsSection('display')}
+        className="text-[11px] text-neon-cyan hover:underline"
+      >
+        {state.setting} →
+      </button>
+    </div>
+  );
+};
 
 const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
   const { writePicture, isConnecting } = useRadioConnection();
@@ -118,7 +163,10 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
 
   return (
     <div className="p-4 bg-dark-charcoal rounded-lg border-panel">
-      <h4 className="text-sm font-semibold text-neon-cyan mb-3">{D890_IMAGE_LABEL[kind]}</h4>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <h4 className="text-sm font-semibold text-neon-cyan">{D890_IMAGE_LABEL[kind]}</h4>
+        <DisplayBadge kind={kind} />
+      </div>
 
       <div className="flex flex-wrap gap-6 items-start">
         <div>
@@ -243,45 +291,6 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
  * other contents are unknown. Staging without sending is the useful half: it
  * exercises the encoder and shows the user precisely what would go out.
  */
-/**
- * Whether the radio will actually SHOW what is written here.
- *
- * A picture can be written perfectly and still never appear, because two
- * settings-block bytes decide what the screen displays. Writing a boot image
- * and seeing no change is otherwise indistinguishable from a failed write, so
- * the state of those bytes belongs next to the button.
- */
-const PowerOnDestination: React.FC = () => {
-  const { settings } = useRadioSettingsStore();
-  const specific = settings?.radioSpecific as Record<string, unknown> | undefined;
-  if (!specific) return null;
-
-  const iface = specific.powerOnInterface;
-  const showsPicture = iface === POWER_ON_INTERFACE.CUSTOM_PICTURE;
-
-  return (
-    <div className="mb-6 space-y-2">
-      {iface !== undefined && !showsPicture && (
-        <p className="text-xs text-amber-400">
-          <span className="font-semibold">The boot picture will not be shown.</span>{' '}
-          Power-on Interface is set to{' '}
-          {iface === POWER_ON_INTERFACE.CUSTOM_CHAR
-            ? 'Custom Char, so the radio shows the Power-on Screen text instead'
-            : 'Default Interface'}
-          . Change it in Display to <em>Custom Picture</em> to use the image below.
-        </p>
-      )}
-      {/* Deliberately not saying which of this byte's three values means what:
-          the option labels were never swept, and guessing them here would put
-          an invented claim in front of the user. */}
-      <p className="text-xs text-muted">
-        Which standby background is shown, if any, is set by{' '}
-        <span className="text-cool-gray">Standby BK Picture</span> in Display.
-      </p>
-    </div>
-  );
-};
-
 export const D890ImagesArea: React.FC = () => {
   const { tables } = useRadioStore();
   const { readPictures, isConnecting } = useRadioConnection();
@@ -316,7 +325,6 @@ export const D890ImagesArea: React.FC = () => {
         than custom text.
       </p>
 
-      <PowerOnDestination />
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <button

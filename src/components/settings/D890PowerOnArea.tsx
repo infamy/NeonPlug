@@ -3,6 +3,7 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { useRadioStore } from '../../store/radioStore';
 import { D890_POWER_ON, type D890PowerOnDisplay } from '../../radios/d890uv/powerOnDisplay';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
+import { POWER_ON_INTERFACE } from '../../radios/d890uv/displaySelectors';
 
 /**
  * The custom power-on screen: two text lines and the power-on password.
@@ -20,13 +21,6 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
  * read it back cannot recover a radio they locked — it is not a credential of
  * the user's that we are choosing to expose.
  */
-
-/** Which of the three power-on interfaces the settings block currently selects. */
-export const POWER_ON_INTERFACE = {
-  DEFAULT: 0,
-  CUSTOM_CHAR: 1,
-  CUSTOM_PICTURE: 2,
-} as const;
 
 const FieldRow: React.FC<{
   label: string;
@@ -77,10 +71,22 @@ export const D890PowerOnArea: React.FC = () => {
         <span className="text-white">Power-on Interface</span> above.
       </p>
 
-      {iface !== undefined && !showingText && (
+      {typeof iface === 'number' && !showingText && (
         <p className="mb-4 text-xs text-amber-400">
-          Power-on Interface is not set to <em>Custom Char</em>, so this text will
-          not be shown at power on.
+          Power-on Interface is set to{' '}
+          {iface === POWER_ON_INTERFACE.CUSTOM_PICTURE ? 'Custom Picture' : 'Default Interface'},
+          so this text is not shown at power on.{' '}
+          <button
+            type="button"
+            onClick={() =>
+              document
+                .getElementById('settings-section-display')
+                ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
+            className="text-neon-cyan hover:underline"
+          >
+            Power-on Interface →
+          </button>
         </p>
       )}
 
