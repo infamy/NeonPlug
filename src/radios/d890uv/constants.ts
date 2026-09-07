@@ -715,7 +715,30 @@ export const D890_BUSY_LOCK = ['Off / Always', 'Different CDT', 'Channel Free'] 
  * to "5s" in the vendor CPS, save, and read `.rdt` 0x087 — 4 confirms this list,
  * 5 means something precedes "1s".
  */
+/**
+ * Group / private call hold time.
+ *
+ * ⚠️ THE BYTE IS 1-BASED, so index 0 is a placeholder and the real entries start
+ * at 1. Getting this wrong was two bugs at once, both silent:
+ *
+ *   byte  5  ->  '5s'      read 0-based it showed '6s' on every single read
+ *   byte 31  ->  '30min'   read 0-based it showed 'Infinite'
+ *   byte 32  ->  'Infinite'  read 0-based it was OUT OF RANGE entirely
+ *
+ * The CPS sweep settles the top of the range: selecting 'Infinite' writes
+ * 0x20 = 32, marked VERIFIED, which a 32-entry 0-based list cannot represent.
+ *
+ * CONFIRMED AGAINST THE VENDOR CPS 2026-09-07 for the bottom of it too — the
+ * radio holds 0x05 and the CPS displays '5s'. That is the direct check, not an
+ * inference: 0-based would have to display '6s'. NeonPlug did display '6s',
+ * on every read, for as long as this list existed.
+ *
+ * Index 0 has never been observed. It is labelled rather than omitted so the
+ * byte value and the list index stay equal — the alternative is an off-by-one
+ * correction at every use site, which is how this went wrong to begin with.
+ */
 export const D890_CALL_HOLD_TIME: readonly string[] = [
+  '(0 — never written by the CPS)',
   ...Array.from({ length: 30 }, (_, i) => `${i + 1}s`),
   '30min',
   'Infinite',

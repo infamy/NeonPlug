@@ -66,3 +66,7 @@ DA7X2-READ-REMAINING.md
 DA7X2-SESSION-FINDINGS-2026-08-30.md
 DA7X2-UI-VERIFY-REQUEST.md
 DA7X2-ERASE-QUESTION.md
+
+# Normalised serial captures — regenerate with tools/normalize-capture.mjs.
+# Curated fixtures belong in tests/fixtures/<model>/ instead.
+captures/

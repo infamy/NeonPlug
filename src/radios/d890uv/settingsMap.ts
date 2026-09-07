@@ -194,8 +194,8 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'p1ShortKey',                      label: 'P1 Short Key',                        cpsLabel: 'Pl Short Key',                        group: 'Key Function',    offset: 0x013, max: 66, listLength: 67 },
   { key: 'p2ShortKey',                      label: 'P2 Short Key',                        cpsLabel: 'P2 Short Key',                        group: 'Key Function',    offset: 0x014, max: 66, listLength: 67 },
   { key: 'steTypeOfCtcss',                  label: 'STE Type Of CTCSS',                   cpsLabel: 'STE Type Of CTCSS',                   group: 'STE',             offset: 0x017, max: 4, listLength: 5, options: ['On', 'Silent', '120 Degree', '180 Degree', '240 Degree'], vendorField: 'STE_Type' },
-  { key: 'groupCallHoldTime',               label: 'Group Call Hold Time',                cpsLabel: 'Group Call Hold Tme',                 group: 'Digital Func',    offset: 0x019, max: 31, listLength: 32, options: D890_CALL_HOLD_TIME, confidence: 'inferred', vendorField: 'GroupTalkHold' },
-  { key: 'privateCallHoldTime',             label: 'Private Call Hold Time',              cpsLabel: 'Private Call Hold Tme',               group: 'Digital Func',    offset: 0x01a, max: 31, listLength: 32, options: D890_CALL_HOLD_TIME, confidence: 'inferred', vendorField: 'PersonTalkHold' },
+  { key: 'groupCallHoldTime',               label: 'Group Call Hold Time',                cpsLabel: 'Group Call Hold Tme',                 group: 'Digital Func',    offset: 0x019, max: 32, listLength: 33, options: D890_CALL_HOLD_TIME, confidence: 'swept', vendorField: 'GroupTalkHold' },
+  { key: 'privateCallHoldTime',             label: 'Private Call Hold Time',              cpsLabel: 'Private Call Hold Tme',               group: 'Digital Func',    offset: 0x01a, max: 32, listLength: 33, options: D890_CALL_HOLD_TIME, confidence: 'swept', vendorField: 'PersonTalkHold' },
   { key: 'txPreambleDuration',              label: 'TX preamble duration',                cpsLabel: 'TX preamble duration',                group: 'Digital Func',    offset: 0x01c, max: 40, listLength: 41, vendorField: 'Preamble', valueRule: { scale: 60, offset: 0, unit: 'ms', basis: 'two-point' } },
   { key: 'amFmFunction',                    label: 'AM/FM Function',                      cpsLabel: 'AM/FM Function',                      group: 'AM/FM',           offset: 0x021, max: 3, listLength: 4, vendorField: 'FM_En' },
   { key: 'autoBacklightDuration',           label: 'Auto Backlight Duration',             cpsLabel: 'Auto Backlight Duration',             group: 'Display',         offset: 0x027, max: 15, listLength: 16, vendorField: 'AutoBKLightTime' },
@@ -319,7 +319,14 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'memZoneA', label: 'MEM Zone(A)', group: 'Work Mode', offset: 0x01f, max: 255, vendorField: 'Work_Zone1', confidence: 'vendor-name' },
   { key: 'memZoneB', label: 'MEM Zone(B)', group: 'Work Mode', offset: 0x020, max: 255, vendorField: 'Work_Zone2', confidence: 'vendor-name' },
   { key: 'recordFunction', label: 'Record Function', cpsLabel: 'Record Function', group: 'Record', offset: 0x022, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'Record_En', confidence: 'swept', hint: 'Enable or disable the recording function.'},
-  { key: 'manDown', label: 'Man Down', group: 'Other', offset: 0x024, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'FailAlarm', confidence: 'vendor-name', hint: 'Alarms if the radio is tilted past its threshold, for the delay below.'},
+  // ⚠️ VOCABULARY NEVER MEASURED. This control does not appear on ANY of the
+  // 18 tabs of this model's Optional Setting dialog (verified against the CPS
+  // control inventory, 231 controls), so ['Off','On'] came from a vendor
+  // marshaller NAME, not from anything anyone saw. Declared max:1 it rendered
+  // as a CHECKBOX, which is the shape that corrupted btOnOff and btPttHold:
+  // a checkbox cannot express a value outside 0/1, so saving any unrelated
+  // setting silently rewrites this byte. Widened until measured.
+  { key: 'manDown', label: 'Man Down', group: 'Other', offset: 0x024, max: 255, vendorField: 'FailAlarm', confidence: 'vendor-name', hint: 'Alarms if the radio is tilted past its threshold, for the delay below.'},
   { key: 'monKeyFunction', label: 'MON Key Function', group: 'Key Function', offset: 0x025, max: 255, vendorField: 'MonType', confidence: 'vendor-name' },
   { key: 'brightness', label: 'Brightness', group: 'Display', offset: 0x026, max: 255, vendorField: 'Lightness', confidence: 'vendor-name' },
   // CONFIRMED on hardware 2026-08-30: switching GPS off on the radio moved this
@@ -332,41 +339,79 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'digiCallResetTone', label: 'Digi Call Reset Tone', cpsLabel: 'Digi Call Reset Tone', group: 'Alert Tone', offset: 0x032, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'OverVoice', confidence: 'swept' },
   { key: 'voiceBroadcast', label: 'Voice Broadcast', group: 'Alert Tone', offset: 0x035, max: 255, vendorField: 'Voice_Note', confidence: 'vendor-name' },
   { key: 'maximumVolume', label: 'Maximum Volume', group: 'Volume/Audio', offset: 0x03b, max: 255, vendorField: 'MaxVol', confidence: 'vendor-name' },
-  { key: 'selectTxContact', label: 'Select TX Contact', group: 'Other', offset: 0x040, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'ContactOutSetEn', confidence: 'vendor-name' },
+  // ⚠️ VOCABULARY NEVER MEASURED. This control does not appear on ANY of the
+  // 18 tabs of this model's Optional Setting dialog (verified against the CPS
+  // control inventory, 231 controls), so ['Off','On'] came from a vendor
+  // marshaller NAME, not from anything anyone saw. Declared max:1 it rendered
+  // as a CHECKBOX, which is the shape that corrupted btOnOff and btPttHold:
+  // a checkbox cannot express a value outside 0/1, so saving any unrelated
+  // setting silently rewrites this byte. Widened until measured.
+  { key: 'selectTxContact', label: 'Select TX Contact', group: 'Other', offset: 0x040, max: 255, vendorField: 'ContactOutSetEn', confidence: 'vendor-name' },
   { key: 'manDownDelayS', label: 'Man Down Delay[s]', group: 'Other', offset: 0x04f, max: 255, vendorField: 'ManDownWait', confidence: 'vendor-name' },
-  { key: 'gpsTemplateInformation', label: 'GPS Template Information', group: 'GPS/Ranging', offset: 0x053, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'GpsTextUsed', confidence: 'vendor-name' },
-  // ⚠️ Reads 255 where the vendor shows 0. Verified against a real radio image
-  // 2026-08-31: this sits on an `ff ff` byte PAIR, so it is almost certainly a
-  // u16 with 0xFFFF meaning "none" — read here as a single byte, which surfaces
-  // 255 as though it were a real value. Do not write it until the width is
-  // settled; a one-byte write would leave half a sentinel behind.
+  // ⚠️ VOCABULARY NEVER MEASURED. This control does not appear on ANY of the
+  // 18 tabs of this model's Optional Setting dialog (verified against the CPS
+  // control inventory, 231 controls), so ['Off','On'] came from a vendor
+  // marshaller NAME, not from anything anyone saw. Declared max:1 it rendered
+  // as a CHECKBOX, which is the shape that corrupted btOnOff and btPttHold:
+  // a checkbox cannot express a value outside 0/1, so saving any unrelated
+  // setting silently rewrites this byte. Widened until measured.
+  { key: 'gpsTemplateInformation', label: 'GPS Template Information', group: 'GPS/Ranging', offset: 0x053, max: 255, vendorField: 'GpsTextUsed', confidence: 'vendor-name' },
+  // NOT A u16 — corrected 2026-09-07. This pair was read as one 16-bit sentinel
+  // because every capture showed `ff ff`; the radio image that PREDATES all of
+  // them holds `01 00`, which no sentinel reading explains.
+  //
+  // They are two independent u8 selectors into the auto-repeater offset table,
+  // stored as value-1 with 0xFF meaning Off. The .rdt from the same radio holds
+  // 02 and 01 where these hold 01 and 00 — exactly v-1 each — and the CPS
+  // marshaller makes two separate stores through a converter that maps v<=0 to
+  // 0xFF and otherwise v-1. The universal `ff ff` in later captures is just both
+  // being Off: the CPS resets them on every dialog OK.
+  //
+  // So the width is settled and a one-byte write is correct. What is NOT safe is
+  // the 0..255 input this still renders: the only legal values are 0xFF or an
+  // index into the offset table, which has far fewer than 255 entries.
   { key: 'autoRepeater1Uhf', label: 'Auto Repeater1(UHF)', group: 'Auto repeater', offset: 0x068, max: 255, vendorField: 'UhfAutoRep', confidence: 'inferred' },
-  // ⚠️ Reads 255 where the vendor shows 0. Verified against a real radio image
-  // 2026-08-31: this sits on an `ff ff` byte PAIR, so it is almost certainly a
-  // u16 with 0xFFFF meaning "none" — read here as a single byte, which surfaces
-  // 255 as though it were a real value. Do not write it until the width is
-  // settled; a one-byte write would leave half a sentinel behind.
+  // The VHF half of the pair above — an independent u8, not the high byte of a
+  // u16. See the note on autoRepeater1Uhf.
   { key: 'autoRepeater1Vhf', label: 'Auto Repeater1(VHF)', group: 'Auto repeater', offset: 0x069, max: 255, vendorField: 'VhfAutoRep', confidence: 'inferred' },
   { key: 'priorityZoneA', label: 'Priority Zone A', group: 'Other', offset: 0x06f, max: 255, vendorField: 'PriZoneA', confidence: 'vendor-name' },
   { key: 'priorityZoneB', label: 'Priority Zone B', group: 'Other', offset: 0x070, max: 255, vendorField: 'PriZoneB', confidence: 'vendor-name' },
-  { key: 'smsConfirmation', label: 'SMS Confirmation', group: 'Digital Func', offset: 0x071, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'MsgOacsuSet', confidence: 'vendor-name' },
+  // ⚠️ VOCABULARY NEVER MEASURED. This control does not appear on ANY of the
+  // 18 tabs of this model's Optional Setting dialog (verified against the CPS
+  // control inventory, 231 controls), so ['Off','On'] came from a vendor
+  // marshaller NAME, not from anything anyone saw. Declared max:1 it rendered
+  // as a CHECKBOX, which is the shape that corrupted btOnOff and btPttHold:
+  // a checkbox cannot express a value outside 0/1, so saving any unrelated
+  // setting silently rewrites this byte. Widened until measured.
+  { key: 'smsConfirmation', label: 'SMS Confirmation', group: 'Digital Func', offset: 0x071, max: 255, vendorField: 'MsgOacsuSet', confidence: 'vendor-name' },
   { key: 'callDisplayMode', label: 'Call Display Mode', cpsLabel: 'Call Display Mode', group: 'Display', offset: 0x0af, max: 2, options: ['Turn off Talker Alias', 'Call Sign Based', 'Name Based'], listLength: 3, vendorField: 'CallModeDisKind', confidence: 'swept' },
-  // ⚠️ THE OPTION LIST WAS INVENTED, and it made this a checkbox that corrupts.
+  // Two states, but the byte is 0 and 2 — index 1 does not exist.
   //
-  // The OFFSET is sound — 'BlueToothOn' is marshaller raw 0x0a5 +12 = 0x0b1 —
-  // but ['Off','On'] with max:1 was asserted, never swept, and the byte reads
-  // 0x02 on a real radio (tests/fixtures/d890uv/settings.bin). A checkbox can
-  // only write 0 or 1, so editing anything on the Settings tab wrote 1 over a
-  // 2 and silently changed a setting the user never touched.
+  // History: this was declared max:1 with ['Off','On'], which the Settings tab
+  // renders as a CHECKBOX. The byte reads 0x02 on a real radio, so a checkbox
+  // could not express it and saving any unrelated setting rewrote it to 0 or 1.
   //
-  // Widened rather than demoted, unlike btPttHold at 0x0f0: there the offset
-  // itself is unproven, whereas here only the vocabulary was wrong. Dropping
-  // `options` and `listLength` renders a number field instead of a checkbox,
-  // which is honest about not knowing the labels. Nine other fields share this
-  // exact risk — their option lists come from dialogs the sweep never covered.
-  // Restore a list here only from a real sweep.
-  { key: 'btOnOff', label: 'BT On/Off', group: 'Vox/BT', offset: 0x0b1, max: 2, vendorField: 'BlueToothOn', confidence: 'vendor-name' },
-  { key: 'btInternalSpeaker', label: 'BT + int spk', group: 'Vox/BT', offset: 0x0b3, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'SpkInBlueTooth', confidence: 'vendor-name' },
+  // CONFIRMED 2026-09-07: the radio's own menu offers exactly two states, On and
+  // Off — and across the fixture plus seven captures this byte only ever holds
+  // 0x00 or 0x02, never 0x01. So the vocabulary really is two entries; what was
+  // wrong is that they are not adjacent. The gap is spelled out rather than
+  // closed, so the byte value and the option index stay equal.
+  //
+  // ⚠️ WHICH VALUE IS WHICH IS ASSUMED, not measured. 0 = Off is the convention
+  // and 0x00 is what every post-CPS-write capture holds, while 0x02 comes from
+  // the radio image taken before any CPS write. If that is backwards, the labels
+  // swap and nothing else changes. Toggling BT in the radio menu and re-reading
+  // settles it.
+  { key: 'btOnOff', label: 'BT On/Off', group: 'Vox/BT', offset: 0x0b1, max: 2, listLength: 3,
+    options: ['Off', '(1 — never observed)', 'On'], vendorField: 'BlueToothOn', confidence: 'inferred' },
+  // ⚠️ VOCABULARY NEVER MEASURED. This control does not appear on ANY of the
+  // 18 tabs of this model's Optional Setting dialog (verified against the CPS
+  // control inventory, 231 controls), so ['Off','On'] came from a vendor
+  // marshaller NAME, not from anything anyone saw. Declared max:1 it rendered
+  // as a CHECKBOX, which is the shape that corrupted btOnOff and btPttHold:
+  // a checkbox cannot express a value outside 0/1, so saving any unrelated
+  // setting silently rewrites this byte. Widened until measured.
+  { key: 'btInternalSpeaker', label: 'BT + int spk', group: 'Vox/BT', offset: 0x0b3, max: 255, vendorField: 'SpkInBlueTooth', confidence: 'vendor-name' },
   { key: 'plugInRecordingTone', label: 'Plug-in Recording Tone', group: 'Record', offset: 0x0b4, max: 255, vendorField: 'WtRecordNote', confidence: 'vendor-name' },
   { key: 'rangingIntervalS', label: 'Ranging Interval[s]', group: 'GPS/Ranging', offset: 0x0b5, max: 255, vendorField: 'MeasurePeriod', confidence: 'vendor-name' },
   { key: 'btMicGain', label: 'BT MIC Gain', group: 'Vox/BT', offset: 0x0b6, max: 255, vendorField: 'BhtMicGain', confidence: 'vendor-name' },
