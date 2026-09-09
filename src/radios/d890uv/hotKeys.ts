@@ -102,3 +102,40 @@ export function parseHotKeys(region: Uint8Array): D890HotKey[] {
     parseHotKey(region, base + slot * D890_HOT_KEYS.STRIDE, slot)
   );
 }
+
+/**
+ * Write one hot key, patching the region.
+ *
+ * Only the six modelled bytes move; +0x09 through +0x2f of the entry stay the
+ * radio's own. The mask at 0x3701510 is NOT touched — it marks which rows differ
+ * from the CPS default, not which exist, and nothing here knows what the default
+ * is. All 18 entries are live regardless of it.
+ */
+export function encodeHotKey(
+  region: Uint8Array,
+  slot: number,
+  key: Omit<D890HotKey, 'slot'>
+): Uint8Array {
+  if (slot < 0 || slot >= D890_HOT_KEYS.SLOTS) {
+    throw new Error(`Hot key slot ${slot} is outside 0..${D890_HOT_KEYS.SLOTS - 1}`);
+  }
+  const out = Uint8Array.from(region);
+  const at = D890_HOT_KEYS.BASE - 0x3700000 + slot * D890_HOT_KEYS.STRIDE;
+  if (at + 0x09 > out.length) throw new Error('Hot key region is shorter than the slot');
+
+  out[at + 0x00] = key.mode & 0xff;
+  out[at + 0x01] = key.menu & 0xff;
+  out[at + 0x02] = key.callType & 0xff;
+  out[at + 0x03] = key.digiCallType & 0xff;
+
+  // 0xFFFFFFFF is the grid's "Off" for Call Object.
+  const obj = key.callObject === null ? 0xffffffff : key.callObject >>> 0;
+  out[at + 0x04] = obj & 0xff;
+  out[at + 0x05] = (obj >>> 8) & 0xff;
+  out[at + 0x06] = (obj >>> 16) & 0xff;
+  out[at + 0x07] = (obj >>> 24) & 0xff;
+
+  out[at + 0x08] =
+    key.contentSmsIndex === null ? D890_HOT_KEYS.NONE_BYTE : key.contentSmsIndex & 0xff;
+  return out;
+}

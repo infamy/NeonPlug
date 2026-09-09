@@ -69,6 +69,20 @@ export interface OptionalDigitalReads {
   /** The radio's own DMR ID ("MastID"), or null when the record is empty. */
   /** Auto-repeater offsets in MHz, by slot; null for an unused slot. */
   readAutoRepeaterOffsets?(): Promise<(number | null)[]>;
+  readHotKeyRegion?(): Promise<{
+    statusMessages: import('./d890uv/statusMessages').D890StatusMessage[];
+    hotKeys: import('./d890uv/hotKeys').D890HotKey[];
+  }>;
+  readAnalogAddressBook?(): Promise<
+    import('./d890uv/analogAddressBook').D890AnalogContact[]
+  >;
+  readMdc1200Contacts?(): Promise<import('./d890uv/mdc1200').D890Mdc1200Contact[]>;
+  readSmsStore?(): Promise<import('./d890uv/smsStore').D890SmsEnvelope[]>;
+  readZoneRoamMask?(): Promise<Uint8Array[]>;
+  readDtmf?(): Promise<{
+    settings: import('./d890uv/dtmf').D890DtmfSettings;
+    encodeList: string[];
+  }>;
   /** The AM airband receiver's own tuning record. */
   readAmVfo?(): Promise<import('./d890uv/broadcastChannels').D890BroadcastChannel | null>;
   readMasterRadioId?(): Promise<{

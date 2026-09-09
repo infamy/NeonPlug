@@ -175,10 +175,16 @@ export function scanListAddress(index: number): number {
  * Both readings agree below index 1000, which is why no capture here can
  * arbitrate: every codeplug seen has held six talkgroups.
  *
- * THE ONE TEST THAT SETTLES IT: load a codeplug with more than 1000 talkgroups
- * through the vendor CPS and capture one read. Talkgroup 1000 lands at
- * 0x3a80000 under this reading and 0x3a30d40 under the old one — the first
- * record above 999 decides it in a single frame.
+ * CONFIRMED ON HARDWARE 2026-09-08. 1010 talk groups were loaded by CSV import,
+ * each named after its own index so the boundary record is unmistakable, and the
+ * write set came out as 200,000 bytes at 0x3a00000 (records 0..999, contiguous)
+ * then 2,000 bytes at 0x3a80000. The record AT 0x3a80000 is TG1001 — CSV row
+ * 1001, zero-based index 1000 — and reading 0x3a30d40 back off the radio gives
+ * 0xFF: not padding, never written at all.
+ *
+ * So the old flat formula did not merely mis-address; it pointed at erased flash
+ * inside a valid region, which a client would have taken for a record. 200,000 /
+ * 1000 = 200 bytes exactly, confirming the stride at the same time.
  */
 export const D890_TALKGROUPS_PER_BANK = 1000;
 

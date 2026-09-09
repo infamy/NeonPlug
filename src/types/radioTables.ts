@@ -124,6 +124,44 @@ export interface RadioTables {
    * whatever selects it.
    */
   autoRepeaterOffsets: (number | null)[];
+  /**
+   * Hot-key status messages — the canned texts a key can send.
+   *
+   * Driven by the presence bitmask, not by "does the slot have text": the mask
+   * is what the radio consults, so a slot with stale text and a clear bit is
+   * not a message.
+   */
+  statusMessages: import('../radios/d890uv/statusMessages').D890StatusMessage[];
+  /**
+   * All 18 hot keys — 6 Hot Key rows plus 12 Fun, matching the CPS grid.
+   *
+   * Every entry is live. The mask at 0x3701510 marks which rows differ from the
+   * default, NOT which exist, so all 18 are parsed.
+   */
+  hotKeys: import('../radios/d890uv/hotKeys').D890HotKey[];
+  /** Analog (DTMF) address book. Deleting an entry COMPACTS and renumbers. */
+  analogAddressBook: import('../radios/d890uv/analogAddressBook').D890AnalogContact[];
+  /** MDC1200 address book — the vendor CPS calls it QDC. */
+  mdc1200Contacts: import('../radios/d890uv/mdc1200').D890Mdc1200Contact[];
+  /**
+   * SMS store envelopes, in the radio's own chain order.
+   *
+   * A linked list, not an array: deleting a message retires its slot and
+   * repoints the head, leaving the others where they were.
+   */
+  smsStore: import('../radios/d890uv/smsStore').D890SmsEnvelope[];
+  /**
+   * Zone roam mask, 32 bytes per present zone, in zone-slot order.
+   *
+   * Carried verbatim — zero on every radio seen, with no UI anywhere that can
+   * set it. Read so a write can put it back.
+   */
+  zoneRoamMask: Uint8Array[];
+  /** DTMF settings and the 16 encode entries. */
+  dtmf: {
+    settings: import('../radios/d890uv/dtmf').D890DtmfSettings;
+    encodeList: string[];
+  };
   /** Power-on screen text and password. */
   powerOnDisplay: D890PowerOnDisplay;
   /**

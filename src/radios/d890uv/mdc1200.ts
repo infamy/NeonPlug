@@ -16,15 +16,51 @@
  *   0x4a00000  00 00 00 00 00 00 11 11  then zeros
  *   0x4a00040  00 01 00 00 22 02 00 00  then zeros
  *
- * ⚠️ THE ID IS BCD WITH THE BYTE PAIR SWAPPED, and only the Group ID proves it.
- * 222 stored as `22 02` is 222 only when the high pair is read from the SECOND
- * byte: 0x02 -> "02", 0x22 -> "22", giving "0222". Every other reading gives a
- * different number — u16 LE is 546, u16 BE is 8706, straight BCD is 2202. The
- * Private ID 1111 stored as `11 11` is a palindrome and would have been
- * consistent with all four, which is why it could not settle this alone.
+ * ⚠️ THE ID IS A PLAIN LITTLE-ENDIAN uint16. This was decoded as byte-swapped
+ * BCD on 2026-09-07 and CORRECTED on 2026-09-08 by a controlled write on real
+ * hardware: writing 1234 stores `d2 04`, and 0x04D2 = 1234. No BCD reading
+ * produces that.
+ *
+ * How the wrong answer looked right. The only two values available on 09-07
+ * were 1111 (`11 11`) and a second entry read as 222 (`22 02`). 1111 is a
+ * palindrome and fits every candidate encoding. `22 02` read as BCD digits
+ * looks like "2202", and taking the high pair from the second byte gives
+ * "0222" — close enough to a believed 222 to seem confirmed. It is in fact 546
+ * (0x0222), and BCD gives the wrong number for every value that is not
+ * coincidentally palindromic.
+ *
+ * The lesson is the one the capture protocol already states: a discriminating
+ * value settles an encoding, and a value that merely *fits* proves nothing.
+ * 1234 discriminates; 1111 never could.
  */
 
 /** Records are 0x40 apart; the CPS writes only the first 0x30 of each. */
+/**
+ * The slot table is a u16, split column-wise across two byte arrays.
+ *
+ * RESOLVED 2026-09-08 without a capture, from eleven states both sides already
+ * held: 0x4980100 is 0x00 at exactly the slots where 0x4980000 holds a valid
+ * index, and 0xFF at exactly the slots where 0x4980000 is 0xFF. They have never
+ * once disagreed.
+ *
+ * So the pair is one little-endian u16 slot index per slot — low bytes at
+ * 0x4980000, high bytes at 0x4980100 — with 0xFFFF for absent. The high byte is
+ * 0x00 for every present slot because every index is below 256, and this radio
+ * caps the book at 128 rows, so a non-zero high byte is UNREACHABLE here.
+ *
+ * That is why the obvious experiment could never have worked: varying a
+ * per-entry attribute cannot move it. An existing capture already rules out Ack
+ * and Type, which differ between rows while the high bytes stay 00 00 00 00.
+ *
+ * ⚠️ A WRITER MUST STILL EMIT IT: 0x00 for present slots, 0xFF for absent. A
+ * present slot left with 0xFF in the high byte is index 0xFF00 + n, which is
+ * not a slot that exists.
+ *
+ * Inference from consistent states plus a structural argument, not a direct
+ * measurement — nobody has seen a non-zero high byte because on this radio
+ * nothing can produce one. Falsifiable: a table of this shape with more than
+ * 255 entries would show one.
+ */
 export const D890_MDC1200 = {
   CONTACTS: 0x4a00000,
   /** One byte per slot, 0xFF unused. Its length is where 128 slots comes from. */
@@ -43,34 +79,32 @@ export const MDC_CALL_TYPE = { PRIVATE: 0, GROUP: 1, ALL: 2 } as const;
 
 export interface D890Mdc1200Contact {
   slot: number;
+  /** +0x01 'Attr' in the vendor CSV: 0 Private, 1 Group, 2 All Call. */
   callType: number;
-  /** The ID that is actually in use, decoded from whichever field Call Type selects. */
-  id: number | null;
+  /** +0x00. 5 = ALARM, the 6th entry of the Type list, so the list is 0-based. */
+  type: number;
+  /** +0x02. 1 = On. */
+  ack: number;
+  /** The ID in use, from whichever of Group/Private the call type selects. */
+  id: number;
   name: string;
 }
 
 /**
- * Decode a 2-byte swapped-BCD ID. Returns null when the pair is not decimal —
- * an unpopulated field reads 00 00, which is a legitimate 0, so callers must
- * decide emptiness from Call Type rather than from a zero here.
+ * Decode a little-endian uint16 ID.
+ *
+ * Never returns null: every 16-bit pattern is a legal ID, including 0. An
+ * unpopulated field reads `00 00`, which is indistinguishable from a real 0, so
+ * emptiness must be decided from the slot table — not from the value here.
  */
-export function decodeMdcId(lowPair: number, highPair: number): number | null {
-  const pair = (byte: number) => {
-    const hi = byte >> 4;
-    const lo = byte & 0x0f;
-    return hi > 9 || lo > 9 ? null : hi * 10 + lo;
-  };
-  const high = pair(highPair);
-  const low = pair(lowPair);
-  if (high === null || low === null) return null;
-  return high * 100 + low;
+export function decodeMdcId(low: number, high: number): number {
+  return ((low & 0xff) | ((high & 0xff) << 8)) >>> 0;
 }
 
 /** Inverse of `decodeMdcId`, as the two bytes in the order they are stored. */
 export function encodeMdcId(id: number): [number, number] {
-  const clamped = Math.max(0, Math.min(9999, Math.trunc(id)));
-  const bcd = (n: number) => ((Math.trunc(n / 10) % 10) << 4) | (n % 10);
-  return [bcd(clamped % 100), bcd(Math.trunc(clamped / 100))];
+  const clamped = Math.max(0, Math.min(0xffff, Math.trunc(id)));
+  return [clamped & 0xff, (clamped >> 8) & 0xff];
 }
 
 export function parseMdc1200Contact(
@@ -87,6 +121,8 @@ export function parseMdc1200Contact(
   // and populates only the one the Call Type selects.
   const at = callType === MDC_CALL_TYPE.GROUP ? offset + 0x04 : offset + 0x06;
   const id = decodeMdcId(bytes[at] ?? 0, bytes[at + 1] ?? 0);
+  const type = bytes[offset + 0x00] ?? 0;
+  const ack = bytes[offset + 0x02] ?? 0;
 
   let name = '';
   for (let i = 0x08; i < D890_MDC1200.BODY - 1; i += 2) {
@@ -94,7 +130,7 @@ export function parseMdc1200Contact(
     if (unit === 0 || unit === 0xffff) break;
     name += String.fromCharCode(unit);
   }
-  return { slot, callType, id, name };
+  return { slot, callType, type, ack, id, name };
 }
 
 /**
@@ -112,4 +148,76 @@ export function occupiedMdcSlots(slotTable: Uint8Array): number[] {
     if (slotTable[i] !== 0xff) out.push(i);
   }
   return out;
+}
+
+/**
+ * Decode the slot table as the u16 array it actually is.
+ *
+ * `low` and `high` are the two parallel byte arrays — the same u16 split
+ * column-wise. Absent is 0xFFFF, and a present slot's index is below 256 on
+ * this radio, so `high` is 0x00 throughout in practice.
+ *
+ * Provided so a writer has something to be the inverse of. Reading occupancy
+ * only needs `occupiedMdcSlots`; reproducing the table on a write needs both
+ * halves, because a present slot left with 0xFF in `high` is index 0xFF00 + n.
+ */
+export function parseMdcSlotIndices(
+  low: Uint8Array,
+  high: Uint8Array
+): (number | null)[] {
+  return Array.from({ length: D890_MDC1200.SLOTS }, (_, i) => {
+    const lo = low[i] ?? 0xff;
+    const hi = high[i] ?? 0xff;
+    const value = lo | (hi << 8);
+    return value === 0xffff ? null : value;
+  });
+}
+
+/**
+ * Write one MDC1200 record, patching the original.
+ *
+ * Group ID and Private ID are SEPARATE fields; only the one the call type
+ * selects is written, and the other is zeroed — which is what the CPS produces
+ * and what our parser relies on to pick the live one.
+ */
+export function encodeMdc1200Contact(
+  original: Uint8Array,
+  offset: number,
+  contact: Omit<D890Mdc1200Contact, 'slot'>
+): Uint8Array {
+  const out = Uint8Array.from(original);
+  out[offset + 0x00] = contact.type & 0xff;
+  out[offset + 0x01] = contact.callType & 0xff;
+  out[offset + 0x02] = contact.ack & 0xff;
+  out[offset + 0x03] = 0;
+
+  const [lo, hi] = encodeMdcId(contact.id);
+  const group = contact.callType === MDC_CALL_TYPE.GROUP;
+  out[offset + 0x04] = group ? lo : 0;
+  out[offset + 0x05] = group ? hi : 0;
+  out[offset + 0x06] = group ? 0 : lo;
+  out[offset + 0x07] = group ? 0 : hi;
+
+  const name = Array.from(contact.name).slice(0, (D890_MDC1200.BODY - 0x08) / 2 - 1);
+  out.fill(0, offset + 0x08, offset + D890_MDC1200.BODY);
+  name.forEach((ch, i) => {
+    const code = ch.charCodeAt(0);
+    out[offset + 0x08 + i * 2] = code & 0xff;
+    out[offset + 0x08 + i * 2 + 1] = (code >> 8) & 0xff;
+  });
+  return out;
+}
+
+/** Both halves of the MDC slot table. See `encodeAnalogSlotTable` — same shape. */
+export function encodeMdcSlotTable(occupied: readonly number[]): [Uint8Array, Uint8Array] {
+  const low = new Uint8Array(D890_MDC1200.SLOTS).fill(0xff);
+  const high = new Uint8Array(D890_MDC1200.SLOTS).fill(0xff);
+  occupied.forEach((slot, position) => {
+    if (slot < 0 || slot >= D890_MDC1200.SLOTS) {
+      throw new Error(`MDC1200 slot ${slot} is out of range`);
+    }
+    low[position] = slot & 0xff;
+    high[position] = (slot >> 8) & 0xff;
+  });
+  return [low, high];
 }

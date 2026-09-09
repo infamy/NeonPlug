@@ -258,7 +258,25 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'chSwitchingKeepsLast',            label: 'CH Switching Keeps Last',             cpsLabel: 'CH Switching Keeps Last',             group: 'Display',         offset: 0x0e2, max: 1, listLength: 2, options: ['Off', 'On'], vendorField: 'LastHeardChanSet' },
   { key: 'aChannelNameColor',               label: 'A Channel Name Color',                cpsLabel: 'A Channel Name Color',                group: 'Display',         offset: 0x0e3, max: 6, listLength: 7, options: ['Orange', 'Red', 'Yellow', 'Green', 'Turquoise', 'Blue', 'White'], vendorField: 'ChanNameColour' },
   { key: 'receiveBacklightDelayS',          label: 'Receive Backlight Delay[s]',          cpsLabel: 'Receive Backlight Delay[s]',          group: 'Display',         offset: 0x0e5, max: 30, listLength: 31, vendorField: 'RxDimWait', valueRule: { scale: 1, offset: 0, unit: 's', zeroLabel: 'Always', basis: 'range-forced' } },
-  { key: 'muteTiming',                      label: 'Out of Range Notify (times)',                         cpsLabel: 'Mute timing',                         group: 'Other',           offset: 0x0e8, max: 255, listLength: 256, vendorField: 'FixTimeMute' },
+  // Was labelled 'Out of Range Notify (times)' with a 256-entry range. Both wrong,
+  // and they are not even the same control — the CPS has THREE separate ones:
+  // `Mute timing` on the Other tab (this, a DURATION), plus
+  // `Repeater Out of Range Notify` and `Out of Range Notify(times)` on Auto
+  // repeater. Carrying two names meant the entry was half-describing each.
+  //
+  // ⚠️ IT IS 256 ENTRIES, NOT 8. A CPS-side measurement on 2026-09-08 reported 8
+  // options (`1 minute`..`8 minute`) and this entry was briefly changed to match.
+  // The sweep refutes it and is the stronger evidence: pressing {END} on this
+  // control selected `256minute` and wrote 0xFF, marked VERIFIED. An 8-entry
+  // list would have written 7.
+  //
+  // The 8 is almost certainly the VISIBLE row count of an unscrolled list — the
+  // same failure the measuring tool documents for lists that need walking.
+  //
+  // So the value is an index and the label is index+1 minutes, which is what the
+  // valueRule below renders. No options array: 256 hand-written strings would be
+  // the thing that drifts.
+  { key: 'muteTiming',                      label: 'Mute timing',                         cpsLabel: 'Mute timing',                         group: 'Other',           offset: 0x0e8, max: 255, listLength: 256, valueRule: { scale: 1, offset: 1, unit: 'minute', basis: 'range-forced' }, vendorField: 'FixTimeMute' },
   { key: 'outOfRangeNotifyTime',            label: 'Out of Range Notify(time',            cpsLabel: 'Out of Range Notify(time:',           group: 'Auto repeater',   offset: 0x0e9, max: 9, listLength: 10, vendorField: 'OutNoteTimes', valueRule: { scale: 1, offset: 1, unit: '', basis: 'range-forced' } },
   { key: 'noaaAlert',                       label: 'NOAA Alert',                          cpsLabel: 'NOAA Alert',                          group: 'Other',           offset: 0x0ef, max: 1, listLength: 2, options: ['Off', 'On'], vendorField: 'WxAlarmSign' },
   { key: 'gpsMode',                         label: 'Gps Mode',                            cpsLabel: 'Gps Mode',                            group: 'GPS/Ranging',     offset: 0x105, max: 6, listLength: 7, vendorField: 'GpsMode' },
@@ -313,20 +331,47 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'vfMrA', label: 'VF/MR(A)', cpsLabel: 'VF/MR(A)', group: 'Work Mode', offset: 0x015, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'RMV1', confidence: 'swept' },
   { key: 'vfMrB', label: 'VF/MR(B)', cpsLabel: 'VF/MR(B)', group: 'Work Mode', offset: 0x016, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'RMV2', confidence: 'swept' },
   { key: 'steWhenNoSignal', label: 'STE When No Signal', group: 'STE', offset: 0x018, max: 255, vendorField: 'STE_Freq', confidence: 'vendor-name' },
-  { key: 'voiceHeaderRepetitions', label: 'Voice header repetitions', group: 'Digital Func', offset: 0x01b, max: 255, confidence: 'inferred', vendorField: 'VcallRpheader'},
+  // The byte is the DISPLAYED REPETITION COUNT, not a 0-based index — CONFIRMED
+  // ON HARDWARE 2026-09-08. The CPS showed 2 and this byte read 0x02; setting it
+  // to 7 wrote 0x07. An index would have written 0x05.
+  //
+  // So the byte is the number itself: no index translation, no value rule. A
+  // rule with offset 2 was tried and is WRONG — it would render the measured
+  // 0x02 as 4.
+  //
+  // The CPS list runs 2..10, so 0 and 1 are not values it can produce; the
+  // bound here is 10 and the field descriptor has no `min` to express the floor.
+  // The offset was doubted on 2026-09-07 — the sweep implied a delta 250 bytes
+  // outside every other tail delta — and it turned out to be right while the
+  // ENCODING was what was wrong.
+  { key: 'voiceHeaderRepetitions', label: 'Voice header repetitions', group: 'Digital Func', offset: 0x01b, max: 10, listLength: 11, confidence: 'hardware', vendorField: 'VcallRpheader'},
   { key: 'fmWorkChannel', label: 'FM Work Channel', group: 'AM/FM', offset: 0x01d, max: 255, vendorField: 'Work_FMCH', confidence: 'vendor-name' },
   { key: 'fmVfoMem', label: 'FM VFO/MEM', group: 'AM/FM', offset: 0x01e, max: 1, options: ['MEM', 'VFO'], listLength: 2, vendorField: 'FM_VFO', confidence: 'vendor-name' },
-  { key: 'memZoneA', label: 'MEM Zone(A)', group: 'Work Mode', offset: 0x01f, max: 255, vendorField: 'Work_Zone1', confidence: 'vendor-name' },
+  // ⚠️ LIVE OPERATOR STATE, not a preference. This byte moves when the user turns
+  // the knob, with no intent to change a setting — it was seen going 04 -> 05
+  // simply because the owner navigated zones to reach a menu.
+  //
+  // Two consequences. A capture diff shows it constantly and it must not be read
+  // as a finding. And writing it back restores wherever the radio WAS at read
+  // time, moving the operator's current position under them — a vendor CPS write
+  // was measured doing exactly that.
+  { key: 'memZoneA', label: 'MEM Zone(A)', group: 'Work Mode', offset: 0x01f, max: 255, vendorField: 'Work_Zone1', confidence: 'vendor-name', hint: 'Live radio state — this is where the operator currently is, not a preference.' },
   { key: 'memZoneB', label: 'MEM Zone(B)', group: 'Work Mode', offset: 0x020, max: 255, vendorField: 'Work_Zone2', confidence: 'vendor-name' },
   { key: 'recordFunction', label: 'Record Function', cpsLabel: 'Record Function', group: 'Record', offset: 0x022, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'Record_En', confidence: 'swept', hint: 'Enable or disable the recording function.'},
-  // ⚠️ VOCABULARY NEVER MEASURED. This control does not appear on ANY of the
-  // 18 tabs of this model's Optional Setting dialog (verified against the CPS
-  // control inventory, 231 controls), so ['Off','On'] came from a vendor
-  // marshaller NAME, not from anything anyone saw. Declared max:1 it rendered
-  // as a CHECKBOX, which is the shape that corrupted btOnOff and btPttHold:
-  // a checkbox cannot express a value outside 0/1, so saving any unrelated
-  // setting silently rewrites this byte. Widened until measured.
-  { key: 'manDown', label: 'Man Down', group: 'Other', offset: 0x024, max: 255, vendorField: 'FailAlarm', confidence: 'vendor-name', hint: 'Alarms if the radio is tilted past its threshold, for the delay below.'},
+  // The radio menu offers exactly two states, Off and On — READ OFF THE RADIO
+  // 2026-09-08. Restored to a boolean after being widened to a number field on
+  // 2026-09-07, when its absence from all 18 CPS tabs was taken as evidence the
+  // Off/On list had been invented.
+  //
+  // Man Down is the proof that "absent from the CPS" does not mean "absent from
+  // the radio" — it is a radio-menu-only control, the same class as BT On/Off.
+  //
+  // ⚠️ THE OFFSET IS STILL UNCONFIRMED. What is measured is that the FEATURE has
+  // two states, not that this byte is its enable. 0x04f is the separate delay
+  // (ManDownWait, VERIFIED). An attempt to move this byte from the radio menu
+  // left all 512 bytes identical, which is equally consistent with the setting
+  // never being applied — "nothing moved" and "not this byte" look the same.
+  { key: 'manDown', label: 'Man Down', group: 'Other', offset: 0x024, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'FailAlarm', confidence: 'vendor-name', hint: 'Alarms if the radio is tilted past its threshold, for the delay below.'},
   { key: 'monKeyFunction', label: 'MON Key Function', group: 'Key Function', offset: 0x025, max: 255, vendorField: 'MonType', confidence: 'vendor-name' },
   { key: 'brightness', label: 'Brightness', group: 'Display', offset: 0x026, max: 255, vendorField: 'Lightness', confidence: 'vendor-name' },
   // CONFIRMED on hardware 2026-08-30: switching GPS off on the radio moved this
@@ -334,7 +379,10 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'gps', label: 'GPS', group: 'GPS/Ranging', offset: 0x028, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'Gps', confidence: 'hardware' },
   { key: 'frequencyDisplay', label: 'Frequency Display', group: 'Display', offset: 0x02a, max: 255, vendorField: 'FreqDis', confidence: 'vendor-name' },
   { key: 'fmMonitor', label: 'FM Monitor', group: 'AM/FM', offset: 0x02b, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'FmMon', confidence: 'vendor-name' },
-  { key: 'mainChannelSet', label: 'Main Channel Set', cpsLabel: 'Main Channel Set', group: 'Work Mode', offset: 0x02c, max: 1, options: ['A', 'B'], listLength: 2, vendorField: 'MainState', confidence: 'swept' },
+  // ⚠️ LIVE OPERATOR STATE, like memZoneA above — the active VFO. Seen moving
+  // 00 -> 01 from an A/B switch during menu navigation. Writing it back moves
+  // the operator's active VFO.
+  { key: 'mainChannelSet', label: 'Main Channel Set', cpsLabel: 'Main Channel Set', group: 'Work Mode', offset: 0x02c, max: 1, options: ['A', 'B'], listLength: 2, vendorField: 'MainState', confidence: 'swept', hint: 'Live radio state — this is where the operator currently is, not a preference.' },
   { key: 'subChannelMode', label: 'Sub-Channel Mode', cpsLabel: 'Sub-Channel Mode', group: 'Work Mode', offset: 0x02d, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'SubMode', confidence: 'swept' },
   { key: 'digiCallResetTone', label: 'Digi Call Reset Tone', cpsLabel: 'Digi Call Reset Tone', group: 'Alert Tone', offset: 0x032, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'OverVoice', confidence: 'swept' },
   { key: 'voiceBroadcast', label: 'Voice Broadcast', group: 'Alert Tone', offset: 0x035, max: 255, vendorField: 'Voice_Note', confidence: 'vendor-name' },
@@ -385,25 +433,30 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   // setting silently rewrites this byte. Widened until measured.
   { key: 'smsConfirmation', label: 'SMS Confirmation', group: 'Digital Func', offset: 0x071, max: 255, vendorField: 'MsgOacsuSet', confidence: 'vendor-name' },
   { key: 'callDisplayMode', label: 'Call Display Mode', cpsLabel: 'Call Display Mode', group: 'Display', offset: 0x0af, max: 2, options: ['Turn off Talker Alias', 'Call Sign Based', 'Name Based'], listLength: 3, vendorField: 'CallModeDisKind', confidence: 'swept' },
-  // Two states, but the byte is 0 and 2 — index 1 does not exist.
+  // Off / On / KISS TNC — and 0x02 is KISS TNC, not On.
   //
-  // History: this was declared max:1 with ['Off','On'], which the Settings tab
-  // renders as a CHECKBOX. The byte reads 0x02 on a real radio, so a checkbox
-  // could not express it and saving any unrelated setting rewrote it to 0 or 1.
+  // MEASURED 2026-09-08: the owner set the radio menu to KISS TNC and this byte
+  // moved 0x00 -> 0x02. The baseline was strong — five reads of the region across
+  // two days were byte-identical — so the change is attributable.
   //
-  // CONFIRMED 2026-09-07: the radio's own menu offers exactly two states, On and
-  // Off — and across the fixture plus seven captures this byte only ever holds
-  // 0x00 or 0x02, never 0x01. So the vocabulary really is two entries; what was
-  // wrong is that they are not adjacent. The gap is spelled out rather than
-  // closed, so the byte value and the option index stay equal.
+  // 0x01 = On is by ELIMINATION, not measurement: the menu offers exactly three
+  // states, 0x00 is Off in every capture, and 0x02 is KISS TNC by direct
+  // measurement. Sound, but not the same thing as having seen it.
   //
-  // ⚠️ WHICH VALUE IS WHICH IS ASSUMED, not measured. 0 = Off is the convention
-  // and 0x00 is what every post-CPS-write capture holds, while 0x02 comes from
-  // the radio image taken before any CPS write. If that is backwards, the labels
-  // swap and nothing else changes. Toggling BT in the radio menu and re-reading
-  // settles it.
-  { key: 'btOnOff', label: 'BT On/Off', group: 'Vox/BT', offset: 0x0b1, max: 2, listLength: 3,
-    options: ['Off', '(1 — never observed)', 'On'], vendorField: 'BlueToothOn', confidence: 'inferred' },
+  // This byte has been wrong three times. A max:1 checkbox over a byte holding
+  // 0x02; then a two-entry list with a hole at index 1, reasoning from "the menu
+  // has two states" plus "only 0x00 and 0x02 observed" — index 1 was real and
+  // merely uncaptured; and an assumption that 0x02 meant On.
+  //
+  // ⚠️ A VENDOR CPS WRITE DESTROYS THIS SETTING. Measured the same day: the CPS
+  // wrote 0x00 here over a radio that was in KISS TNC — and the OWNER CONFIRMED
+  // the radio's Bluetooth was actually off afterwards, so this is a behaviour
+  // change on the hardware and not merely a byte that moved. It has no Bluetooth
+  // control on any of its 18 tabs, so the field is absent from its model and it
+  // writes its own default. NeonPlug is safe by construction — the encoders
+  // PATCH the last read rather than build from a model — but do not "fix" that
+  // into a rebuild, and do not write this byte unless the user changed it.
+  { key: 'btOnOff', label: 'BT On/Off', group: 'Vox/BT', offset: 0x0b1, max: 2, listLength: 3, options: ['Off', 'On', 'KISS TNC'], vendorField: 'BlueToothOn', confidence: 'hardware' },
   // ⚠️ VOCABULARY NEVER MEASURED. This control does not appear on ANY of the
   // 18 tabs of this model's Optional Setting dialog (verified against the CPS
   // control inventory, 231 controls), so ['Off','On'] came from a vendor
@@ -439,8 +492,13 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'startupReset', label: 'Startup Reset', cpsLabel: 'Startup Reset', group: 'Power-on', offset: 0x0ea, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'StartResetEn', confidence: 'swept' },
   { key: 'btHoldTime', label: 'BT Hold Time', group: 'Vox/BT', offset: 0x0eb, max: 255, vendorField: 'BhtHoldTime', confidence: 'vendor-name' },
   { key: 'btRxDelay', label: 'BT RX Delay', group: 'Vox/BT', offset: 0x0ec, max: 255, vendorField: 'BhtHoldDelay', confidence: 'vendor-name' },
-  { key: 'aliasDisplayPriority', label: 'Alias Display Priority', group: 'Digital Func', offset: 0x0ed, max: 2, options: ['Off', 'Contact Alias', 'Air Alias DMR/NX'], listLength: 3, vendorField: 'SctRxTalkAliasDis', confidence: 'vendor-name' },
-  { key: 'aliasDataFormat', label: 'Alias Data Format', group: 'Digital Func', offset: 0x0ee, max: 2, options: ['ISO 8', 'ISO 7', 'Unicode'], listLength: 3, vendorField: 'SctTalkAliasForm', confidence: 'vendor-name' },
+  // Both Talk Alias controls CONFIRMED 2026-09-08 two ways: a screenshot of the
+  // open dropdown, and the CPS language file, where 30752-30754 and 30755-30757
+  // are consecutive runs matching these lists exactly. Both are 3-state — had
+  // either been modelled as an Off/On checkbox it would have been the same
+  // silent-corruption bug as btOnOff. They were already right; this records why.
+  { key: 'aliasDisplayPriority', label: 'Alias Display Priority', group: 'Digital Func', offset: 0x0ed, max: 2, options: ['Off', 'Contact Alias', 'Air Alias DMR/NX'], listLength: 3, vendorField: 'SctRxTalkAliasDis', confidence: 'swept' },
+  { key: 'aliasDataFormat', label: 'Alias Data Format', group: 'Digital Func', offset: 0x0ee, max: 2, options: ['ISO 8', 'ISO 7', 'Unicode'], listLength: 3, vendorField: 'SctTalkAliasForm', confidence: 'swept' },
   { key: 'btSleepTime', label: 'Ptt Sleep Time', group: 'Vox/BT', offset: 0x104, max: 255, vendorField: 'PttSleepTime', confidence: 'vendor-name' },
   { key: 'manualDialGroupHoldTime', label: 'Manual Dial - Group TG Hold Time', group: 'Digital Func', offset: 0x107, max: 255, vendorField: 'DialGroupHold', confidence: 'vendor-name' },
   { key: 'manualDialPrivateHoldTime', label: 'Manual Dial - Private TG Hold Time', group: 'Digital Func', offset: 0x108, max: 255, vendorField: 'DialPrivateHold', confidence: 'vendor-name' },
@@ -454,7 +512,15 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'amWorkZone', label: 'AM Work Zone', group: 'AM/FM', offset: 0x140, max: 255, vendorField: 'CurAmChan', confidence: 'vendor-name' },
   { key: 'amOffset', label: 'AM Offset', group: 'AM/FM', offset: 0x141, max: 255, vendorField: 'AmOffset', confidence: 'vendor-name' },
   { key: 'amSquelchLevel', label: 'AM Squelch Level', group: 'AM/FM', offset: 0x142, max: 255, vendorField: 'AmSqLevel', confidence: 'vendor-name', hint: 'Squelch level for the AM air band, to improve reception.'},
+  // Restored 2026-09-08. These long labels are absent from english.ini, which
+  // was briefly taken as proof they were paraphrased — the same reasoning that
+  // was wrong for `Slot 1` and `2.5K`, both observed on the running CPS while
+  // absent from the file. Absence is not evidence. Unverified, not disproven.
   { key: 'repeaterSlotPathA', label: 'Repeater Slot Path A', cpsLabel: 'Repeater Slot Path A', group: 'Auto repeater', offset: 0x145, max: 2, options: ['Off', 'Channel A Fixed Time Slot1', 'Channel A Fixed Time Slot2'], listLength: 3, vendorField: 'RepSlotPathA', confidence: 'swept' },
+  // Restored 2026-09-08. These long labels are absent from english.ini, which
+  // was briefly taken as proof they were paraphrased — the same reasoning that
+  // was wrong for `Slot 1` and `2.5K`, both observed on the running CPS while
+  // absent from the file. Absence is not evidence. Unverified, not disproven.
   { key: 'repeaterSlotPathB', label: 'Repeater Slot Path B', cpsLabel: 'Repeater Slot Path B', group: 'Auto repeater', offset: 0x146, max: 2, options: ['Off', 'Channel B Fixed Time Slot1', 'Channel B Fixed Time Slot2'], listLength: 3, vendorField: 'RepSlotPathB', confidence: 'swept' },
   { key: 'dcsSte', label: 'DCS STE', group: 'STE', offset: 0x14a, max: 255, vendorField: 'DcsSte', confidence: 'vendor-name' },
   { key: 'btNoiseReductionBefore', label: 'Bt Nr Before', group: 'Vox/BT', offset: 0x14b, max: 255, vendorField: 'BtNrBefore', confidence: 'vendor-name' },
@@ -466,10 +532,38 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'resetDigitalProtocol', label: 'Reset Digital Protocol', cpsLabel: 'Reset Digital Protocol', group: 'Digital Func', offset: 0x154, max: 1, options: ['Off', 'DMR'], listLength: 2, vendorField: 'ResetDigiProtocal', confidence: 'swept' },
   { key: 'noaaMonitor', label: 'NOAA Moni', cpsLabel: 'NOAA Monitor', group: 'Other', offset: 0x157, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'WxMoni', confidence: 'swept', hint: 'Weather channel monitoring.'},
   { key: 'noaaScan', label: 'NOAA Scan', cpsLabel: 'NOAA Scan', group: 'Other', offset: 0x158, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'WxScan', confidence: 'swept' },
-  { key: 'amFrequencyStep', label: 'Freq Step', group: 'AM/FM', offset: 0x159, max: 9, options: ['2.5K', '5K', '6.25K', '8.33K', '10K', '12.5K', '20K', '25K', '30K', '50K'], listLength: 10, vendorField: 'AmFreqStep', confidence: 'vendor-name' },
+  // Absent from english.ini, yet REAL. The CPS was observed 2026-09-08 with
+  // this control (`Freq Step`, AM/FM tab) displaying `2.5K`, so the step strings
+  // are generated rather than stored in the language file. A list was briefly
+  // dropped here on the mistaken reasoning that ini-absence meant invented.
+  //
+  // Note there are TWO step controls and they are different: `Freq Step` on
+  // AM/FM (this one, showing 2.5K) and `Frequency Step` on Other (showing
+  // 12.5K). The count is still unmeasured — punch list B2.
+  { key: 'amFrequencyStep', label: 'Freq Step', group: 'AM/FM', offset: 0x159, max: 9, listLength: 10, options: ['2.5K', '5K', '6.25K', '8.33K', '10K', '12.5K', '20K', '25K', '30K', '50K'], vendorField: 'AmFreqStep', confidence: 'vendor-name' },
   { key: 'repeaterWhitelist', label: 'Repeater Whitelist', cpsLabel: 'Repeater Whitelist', group: 'Auto repeater', offset: 0x15a, max: 1, options: ['Off', 'On'], listLength: 2, vendorField: 'RepIdLimit', confidence: 'swept' },
   { key: 'simpRepeaterVoiceEnable', label: 'Simp Repearter VoiceEn', group: 'Auto repeater', offset: 0x15d, max: 1, confidence: 'inferred', vendorField: 'SimpRepterVoiceEn'},
-  { key: 'simpRepeaterSlot', label: 'Simp Repearter Slot', group: 'Auto repeater', offset: 0x15e, max: 2, options: ['Slot 1', 'Slot 2', 'Current Slot'], listLength: 3, vendorField: 'SimpRepterSlot', confidence: 'vendor-name' },
+  // ⚠️ DO NOT re-derive this list from ini key positions. Two attempts have now
+  // been wrong in opposite directions.
+  //
+  // 2026-09-08 morning: the list was rewritten to ['Channel Slot','Slot1','Slot2']
+  // because none of the original strings appeared in the CPS language file and
+  // ini 29997-29999 is a clean consecutive run of exactly three slot strings.
+  // Both observations were true and the conclusion was still wrong.
+  //
+  // 2026-09-08 afternoon, from the CPS side: the control is spelled
+  // `Simp Repearter Slot` (a vendor typo, ini 302547) and was OBSERVED on the
+  // running dialog displaying `Slot 1` — WITH the space. 302545-302547 are three
+  // LABELS, not options. And the CPS's own rule that options start at a fixed
+  // key offset was retracted the same day, so key adjacency proves nothing.
+  //
+  // The lesson: a string absent from english.ini is NOT evidence it is invented.
+  // Some option strings are generated rather than stored — `2.5K` on Freq Step
+  // is another. Only a POSITIVE match (an exact consecutive run) is evidence.
+  //
+  // Restored to the observed spelling. Entries 2 and 3 remain unverified; one
+  // dropdown screenshot settles the count and the wording (punch list B2).
+  { key: 'simpRepeaterSlot', label: 'Simp Repearter Slot', group: 'Auto repeater', offset: 0x15e, max: 2, options: ['Slot 1', 'Slot 2', 'Current Slot'], listLength: 3, vendorField: 'SimpRepterSlot', confidence: 'inferred' },
 ] as const;
 
 /**
@@ -504,6 +598,16 @@ export const D890_SETTINGS_FREQUENCIES: readonly D890FrequencyField[] = [
   // Auto-Repeater-2 reading for exactly that reason. Naming them here rather
   // than leaving sixteen loose bytes keeps them out of the unmapped table
   // without claiming to know what they do.
+  // CONFIRMED ON HARDWARE 2026-09-08, all four. A CPS write of 144.100 / 145.900 /
+  // 430.100 / 439.900 produced exactly:
+  //     0x0f4 = 14410000   0x0f8 = 14590000   0x0fc = 43010000   0x100 = 43990000
+  // u32 LE, value x 100000, in V2min / V2max / U2min / U2max order — and Auto
+  // Repeater 1 at 0x0c4-0x0d3 stayed byte-identical at 136/174/400/480.
+  //
+  // That dissolves a doubt recorded here on 2026-09-07: these 16 bytes had held
+  // values identical to Auto Repeater 1 in every capture, which looked like a
+  // mirror. They were simply both at factory defaults — nobody had ever changed
+  // either array on this radio.
   { key: 'autoRep2Freq0',   label: 'Auto Repeater 2 frequency 0', group: 'Auto repeater', offset: 0x0f4, vendorField: 'AutoRepFreq2_0' },
   { key: 'autoRep2Freq1',   label: 'Auto Repeater 2 frequency 1', group: 'Auto repeater', offset: 0x0f8, vendorField: 'AutoRepFreq2_1' },
   { key: 'autoRep2Freq2',   label: 'Auto Repeater 2 frequency 2', group: 'Auto repeater', offset: 0x0fc, vendorField: 'AutoRepFreq2_2' },

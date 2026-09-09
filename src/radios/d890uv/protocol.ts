@@ -59,6 +59,26 @@ import { D890_GPS_ROAMING, parseGpsRoamingTable } from './gpsRoaming';
 import { D890_POWER_ON, parsePowerOnDisplay } from './powerOnDisplay';
 import { D890_AM_ZONES, parseAmZone, applyAmZoneTables, type D890AmZone } from './amZones';
 import { D890_AUTO_REPEATER, parseAutoRepeaterOffsets } from './autoRepeater';
+import { parseStatusMessages, type D890StatusMessage } from './statusMessages';
+import { parseHotKeys, type D890HotKey } from './hotKeys';
+import {
+  D890_ANALOG_ADDRESS_BOOK,
+  parseAnalogContact,
+  type D890AnalogContact,
+} from './analogAddressBook';
+import { D890_SMS_STORE, parseSmsStore, type D890SmsEnvelope } from './smsStore';
+import {
+  D890_DTMF,
+  parseDtmfSettings,
+  parseDtmfEncodeList,
+  type D890DtmfSettings,
+} from './dtmf';
+import {
+  D890_MDC1200,
+  parseMdc1200Contact,
+  occupiedMdcSlots,
+  type D890Mdc1200Contact,
+} from './mdc1200';
 import {
   D890_TONES,
   parseFiveTone,
@@ -1401,6 +1421,129 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
       D890_ADDR.AUTO_REPEATER_READ
     );
     return parseAutoRepeaterOffsets(bytes);
+  }
+
+  /**
+   * The hot-key region — status messages AND the hot keys themselves.
+   *
+   * ONE read serves both: they live in the same 0x1530 span and the preserve
+   * pass already fetches it, so this adds no traffic. A decoder's read simply
+   * lands first and the preserve pass then skips the run.
+   */
+  async readHotKeyRegion(): Promise<{
+    statusMessages: D890StatusMessage[];
+    hotKeys: D890HotKey[];
+  }> {
+    const bytes = await this.requireConnection().readMemory(0x3700000, 0x1530);
+    return { statusMessages: parseStatusMessages(bytes), hotKeys: parseHotKeys(bytes) };
+  }
+
+  /**
+   * The analog (DTMF) address book.
+   *
+   * Reads the slot table first and then only the records it says are occupied,
+   * rather than all 128 slots. On a radio with two entries that is 128 + 128
+   * bytes instead of 8 KB, and the slot table has to be read anyway — its
+   * high-byte half is what a writer must reproduce.
+   */
+  async readAnalogAddressBook(): Promise<D890AnalogContact[]> {
+    const conn = this.requireConnection();
+    const table = await conn.readMemory(D890_ANALOG_ADDRESS_BOOK.SLOT_TABLE, 128);
+    const used: number[] = [];
+    for (let i = 0; i < 128; i += 1) if (table[i] !== 0xff) used.push(i);
+    if (used.length === 0) return [];
+
+    // One contiguous read up to the last occupied slot: the records are 0x40
+    // apart, so a gap costs less than a second round trip would.
+    const span = (Math.max(...used) + 1) * D890_ANALOG_ADDRESS_BOOK.STRIDE;
+    const bytes = await conn.readMemory(D890_ANALOG_ADDRESS_BOOK.BASE, span);
+    return used
+      .map((slot) => parseAnalogContact(bytes, slot * D890_ANALOG_ADDRESS_BOOK.STRIDE, slot))
+      .filter((c): c is D890AnalogContact => c !== null);
+  }
+
+  /** The MDC1200 (vendor: QDC) address book. Same shape as the analog book. */
+  async readMdc1200Contacts(): Promise<D890Mdc1200Contact[]> {
+    const conn = this.requireConnection();
+    // Both halves of the slot table: 0x4980000 is the low byte of a u16 index
+    // and 0x4980100 the high byte. Reading only the low half is enough to find
+    // the occupied slots, but a write has to reproduce both — a present slot
+    // with 0xFF in the high byte is index 0xFF00 + n, which does not exist.
+    const table = await conn.readMemory(D890_MDC1200.CONTACTS_SLOT_TABLE, 128);
+    await conn.readMemory(D890_MDC1200.CONTACTS_SLOT_TABLE + 0x100, 128);
+    const used = occupiedMdcSlots(table);
+    if (used.length === 0) return [];
+    const span = (Math.max(...used) + 1) * D890_MDC1200.STRIDE;
+    const bytes = await conn.readMemory(D890_MDC1200.CONTACTS, span);
+    return used
+      .map((slot) => parseMdc1200Contact(bytes, slot * D890_MDC1200.STRIDE, slot))
+      .filter((c): c is D890Mdc1200Contact => c !== null);
+  }
+
+  /**
+   * The SMS message store — envelopes, the valid table and the head, in one go.
+   *
+   * All three are needed together: the envelopes alone cannot say which slots
+   * are live, and the chain has to start somewhere. 100 envelopes is 1,600
+   * bytes, which the preserve pass already fetches.
+   */
+  async readSmsStore(): Promise<D890SmsEnvelope[]> {
+    const conn = this.requireConnection();
+    const envelopes = await conn.readMemory(
+      D890_SMS_STORE.ENVELOPES,
+      D890_SMS_STORE.SLOTS * D890_SMS_STORE.STRIDE
+    );
+    // The valid table and the head are 0x80 apart; one read covers both.
+    const tail = await conn.readMemory(D890_SMS_STORE.VALID, 0x90);
+    const valid = tail.subarray(0, D890_SMS_STORE.SLOTS);
+    const head = tail[D890_SMS_STORE.HEAD - D890_SMS_STORE.VALID] ?? D890_SMS_STORE.END;
+    return parseSmsStore(envelopes, valid, head);
+  }
+
+  /** DTMF settings and the 16-entry encode list — two regions, one call. */
+  async readDtmf(): Promise<{ settings: D890DtmfSettings; encodeList: string[] }> {
+    const conn = this.requireConnection();
+    const settings = await conn.readMemory(D890_DTMF.SETTINGS, D890_DTMF.SETTINGS_BYTES);
+    const encode = await conn.readMemory(
+      D890_DTMF.ENCODE,
+      D890_DTMF.ENCODE_SLOTS * D890_DTMF.ENCODE_STRIDE
+    );
+    return { settings: parseDtmfSettings(settings), encodeList: parseDtmfEncodeList(encode) };
+  }
+
+  /**
+   * The zone roam mask — 32 bytes per zone, bit k = that zone's k-th member is
+   * a roam channel.
+   *
+   * Read VERBATIM and not decoded into anything. The bits are zero on every
+   * radio either this project or the CPS-side analysis has seen, and there is
+   * no UI path anywhere that populates them: no CPS control, no language-file
+   * label, no .rdt field. Decoding a structure nobody can produce would be
+   * inventing a meaning for it.
+   *
+   * ⚠️ MEMBERSHIP IS BY POSITION WITHIN THE ZONE, not by channel index — bit k
+   * refers to the zone's k-th member. The vendor's own writer derives its bit
+   * index from the matched roam VALUE instead, which disagrees with its reader
+   * whenever a channel index differs from its position. That is either a latent
+   * CPS bug or an unreachable path; either way, do not copy the writer.
+   *
+   * Reading it is what lets a write put it back unchanged, which is the whole
+   * reason it is here.
+   */
+  async readZoneRoamMask(): Promise<Uint8Array[]> {
+    const conn = this.requireConnection();
+    const slots = this.rawZoneIndices ?? [];
+    if (slots.length === 0) return [];
+    const out: Uint8Array[] = [];
+    for (const slot of slots) {
+      out.push(
+        await conn.readMemory(
+          D890_ADDR.ZONE_ROAM + slot * D890_ADDR.ZONE_ROAM_STRIDE,
+          D890_ADDR.ZONE_ROAM_STRIDE
+        )
+      );
+    }
+    return out;
   }
 
   /** The GPS Roaming geofence table. */

@@ -141,6 +141,26 @@ export const CODEPLUG_READS: CodeplugRead[] = [
   table('autoRepeaterOffsets', 'Auto-repeater offsets',
     (p) => p.readAutoRepeaterOffsets?.bind(p) ?? null),
 
+  // Status messages and hot keys share ONE read — same 0x1530 region, two
+  // parsers — so this costs one round trip, not two.
+  table('statusMessages', 'Status messages', (p) =>
+    p.readHotKeyRegion
+      ? async () => (await p.readHotKeyRegion!()).statusMessages
+      : null),
+  table('hotKeys', 'Hot keys', (p) =>
+    p.readHotKeyRegion
+      ? async () => (await p.readHotKeyRegion!()).hotKeys
+      : null),
+  table('analogAddressBook', 'Analog address book',
+    (p) => p.readAnalogAddressBook?.bind(p) ?? null),
+  table('mdc1200Contacts', 'MDC1200 address book',
+    (p) => p.readMdc1200Contacts?.bind(p) ?? null),
+  table('smsStore', 'SMS store', (p) => p.readSmsStore?.bind(p) ?? null),
+  table('dtmf', 'DTMF', (p) => p.readDtmf?.bind(p) ?? null),
+  // After the zones: it is indexed by hardware zone SLOT, like the A/B channels
+  // below, so the zone slots must already be known.
+  table('zoneRoamMask', 'Zone roam mask', (p) => p.readZoneRoamMask?.bind(p) ?? null),
+
   // Last deliberately: the radio's table is indexed by hardware zone SLOT, and
   // the zones array has empty slots dropped. Aligning them needs the zones to
   // have been read already.

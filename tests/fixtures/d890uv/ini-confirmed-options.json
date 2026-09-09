@@ -1,0 +1,133 @@
+{
+ "_source": "DA_7X2_1.05d/language/english.ini, section [OTHER]",
+ "_how": "For each settings field declaring 3+ options, the list was located as a CONSECUTIVE run of ini keys. The vendor file itself is not committed - only which field matched, at which key, and the strings we therefore claim.",
+ "_why": "These option lists are the labels a user picks from, and several were invented from a vendor field NAME rather than read from the CPS. This pins the ones that ARE the CPS's own words, so a later edit cannot quietly replace them with a paraphrase.",
+ "_caveat": "A run match is EVIDENCE, NOT PROOF, and this fixture previously contained a false positive. simpRepeaterSlot was pinned to ini 29997-29999 - Channel Slot / Slot1 / Slot2, a clean consecutive run of exactly three slot strings ending at a dialog title. The CPS was then observed displaying 'Slot 1' WITH a space for that control, and the vendor's own rule that options sit at a fixed key offset was retracted. A coincidental run in a 1,899-key flat pool is entirely possible.",
+ "_also": "The INVERSE inference is refuted outright: a string absent from english.ini is NOT evidence it is invented. 'Slot 1' and '2.5K' are both displayed by the CPS and appear nowhere in the file - some option strings are generated rather than stored.",
+ "confirmed": {
+  "vfoScanType": {
+   "iniKey": 1747,
+   "options": [
+    "TO",
+    "CO",
+    "SE"
+   ]
+  },
+  "steTypeOfCtcss": {
+   "iniKey": 39007,
+   "options": [
+    "On",
+    "Silent",
+    "120 Degree",
+    "180 Degree",
+    "240 Degree"
+   ]
+  },
+  "voxDetection": {
+   "iniKey": 39033,
+   "options": [
+    "Built-in Microphone",
+    "External Microphone",
+    "Both"
+   ]
+  },
+  "callSignDisplayColor": {
+   "iniKey": 302016,
+   "options": [
+    "Orange",
+    "Red",
+    "Yellow",
+    "Green",
+    "Turquoise",
+    "Blue",
+    "White"
+   ]
+  },
+  "standbyCharColor": {
+   "iniKey": 302025,
+   "options": [
+    "White",
+    "Black",
+    "Orange",
+    "Red",
+    "Yellow",
+    "Green",
+    "Turquoise",
+    "Blue"
+   ]
+  },
+  "aChannelNameColor": {
+   "iniKey": 302016,
+   "options": [
+    "Orange",
+    "Red",
+    "Yellow",
+    "Green",
+    "Turquoise",
+    "Blue",
+    "White"
+   ]
+  },
+  "bChannelNameColor": {
+   "iniKey": 302016,
+   "options": [
+    "Orange",
+    "Red",
+    "Yellow",
+    "Green",
+    "Turquoise",
+    "Blue",
+    "White"
+   ]
+  },
+  "zoneNameColourA": {
+   "iniKey": 302016,
+   "options": [
+    "Orange",
+    "Red",
+    "Yellow",
+    "Green",
+    "Turquoise",
+    "Blue",
+    "White"
+   ]
+  },
+  "zoneNameColourB": {
+   "iniKey": 302016,
+   "options": [
+    "Orange",
+    "Red",
+    "Yellow",
+    "Green",
+    "Turquoise",
+    "Blue",
+    "White"
+   ]
+  },
+  "aliasDisplayPriority": {
+   "iniKey": 30752,
+   "options": [
+    "Off",
+    "Contact Alias",
+    "Air Alias DMR/NX"
+   ]
+  },
+  "aliasDataFormat": {
+   "iniKey": 30755,
+   "options": [
+    "ISO 8",
+    "ISO 7",
+    "Unicode"
+   ]
+  },
+  "satelliteTxPower": {
+   "iniKey": 10057,
+   "options": [
+    "Low",
+    "Mid",
+    "High",
+    "Turbo"
+   ]
+  }
+ }
+}

@@ -129,6 +129,18 @@ describe('generic DMR content is read for every digital radio', () => {
       // sequence it is safe to append to, not into the middle of it.
       'Master radio ID',
       'Auto-repeater offsets',
+      // Added 2026-09-08, once their parsers were wired to an actual read.
+      // Status messages and hot keys come from ONE region read that the
+      // preserve pass already performed, so the pair costs one round trip.
+      'Status messages',
+      'Hot keys',
+      'Analog address book',
+      'MDC1200 address book',
+      'SMS store',
+      'DTMF',
+      'Zone roam mask',
+      // Zone A/B channels stays LAST: it aligns against the zone slots, so the
+      // zones must already have been read.
       'Zone A/B channels',
     ]);
   });

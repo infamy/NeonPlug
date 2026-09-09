@@ -228,3 +228,32 @@ describe('DA-7X2 record layout documentation', () => {
     expect(callId.note).toMatch(/index/i);
   });
 });
+
+describe('DA-7X2 never-write regions', () => {
+  /**
+   * A region we are correct NOT to write is a finished state, not a gap.
+   *
+   * `Local info` is the radio identifying itself. Before this flag existed it
+   * counted as a write miss, so Core write could never reach 100% and reported
+   * a permanent shortfall that was really a correct decision. The coverage tool
+   * excludes these from the write and round-trip denominators.
+   */
+  it('flags Local info, and it is genuinely not written', () => {
+    const local = D890_MEMORY_MAP.find((r) => r.name === 'Local info');
+    expect(local?.neverWrite).toBe(true);
+    expect(local?.write).toBeFalsy();
+    // Still read — the flag is about writing, and it is also the read-length
+    // negotiation probe target.
+    expect(local?.read).toBe(true);
+  });
+
+  /** The flag must never be an excuse for an unimplemented encoder. */
+  it('uses the flag only where writing would be wrong, not merely undone', () => {
+    const flagged = D890_MEMORY_MAP.filter((r) => r.neverWrite);
+    expect(flagged.map((r) => r.name)).toEqual(['Local info']);
+    for (const r of flagged) {
+      expect(r.write, `${r.name} cannot be both neverWrite and write`).toBeFalsy();
+      expect(r.note, `${r.name} must say why`).toMatch(/NEVER WRITE/);
+    }
+  });
+});
