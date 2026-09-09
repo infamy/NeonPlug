@@ -141,3 +141,52 @@ export function encodeStatusMessage(
   out[maskAt] = clipped.length > 0 ? current | bit : current & ~bit & 0xff;
   return out;
 }
+
+/**
+ * Write a whole set of status messages, patching the region.
+ *
+ * Two rules, and the difference between them is the point:
+ *
+ *   - A slot IN the list gets its text written and its mask bit set.
+ *   - A slot NOT in the list gets its mask bit CLEARED and its bytes LEFT
+ *     ALONE.
+ *
+ * The second rule is deliberate and it is not laziness. The mask is what the
+ * radio consults — that is the finding this whole module rests on — so clearing
+ * the bit is what deletes the message. Wiping the text as well would be a
+ * change to bytes the user never touched, and it would show up in the "did
+ * anything else move" half of a round-trip diff as noise indistinguishable from
+ * a real encoder bug.
+ *
+ * The region also holds all 18 hot keys, so this PATCHES rather than builds.
+ * Chain it with `encodeHotKey` over the same buffer.
+ */
+export function encodeStatusMessages(
+  region: Uint8Array,
+  messages: readonly D890StatusMessage[]
+): Uint8Array {
+  let out: Uint8Array = Uint8Array.from(region);
+  const listed = new Map(messages.map((m) => [m.slot, m.text]));
+  for (const [slot] of listed) {
+    if (slot < 0 || slot >= D890_STATUS_MESSAGES.MAX_SLOTS) {
+      throw new Error(
+        `Status message slot ${slot} is outside 0..${D890_STATUS_MESSAGES.MAX_SLOTS - 1}`
+      );
+    }
+  }
+
+  for (const [slot, text] of listed) out = encodeStatusMessage(out, slot, text);
+
+  // Clear the bits of every slot the list does not carry. Done on the mask
+  // alone: `encodeStatusMessage(out, slot, '')` would also zero the slot's 0x40
+  // bytes, which is a change we cannot justify from a deletion.
+  const maskBase = D890_STATUS_MESSAGES.MASK - 0x3700000;
+  for (let slot = 0; slot < D890_STATUS_MESSAGES.MAX_SLOTS; slot += 1) {
+    if (listed.has(slot)) continue;
+    const at = maskBase + (slot >> 3);
+    // 0xFF is erased flash, not eight messages — treat it as empty.
+    const current = out[at] === 0xff ? 0 : (out[at] ?? 0);
+    out[at] = current & ~(1 << (slot & 7)) & 0xff;
+  }
+  return out;
+}

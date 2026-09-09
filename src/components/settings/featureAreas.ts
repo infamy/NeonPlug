@@ -27,6 +27,11 @@ import { D890EmergencyArea } from './D890EmergencyArea';
 import { D890ImagesArea } from './D890ImagesArea';
 import { D890PowerOnArea } from './D890PowerOnArea';
 import { AutoRepeaterOffsets } from './AutoRepeaterOffsets';
+import { D890StatusMessagesArea } from './D890StatusMessagesArea';
+import { D890HotKeysArea } from './D890HotKeysArea';
+import { D890AddressBooksArea } from './D890AddressBooksArea';
+import { D890SmsStoreArea } from './D890SmsStoreArea';
+import { D890DtmfArea } from './D890DtmfArea';
 
 export const FEATURE_AREAS: Partial<Record<SettingsFeature, ComponentType>> = {
   roaming: D890RoamingArea,
@@ -39,4 +44,9 @@ export const FEATURE_AREAS: Partial<Record<SettingsFeature, ComponentType>> = {
   // Read on demand from inside the area — 3 x 40 KB is larger than the rest of
   // this radio combined, so pictures are not part of the codeplug read.
   pictures: D890ImagesArea,
+  statusMessages: D890StatusMessagesArea,
+  hotKeyGrid: D890HotKeysArea,
+  addressBooks: D890AddressBooksArea,
+  smsStore: D890SmsStoreArea,
+  dtmf: D890DtmfArea,
 };

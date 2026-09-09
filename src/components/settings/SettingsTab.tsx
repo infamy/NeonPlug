@@ -351,6 +351,11 @@ export const SettingsTab: React.FC = () => {
     { id: 'feature-autoRepeaterOffsets', title: 'Auto-Repeater Offsets', feature: 'autoRepeaterOffsets' },
     { id: 'feature-pictures', title: 'Boot & Standby Backgrounds', feature: 'pictures' },
     { id: 'feature-gpsAprs', title: 'GPS & APRS', feature: 'gpsAprs' },
+    { id: 'feature-statusMessages', title: 'Status Messages', feature: 'statusMessages' },
+    { id: 'feature-hotKeyGrid', title: 'Hot Keys', feature: 'hotKeyGrid' },
+    { id: 'feature-addressBooks', title: 'Address Books', feature: 'addressBooks' },
+    { id: 'feature-smsStore', title: 'SMS Store', feature: 'smsStore' },
+    { id: 'feature-dtmf', title: 'DTMF', feature: 'dtmf' },
   ] satisfies { id: string; title: string; feature: SettingsFeature }[]).filter((t) =>
     settingsProfile?.features?.includes(t.feature) &&
     // A section that owns an area renders it itself; listing it here too would

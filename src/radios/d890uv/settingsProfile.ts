@@ -130,6 +130,13 @@ export const D890UV_SETTINGS_PROFILE: SettingsProfile = {
     'toneLists',
     'autoRepeaterOffsets',
     'emergencyAlarm',
+    // Tables that had parsers and encoders but nothing a user could reach —
+    // which is why every one of them still reads 0 hardware round trips.
+    'statusMessages',
+    'hotKeyGrid',
+    'addressBooks',
+    'smsStore',
+    'dtmf',
   ],
   sections: SECTION_ORDER.map((title) => ({
     id: title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),

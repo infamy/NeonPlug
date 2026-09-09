@@ -28,7 +28,20 @@ export const D890_HOT_KEYS = {
   STRIDE: 0x30,
   /** 6 Hot Key rows + 12 Fun rows, matching the CPS grid and the byte table. */
   SLOTS: 18,
-  /** Bit per entry; 0x03 with exactly entries 0 and 1 non-default. */
+  /**
+   * ⚠️ DISPUTED — this address is also `D890_ADDR.RX_GROUP_SET`.
+   *
+   * Read as 0x03 in a capture where entries 0 and 1 were the only rows
+   * differing from the CPS grid default, which is where "configured mask" came
+   * from. But 0x03 is equally consistent with "receive group lists 0 and 1 are
+   * present", and on 2026-09-09 a radio with exactly two receive group lists
+   * read ZERO here — while its hot keys were unchanged from the same defaults.
+   *
+   * Nothing depends on this constant: `parseHotKeys` reads all 18 entries and
+   * `encodeHotKey` does not touch the mask, both because the entries are live
+   * regardless of it. It is kept only so the collision is recorded rather than
+   * rediscovered. See the note on `RX_GROUP_SET` in constants.ts.
+   */
   MASK: 0x3701510,
   /** +0x04..07 and +0x08 use 0xFF fill for "Off". */
   NONE_BYTE: 0xff,

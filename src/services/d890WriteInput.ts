@@ -45,6 +45,16 @@ export function buildD890CodeplugTables(
     masterRadioId: t.masterRadioId,
     emergencySettings: t.emergencyAlarm?.settings ?? undefined,
     emergencyContact: t.emergencyAlarm?.contact ?? undefined,
+    statusMessages: t.statusMessages,
+    hotKeys: t.hotKeys,
+    // Both books COMPACT on delete, so the write renumbers to array order and
+    // the `slot` each entry was read from is deliberately not carried.
+    analogContacts: t.analogAddressBook,
+    mdc1200Contacts: t.mdc1200Contacts,
+    // The SMS store does the opposite — a survivor keeps its own slot — so this
+    // one IS carried by slot.
+    smsStore: t.smsStore,
+    dtmf: t.dtmf,
     // Position→slot. The read compacts empty slots away, so these two indexings
     // diverge the moment a zone in the middle is empty.
     zoneCurrentChannels:

@@ -124,7 +124,12 @@ export type SettingsFeature =
   | 'satellites'
   | 'toneLists'
   | 'autoRepeaterOffsets'
-  | 'emergencyAlarm';
+  | 'emergencyAlarm'
+  | 'statusMessages'
+  | 'hotKeyGrid'
+  | 'addressBooks'
+  | 'smsStore'
+  | 'dtmf';
 
 export interface SettingsProfile {
   radioType: string;

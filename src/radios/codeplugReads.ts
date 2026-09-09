@@ -106,7 +106,17 @@ export const CODEPLUG_READS: CodeplugRead[] = [
     plan: (p) =>
       p.readQuickMessages
         ? async (s) => {
-            s.setMessages(await p.readQuickMessages!());
+            const messages = await p.readQuickMessages!();
+            // Keep the SLOTS before handing the list to the store, which
+            // renumbers `.index` to array position. Hot keys and SMS envelopes
+            // both reference a slot, so the renumbered list cannot resolve them
+            // once any slot below the last message is empty — and on the first
+            // radio checked, slot 0 was.
+            s.setTable(
+              'predefinedSms',
+              messages.map((m) => ({ slot: m.index, text: m.text }))
+            );
+            s.setMessages(messages);
             s.setMessagesLoaded(true);
           }
         : null,

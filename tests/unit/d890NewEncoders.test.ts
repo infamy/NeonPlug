@@ -211,26 +211,47 @@ describe('DA-7X2 DTMF encoder', () => {
   const settings = {
     interCode: 0x0e, groupCode: 0x0a, decodingResponse: 0,
     pretimeMs: 420, firstDigitMs: 310, timeLapseAfterEncodeMs: 530,
+    autoResetTimeS: 9, pttIdPauseS: 7,
     selfId: '001', sideTone: 1, strings: ['', '', '', ''],
   };
 
-  it('writes the hardware-assigned timings as milliseconds over ten', () => {
+  /**
+   * ⚠️ The two units are not the same and nothing in the block says which is
+   * which: millisecond fields hold value/10, second fields hold RAW seconds.
+   * Running a seconds field through the ms conversion sets Auto Reset to 0 s.
+   */
+  it('writes ms fields as value/10 and seconds fields raw', () => {
     const out = encodeDtmfSettings(new Uint8Array(0x50), settings);
-    expect(out[0x03]).toBe(0x2a);   // 420 ms
-    expect(out[0x04]).toBe(0x1f);   // 310 ms
-    expect(out[0x0a]).toBe(0x35);   // 530 ms
+    expect(out[0x03]).toBe(0x2a);   // 420 ms -> 42
+    expect(out[0x04]).toBe(0x1f);   // 310 ms -> 31
+    expect(out[0x0a]).toBe(0x35);   // 530 ms -> 53
+    expect(out[0x05]).toBe(0x09);   // 9 s, RAW
+    expect(out[0x0b]).toBe(0x07);   // 7 s, RAW
     expect(parseDtmfSettings(out)).toMatchObject({
       pretimeMs: 420, firstDigitMs: 310, timeLapseAfterEncodeMs: 530,
+      autoResetTimeS: 9, pttIdPauseS: 7,
     });
+  });
+
+  it('reproduces the captured block after the second hardware write', () => {
+    const out = encodeDtmfSettings(new Uint8Array(0x50), settings);
+    expect(Array.from(out.subarray(0, 12)))
+      .toEqual([0x0e, 0x0a, 0x00, 0x2a, 0x1f, 0x09, 0x00, 0x00, 0x01, 0x01, 0x35, 0x07]);
+  });
+
+  it('treats PTT ID Pause 0x00 as Off rather than zero seconds', () => {
+    const off = encodeDtmfSettings(new Uint8Array(0x50), { ...settings, pttIdPauseS: null });
+    expect(off[0x0b]).toBe(0x00);
+    expect(parseDtmfSettings(off).pttIdPauseS).toBeNull();
   });
 
   /**
    * The unassigned bytes must survive a write untouched.
    *
-   * 0x05 and 0x0b are the two timings the hardware write could not vary (Auto
-   * Reset Time and PTT ID Pause are consistent with them but not pinned), and
-   * 0x0c / 0x0d / 0x0e / 0x0f are unmodelled. Writing a byte whose meaning is
-   * unknown is the change that breaks a radio.
+   * 0x05 and 0x0b were in this set until 2026-09-08, when a second hardware
+   * write assigned them (Auto Reset Time and PTT ID Pause). What remains
+   * unmodelled is 0x0c through 0x0f. Writing a byte whose meaning is unknown is
+   * the change that breaks a radio.
    *
    * Note 0x4f is NOT in this set: the block is fully accounted for — 0x00-0x0f
    * settings then four 16-byte digit strings at 0x10/0x20/0x30/0x40 — so 0x4f is
@@ -238,15 +259,15 @@ describe('DA-7X2 DTMF encoder', () => {
    */
   it('does not write the bytes whose meaning is unknown', () => {
     const original = new Uint8Array(0x50).fill(0);
-    original[0x05] = 0xa5;
-    original[0x0b] = 0x5a;
     original[0x0c] = 0x3c;
     original[0x0d] = 0xc3;
     original[0x0e] = 0x11;
     original[0x0f] = 0x22;
-    const out = encodeDtmfSettings(original, settings);
-    expect([out[0x05], out[0x0b], out[0x0c], out[0x0d], out[0x0e], out[0x0f]])
-      .toEqual([0xa5, 0x5a, 0x3c, 0xc3, 0x11, 0x22]);
+    original[0x01] = 0xa5;
+    const out = encodeDtmfSettings(original, { ...settings, groupCode: 0x0a });
+    // 0x01 IS written (Group Code), so it is not in this set — what must survive
+    // is 0x0c, 0x0d, 0x0e and 0x0f, the bytes still without a meaning.
+    expect([out[0x0c], out[0x0d], out[0x0e], out[0x0f]]).toEqual([0x3c, 0xc3, 0x11, 0x22]);
   });
 
   it('keeps encode-list entries at their index, empty ones padded', () => {

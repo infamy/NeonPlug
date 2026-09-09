@@ -279,7 +279,15 @@ export const D890_SETTINGS_FIELDS: readonly D890SettingsField[] = [
   { key: 'muteTiming',                      label: 'Mute timing',                         cpsLabel: 'Mute timing',                         group: 'Other',           offset: 0x0e8, max: 255, listLength: 256, valueRule: { scale: 1, offset: 1, unit: 'minute', basis: 'range-forced' }, vendorField: 'FixTimeMute' },
   { key: 'outOfRangeNotifyTime',            label: 'Out of Range Notify(time',            cpsLabel: 'Out of Range Notify(time:',           group: 'Auto repeater',   offset: 0x0e9, max: 9, listLength: 10, vendorField: 'OutNoteTimes', valueRule: { scale: 1, offset: 1, unit: '', basis: 'range-forced' } },
   { key: 'noaaAlert',                       label: 'NOAA Alert',                          cpsLabel: 'NOAA Alert',                          group: 'Other',           offset: 0x0ef, max: 1, listLength: 2, options: ['Off', 'On'], vendorField: 'WxAlarmSign' },
-  { key: 'gpsMode',                         label: 'Gps Mode',                            cpsLabel: 'Gps Mode',                            group: 'GPS/Ranging',     offset: 0x105, max: 6, listLength: 7, vendorField: 'GpsMode' },
+  // CONFIRMED ON HARDWARE 2026-09-08: setting Gps Mode to `All` in the CPS moved
+  // exactly one byte in the whole 512-byte settings region — 0x3500105 -> 0x06.
+  // `All` is the 7th entry, so it is a plain 0-based index 0..6.
+  //
+  // The range here was already right; what it lacked was the labels, so it
+  // rendered as a bare 0..6 spinner. Note this is NOT `gps` at 0x028: that is
+  // `Get GPS Positioning`, the Off/On control, and the two were shown to be
+  // different bytes by two single-field edits from a common base.
+  { key: 'gpsMode',                         label: 'Gps Mode',                            cpsLabel: 'Gps Mode',                            group: 'GPS/Ranging',     offset: 0x105, max: 6, listLength: 7, options: ['GPS', 'BDS', 'GPS+BDS', 'GLONASS', 'GPS+GLONASS', 'BDS+GLONASS', 'All'], vendorField: 'GpsMode', confidence: 'hardware' },
   { key: 'steTime',                         label: 'Ste Time',                            cpsLabel: 'Ste Time',                            group: 'STE',             offset: 0x106, max: 100, listLength: 101, vendorField: 'SteTime', valueRule: { scale: 10, offset: 0, unit: 'ms', basis: 'two-point' } },
   { key: 'bChannelNameColor',               label: 'B Channel Name Color',                cpsLabel: 'B Channel Name Color',                group: 'Display',         offset: 0x109, max: 6, listLength: 7, options: ['Orange', 'Red', 'Yellow', 'Green', 'Turquoise', 'Blue', 'White'], vendorField: 'ChanNameColourB' },
   { key: 'totPredict',                      label: 'TOT Predict',                         cpsLabel: 'TOT Predict',                         group: 'Other',           offset: 0x10b, max: 1, listLength: 2, options: ['Off', 'On'], vendorField: 'TotPreEn' },
@@ -883,6 +891,35 @@ export const D890_KEY_FUNCTIONS: readonly string[] = [
   'Simplex Repeater',
   'NOAA Alert'
 ] as const;
+
+/**
+ * ⚠️ THE VENDOR CPS OFFERS ONLY 61 OF THESE, and that is not a discrepancy.
+ *
+ * Measured on the CPS 2026-09-08: a PF Short Key dropdown holds 61 entries,
+ * P1/P2 Short 60, and every Long key 57. The 61 are an ordered SUBSEQUENCE of
+ * the list above — the CPS simply does not offer six functions the radio
+ * supports:
+ *
+ *   GPS Information (17), Ranging (35), Channel Ranging (37),
+ *   APRS Type Switch (40), APRS Set (43), Digital Protocol (62)
+ *
+ * 67 - 6 = 61 exactly, and the remaining order is unchanged.
+ *
+ * This list was briefly REPLACED with the CPS's 61 on the reasoning that our
+ * extra entry at 17 shifted every index after it. It does not: the indices above
+ * are the radio's, confirmed by hardware anchors (Monitor at 18, Main Channel
+ * Switch at 19, NOAA Alert at 66) taken off a radio rather than from a string
+ * table. The CPS list is a different thing — what the vendor software exposes —
+ * and its position 17 is our 18 precisely because it omits index 17.
+ *
+ * Same shape as BT On/Off: the radio menu is a superset of the CPS, so a control
+ * being absent from the CPS says nothing about the radio.
+ *
+ * Two consequences a UI should honour, neither yet implemented:
+ *   - Long keys cannot take Sub PTT, Alarm, Monitor or TBST Send — the four that
+ *     only mean anything while a key is held.
+ *   - P1/P2 (the side keys) cannot take Sub PTT.
+ */
 
 /** The nine controls that share D890_KEY_FUNCTIONS. */
 export const D890_KEY_FUNCTION_FIELDS: readonly string[] = [

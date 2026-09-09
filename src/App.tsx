@@ -32,6 +32,7 @@ import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import type { CodeplugData } from './services/codeplugExport';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
 import { setLogStore, logger, LogLevel } from './utils/protocolLogger';
+import { installDevStoreHandle } from './utils/devStoreHandle';
 import { useLogStore } from './store/logStore';
 
 function App() {
@@ -63,6 +64,9 @@ function App() {
     // Allow debug logging to be toggled without a code change:
     //   enable:  localStorage.setItem('neonplug_log_level', 'debug')  then reload
     //   disable: localStorage.removeItem('neonplug_log_level')         then reload
+    // Dev builds only — lets a UI gated behind "read a radio first" be looked
+    // at without one. Stripped from every production build.
+    installDevStoreHandle();
     const stored = localStorage.getItem('neonplug_log_level');
     if (stored === 'verbose') {
       logger.configure({ level: LogLevel.VERBOSE });

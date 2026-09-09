@@ -74,7 +74,11 @@ export const D890_MDC1200 = {
   ENCODE_SLOTS: 100,
 } as const;
 
-/** Call Type at +0x01. Private and Group are confirmed; All Call is not. */
+/**
+ * Call Type at +0x01. All three are now confirmed on hardware — a radio read on
+ * 2026-09-09 held a slot with call type 2 named "MDCALL", which had until then
+ * been only a column in the vendor CSV.
+ */
 export const MDC_CALL_TYPE = { PRIVATE: 0, GROUP: 1, ALL: 2 } as const;
 
 export interface D890Mdc1200Contact {

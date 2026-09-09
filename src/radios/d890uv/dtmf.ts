@@ -7,13 +7,22 @@
  *   0x3481e00  0x50 bytes  settings, then four 16-byte digit strings
  *   0x3500800  0x100       16 encode entries x 16 bytes
  *
- * Three timing bytes were ASSIGNED ON HARDWARE 2026-09-08 by writing three
- * deliberately distinct values and reading back — 420, 310 and 530 ms landed as
- * 0x2A, 0x1F and 0x35, each unique within the block, which is what made the
- * assignment unambiguous.
+ * ALL FIVE TIMINGS ARE ASSIGNED, on hardware, across two writes on 2026-09-08.
  *
- * ⚠️ Timings are a SINGLE BYTE holding milliseconds/10, not a u16. None of 310,
- * 420 or 530 appears as a u16 anywhere in the block.
+ * ⚠️ THE TWO UNITS DIFFER AND NOTHING IN THE BLOCK SIGNALS WHICH IS WHICH:
+ * millisecond fields hold value/10, second fields hold RAW seconds.
+ *
+ *   +0x03  Pretime[ms]                  value / 10
+ *   +0x04  First Digit Time[ms]         value / 10
+ *   +0x05  Auto Reset Time[s]           RAW seconds
+ *   +0x0a  Time-Lapse After Encode[ms]  value / 10
+ *   +0x0b  PTT ID Pause Time[s]         RAW seconds, 0x00 = Off
+ *
+ * The first three came from one write of 420/310/530 ms, landing as 0x2A, 0x1F
+ * and 0x35 — each value unique within the block, which is what made them
+ * unambiguous. The last two came from a second write of 9 s and 7 s, landing as
+ * 0x09 and 0x07; +0x01 holding at 0x0A through that write is what ruled out the
+ * alternative reading.
  */
 
 export const D890_DTMF = {
@@ -44,16 +53,15 @@ export interface D890DtmfSettings {
   firstDigitMs: number;
   /** ASSIGNED on hardware: milliseconds. */
   timeLapseAfterEncodeMs: number;
+  /** ASSIGNED on hardware: RAW seconds, not tenths. */
+  autoResetTimeS: number;
+  /** ASSIGNED on hardware: RAW seconds. Null when Off (0x00). */
+  pttIdPauseS: number | null;
   /** 3 digit codes, one per byte. */
   selfId: string;
   sideTone: number;
-  /**
-   * ⚠️ NOT ASSIGNED. Auto Reset Time[s] and PTT ID Pause Time[s] both went into
-   * the confirming write at their existing values (10 and Off), so they are
-   * consistent with 0x0A at +0x01 or +0x05 and 0x00 at several offsets — and a
-   * repeated value cannot discriminate. One write with 9 and 7 closes it.
-   */
-  unassigned: { at01: number; at05: number; at0b: number; at0c: number; at0d: number };
+  /** Bytes still without a meaning. +0x05 and +0x0b left this set on 2026-09-08. */
+  unassigned: { at01: number; at0c: number; at0d: number };
   /** BOT, EOT, kill, stun. */
   strings: string[];
 }
@@ -82,9 +90,12 @@ export function parseDtmfSettings(bytes: Uint8Array): D890DtmfSettings {
     pretimeMs: at(0x03) * 10,
     firstDigitMs: at(0x04) * 10,
     timeLapseAfterEncodeMs: at(0x0a) * 10,
+    // Seconds, NOT tenths — the units are not uniform across this block.
+    autoResetTimeS: at(0x05),
+    pttIdPauseS: at(0x0b) === 0 ? null : at(0x0b),
     selfId: decodeDtmfDigits(bytes, 0x06, 3),
     sideTone: at(0x09),
-    unassigned: { at01: at(0x01), at05: at(0x05), at0b: at(0x0b), at0c: at(0x0c), at0d: at(0x0d) },
+    unassigned: { at01: at(0x01), at0c: at(0x0c), at0d: at(0x0d) },
     strings: D890_DTMF.STRING_OFFSETS.map((off) =>
       decodeDtmfDigits(bytes, off, D890_DTMF.STRING_BYTES)
     ),
@@ -121,22 +132,24 @@ export function encodeDtmfDigits(text: string, width: number): Uint8Array {
 /**
  * Write the DTMF settings block, patching the original.
  *
- * ONLY the fields that are actually assigned are written. The two unassigned
- * timings — Auto Reset Time and PTT ID Pause — and every byte past +0x0d are
- * left exactly as read, because writing a byte whose meaning is unknown is the
- * change that breaks a radio. When one write with distinct values assigns them,
- * they can be added here.
+ * ONLY assigned fields are written. +0x01, +0x0c and +0x0d still have no
+ * meaning and are left exactly as read, because writing a byte whose meaning is
+ * unknown is the change that breaks a radio.
  *
- * Timings are milliseconds/10 in a SINGLE byte, so 530 ms is 0x35. Values are
- * clamped to a byte rather than silently wrapping: 2560 ms would otherwise
- * become 0.
+ * ⚠️ MIND THE UNITS: +0x03, +0x04 and +0x0a are milliseconds/10, while +0x05 and
+ * +0x0b are RAW seconds. Running a seconds field through the ms conversion would
+ * divide it by ten and set Auto Reset to 0 s.
+ *
+ * Values are clamped to a byte rather than silently wrapping: 2560 ms would
+ * otherwise become 0.
  */
 export function encodeDtmfSettings(
   original: Uint8Array,
   settings: Pick<
     D890DtmfSettings,
     'interCode' | 'groupCode' | 'decodingResponse' | 'pretimeMs' |
-    'firstDigitMs' | 'timeLapseAfterEncodeMs' | 'selfId' | 'sideTone' | 'strings'
+    'firstDigitMs' | 'timeLapseAfterEncodeMs' | 'autoResetTimeS' | 'pttIdPauseS' |
+    'selfId' | 'sideTone' | 'strings'
   >
 ): Uint8Array {
   const out = Uint8Array.from(original);
@@ -147,9 +160,14 @@ export function encodeDtmfSettings(
   out[0x02] = settings.decodingResponse & 0xff;
   out[0x03] = ms(settings.pretimeMs);
   out[0x04] = ms(settings.firstDigitMs);
+  // RAW seconds. Passing these through ms() would divide them by ten.
+  out[0x05] = Math.max(0, Math.min(255, Math.round(settings.autoResetTimeS)));
   out.set(encodeDtmfDigits(settings.selfId, 3), 0x06);
   out[0x09] = settings.sideTone & 0xff;
   out[0x0a] = ms(settings.timeLapseAfterEncodeMs);
+  out[0x0b] = settings.pttIdPauseS === null
+    ? 0x00
+    : Math.max(0, Math.min(255, Math.round(settings.pttIdPauseS)));
 
   D890_DTMF.STRING_OFFSETS.forEach((off, i) => {
     out.set(encodeDtmfDigits(settings.strings[i] ?? '', D890_DTMF.STRING_BYTES), off);

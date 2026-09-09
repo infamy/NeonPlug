@@ -1515,11 +1515,22 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
    * The zone roam mask — 32 bytes per zone, bit k = that zone's k-th member is
    * a roam channel.
    *
-   * Read VERBATIM and not decoded into anything. The bits are zero on every
-   * radio either this project or the CPS-side analysis has seen, and there is
-   * no UI path anywhere that populates them: no CPS control, no language-file
-   * label, no .rdt field. Decoding a structure nobody can produce would be
-   * inventing a meaning for it.
+   * Read VERBATIM and not decoded into anything — and that is now MEASURED
+   * rather than assumed.
+   *
+   * The claim was originally "no UI can set it", which turned out to be wrong in
+   * an interesting way: the CPS does have a rendered, enabled control called
+   * `Exclude channel from roaming`, and setting it moves a byte in the codeplug.
+   * But a write carrying that flag for a channel that IS a zone member left all
+   * 1024 bytes of this region zero. So the CPS does not derive the per-zone mask
+   * from the per-channel flag, and carrying it verbatim is right for a better
+   * reason than the one first given.
+   *
+   * A polarity contradiction is left unresolved on purpose: the control is
+   * EXCLUDE (On = not a roam channel) while this mask is documented as bit set =
+   * IS a roam channel. With every channel's Exclude off, an all-zero mask cannot
+   * satisfy both readings. Since nothing observed drives the mask, do not infer
+   * a polarity from a UI that does not populate it.
    *
    * ⚠️ MEMBERSHIP IS BY POSITION WITHIN THE ZONE, not by channel index — bit k
    * refers to the zone's k-th member. The vendor's own writer derives its bit

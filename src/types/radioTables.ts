@@ -162,6 +162,26 @@ export interface RadioTables {
     settings: import('../radios/d890uv/dtmf').D890DtmfSettings;
     encodeList: string[];
   };
+  /**
+   * Pre-defined SMS texts keyed by their TRUE hardware SLOT.
+   *
+   * This exists because `quickMessagesStore` renumbers `.index` to array
+   * POSITION — correct for the DM-32, where the encoder places messages by
+   * array order, and destructive here. The radio's own reader dereferences a
+   * slot: hot keys store one at +0x08 and every SMS envelope stores one at
+   * +0x03.
+   *
+   * The two indexings diverge whenever a slot below the last message is empty,
+   * and on the first radio anyone checked they did: slot 0 read 0xFF with the
+   * four messages in slots 1-4, so every position was one below its slot. That
+   * made a hot key holding 0x03 ("Good bye!", exactly as the vendor CPS grid
+   * showed) display as "Happy every day!" — and, worse, picking a message from
+   * that dropdown would have written the position and silently repointed the
+   * key one message down.
+   *
+   * Captured at read time, before the store renumbers.
+   */
+  predefinedSms: { slot: number; text: string }[];
   /** Power-on screen text and password. */
   powerOnDisplay: D890PowerOnDisplay;
   /**

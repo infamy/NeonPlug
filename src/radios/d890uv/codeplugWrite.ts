@@ -65,6 +65,27 @@ import type { DMRRadioID } from '../../models/DMRRadioID';
 import type { EncryptionKey } from '../../models/EncryptionKey';
 import type { ScanListDecoded, D890RoamingChannel } from './structures';
 import type { D890BroadcastChannel } from './broadcastChannels';
+import { encodeStatusMessages, type D890StatusMessage } from './statusMessages';
+import { encodeHotKey, type D890HotKey } from './hotKeys';
+import {
+  D890_ANALOG_ADDRESS_BOOK,
+  encodeAnalogContact,
+  encodeAnalogSlotTable,
+  type D890AnalogContact,
+} from './analogAddressBook';
+import {
+  D890_MDC1200,
+  encodeMdc1200Contact,
+  encodeMdcSlotTable,
+  type D890Mdc1200Contact,
+} from './mdc1200';
+import { D890_SMS_STORE, encodeSmsStore, type D890SmsEnvelope } from './smsStore';
+import {
+  D890_DTMF,
+  encodeDtmfEncodeList,
+  encodeDtmfSettings,
+  type D890DtmfSettings,
+} from './dtmf';
 import type { D890AmZone } from './amZones';
 import { D890_AM_ZONES, encodeAmZoneAChannels, encodeAmZoneScan } from './amZones';
 import { D890_BROADCAST, encodeBroadcastScanMask } from './broadcastChannels';
@@ -167,6 +188,31 @@ export interface D890CodeplugWriteInput {
      * position in the flattened list and must never be used to place a key.
      */
     encryptionKeys?: readonly EncryptionKey[];
+    /**
+     * Status messages, by SLOT. A slot missing from this list has its presence
+     * bit cleared and its text left alone — the mask is what the radio reads,
+     * so clearing the bit is the deletion.
+     */
+    statusMessages?: readonly D890StatusMessage[];
+    /** All 18 hot keys. Every entry is live regardless of the 0x3701510 mask. */
+    hotKeys?: readonly D890HotKey[];
+    /**
+     * Analog (DTMF) address book, in DISPLAY order — this book COMPACTS, so the
+     * write places entry i at slot i and renumbers the slot table to match. The
+     * `slot` each contact was read from is deliberately ignored.
+     */
+    analogContacts?: readonly D890AnalogContact[];
+    /** MDC1200 ("QDC") address book. Compacts exactly like the analog book. */
+    mdc1200Contacts?: readonly D890Mdc1200Contact[];
+    /**
+     * SMS store envelopes. Does NOT compact — a deleted message retires its own
+     * slot and the survivors stay where they are, which is the opposite of the
+     * two address books above.
+     */
+    smsStore?: readonly D890SmsEnvelope[];
+    /** DTMF settings and the 16 encode entries. The encode INDEX is what a
+     *  channel references, so the list is written by position, gaps included. */
+    dtmf?: { settings: D890DtmfSettings; encodeList: readonly string[] };
   };
 }
 
@@ -577,6 +623,179 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
     (o, v) => applyZoneCurrentChannels(o, v.a));
   patched('zone current channel B', R.zoneCurrentChannelB, T.zoneCurrentChannels,
     (o, v) => applyZoneCurrentChannels(o, v.b));
+
+  // ── Hot-key region: the status messages AND all 18 hot keys, one span ────
+  //
+  // 0x3700000..0x3701530 holds both tables. They are patched into ONE buffer
+  // and emitted once, because two plans over the same span would hit the
+  // duplicate-address guard below — and without that guard the second would
+  // quietly carry the first's pre-edit bytes.
+  //
+  // The whole span is written rather than only the changed frames, and that
+  // costs nothing: 0x3700000/5424 is a vendor write run, so the verbatim pass
+  // already sends all 339 frames on every write. This only changes what is IN
+  // them.
+  if (T.statusMessages || T.hotKeys) {
+    const spec = { label: 'hot keys / status messages', address: 0x3700000, size: 0x1530 };
+    const original = sliceFromReadLog(input.readLog, spec.address, spec.size);
+    if (!original) {
+      skipped.push({
+        region: spec.label, address: spec.address, reason: 'not-read',
+        detail: 'the hot-key region is not in the read log.',
+      });
+    } else {
+      let encoded: Uint8Array = Uint8Array.from(original);
+      if (T.statusMessages) encoded = encodeStatusMessages(encoded, T.statusMessages);
+      for (const key of T.hotKeys ?? []) encoded = encodeHotKey(encoded, key.slot, key);
+      flat(spec.label, spec, encoded);
+    }
+  }
+
+  // ── The two address books, which both COMPACT ────────────────────────────
+  //
+  // Entry i is written to slot i and the slot table is rebuilt to match, so a
+  // delete renumbers the survivors. That is measured behaviour on the analog
+  // book (2026-09-08) and the same shape on MDC. It is the OPPOSITE of the SMS
+  // store below, and having these two backwards is the single most likely bug
+  // in this section — which is why each has its own round-trip test.
+  //
+  // A record for a slot the read never covered is built from zeros. That is
+  // safe for exactly these two encoders because each writes every byte of the
+  // record it models — do not generalise it to a record with unmodelled bytes.
+  const addressBook = <C>(
+    label: string,
+    contacts: readonly C[],
+    layout: { base: number; stride: number; slotTable: number; highTable: number },
+    encode: (original: Uint8Array, offset: number, contact: C) => Uint8Array,
+    slotTable: (occupied: readonly number[]) => [Uint8Array, Uint8Array]
+  ) => {
+    const recordFrames: D890WriteFrame[] = [];
+    contacts.forEach((contact, slot) => {
+      const at = layout.base + slot * layout.stride;
+      const original =
+        sliceFromReadLog(input.readLog, at, layout.stride) ?? new Uint8Array(layout.stride);
+      const encoded = encode(original, 0, contact);
+      for (let off = 0; off < layout.stride; off += 0x10) {
+        recordFrames.push({
+          address: at + off,
+          data: encoded.slice(off, off + 0x10),
+          what: `${label} ${slot}`,
+        });
+      }
+    });
+    take(label, layout.base, recordFrames);
+
+    // Both halves. The high half is all zeros here because no index reaches
+    // 256, but a present slot left at 0xFF would be index 0xFF00 + n — not a
+    // slot that exists — so it has to be emitted, not skipped.
+    const [low, high] = slotTable(contacts.map((_, i) => i));
+    for (const [tableLabel, address, data] of [
+      [`${label} slot table`, layout.slotTable, low],
+      [`${label} slot table (high)`, layout.highTable, high],
+    ] as const) {
+      const tableFrames: D890WriteFrame[] = [];
+      for (let off = 0; off < data.length; off += 0x10) {
+        tableFrames.push({
+          address: address + off,
+          data: data.slice(off, off + 0x10),
+          what: tableLabel,
+        });
+      }
+      take(tableLabel, address, tableFrames);
+    }
+  };
+
+  if (T.analogContacts) {
+    addressBook(
+      'analog contact',
+      T.analogContacts,
+      {
+        base: D890_ANALOG_ADDRESS_BOOK.BASE,
+        stride: D890_ANALOG_ADDRESS_BOOK.STRIDE,
+        slotTable: D890_ANALOG_ADDRESS_BOOK.SLOT_TABLE,
+        highTable: D890_ANALOG_ADDRESS_BOOK.SECOND_TABLE,
+      },
+      encodeAnalogContact,
+      encodeAnalogSlotTable
+    );
+  }
+
+  if (T.mdc1200Contacts) {
+    addressBook(
+      'MDC1200 contact',
+      T.mdc1200Contacts,
+      {
+        base: D890_MDC1200.CONTACTS,
+        stride: D890_MDC1200.STRIDE,
+        slotTable: D890_MDC1200.CONTACTS_SLOT_TABLE,
+        highTable: D890_MDC1200.CONTACTS_SLOT_TABLE + 0x100,
+      },
+      encodeMdc1200Contact,
+      encodeMdcSlotTable
+    );
+  }
+
+  // ── SMS store: a linked list that does NOT compact ───────────────────────
+  //
+  // Only the CHANGED envelope frames are sent, unlike the hot-key region above.
+  // The vendor's own run here is 80 bytes — five envelopes — so planning all
+  // 1,600 would write twenty times what the vendor ever does to a region whose
+  // chain semantics we have only just decoded. A delete touches the previous
+  // envelope's `next` byte and its own valid byte, and that is what goes out.
+  if (T.smsStore) {
+    const S = D890_SMS_STORE;
+    const envelopeBytes = S.SLOTS * S.STRIDE;
+    const originalEnvelopes = sliceFromReadLog(input.readLog, S.ENVELOPES, envelopeBytes);
+    const originalTail = sliceFromReadLog(input.readLog, S.VALID, 0x90);
+    if (!originalEnvelopes || !originalTail) {
+      skipped.push({
+        region: 'SMS store', address: S.ENVELOPES, reason: 'not-read',
+        detail: 'the SMS envelopes or the valid/head table are not in the read log.',
+      });
+    } else {
+      const { envelopes, valid, head } = encodeSmsStore(originalEnvelopes, T.smsStore);
+      const envelopeFrames = framesForChanges(
+        input.readLog, S.ENVELOPES, originalEnvelopes, envelopes, 'SMS envelope'
+      );
+      if (envelopeFrames) take('SMS envelopes', S.ENVELOPES, envelopeFrames);
+
+      // The valid table and the head byte are 0x80 apart inside one 144-byte
+      // vendor run, so they go out together as that whole run.
+      const tail = Uint8Array.from(originalTail);
+      tail.set(valid, 0);
+      tail[S.HEAD - S.VALID] = head;
+      flat('SMS valid table and head', { label: 'SMS valid table and head', address: S.VALID, size: 0x90 }, tail);
+    }
+  }
+
+  // ── DTMF: a patched settings block and a BUILT encode list ───────────────
+  //
+  // The settings are patched because +0x01, +0x0c and +0x0d still have no
+  // meaning and must survive untouched. The encode list is built, because the
+  // index is what a channel references — an empty entry writes 0xFF rather than
+  // being skipped, or every channel pointing past it would be repointed.
+  if (T.dtmf) {
+    patched(
+      'DTMF settings',
+      { label: 'DTMF settings', address: D890_DTMF.SETTINGS, size: D890_DTMF.SETTINGS_BYTES },
+      T.dtmf.settings,
+      encodeDtmfSettings
+    );
+    const encodeAddress = D890_DTMF.ENCODE;
+    const encodeBytes = D890_DTMF.ENCODE_SLOTS * D890_DTMF.ENCODE_STRIDE;
+    if (sliceFromReadLog(input.readLog, encodeAddress, encodeBytes)) {
+      flat(
+        'DTMF encode list',
+        { label: 'DTMF encode list', address: encodeAddress, size: encodeBytes },
+        encodeDtmfEncodeList(T.dtmf.encodeList)
+      );
+    } else {
+      skipped.push({
+        region: 'DTMF encode list', address: encodeAddress, reason: 'not-read',
+        detail: 'the DTMF encode list is not in the read log.',
+      });
+    }
+  }
 
   // Pre-defined SMS: fixed-stride slots with no mask — a slot is empty when its
   // text is. Each is built rather than patched because the slot holds nothing
