@@ -796,18 +796,31 @@ the prerequisite, not a hardware session.
   stops the panel offering them. Undefined ⇒ all of them, so the DM-32 is
   unchanged.
 
-  ⚠️ **ADD still refused; DELETE works** (hole semantics, measured — see below).
-  The record's LAYOUT is no longer the obstacle: bytes `0x98`-`0x200` are zero in
-  all six scan lists captured across three reads, and `0x2e-0x2f` are the only
-  other offsets the encoder does not cover, also zero. What blocks it is four
-  fields with no UI and no known default — **look-back time A and B, dropout
-  delay, revert channel**. Both lists on the reference radio hold deliberately
-  distinct sweep values (5/26/31/32 and 20/31/37/38), so neither is a default.
+  ☑ **ADD WORKS (2026-09-10).** A scan list created in the vendor CPS and
+  written to the radio (`7x2_slreadaddwrite.txt`) supplied the four fields that
+  had no UI and no derivable value: look-back A **5**, look-back B **26**,
+  dropout delay **31**, revert channel **4** (with dwell 32, scan mode 0). The
+  same values sit in `SL Alpha`, the untouched list in this radio's first reads —
+  they always WERE the defaults, and the earlier note calling them a sweep was
+  wrong.
 
-  ➡️ **ONE scan list created fresh in the vendor CPS unblocks add**, and it is
-  then a `blank()` on `D890_MASKED_TABLES.scanLists` away from working. The UI
-  already allocates the lowest free slot, so a new list will reuse the hole a
-  delete left rather than stranding it.
+  The vendor put its new list into the slot a DELETE had emptied, so the same
+  capture answers the erased-flash question too: `applyScanListToRecord` builds
+  from `blankScanList()` when the original is wholly 0xFF. `tests/fixtures/
+  d890uv/scanlist-vendor-new.bin` is the vendor's actual 512-byte record and the
+  test asserts ours is BYTE-IDENTICAL to it — not that the encoder round-trips,
+  but that our bytes are the vendor's bytes.
+
+  Two defaults are counter-intuitive and are taken verbatim: the member array is
+  0xFF-filled while everything from 0x98 is zero, and **byte 0x01 defaults to 3
+  with BOTH priority channels Off**.
+
+  ❓ **Byte 0x01 (`prioritySelect`) remains unknown and unwritten.** It was
+  briefly recorded as gating the priority channels and a commit derived it from
+  them; that was a misread of the radio's menu and is retracted. Priority 2 is
+  ON with the byte at 1, so it does NOT gate — and the vendor's own default is 3
+  with both priorities off, which rules out "in use" bits from the other
+  direction.
 
   ☑ **DMR radio IDs are wired (2026-09-10)** — edits and adds. `index` IS the
   hardware slot: `readDMRRadioIDs` walks the presence mask and hands each
