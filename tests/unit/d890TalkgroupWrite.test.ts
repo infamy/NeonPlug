@@ -194,18 +194,18 @@ describe('talk groups COMPACT — position is the slot', () => {
     expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0, 1, 2]);
   });
 
-  it('REFUSES a delete — compaction alone would leave references stale', () => {
-    // Channels reference a talk group by SLOT, and so do receive groups. When
-    // the table shifts, a channel pointing at 600 would transmit on 601's talk
-    // group. That codeplug reads back CLEAN, which makes it worse than a
-    // refusal, not better.
+  it('a delete is no longer refused HERE — the guard moved to the references', () => {
+    // d890Talkgroups only places records, and compaction makes that trivial:
+    // entry i to slot i. The dangerous half of a delete is that channels and
+    // receive groups reference talk groups BY SLOT, so the refusal lives in
+    // d890RenumberedChannels, where those references are actually in hand.
     useRadioStore.setState({
       tables: { writeOriginals: { talkgroupCountAtRead: 3 } as never },
     });
     useQuickContactsStore.setState({
       contacts: [tg(1, 'a'), tg(2, 'b')], contactsLoaded: true,
     });
-    expect(() => d890Talkgroups()).toThrow(/deleting one is not safe yet/);
+    expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0, 1]);
   });
 
   it('ALLOWS an add — a new entry lands on the end and shifts nothing', () => {

@@ -8,6 +8,7 @@ import { dryRunWrite } from '../../radios/d890uv/writeDryRun';
 import type { D890WriteDiff } from '../../radios/d890uv/writeDiff';
 import {
   buildD890CodeplugTables,
+  d890RenumberedChannels,
   d890ZoneSlots,
   d890Zones,
   buildD890WriteOriginals,
@@ -50,7 +51,9 @@ export function WriteDryRunPanel() {
       if (!originals) throw new Error('The staged read does not match the selected radio.');
       proto.setWriteOriginals(originals);
       const plan = proto.planCodeplug(
-        useChannelsStore.getState().channels,
+        // Renumbered, exactly as the Write button does — a dry run that skipped
+        // this would be testing a different write from the one that gets sent.
+        d890RenumberedChannels(useChannelsStore.getState().channels),
         zones,
         zoneSlots,
         buildD890CodeplugTables(zones, zoneSlots)

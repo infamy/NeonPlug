@@ -1,20 +1,18 @@
 export interface QuickContact {
   index: number;              // Entry index (1-based)
   /**
-   * Stable identity across edits, assigned at READ time. Optional because the
-   * DM-32 has no use for it and its own reader does not set one.
+   * The hardware slot this talk group was READ from.
    *
-   * `index` cannot serve: `quickContactsStore.deleteContact` re-indexes the
-   * survivors to `idx + 1` and `addContact` assigns `length + 1`, so a list
-   * position stops corresponding to a hardware slot the moment anything is
-   * added or removed. On the DA-7X2 that mapping is what a write places records
-   * by, and losing it means writing every record after the edit into the wrong
-   * slot. Zones already solve this with `Zone.id`; this is the same idea.
+   * ⚠️ NOT used to place records. Talk groups COMPACT — entry i is written to
+   * slot i — so placement needs no identity at all. This exists for the other
+   * half of a delete: channels and receive groups reference talk groups BY
+   * SLOT, so when the table shifts every reference above the deleted entry must
+   * shift with it. See `talkgroupRenumber.ts`.
    *
-   * A contact with NO uid is one the user just created — it gets the lowest
-   * free slot, exactly like a new zone.
+   * Absent on a talk group the user just added, which is correct: a new one
+   * cannot be the target of a reference that predates it.
    */
-  uid?: string;
+  readSlot?: number;
   offset: number;             // Byte offset in the block where this entry starts
   name: string;               // Contact name (variable length, ASCII, null-terminated)
   contactNumber: number;      // Contact number (little-endian uint32)

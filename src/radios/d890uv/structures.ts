@@ -515,9 +515,10 @@ export function parseTalkgroupQuick(bytes: Uint8Array, index: number): QuickCont
   const contact = parseTalkgroup(bytes, index);
   return {
     index: index + 1,
-    // The hardware SLOT, carried in a form the store cannot renumber away.
-    // `index` is rewritten to a list position on the first add or delete; this
-    uid: `tg-${index}`,
+    // Where this talk group sits right now. Records are placed by POSITION —
+    // the table compacts — so this is only for renumbering the channel and
+    // receive-group references that point at it.
+    readSlot: index,
     offset: 0,
     name: contact.name,
     contactNumber: contact.dmrId,

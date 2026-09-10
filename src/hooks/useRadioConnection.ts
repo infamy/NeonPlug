@@ -39,6 +39,7 @@ import { parseBootImageHeader } from '../utils/bootImage';
 import { formatPlural } from '../utils/formatPlural';
 import {
   buildD890CodeplugTables,
+  d890RenumberedChannels,
   buildD890WriteOriginals,
   d890ZoneSlots,
   d890Zones,
@@ -1025,7 +1026,8 @@ export function useRadioConnection() {
       const zoneSlots = d890ZoneSlots(zones);
       const plan = wholeCodeplug
         ? proto.planCodeplug(
-            channelsToWrite, zones, zoneSlots, buildD890CodeplugTables(zones, zoneSlots)
+            d890RenumberedChannels(channelsToWrite), zones, zoneSlots,
+            buildD890CodeplugTables(zones, zoneSlots)
           )
         : planChannelWrite({
             channels: channelsToWrite,
@@ -1254,7 +1256,7 @@ export function useRadioConnection() {
           const zoneSlots = d890ZoneSlots(filteredZones);
           onProgress?.(20, 'Writing codeplug to radio...', steps[4]);
           await d890Write.writeCodeplug(
-            validChannels,
+            d890RenumberedChannels(validChannels),
             filteredZones,
             zoneSlots,
             buildD890CodeplugTables(filteredZones, zoneSlots),

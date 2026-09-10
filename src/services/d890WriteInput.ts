@@ -18,6 +18,14 @@ import { zoneCurrentChannelsBySlot } from '../radios/d890uv/structures';
 import type { D890CodeplugWriteInput } from '../radios/d890uv/codeplugWrite';
 import type { Zone } from '../models/Zone';
 import type { QuickContact } from '../models/QuickContact';
+import type { Channel } from '../models/Channel';
+import {
+  buildTalkgroupRenumber,
+  isNoOpRenumber,
+  renumberChannelContacts,
+  renumberRxGroupMembers,
+  type TalkgroupRenumber,
+} from '../radios/d890uv/talkgroupRenumber';
 
 /**
  * The tables the UI can actually edit.
@@ -218,39 +226,78 @@ export function d890ZoneCurrentBySlot(
 export function d890Talkgroups(): QuickContact[] | undefined {
   const contacts = useQuickContactsStore.getState().contacts;
   if (contacts.length === 0) return undefined;
+  // Compaction: entry i goes to slot i. No identity needed to PLACE a record.
+  return contacts.map((c, i) => ({ ...c, index: i }));
+}
 
-  // ⚠️ DELETE IS REFUSED until reference renumbering exists.
-  //
-  // Compaction is only half of a delete. Channels reference a talk group by
-  // SLOT (u32 at channel +0x14, 0-based, 0xFFFFFFFF = none) and receive groups
-  // reference them the same way (`decodeU32Members`). When the table shifts,
-  // every reference ABOVE the deleted entry has to shift with it or it silently
-  // retargets — a channel pointing at talk group 600 would transmit on 601's.
-  //
-  // Writing a correctly compacted table with stale references is a WORSE
-  // failure than refusing: the codeplug reads back clean and the radio talks to
-  // the wrong group.
-  //
-  // ADD is allowed: a new entry lands on the end and shifts nothing.
-  //
-  // To lift this: record each talk group's read slot, build old -> new from it,
-  // and apply that map to channel `contactId` and receive-group members before
-  // planning. A reference to the DELETED talk group needs a decision of its own
-  // — clear it, or refuse the write and name the channels.
-  const staged = useRadioStore.getState().tables.writeOriginals;
-  const readCount = staged?.talkgroupCountAtRead;
-  if (readCount !== undefined && contacts.length < readCount) {
+/** What moved where, or undefined when the session has no read to compare to. */
+export function d890TalkgroupRenumber(): TalkgroupRenumber | undefined {
+  const countAtRead =
+    useRadioStore.getState().tables.writeOriginals?.talkgroupCountAtRead;
+  if (countAtRead === undefined) return undefined;
+  const r = buildTalkgroupRenumber(
+    useQuickContactsStore.getState().contacts,
+    countAtRead
+  );
+  return isNoOpRenumber(r) ? undefined : r;
+}
+
+/**
+ * Channels with their TX contacts moved to follow the talk groups.
+ *
+ * Call this instead of handing the store's channels straight to the plan. A
+ * delete compacts the talk group table, and a channel's `contactId` is a SLOT —
+ * so without this a channel pointing at talk group 600 would transmit on 601's,
+ * in a codeplug that reads back perfectly clean.
+ *
+ * REFUSES rather than guessing in two cases, both of which need a human:
+ *
+ *   - a channel's TX contact is a talk group that was DELETED. Clearing it to
+ *     "none" changes what that channel does on air, and that is the user's
+ *     call.
+ *   - a RECEIVE GROUP references a talk group that moved or went away. Receive
+ *     groups are not passed to the write plan at all yet (see the audit in
+ *     TODO-DA7X2.md), so we cannot fix them — and leaving them stale points
+ *     them at the wrong talk groups just as surely.
+ */
+export function d890RenumberedChannels(channels: readonly Channel[]): Channel[] {
+  const r = d890TalkgroupRenumber();
+  if (!r) return [...channels];
+
+  const rx = renumberRxGroupMembers(useRXGroupsStore.getState().groups, r);
+  const rxAffected =
+    rx.dangling.length > 0 ||
+    rx.groups.some((g, i) => g !== useRXGroupsStore.getState().groups[i]);
+  if (rxAffected) {
     throw new Error(
-      `Refusing to write talk groups: deleting one is not safe yet.\n\n` +
-        `The table compacts, so every talk group after the deleted one moves ` +
-        `down a slot — and channels and receive groups reference them BY SLOT. ` +
-        `Renumbering those references is not implemented, so the write would ` +
-        `produce a codeplug that reads back clean while channels transmit on ` +
-        `the wrong talk group.\n\n` +
-        `Editing and adding still work. To remove one, use the vendor CPS.`
+      `Refusing to write: deleting a talk group would leave receive groups ` +
+        `pointing at the wrong ones.\n\n` +
+        `Talk groups compact, so everything after the deleted one moves down a ` +
+        `slot — and receive groups reference them by slot. NeonPlug does not ` +
+        `write receive groups yet, so it cannot fix them.\n\n` +
+        `Remove the talk group in the vendor CPS instead, or delete one that no ` +
+        `receive group uses.`
     );
   }
-  return contacts.map((c, i) => ({ ...c, index: i }));
+
+  const result = renumberChannelContacts(channels, r);
+  if (result.dangling.length > 0) {
+    const shown = result.dangling
+      .slice(0, 8)
+      .map((d) => `  channel ${d.number}${d.name ? ` (${d.name})` : ''}`)
+      .join('\n');
+    throw new Error(
+      `Refusing to write: ${result.dangling.length} channel(s) use a talk group ` +
+        `you deleted.\n${shown}` +
+        (result.dangling.length > 8
+          ? `\n  ... and ${result.dangling.length - 8} more`
+          : '') +
+        `\n\nClearing their TX contact would change what they transmit, so that ` +
+        `is your call — point them at another talk group first, or keep the one ` +
+        `they use.`
+    );
+  }
+  return result.channels;
 }
 
 /** Zones exactly as the UI holds them. */

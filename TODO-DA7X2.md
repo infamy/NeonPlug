@@ -234,19 +234,30 @@ Records are now placed by POSITION and the identity apparatus built for the hole
 model (`QuickContact.uid`, `talkgroupSlotByUid`, `resolveTalkgroupSlots`) is
 gone — compaction needs none of it.
 
-⚠️ **DELETE IS STILL REFUSED**, for a different reason than before. Compaction is
-only half of a delete: channels reference a talk group by SLOT (u32 at channel
-`+0x14`, 0-based, `0xFFFFFFFF` = none) and receive groups reference them the same
-way (`decodeU32Members`). When the table shifts, every reference above the
-deleted entry must shift with it. Writing a correctly compacted table with stale
-references is WORSE than refusing — the codeplug reads back clean and the radio
-transmits on the wrong talk group. ADD is allowed; it lands on the end and shifts
-nothing.
+✅ **Reference renumbering implemented 2026-09-10** (`talkgroupRenumber.ts`).
+`QuickContact.readSlot` records where each talk group was read from — used ONLY
+to build `old -> new`, never to place a record, because compaction already
+decides placement. `d890RenumberedChannels` applies it at every write call site,
+including the dry run, so a dry run cannot test a different write from the one
+the button sends.
 
-**To lift it:** record each talk group's read slot, build `old -> new` from it,
-apply to channel `contactId` and receive-group members before planning, and
-decide what a reference to the DELETED talk group becomes — cleared, or the write
-refused naming the channels.
+Two things reference a talk group by slot and both now move with it: a channel's
+TX contact (`contactId`, 1-based, 0 = none) and a receive group's members (raw
+0-based slots).
+
+**Still refused, and both refusals are deliberate:**
+
+- **A channel whose TX contact was deleted.** Clearing it to "none" changes what
+  that channel transmits on air. The write refuses and names the channels so the
+  user can retarget them.
+- **A delete that would move a talk group a RECEIVE GROUP references.** Receive
+  groups are not passed to the write plan at all (see the audit below), so we
+  cannot fix them, and leaving them stale points them at the wrong talk groups.
+  Wiring receive groups lifts this.
+
+⚠️ **NOT ROUND-TRIPPED.** Renumbering is unit-tested only; no delete has been
+written to a radio since it landed. The last one that was — before this existed
+— left the radio reporting 1010 talk groups and crashing.
 
 **Whether the CPS renumbers is UNKNOWN and the captures cannot say.** All 102
 channels with a TX contact on this radio reference slot 0, and nothing
