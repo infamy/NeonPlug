@@ -209,7 +209,43 @@ export function d890Talkgroups(): QuickContact[] | undefined {
   const byUid = useRadioStore.getState().tables.writeOriginals?.talkgroupSlotByUid;
   const contacts = useQuickContactsStore.getState().contacts;
   if (!byUid || contacts.length === 0) return undefined;
-  return resolveTalkgroupSlots(contacts, byUid).map((slot, i) => ({ ...contacts[i]!, index: slot }));
+
+  const slots = resolveTalkgroupSlots(contacts, byUid);
+
+  // ⚠️ REFUSED: any change to the SLOT SET. Editing in place is fine.
+  //
+  // A delete was written to hardware on 2026-09-10 and left the radio in a
+  // broken state: it reported 1010 talk groups and CRASHED when the user
+  // navigated to the deleted one. The mask bit was clear and the locator entry
+  // read 0xFFFFFFFF — both correct — but `planSpanTableWrite` copies the
+  // original into the gap, so the RECORD was written back fully populated. The
+  // radio's list evidently does not come from the mask, so it counted a record
+  // that the locator then said was not there.
+  //
+  // The read-back looked perfect, which is exactly the trap: it proves our
+  // decoder agrees with our encoder and nothing about what the radio does with
+  // the result. The radio's own menu is the authority.
+  //
+  // Do NOT lift this by guessing which of "blank the record", "compact the
+  // table" or "update a count we have not found" is right. Delete a talk group
+  // in the vendor CPS with the serial log capturing and read what it actually
+  // does.
+  const staged = new Set(Object.values(byUid));
+  const wanted = new Set(slots);
+  const changed =
+    wanted.size !== staged.size || [...wanted].some((slot) => !staged.has(slot));
+  if (changed) {
+    throw new Error(
+      `Refusing to write talk groups: adding or deleting one is not safe yet.\n\n` +
+        `A delete on 2026-09-10 left the radio reporting 1010 talk groups and ` +
+        `crashing on the deleted entry. The presence mask and the locator were ` +
+        `both written correctly; the record itself was not cleared, and the ` +
+        `radio counts something other than the mask.\n\n` +
+        `Editing a talk group in place still works. To add or remove one, use ` +
+        `the vendor CPS until this is understood.`
+    );
+  }
+  return slots.map((slot, i) => ({ ...contacts[i]!, index: slot }));
 }
 
 /**

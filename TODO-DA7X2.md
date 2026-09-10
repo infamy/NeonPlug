@@ -212,13 +212,25 @@ which proves the writer's bank arithmetic. Neighbours untouched and all 1,009
 other records byte-perfect, so the record offsets inside a whole-bank span are
 right too.
 
-✅ **DELETE VERIFIED ON HARDWARE 2026-09-10** — the Tier-2 hole test. Deleting
-`TG0501` (slot 500) changed exactly **5 bytes**: 4 in the locator and 1 in the
-presence mask, with **zero** record frames differing. Read-back:
-`locator[500]` = `ff ff ff ff`, **`locator[501]` = `f5 01 00 00` = 501, not
-500**, and all 1,009 surviving entries still equal their own slot. That is the
-only test that can distinguish `V = slot` from `V = packed position` — with a
-contiguous table the two are byte-identical.
+❌ **DELETE FAILED ON THE RADIO 2026-09-10 — add/delete is refused again.**
+The write did exactly what was designed: mask bit clear, `locator[500]` =
+`ff ff ff ff`, `locator[501]` = 501 not 500, every survivor on its own slot, and
+the read-back matched byte for byte. The RADIO then reported **1010** talk groups
+and **crashed** on the deleted entry.
+
+`planSpanTableWrite` copies the original into the gap, so slot 500's RECORD was
+written back fully populated while the mask and locator both said absent. The
+radio's list evidently does not come from the mask.
+
+⚠️ **A clean read-back is not a pass.** It proves our decoder agrees with our
+encoder and nothing about what the radio does with the result — the same trap
+`analogAddressBook.ts` already warns about, written the day before and not
+applied here.
+
+**Do not guess the fix.** "Blank the record", "compact the table" and "there is a
+count field we have not found" are all consistent with what was seen. Delete a
+talk group in the vendor CPS with the serial log capturing, parse it with
+`tools/parse-serial-capture.mjs --writes`, and read what it actually does.
 
 ☐ **ADD is still unproven on hardware.** Unit-tested only, and it exercises a
 path delete does not: the new slot was never read, so its record is BUILT rather

@@ -198,7 +198,32 @@ describe('d890Talkgroups — the store path', () => {
     useQuickContactsStore.setState({ contacts: [], contactsLoaded: false });
   });
 
-  it('maps a read list onto its hardware slots', () => {
+  it('REFUSES a delete — it broke a radio on 2026-09-10', () => {
+    // The mask and the locator were both written correctly; the RECORD was not
+    // cleared, because planSpanTableWrite copies the original into the gap. The
+    // radio then reported 1010 talk groups and crashed on the deleted one, so
+    // its list does not come from the mask. Until the vendor CPS shows what a
+    // delete actually does, any change to the slot set is refused.
+    useRadioStore.setState({
+      tables: { writeOriginals: { talkgroupSlotByUid: { 'tg-0': 0, 'tg-1': 1 } } as never },
+    });
+    useQuickContactsStore.setState({
+      contacts: [{ ...tg(1, 'a'), uid: 'tg-0' }], contactsLoaded: true,
+    });
+    expect(() => d890Talkgroups()).toThrow(/adding or deleting one is not safe yet/);
+  });
+
+  it('REFUSES an add for the same reason', () => {
+    useRadioStore.setState({
+      tables: { writeOriginals: { talkgroupSlotByUid: { 'tg-0': 0 } } as never },
+    });
+    useQuickContactsStore.setState({
+      contacts: [{ ...tg(1, 'a'), uid: 'tg-0' }, tg(2, 'new')], contactsLoaded: true,
+    });
+    expect(() => d890Talkgroups()).toThrow(/adding or deleting one is not safe yet/);
+  });
+
+  it('still allows an EDIT in place — that one IS proven on hardware', () => {
     useRadioStore.setState({
       tables: { writeOriginals: { talkgroupSlotByUid: { 'tg-0': 0, 'tg-1': 1 } } as never },
     });
