@@ -31,6 +31,13 @@ const rec = (i: number) => new Uint8Array(readFileSync(join(DIR, `channel-${i}.b
 /** AES_KEY_BYTES is 32, so the encoder demands 64 hex characters. */
 const AES_HEX = '00112233445566778899AABBCCDDEEFF'.repeat(2);
 
+/**
+ * `id` is the model's ONE-BASED key number — `parseAesKeySlot` returns
+ * `index + 1` and the reader pushes it straight into `id`, so key 1 lives in
+ * hardware SLOT 0. These tests used to pass `id` where a slot was meant and
+ * assert placement at that same number, which is precisely why the write
+ * shipped placing every key one slot too high.
+ */
 const aesKey = (id: number, hex: string): EncryptionKey => ({
   entryNumber: 99, id, name: `K${id}`,
   encryptionType: D890_ENCRYPTION_TYPE.AES128, key: hex,
@@ -84,21 +91,30 @@ const keyBytesAt = (plan: ReturnType<typeof planCodeplugWrite>, slot: number) =>
 describe('encryption keys reach the plan', () => {
   it('writes an edited key to the slot its id names', () => {
     const plan = planCodeplugWrite(setup({
-      encryptionKeys: [aesKey(1, AES_HEX)],
+      encryptionKeys: [aesKey(2, AES_HEX)],
     }));
-    // Slot 1, not entryNumber 99 — entryNumber is a list position.
+    // Key id 2 is hardware SLOT 1 — not entryNumber 99, which is a list
+    // position, and not slot 2, which is the off-by-one this pins.
     expect(keyBytesAt(plan, 1)).toEqual([0x00, 0x11, 0x22, 0x33]);
     // Slot 0 is untouched, because nothing asked for it.
     expect(keyBytesAt(plan, 0)).toBeNull();
+  });
+
+  it('puts key id 1 in hardware slot 0', () => {
+    // The whole off-by-one in one assertion.
+    const plan = planCodeplugWrite(setup({ encryptionKeys: [aesKey(1, AES_HEX)] }));
+    expect(keyBytesAt(plan, 0)).toEqual([0x00, 0x11, 0x22, 0x33]);
+    expect(keyBytesAt(plan, 1)).toBeNull();
   });
 
   it('CLEARS a deleted key rather than leaving it on the radio', () => {
     // Writing only the surviving keys is a silent no-op: the removed key's
     // record stays exactly where it was and the deletion never happens.
     const plan = planCodeplugWrite(setup({
-      encryptionKeys: [aesKey(0, AES_HEX)],
-      clearedEncryptionKeys: [{ encryptionType: D890_ENCRYPTION_TYPE.AES128, id: 1 }],
+      encryptionKeys: [aesKey(1, AES_HEX)],
+      clearedEncryptionKeys: [{ encryptionType: D890_ENCRYPTION_TYPE.AES128, id: 2 }],
     }));
+    // Cleared id 2 = hardware slot 1.
     expect(keyBytesAt(plan, 1)).toEqual([0, 0, 0, 0]);
   });
 
@@ -109,13 +125,20 @@ describe('encryption keys reach the plan', () => {
       encryptionKeys: [],
       clearedEncryptionKeys: [{ encryptionType: D890_ENCRYPTION_TYPE.AES128, id: 1 }],
     }));
-    expect(keyBytesAt(plan, 1)).toEqual([0, 0, 0, 0]);
+    expect(keyBytesAt(plan, 0)).toEqual([0, 0, 0, 0]);
   });
 
   it('skips a slot the session never read rather than inventing one', () => {
     const plan = planCodeplugWrite(setup({
-      encryptionKeys: [aesKey(7, AES_HEX)],
+      encryptionKeys: [aesKey(8, AES_HEX)],
     }));
     expect(keyBytesAt(plan, 7)).toBeNull();
+  });
+
+  it('REFUSES an id outside the table rather than writing past it', () => {
+    expect(() => planCodeplugWrite(setup({ encryptionKeys: [aesKey(0, AES_HEX)] })))
+      .toThrow(/1-based/);
+    expect(() => planCodeplugWrite(setup({ encryptionKeys: [aesKey(999, AES_HEX)] })))
+      .toThrow(/1-based/);
   });
 });

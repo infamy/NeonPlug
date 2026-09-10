@@ -394,6 +394,32 @@ function frameOverlay(readLog: ReadonlyMap<number, Uint8Array>) {
   };
 }
 
+/**
+ * The HARDWARE SLOT of an encryption key, from the model's 1-based `id`.
+ *
+ * Every encryption parser returns `slot: index + 1` — `parseEncryptionSlot`,
+ * `parseAesKeySlot`, `parseArc4KeySlot` — and the reader pushes that straight
+ * into `id`, which is why the UI shows "AES 1" and "Code 1" for the keys living
+ * in hardware slot 0. The write used `id` as the slot directly, so every key was
+ * planned ONE SLOT TOO HIGH: on the reference radio the plan wrote key 1's bytes
+ * into slot 1 and key 2's into slot 2, shifting the whole table up and leaving
+ * the real slot 0 untouched. Visible in all four tables at once.
+ *
+ * Caught by diffing the plan against the read on an UNMODIFIED codeplug, where
+ * every frame must match — 2026-09-10. A read-back would have agreed with
+ * itself, because the shifted keys are what the radio would then hold.
+ */
+function encryptionSlot(id: number, label: string): number {
+  const slot = id - 1;
+  if (!Number.isInteger(slot) || slot < 0 || slot >= D890_ADDR.ENCRYPTION_SLOTS) {
+    throw new D890WriteRefusedError(
+      `Refusing to write ${label}: id ${id} is not one of the ` +
+        `${D890_ADDR.ENCRYPTION_SLOTS} slots this radio holds (ids are 1-based).`
+    );
+  }
+  return slot;
+}
+
 export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWritePlan {
   // Gate 0 — a read we do not trust must not be written back. Checked first
   // because every other gate reasons about a plan built ON that read.
@@ -1003,7 +1029,7 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
     for (const key of T.encryptionKeys ?? []) {
       const table = byTable.find((t) => t.type === key.encryptionType);
       if (!table) continue; // BASIC lives in its own ID/key pair, handled below.
-      const at = table.address + key.id * table.stride;
+      const at = table.address + encryptionSlot(key.id, `${table.kind.toUpperCase()} key ${key.id}`) * table.stride;
       const original = sliceFromReadLog(input.readLog, at, table.stride);
       if (!original) continue;
       const record = applyKeySlotToRecord(
@@ -1026,7 +1052,7 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
     for (const gone of T.clearedEncryptionKeys ?? []) {
       const table = byTable.find((t) => t.type === gone.encryptionType);
       if (!table) continue; // BASIC is cleared below, with its own pair.
-      const at = table.address + gone.id * table.stride;
+      const at = table.address + encryptionSlot(gone.id, `cleared ${table.kind.toUpperCase()} key ${gone.id}`) * table.stride;
       const original = sliceFromReadLog(input.readLog, at, table.stride);
       if (!original) continue;
       const record = applyKeySlotToRecord(
@@ -1051,8 +1077,9 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
     const basic = frameOverlay(input.readLog);
     for (const key of T.encryptionKeys ?? []) {
       if (key.encryptionType !== D890_ENCRYPTION_TYPE.BASIC) continue;
-      const idAt = D890_ADDR.ENCRYPTION_ID_TABLE + key.id * D890_ADDR.ENCRYPTION_ID_STRIDE;
-      const keyAt = D890_ADDR.ENCRYPTION_KEY_TABLE + key.id * D890_ADDR.ENCRYPTION_KEY_STRIDE;
+      const slot = encryptionSlot(key.id, `encryption code ${key.id}`);
+      const idAt = D890_ADDR.ENCRYPTION_ID_TABLE + slot * D890_ADDR.ENCRYPTION_ID_STRIDE;
+      const keyAt = D890_ADDR.ENCRYPTION_KEY_TABLE + slot * D890_ADDR.ENCRYPTION_KEY_STRIDE;
       const idOriginal = sliceFromReadLog(input.readLog, idAt, D890_ADDR.ENCRYPTION_ID_STRIDE);
       const keyOriginal = sliceFromReadLog(input.readLog, keyAt, D890_ADDR.ENCRYPTION_KEY_STRIDE);
       if (!idOriginal || !keyOriginal) continue;

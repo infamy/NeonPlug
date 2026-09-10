@@ -215,7 +215,9 @@ describe('regions that were mislabelled as unmodelled', () => {
   it('places an encryption key by (type, slot), never by entryNumber', () => {
     const base = setup();
     const readLog = new Map(base.readLog);
-    const slot = 3;
+    // `id` is ONE-BASED, so key id 4 is hardware slot 3.
+    const id = 4;
+    const slot = id - 1;
     const at = D890_ADDR.AES_KEY_TABLE + slot * D890_ADDR.AES_KEY_STRIDE;
     readLog.set(at, new Uint8Array(D890_ADDR.AES_KEY_STRIDE));
 
@@ -223,9 +225,9 @@ describe('regions that were mislabelled as unmodelled', () => {
       ...base, readLog, writeUnmodelledVerbatim: false,
       tables: {
         encryptionKeys: [{
-          // entryNumber deliberately disagrees with the slot: if the writer
-          // used it, the key would land at slot 1 instead of 3.
-          entryNumber: 1, id: slot, name: 'AES 3',
+          // entryNumber deliberately disagrees with the id: if the writer used
+          // it, the key would land at slot 0 instead of 3.
+          entryNumber: 1, id, name: 'AES 4',
           encryptionType: 3, key: 'AB'.repeat(32),
         }],
       },
