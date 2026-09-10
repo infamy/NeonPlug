@@ -705,10 +705,30 @@ the prerequisite, not a hardware session.
 - ☑ **Talk groups** — wired with banking and the index base fixed 2026-09-09.
   EDIT round-tripped 2026-09-09, DELETE 2026-09-10. ADD is unit-tested only.
 - ☐ **Scan lists · RX groups · radio IDs · encryption keys · quick messages** —
-  same missing wiring in `buildD890CodeplugTables`. Every one is editable in the
-  UI today and silently discarded on write. **Not individually verified** — the
-  absence in that function is confirmed; which of them have working planners
-  behind it is not.
+  AUDITED 2026-09-10, and the "not individually verified" caveat is now closed.
+  All five have a working emitter in `planCodeplugWrite`, all five are editable
+  in the UI, and **none is passed by `buildD890CodeplugTables`**. Every edit to
+  any of them is silently discarded on write.
+
+  Wiring is NOT the whole job, and the amount left differs per table. What
+  decides it is whether the HARDWARE SLOT survives an edit — the talk group
+  lesson, which cost 994 records and then a crashed radio:
+
+  | Table | Emitter keys on | Does the slot survive? |
+  |---|---|---|
+  | Encryption keys | `(encryptionType, id)` | ✅ `id` IS the slot; the store never renumbers |
+  | Radio IDs | `.index` | ⚠️ model carries `index` and the store does not renumber, but nothing confirms `index` is the hardware slot rather than a list position |
+  | Scan lists | `list.slot` | ❌ **`ScanListDecoded` never leaves `d890uv/`.** The store holds the shared `ScanList`, which has NO slot field, so the decoded slots are discarded at the store boundary |
+  | RX groups | `.index` | ❌ `deleteGroup` reindexes survivors to `idx` |
+  | Quick messages | slot-indexed | ❌ renumbers on READ and on delete — the same fault `predefinedSms` was added to work around |
+
+  So encryption keys are the only one that could be wired as-is. The other four
+  need their slots carried the way `talkgroupSlotByUid` and `predefinedSms` now
+  do, and none of them should get add/delete until it is round-tripped — the
+  talk group delete looked perfect on read-back and crashed the radio.
+
+  ⚠️ Do not wire and write in the same sitting. Wire, dry-run, then verify one
+  table at a time on a codeplug backed up in the CPS.
 - ☑ **Talk group locator** (`talkgroupLocator.ts`) — wired 2026-09-10 and
   proven by the hole test the same day. `V` is the SLOT INDEX, measured.
 - ☐ Roaming ZONES — encoder and tests exist, nothing calls it
