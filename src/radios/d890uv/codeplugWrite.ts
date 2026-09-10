@@ -348,29 +348,50 @@ export function framesForChanges(
  * is what produced `offset is out of bounds`: a 40-byte record was copied into a
  * single 16-byte frame.
  *
- * Returns nothing for a span the read never covered, rather than inventing the
- * missing bytes.
+ * Records are ACCUMULATED, not emitted one at a time: the encryption ID stride
+ * is 2, so eight IDs share a frame, and consecutive key records straddle one.
+ * Emitting a frame per record made each a fresh copy of the pre-edit bytes, so
+ * the last one to land silently dropped every earlier edit to that frame — the
+ * duplicate-address trap that a read-back cannot show you. The plan's own
+ * duplicate-frame guard caught it on hardware 2026-09-10.
+ *
+ * A span the read never covered applies nothing, rather than inventing bytes.
  */
-function overlayOntoFrames(
-  readLog: ReadonlyMap<number, Uint8Array>,
-  address: number,
-  record: Uint8Array,
-  what: string
-): D890WriteFrame[] {
-  const out: D890WriteFrame[] = [];
-  const first = address - (address % 0x10);
-  const last = address + record.length - 1;
-  for (let frameAt = first; frameAt <= last; frameAt += 0x10) {
-    const base = sliceFromReadLog(readLog, frameAt, 0x10);
-    if (!base) return [];
-    const data = Uint8Array.from(base);
-    for (let i = 0; i < 0x10; i += 1) {
-      const at = frameAt + i;
-      if (at >= address && at < address + record.length) data[i] = record[at - address]!;
-    }
-    out.push({ address: frameAt, data, what });
-  }
-  return out;
+function frameOverlay(readLog: ReadonlyMap<number, Uint8Array>) {
+  const frames = new Map<number, { data: Uint8Array; what: string }>();
+  return {
+    /**
+     * Apply one record. Returns false if the read never covered its span, in
+     * which case nothing is applied.
+     */
+    apply(address: number, record: Uint8Array, what: string): boolean {
+      const first = address - (address % 0x10);
+      const last = address + record.length - 1;
+      const touched: { at: number; data: Uint8Array; what: string }[] = [];
+      for (let frameAt = first; frameAt <= last; frameAt += 0x10) {
+        let slot = frames.get(frameAt);
+        if (!slot) {
+          const base = sliceFromReadLog(readLog, frameAt, 0x10);
+          if (!base) return false;
+          slot = { data: Uint8Array.from(base), what };
+        }
+        touched.push({ at: frameAt, data: slot.data, what: slot.what });
+      }
+      for (const t of touched) {
+        for (let i = 0; i < 0x10; i += 1) {
+          const at = t.at + i;
+          if (at >= address && at < address + record.length) t.data[i] = record[at - address]!;
+        }
+        frames.set(t.at, { data: t.data, what: t.what === what ? what : `${t.what} + ${what}` });
+      }
+      return true;
+    },
+    emit(): D890WriteFrame[] {
+      return [...frames.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([address, { data, what }]) => ({ address, data, what }));
+    },
+  };
 }
 
 export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWritePlan {
@@ -1024,6 +1045,10 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
     }
 
     // The basic table is a 16-bit ID and a 16-bit key in two separate regions.
+    // Both are accumulated rather than emitted per key: their records share
+    // frames with their neighbours, so one frame per record would have each key
+    // overwrite the last one's edit.
+    const basic = frameOverlay(input.readLog);
     for (const key of T.encryptionKeys ?? []) {
       if (key.encryptionType !== D890_ENCRYPTION_TYPE.BASIC) continue;
       const idAt = D890_ADDR.ENCRYPTION_ID_TABLE + key.id * D890_ADDR.ENCRYPTION_ID_STRIDE;
@@ -1044,19 +1069,18 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
       // that into a single 16-byte frame threw `offset is out of bounds` and
       // took the entire plan with it, so no write could be built at all on a
       // radio with a BASIC key. Caught by the dry run on hardware 2026-09-10.
-      keyFrames.push(
-        ...overlayOntoFrames(
-          input.readLog, idAt,
-          applyEncryptionIdToRecord(idOriginal, key.encryptionId ?? 0),
-          `encryption ID ${key.id}`
-        ),
-        ...overlayOntoFrames(
-          input.readLog, keyAt,
-          applyEncryptionKeyRefToRecord(keyOriginal, parseInt(key.key, 16) || 0),
-          `encryption key ${key.id}`
-        )
+      basic.apply(
+        idAt,
+        applyEncryptionIdToRecord(idOriginal, key.encryptionId ?? 0),
+        `encryption ID ${key.id}`
+      );
+      basic.apply(
+        keyAt,
+        applyEncryptionKeyRefToRecord(keyOriginal, parseInt(key.key, 16) || 0),
+        `encryption key ${key.id}`
       );
     }
+    keyFrames.push(...basic.emit());
     take('encryption', D890_ADDR.AES_KEY_TABLE, keyFrames);
   }
 
