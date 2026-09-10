@@ -431,6 +431,20 @@ export { D890_CHANNEL_RECORD_BYTES };
  * Geometry of a table that is stored as fixed-stride records plus a presence
  * mask. Six of this radio's tables have exactly this shape.
  */
+/**
+ * Address of one record, honouring the bank layout when the table has one.
+ *
+ * The ONE place this arithmetic lives. It was duplicated flat in two planners
+ * and banked in `talkgroupAddress()`, so the reader and the writer disagreed
+ * above slot 999 — the reader fetched a record the writer would never write.
+ */
+export function tableRecordAddress(spec: D890MaskedTableSpec, index: number): number {
+  if (!spec.bank) return spec.dataAddress + index * spec.stride;
+  const bank = Math.floor(index / spec.bank.size);
+  const inBank = index % spec.bank.size;
+  return spec.dataAddress + bank * spec.bank.stride + inBank * spec.stride;
+}
+
 export interface D890MaskedTableSpec {
   /** Shown in frame labels and refusal messages, so it reads as a thing a user recognises. */
   label: string;
@@ -447,6 +461,19 @@ export interface D890MaskedTableSpec {
    * record is fully accounted for and the vendor capture says what a fresh one
    * contains. See `blankRecords.ts`.
    */
+  /**
+   * Set when the table is BANKED rather than one flat array.
+   *
+   * Talk groups are `0x3A00000 + (i / 1000) * 0x80000 + (i % 1000) * 0xC8`.
+   * Below 1000 that is identical to flat addressing, which is why a flat
+   * planner looked correct for as long as nobody had more than a bank's worth —
+   * and why the bug is invisible until it is catastrophic.
+   *
+   * Confirmed on hardware 2026-09-08: with 1010 talk groups, record 1000 sits
+   * at 0x3A80000, and 0x3A30D40 — where a flat array would put it — reads back
+   * 0xFF and is never written by the vendor.
+   */
+  bank?: { size: number; stride: number };
   blank?: () => Uint8Array;
   /**
    * True when a SET bit means the slot is EMPTY. The talkgroup mask is
@@ -562,7 +589,10 @@ export function planMaskedTableWrite<T extends { index: number }>(
           `${record.length} bytes, expected ${spec.stride}.`
       );
     }
-    const base = spec.dataAddress + entry.index * spec.stride;
+    // Banked-aware for the same reason as the span planner. No banked table
+    // uses THIS planner today, but leaving the flat form here would reintroduce
+    // the bug the moment one does.
+    const base = tableRecordAddress(spec, entry.index);
     for (let off = 0; off < record.length; off += 0x10) {
       frames.push({
         address: base + off,
@@ -645,20 +675,42 @@ export function planSpanTableWrite<T extends { index: number }>(
   const frames: D890WriteFrame[] = [];
   const written = inRange.map((e) => e.index).sort((a, b) => a - b);
 
-  if (written.length > 0) {
-    const first = written[0];
-    const last = written[written.length - 1];
+  // ── Planned one BANK at a time ───────────────────────────────────────────
+  //
+  // A banked table's records are contiguous WITHIN a bank and far apart across
+  // them — talk groups are 0xC8 apart inside a bank and 0x80000 between banks.
+  // One span across a boundary would be half a megabyte of mostly nothing, and
+  // every record above the boundary would land at an address the radio does not
+  // use. An unbanked table is simply the single-bank case.
+  const bankSize = spec.bank?.size ?? spec.slots;
+  const bankStride = spec.bank?.stride ?? 0;
+  const byBank = new Map<number, T[]>();
+  for (const e of inRange) {
+    const b = Math.floor(e.index / bankSize);
+    const list = byBank.get(b);
+    if (list) list.push(e);
+    else byBank.set(b, [e]);
+  }
+
+  for (const [bank, entries] of [...byBank].sort((a, b) => a[0] - b[0])) {
+    const bankBase = spec.dataAddress + bank * bankStride;
+    const globalOf = (local: number) => bank * bankSize + local;
+    const local = entries.map((e) => e.index % bankSize).sort((a, b) => a - b);
+    const first = local[0];
+    const last = local[local.length - 1];
     // Align the span outwards to frame boundaries.
     const spanStart = Math.floor((first * spec.stride) / 0x10) * 0x10;
     const spanEnd = Math.ceil(((last + 1) * spec.stride) / 0x10) * 0x10;
 
     // Every record overlapping the span has to be present, or its bytes would
-    // be invented.
+    // be invented. Span offsets are LOCAL to the bank; `originals` is keyed by
+    // the GLOBAL slot, and mixing the two is the whole bug this loop fixes.
     const firstNeeded = Math.floor(spanStart / spec.stride);
     const lastNeeded = Math.ceil(spanEnd / spec.stride) - 1;
     const missing: number[] = [];
-    for (let i = firstNeeded; i <= lastNeeded && i < spec.slots; i += 1) {
-      if (!originals.has(i)) missing.push(i);
+    for (let i = firstNeeded; i <= lastNeeded && i < bankSize; i += 1) {
+      const g = globalOf(i);
+      if (g < spec.slots && !originals.has(g)) missing.push(g);
     }
     if (missing.length > 0) {
       throw new D890WriteRefusedError(
@@ -679,10 +731,12 @@ export function planSpanTableWrite<T extends { index: number }>(
       const to = Math.min(src.length, span.length - at);
       if (to > from) span.set(src.subarray(from, to), at + from);
     };
-    for (let i = firstNeeded; i <= lastNeeded && i < spec.slots; i += 1) {
-      copyInto(originals.get(i)!, i * spec.stride - spanStart);
+    for (let i = firstNeeded; i <= lastNeeded && i < bankSize; i += 1) {
+      const g = globalOf(i);
+      if (g >= spec.slots) break;
+      copyInto(originals.get(g)!, i * spec.stride - spanStart);
     }
-    for (const entry of inRange) {
+    for (const entry of entries) {
       const record = encode(originals.get(entry.index)!, entry);
       if (record.length !== spec.stride) {
         throw new D890WriteRefusedError(
@@ -690,14 +744,14 @@ export function planSpanTableWrite<T extends { index: number }>(
             `${record.length} bytes, expected ${spec.stride}.`
         );
       }
-      copyInto(record, entry.index * spec.stride - spanStart);
+      copyInto(record, (entry.index % bankSize) * spec.stride - spanStart);
     }
 
     for (let off = 0; off < span.length; off += 0x10) {
       frames.push({
-        address: spec.dataAddress + spanStart + off,
+        address: bankBase + spanStart + off,
         data: span.slice(off, off + 0x10),
-        what: `${spec.label}s ${first + 1}-${last + 1}`,
+        what: `${spec.label}s ${globalOf(first) + 1}-${globalOf(last) + 1}`,
       });
     }
   }

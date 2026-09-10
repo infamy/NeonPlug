@@ -34,6 +34,7 @@ import {
   D890_TALKGROUP_MASK_INVERTED,
 } from './constants';
 import { encodeBcdAsHexU32, encodeFrequencyMHz, encodeWideCharString } from './channelWrite';
+import { D890_TALKGROUPS_PER_BANK } from './structures';
 import { D890_BROADCAST, type D890BroadcastBand, type D890BroadcastChannel } from './broadcastChannels';
 import { blankBroadcastChannel, blankAmZone } from './blankRecords';
 import {
@@ -261,6 +262,10 @@ export const D890_MASKED_TABLES = {
     stride: D890_ADDR.TALKGROUP_STRIDE,
     slots: D890_LIMITS.TALK_GROUPS_MAX,
     maskInverted: D890_TALKGROUP_MASK_INVERTED,
+    // BANKED — 1000 records per bank, banks 0x80000 apart. `talkgroupAddress()`
+    // has always known this; the write planner did not, so above slot 999 the
+    // reader and the writer disagreed about where a record lives.
+    bank: { size: D890_TALKGROUPS_PER_BANK, stride: D890_ADDR.TALKGROUP_BANK_STRIDE },
   },
   amChannels: {
     label: 'AM airband channel',

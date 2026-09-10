@@ -163,52 +163,46 @@ became a sixth extra the same day. Finding a region you were ignoring makes the
 score worse and the driver better. Do not "fix" that by editing the table —
 there is nothing to edit any more.
 
-### ⛔ Talk groups CANNOT be written — two independent faults (found 2026-09-09)
+### Talk groups — EDITS work; add/delete still refuses (2026-09-09)
 
-Editing a talk group in the Digital tab and pressing Write does nothing, and the
-dry run correctly reports **no changes**. Two separate faults, either of which
-alone would be enough:
+Three faults were found and fixed together, deliberately: fixing only the first
+is the dangerous outcome, because on a codeplug under 1000 entries it appears to
+work while writing every record one slot high.
 
-**1. The table never reaches the plan.** `buildD890CodeplugTables` in
-`src/services/d890WriteInput.ts` passes none of `talkgroups`, `scanLists`,
-`rxGroups`, `radioIds`, `encryptionKeys` or `quickMessages`. They are read from
-their stores only for COUNTS and for the dangling-reference check in
-`buildD890WriteOriginals`. With `T.talkgroups` undefined, `maskedTable` returns
-immediately and the region goes out through the verbatim pass — the pre-edit
-bytes. **The same is true of scan lists, radio IDs and encryption keys: every one
-of those is editable in the UI and silently discarded on write.**
+1. **Never passed to the plan.** `buildD890CodeplugTables` omitted the table, so
+   `maskedTable` returned immediately and the region went out verbatim — the
+   edit silently dropped. Now passed via `d890Talkgroups()`.
+2. **Flat addressing on a banked table.** The planners used
+   `dataAddress + index * stride` while `talkgroupAddress()` banks at 1000.
+   `tableRecordAddress()` is now the single place that arithmetic lives, the
+   span planner plans one bank at a time, and a test asserts the writer and the
+   reader agree at slots 0, 999, 1000, 1004 and 2500.
+3. **Index base.** `QuickContact.index` is `slot + 1` off a read; the planner
+   keys 0-based slots.
 
-**2. The planner is flat-addressed; the table is banked.** `planSpanTableWrite`
-and `maskedTable` both compute `spec.dataAddress + index * spec.stride`, while
-`talkgroupAddress()` is banked:
+A fourth surfaced while testing: `maskedTable` fetched originals only for the
+EDITED entries, but `planSpanTableWrite` needs every record its span covers,
+because a 0xC8 stride means one frame carries bytes from two records. The first
+talkgroup write would have refused, claiming its own neighbour was never read.
+That path had never executed, since the table was never passed.
 
-```
-0x3A00000 + (index / 1000) * 0x80000 + (index % 1000) * 0xC8
-```
+**Still refused: adding or deleting a talk group.** `quickContactsStore`
+re-indexes survivors to `idx + 1` on delete and assigns `length + 1` on add, so
+by the time a write is planned the mapping from list position to hardware slot
+is gone — and `QuickContact` has no stable id to rebuild it from the way
+`Zone.id` does. `d890Talkgroups()` compares against `talkgroupSlots` staged at
+read time and throws with an explanation rather than guessing. Zones were
+written a slot down exactly this way on 2026-09-03.
 
-Below 1000 the two coincide, which is why nothing has caught this. Above it they
-diverge completely: on a 1010-talk-group codeplug the planner looks for slot
-1004's original at a flat address that was never read, so it **refuses** with
-"records … were never read" rather than corrupting — correct, but not working.
+- ☐ Give `QuickContact` a stable id, then stage `talkgroupSlotById` the way
+  `zoneSlotById` is staged, and lift the refusal.
+- ☐ **Wire `talkgroupLocator.ts`** — decoded, tested, called from nothing. The
+  40 KB locator at `0x3900000` rides out verbatim, which is harmless while the
+  slot set cannot change and WRONG the moment add/delete is allowed. Both must
+  land together.
 
-**3. And an index-base mismatch on top.** `QuickContact.index` is 1-based
-(`parseTalkgroupQuick` returns `index + 1`) while `planSpanTableWrite` keys
-0-based slots. Wiring the table up without accounting for that writes every talk
-group one slot high and sets the wrong mask bits.
-
-**Do not fix (1) without (2) and (3).** Passing the table through on its own is
-the dangerous half-fix: on a codeplug under 1000 entries it would appear to work
-while writing every record one slot high.
-
-Test to pin the fix: a talk group at display index 1005 must land at
-**0x3A80320** (slot 1004, bank 1). A flat writer puts slot 1000 at 0x3A30D40,
-which reads 0xFF on hardware and is never written by the vendor — so the failure
-is detectable rather than plausible.
-
-Related and still open: `talkgroupLocator.ts` is wired to nothing, so the 40 KB
-locator at 0x3900000 rides out verbatim. That is harmless for an EDIT (the slot
-set does not change) and wrong for a DELETE, which is why the Tier-2 hole test
-cannot run yet.
+⚠️ **No talk group write has reached a radio.** The edit path is unit-tested and
+unproven; it needs the Tier-2 round trip in `HW-ROUNDTRIP-TESTS.md`.
 
 ### What is actually ready
 
@@ -676,8 +670,8 @@ the prerequisite, not a hardware session.
 
 - ☑ **Status messages · hot keys · both address books · SMS store · DTMF** —
   wired 2026-09-09 and all six now have hardware round trips.
-- ☐ **Talk groups** — needs banking and an index-base fix as well as wiring; see
-  the ⛔ section above. Do not wire it without those.
+- ☑ **Talk groups — EDITS**, wired with banking and the index base fixed
+  2026-09-09. Add/delete still refuses; see the section above.
 - ☐ **Scan lists · RX groups · radio IDs · encryption keys · quick messages** —
   same missing wiring in `buildD890CodeplugTables`. Every one is editable in the
   UI today and silently discarded on write. **Not individually verified** — the

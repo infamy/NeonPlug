@@ -31,7 +31,12 @@ import type { D890WriteFrame } from './writePlan';
 import { planChannelWrite, planZoneWrite, D890WriteRefusedError } from './writePlan';
 import type { D890ChannelWriteInput } from './writePlan';
 import { blocksWriting, describeFindings, type D890IntegrityFinding } from './integrity';
-import { planMaskedTableWrite, planSpanTableWrite, type D890MaskedTableSpec } from './writePlan';
+import {
+  planMaskedTableWrite,
+  planSpanTableWrite,
+  tableRecordAddress,
+  type D890MaskedTableSpec,
+} from './writePlan';
 import { planFlatRegionWrite, D890_FLAT_REGIONS } from './flatRegionWrite';
 import {
   D890_MASKED_TABLES,
@@ -421,10 +426,41 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
       });
       return;
     }
-    const originals = new Map<number, Uint8Array>();
+    // Originals for every slot the plan could TOUCH, not just the edited ones.
+    //
+    // `planSpanTableWrite` writes one aligned span per bank, and this table's
+    // records do not start on frame boundaries — the talkgroup stride is 0xC8,
+    // so a frame routinely carries bytes from two records. It therefore demands
+    // an original for every record the span covers, including neighbours nobody
+    // edited, and refuses rather than filling a gap with zeros.
+    //
+    // Supplying only the edited entries made that refusal unreachable in
+    // practice and guaranteed on first use: the very first talkgroup write
+    // planned would fail claiming its own neighbour was never read. This path
+    // had never run, because the table was never passed to the plan at all.
+    //
+    // ±1 around the range covers the frame-alignment overhang at each end.
+    const bankSize = spec.bank?.size ?? spec.slots;
+    const wanted = new Set<number>();
     for (const e of entries) {
-      const o = sliceFromReadLog(input.readLog, spec.dataAddress + e.index * spec.stride, spec.stride);
-      if (o) originals.set(e.index, o);
+      const bank = Math.floor(e.index / bankSize);
+      wanted.add(e.index);
+      for (const neighbour of [e.index - 1, e.index + 1]) {
+        // Never cross a bank boundary: the record on the other side is half a
+        // megabyte away and shares no frame with this one.
+        if (neighbour < 0 || neighbour >= spec.slots) continue;
+        if (Math.floor(neighbour / bankSize) !== bank) continue;
+        wanted.add(neighbour);
+      }
+    }
+    const originals = new Map<number, Uint8Array>();
+    for (const slot of wanted) {
+      // `tableRecordAddress`, NOT flat arithmetic: for a banked table the two
+      // diverge above the first bank, and the flat answer is an address the
+      // radio never uses — so every original above slot 999 came back
+      // undefined and the write refused for the wrong reason.
+      const o = sliceFromReadLog(input.readLog, tableRecordAddress(spec, slot), spec.stride);
+      if (o) originals.set(slot, o);
     }
     const plan = span(spec, { entries, originals, originalMask, encode });
     take(region, spec.dataAddress, plan.frames);

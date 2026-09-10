@@ -66,6 +66,25 @@ export interface RadioTables {
      */
     zoneSlotById?: Readonly<Record<string, number>>;
     zoneCurrentById?: Readonly<Record<string, { a: number; b: number }>>;
+    /**
+     * Hardware slot per talk group, by position in the list AS READ.
+     *
+     * Talk groups have the zone problem and none of the zone solution:
+     * `QuickContact.index` arrives as `slot + 1` from the read, but
+     * `quickContactsStore.deleteContact` RE-INDEXES the survivors to `idx + 1`
+     * and `addContact` assigns `length + 1`. Either one destroys the mapping,
+     * and `QuickContact` has no stable id to rebuild it from the way `Zone.id`
+     * does.
+     *
+     * So this is staged for exactly one purpose: to detect that the list has
+     * changed and REFUSE, rather than write 1,010 records one slot out of
+     * place. Edits — rename, DMR ID, call type — keep the list's length and
+     * order, so they resolve against it correctly.
+     *
+     * Adding or deleting a talk group needs identity tracking like
+     * `zoneSlotById`, which needs a stable id on the model first.
+     */
+    talkgroupSlots?: readonly number[];
     /** Channel records by 1-based channel number, including VFO A/B at 4001/4002. */
     channelRecords: Map<number, Uint8Array>;
     /** The channel presence mask exactly as read — patched on write, never rebuilt. */

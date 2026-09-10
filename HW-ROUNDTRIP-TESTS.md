@@ -140,8 +140,9 @@ and its **header**.
 
 | | Region | Test | Note |
 |---|---|---|---|
+| ☐ | **Talk group — EDIT** | Rename `TG1005` and set its DMR ID to `2345678`. Slot 1004, record **`0x3A80320`**, bank 1. This is the one that proves the WRITER's bank arithmetic — the reader's was confirmed 2026-09-08, the writer's never has been. Falsifiable: a flat writer puts slot 1000 at `0x3A30D40`, which reads `0xFF` on hardware and the vendor never writes. Add `TG0500` (slot 499, `0x3A185D8`) to cover bank 0 in the same write. |
 | ☐ | **Zone roam mask** | Read, write unchanged, read | It is carried **verbatim** and zero on every radio anyone has seen. The test is that a write does not disturb it. If it comes back changed, our write is wrong. |
-| ☐ | **Talk group locator** | Only meaningful once talk group **writing** exists | A write must emit `V = slot index`, `0xFFFFFFFF` for absent — **not** a packed `0..N-1`. With contiguous talk groups the two coincide, so this test needs a **hole**: delete a middle talk group, write, and confirm the survivors still resolve. |
+| ☐ | **Talk group locator** | Needs the locator WIRED first — it is called from nothing | A write must emit `V = slot index`, `0xFFFFFFFF` for absent — **not** a packed `0..N-1`. With contiguous talk groups the two coincide, so this test needs a **hole**: delete a middle talk group, write, and confirm the survivors still resolve. |
 
 ## Tier 3 — the Extra regions
 

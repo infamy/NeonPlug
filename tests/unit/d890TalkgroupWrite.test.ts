@@ -1,0 +1,192 @@
+/**
+ * Talk group writing — banking, index base, and the guard that refuses.
+ *
+ * Talk groups were editable in the Digital tab and silently discarded on write
+ * for as long as this driver has existed, behind THREE independent faults:
+ *
+ *   1. `buildD890CodeplugTables` never passed the table, so `maskedTable`
+ *      returned immediately and the region went out verbatim.
+ *   2. The planner addressed records flat while `talkgroupAddress()` banks them
+ *      at 1000. Below 1000 the two agree, which is why it looked fine.
+ *   3. `QuickContact.index` is 1-based off a read; the planner keys 0-based
+ *      slots.
+ *
+ * Fixing only the first is the dangerous outcome: on a codeplug under 1000
+ * entries it appears to work while writing every record one slot high. These
+ * tests exist so that cannot happen quietly again.
+ *
+ * ⚠️ No talk group write has ever reached a radio.
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { planCodeplugWrite } from '../../src/radios/d890uv/codeplugWrite';
+import { tableRecordAddress } from '../../src/radios/d890uv/writePlan';
+import { D890_MASKED_TABLES } from '../../src/radios/d890uv/tableWrite';
+import { D890_ADDR } from '../../src/radios/d890uv/constants';
+import {
+  parseChannel, parseZone, talkgroupAddress, D890_TALKGROUPS_PER_BANK,
+} from '../../src/radios/d890uv/structures';
+import { useRadioStore } from '../../src/store/radioStore';
+import { useQuickContactsStore } from '../../src/store/quickContactsStore';
+import { d890Talkgroups } from '../../src/services/d890WriteInput';
+import type { Channel } from '../../src/models/Channel';
+import type { QuickContact } from '../../src/models/QuickContact';
+
+const DIR = join(__dirname, '../fixtures/d890uv');
+const REAL_MASK = new Uint8Array(readFileSync(join(DIR, 'channel-mask-512.bin')));
+const rec = (i: number) => new Uint8Array(readFileSync(join(DIR, `channel-${i}.bin`)));
+
+const tg = (slot: number, name: string): QuickContact => ({
+  index: slot, offset: 0, name, contactNumber: 200000 + slot,
+  callType: 4, hasHeader: false, flag: 0, rawData: new Uint8Array(0),
+});
+
+/** A codeplug write whose only table is the talk groups given. */
+function setup(talkgroups: QuickContact[], neededSlots: number[]) {
+  const channels: Channel[] = [];
+  const originals = new Map<number, Uint8Array>();
+  for (let i = 0; i < 4; i += 1) {
+    const bytes = rec(i);
+    channels.push(parseChannel(bytes, i).channel);
+    originals.set(i + 1, bytes);
+  }
+  const readLog = new Map<number, Uint8Array>();
+  const zoneMask = new Uint8Array(D890_ADDR.ZONE_SET_SIZE);
+  zoneMask[0] |= 1;
+  readLog.set(D890_ADDR.ZONE_SET, zoneMask);
+  const members = new Uint8Array(D890_ADDR.ZONE_CHANNELS_STRIDE);
+  members[2] = 0xff; members[3] = 0xff;
+  const name = new Uint8Array(D890_ADDR.ZONE_NAME_STRIDE);
+  name[0] = 0x5a; name[2] = 0x31;
+  readLog.set(D890_ADDR.ZONE_CHANNELS, members);
+  readLog.set(D890_ADDR.ZONE_NAMES, name);
+
+  // The talkgroup presence mask is INVERTED: a set bit means empty.
+  readLog.set(D890_ADDR.TALKGROUP_SET, new Uint8Array(1264).fill(0xff));
+  // Every record the span touches must have been read — at its BANKED address.
+  for (const slot of neededSlots) {
+    readLog.set(talkgroupAddress(slot), new Uint8Array(D890_ADDR.TALKGROUP_STRIDE));
+  }
+
+  return {
+    channels, zones: [parseZone(name, members, 0)], zoneSlots: [0], readLog,
+    writeUnmodelledVerbatim: false as const,
+    channelInput: {
+      originals, originalMask: REAL_MASK,
+      counts: { DMRTalkGroups: talkgroups.length, ScanList: 2,
+        DMRReceiveGroupCallList: 1, RadioIDList: 4, AESEncryptionCode: 2 },
+      referencingTables: [],
+    },
+    tables: { talkgroups },
+  };
+}
+
+describe('talkgroup record addressing', () => {
+  it('banks at 1000 — slot 1004 lands in bank 1, not off the end of bank 0', () => {
+    // The falsifiable part: a flat writer puts slot 1000 at 0x3A30D40, which
+    // reads 0xFF on hardware and is never written by the vendor. So a banking
+    // bug lands the bytes somewhere provably wrong, not somewhere plausible.
+    expect(tableRecordAddress(D890_MASKED_TABLES.talkgroups, 1004)).toBe(0x3a80320);
+    expect(tableRecordAddress(D890_MASKED_TABLES.talkgroups, 999)).toBe(0x3a30c78);
+    expect(tableRecordAddress(D890_MASKED_TABLES.talkgroups, 1000)).toBe(0x3a80000);
+    // …and agrees with the READER, which is the disagreement that caused this.
+    for (const slot of [0, 1, 999, 1000, 1004, 2500]) {
+      expect(tableRecordAddress(D890_MASKED_TABLES.talkgroups, slot))
+        .toBe(talkgroupAddress(slot));
+    }
+  });
+
+  it('is flat for an unbanked table', () => {
+    const spec = D890_MASKED_TABLES.amChannels;
+    expect(tableRecordAddress(spec, 3)).toBe(spec.dataAddress + 3 * spec.stride);
+  });
+});
+
+describe('planning a banked talkgroup write', () => {
+  it('writes a bank-1 record at its banked address and never at the flat one', () => {
+    const plan = planCodeplugWrite(setup([tg(1004, 'RT bank1')], [1004, 1005]));
+    const addresses = plan.frames.map((f) => f.address);
+    expect(addresses).toContain(0x3a80320);
+    // 0x3A30D40 is where a flat planner would have put slot 1000.
+    expect(addresses.some((a) => a >= 0x3a30d40 && a < 0x3a30e00)).toBe(false);
+  });
+
+  it('plans each bank as its own span rather than one across the boundary', () => {
+    // Spanning the boundary would be ~half a megabyte of mostly nothing.
+    const plan = planCodeplugWrite(
+      setup([tg(999, 'last of bank 0'), tg(1004, 'in bank 1')], [998, 999, 1004, 1005])
+    );
+    const tgFrames = plan.frames.filter((f) => f.address >= 0x3a00000 && f.address < 0x3b00000);
+    expect(tgFrames.length).toBeLessThan(64);
+    // Slot 999's RECORD is at 0x3A30C78 — eight bytes into a frame, because the
+    // 0xC8 stride does not divide 16. Its FRAME is the boundary below it, which
+    // is exactly why this table needs a span planner and not a per-record one.
+    expect(tgFrames.some((f) => f.address === 0x3a30c70)).toBe(true);
+    expect(tgFrames.some((f) => f.address === 0x3a80320)).toBe(true);
+  });
+
+  it('refuses when a record the span covers was never read', () => {
+    // Slot 1005 shares a frame with 1004: the stride is 0xC8, so records do not
+    // start on frame boundaries and one frame carries bytes from two records.
+    expect(() => planCodeplugWrite(setup([tg(1004, 'x')], [1004])))
+      .toThrow(/never read/);
+  });
+
+  it('recomputes the inverted presence mask for the slots it writes', () => {
+    const plan = planCodeplugWrite(setup([tg(1004, 'x')], [1004, 1005]));
+    const maskFrame = plan.frames.find(
+      (f) => f.address === D890_ADDR.TALKGROUP_SET + Math.floor(1004 / 8 / 0x10) * 0x10
+    );
+    expect(maskFrame).toBeDefined();
+    // Inverted: a CLEAR bit means present.
+    const byteInFrame = Math.floor(1004 / 8) % 0x10;
+    expect((maskFrame!.data[byteInFrame] >> (1004 % 8)) & 1).toBe(0);
+  });
+});
+
+describe('d890Talkgroups — index base and the refusal', () => {
+  beforeEach(() => {
+    useRadioStore.setState({ tables: {} });
+    useQuickContactsStore.setState({ contacts: [], contactsLoaded: false });
+  });
+
+  const stage = (slots: number[]) =>
+    useRadioStore.setState({
+      tables: { writeOriginals: { talkgroupSlots: slots } as never },
+    });
+
+  it('maps list position onto the staged hardware slot', () => {
+    // QuickContact.index is slot + 1 off a read; the planner keys 0-based slots.
+    stage([0, 1, 2]);
+    useQuickContactsStore.setState({
+      contacts: [tg(1, 'a'), tg(2, 'b'), tg(3, 'c')], contactsLoaded: true,
+    });
+    expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0, 1, 2]);
+  });
+
+  it('resolves against slots correctly when the mask has a HOLE', () => {
+    // Three talk groups occupying slots 0, 5 and 9. Position and slot diverge,
+    // and writing by position would put two of them in the wrong records.
+    stage([0, 5, 9]);
+    useQuickContactsStore.setState({
+      contacts: [tg(1, 'a'), tg(6, 'b'), tg(10, 'c')], contactsLoaded: true,
+    });
+    expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0, 5, 9]);
+  });
+
+  it('REFUSES when the list length changed, rather than guessing', () => {
+    // deleteContact re-indexes the survivors, so the mapping is already gone.
+    stage([0, 1, 2]);
+    useQuickContactsStore.setState({
+      contacts: [tg(1, 'a'), tg(2, 'b')], contactsLoaded: true,
+    });
+    expect(() => d890Talkgroups()).toThrow(/list has changed since the radio was read/);
+  });
+
+  it('returns undefined when nothing was staged, so a file-loaded codeplug still writes', () => {
+    useQuickContactsStore.setState({ contacts: [tg(1, 'a')], contactsLoaded: true });
+    expect(d890Talkgroups()).toBeUndefined();
+  });
+});
