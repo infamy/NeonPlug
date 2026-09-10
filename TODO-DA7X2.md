@@ -776,14 +776,49 @@ the prerequisite, not a hardware session.
      boundary of "what the UI may edit" is visible and the DM-32-shaped fields
      cannot leak into a record the D890 encoder reads.
 
-  ⚠️ **ADD and DELETE refused.** Channels reference a scan list by index
-  (`scanListId`, channel `+0x1b`), and hole-vs-compact is unknown here for the
-  same reason as radio IDs. An added list also has no decoded record to patch.
+  ☑ **Three more fields wired (2026-09-10)** — the overlay was name and channels
+  only, so the other eight controls in the settings panel were editable and
+  discarded. `Hang Time` was the worst of them: it DISPLAYED this radio's real
+  dwell time, took an edit, and reverted. Three map onto fields the record has —
+  `hangTime`→`dwellTime`, `priorityChannel1/2`→`priorityChannel1Raw/2Raw` — and
+  are now written.
+
+  Both directions had to move together. The read never populated
+  `priority1Type`, so the UI showed "None" for a list whose record said channel
+  60; wiring only the write would have cleared a real priority on the first
+  save. `scanListPriority.ts` holds the codec (`0xffff` Off, `0x0000` Current,
+  `n` channel n — note zero is a LIVE setting, not "unset") plus
+  `narrowScanList`, lifted out of `readScanLists` so the lossy step can be
+  tested without a radio. An absent UI value keeps the radio's value rather than
+  encoding undefined as Off.
+
+  The other five have no D890 equivalent, so the new `scanListFields` capability
+  stops the panel offering them. Undefined ⇒ all of them, so the DM-32 is
+  unchanged.
+
+  ⚠️ **ADD still refused; DELETE works** (hole semantics, measured — see below).
+  The record's LAYOUT is no longer the obstacle: bytes `0x98`-`0x200` are zero in
+  all six scan lists captured across three reads, and `0x2e-0x2f` are the only
+  other offsets the encoder does not cover, also zero. What blocks it is four
+  fields with no UI and no known default — **look-back time A and B, dropout
+  delay, revert channel**. Both lists on the reference radio hold deliberately
+  distinct sweep values (5/26/31/32 and 20/31/37/38), so neither is a default.
+
+  ➡️ **ONE scan list created fresh in the vendor CPS unblocks add**, and it is
+  then a `blank()` on `D890_MASKED_TABLES.scanLists` away from working. The UI
+  already allocates the lowest free slot, so a new list will reuse the hole a
+  delete left rather than stranding it.
 
   ☑ **DMR radio IDs are wired (2026-09-10)** — edits and adds. `index` IS the
   hardware slot: `readDMRRadioIDs` walks the presence mask and hands each
   occupied slot to `parseRadioId`, and the store renumbers on neither add nor
   delete. Holes are honoured rather than packed down.
+
+  The UI list still LOOKS compacted — a radio holding slots 0, 1 and 3 shows
+  three rows — but nothing downstream uses the row position: every handler
+  passes `radioId.index`, and `maskedTable` places at `index: list.slot` for scan
+  lists. `lowestFreeSlot` (shared with scan lists) allocates an add, so a new ID
+  fills slot 2 rather than colliding with slot 3 and leaving the hole forever.
 
   ✅ **DELETE LEAVES A HOLE — measured 2026-09-10**, from a vendor CPS delete
   captured either side (`7x2_predelete.txt` / `7x2_postdelete.txt`, read
