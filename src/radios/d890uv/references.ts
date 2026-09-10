@@ -99,9 +99,28 @@ export interface D890TableCounts {
  *
  * A zero index means "none" everywhere on this radio and is always valid.
  */
+/**
+ * Which SLOTS a table actually occupies, where that is known.
+ *
+ * A count is only equivalent to a slot set when a table is contiguous, and two
+ * of these are not: MEASURED 2026-09-10 from a vendor CPS delete, radio IDs and
+ * scan lists leave a HOLE — survivors keep their slots and the mask simply
+ * loses a bit. Deleting radio ID slot 2 of 0-3 leaves three entries occupying
+ * slots 0, 1 and 3, and a count of 3 would call a channel referencing slot 3
+ * out of range and refuse a perfectly good write.
+ *
+ * Talk groups are the exception that proves the rule: they COMPACT, so for them
+ * a count and a slot set say the same thing.
+ */
+export type D890OccupiedSlots = Partial<
+  Record<keyof D890TableCounts, ReadonlySet<number>>
+>;
+
 export function findDanglingReferences(
   channels: readonly Channel[],
-  counts: D890TableCounts
+  counts: D890TableCounts,
+  /** Preferred over `counts` for any table it covers. */
+  occupied?: D890OccupiedSlots
 ): DanglingReference[] {
   const out: DanglingReference[] = [];
   for (const channel of channels) {
@@ -122,7 +141,29 @@ export function findDanglingReferences(
         continue;
       }
 
-      const available = counts[ref.table as keyof D890TableCounts] ?? 0;
+      const table = ref.table as keyof D890TableCounts;
+      const available = counts[table] ?? 0;
+      const slots = occupied?.[table];
+
+      // Prefer the slot set: with a hole, a count says "3 entries" while the
+      // highest occupied slot is 3, and every reference to it would be refused.
+      if (slots) {
+        // A one-based reference of N points at slot N-1.
+        const slot = ref.oneBased ? raw - 1 : raw;
+        if (!slots.has(slot)) {
+          out.push({
+            channelNumber: channel.number,
+            field: ref.field,
+            label: ref.label,
+            table: ref.table,
+            value: raw,
+            available,
+            reason: 'out-of-range',
+          });
+        }
+        continue;
+      }
+
       // A one-based reference of N needs N entries; a zero-based one needs N+1.
       const highest = ref.oneBased ? available : available - 1;
       if (raw > highest) {

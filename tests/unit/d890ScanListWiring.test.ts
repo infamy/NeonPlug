@@ -94,10 +94,15 @@ describe('d890ScanLists', () => {
     expect(d890ScanLists()![0].slot).toBe(3);
   });
 
-  it('REFUSES a delete — hole vs compact is unknown and channels reference lists', () => {
+  it('DELETE drops the list and leaves its slot a hole', () => {
+    // Measured 2026-09-10: deleting scan list slot 0 of {0,1} left the read
+    // fetching 0x2100200 alone — slot 1 stayed slot 1 rather than moving down.
+    // So the survivor keeps its slot and channels referencing it still resolve.
     stage([decoded(0, 'A'), decoded(1, 'B')]);
-    useScanListsStore.setState({ scanLists: [uiList(0, 'A', [1])] });
-    expect(() => d890ScanLists()).toThrow(/adding or removing a scan list is not safe yet/);
+    useScanListsStore.setState({ scanLists: [uiList(1, 'B', [4])] });
+    const out = d890ScanLists()!;
+    expect(out.map((l) => l.slot)).toEqual([1]);
+    expect(out[0].name).toBe('B');
   });
 
   it('REFUSES an add — a new list has no decoded record to patch', () => {
@@ -105,7 +110,7 @@ describe('d890ScanLists', () => {
     useScanListsStore.setState({
       scanLists: [uiList(0, 'A', [1]), uiList(undefined, 'brand new', [2])],
     });
-    expect(() => d890ScanLists()).toThrow(/adding or removing a scan list is not safe yet/);
+    expect(() => d890ScanLists()).toThrow(/adding a scan list is not supported yet/);
   });
 
   it('returns undefined when the radio was never read', () => {

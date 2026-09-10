@@ -340,43 +340,20 @@ export function d890ClearedEncryptionKeys():
  * on neither add nor delete. So an edit needs no mapping — unlike scan lists,
  * receive groups and quick messages, which all lose their slots.
  *
- * ⚠️ DELETE IS REFUSED, and the reason is an unknown rather than a known fault.
- * Two masked tables on this radio behave differently when an entry is removed:
+ * DELETE leaves a HOLE — survivors keep their slots. MEASURED 2026-09-10 from a
+ * vendor CPS delete: removing radio ID slot 2 of 0-3 left the read fetching
+ * 0x3680000 (slots 0-1) and 0x36800c0 (slot 3), with nothing shifted. Same as
+ * zones, and unlike talk groups, which compact.
  *
- *   - ZONES leave a hole. Proven on hardware 2026-09-03: the mask bit cleared
- *     and every survivor kept its slot.
- *   - TALK GROUPS COMPACT. Proven from the vendor CPS 2026-09-10: everything
- *     after the removed entry shifts down and the last slot is freed.
- *
- * Nothing tells us which of those radio IDs are, and CHANNELS REFERENCE THEM BY
- * INDEX (`dmrRadioIdIndex`, channel `+0x18`). Guess "hole" when it compacts and
- * every channel above the deletion points at the wrong ID — in a codeplug that
- * reads back perfectly clean. The talk group delete looked exactly that
- * convincing before it crashed the radio.
- *
- * To settle it: delete a radio ID in the vendor CPS with the serial log
- * capturing, and see whether the mask gains a hole or the records shift.
+ * So a delete needs no renumbering: channels reference radio IDs by index
+ * (`dmrRadioIdIndex`, channel `+0x18`) and those indices do not move. It does
+ * need the dangling-reference gate to be slot-aware, or a channel pointing at
+ * slot 3 of {0,1,3} is refused against a count of 3 — see `occupiedSlots`.
  */
 export function d890RadioIds(): DMRRadioID[] | undefined {
   const ids = useDMRRadioIDsStore.getState().radioIds;
   if (ids.length === 0) return undefined;
 
-  const atRead = useRadioStore.getState().tables.writeOriginals?.radioIdSlotsAtRead;
-  if (atRead) {
-    const now = new Set(ids.map((r) => r.index));
-    const removed = atRead.filter((slot) => !now.has(slot));
-    if (removed.length > 0) {
-      throw new Error(
-        `Refusing to write: deleting a DMR radio ID is not safe yet.\n\n` +
-          `It is not known whether this table leaves a HOLE when an entry is ` +
-          `removed, as zones do, or COMPACTS, as talk groups do — and channels ` +
-          `reference radio IDs by index. If it compacts and we leave a hole, ` +
-          `every channel above the deleted ID points at the wrong one, in a ` +
-          `codeplug that reads back clean.\n\n` +
-          `Editing and adding still work. To remove one, use the vendor CPS.`
-      );
-    }
-  }
   return [...ids];
 }
 
@@ -395,11 +372,14 @@ export function d890RadioIds(): DMRRadioID[] | undefined {
  *      `tables.scanListsDetailed` is the base and only the fields the UI can
  *      actually edit — name and channels — are overlaid.
  *
- * ⚠️ ADD and DELETE are refused. Channels reference a scan list by index
- * (`scanListId`, channel `+0x1b`), and it is not known whether removing one
- * leaves a HOLE as zones do or COMPACTS as talk groups do. Guess wrong and every
- * channel above the deletion points at another list, in a codeplug that reads
- * back clean. An added list has no decoded record to patch either.
+ * DELETE leaves a HOLE — survivors keep their slots. MEASURED 2026-09-10 from a
+ * vendor CPS delete: removing scan list slot 0 of {0,1} left the read fetching
+ * 0x2100200 alone, so slot 1 stayed slot 1 rather than moving down. Channels
+ * reference a scan list by index (`scanListId`, channel `+0x1b`) and those
+ * indices do not move, so no renumbering is needed.
+ *
+ * ⚠️ ADD is still refused: a new list has no decoded record to patch, and this
+ * radio's scan list record has fields the shared model cannot describe.
  */
 export function d890ScanLists(): ScanListDecoded[] | undefined {
   const detailed = useRadioStore.getState().tables.scanListsDetailed;
@@ -412,25 +392,25 @@ export function d890ScanLists(): ScanListDecoded[] | undefined {
   }
 
   const added = edited.filter((l) => l.slot === undefined);
-  const removed = detailed.filter((d) => !bySlot.has(d.slot));
-  if (added.length > 0 || removed.length > 0) {
+  if (added.length > 0) {
     throw new Error(
-      `Refusing to write: adding or removing a scan list is not safe yet.\n\n` +
-        `Channels reference a scan list by index, and it is not known whether ` +
-        `removing one leaves a hole (as zones do) or compacts the table (as ` +
-        `talk groups do). Guessing wrong points channels at the wrong list in a ` +
-        `codeplug that reads back clean.\n\n` +
-        `Editing a scan list — its name and its channels — still works. To add ` +
-        `or remove one, use the vendor CPS.`
+      `Refusing to write: adding a scan list is not supported yet.\n\n` +
+        `A new list has no record read from the radio to patch, and this radio's ` +
+        `scan list holds fields the shared model cannot describe — scan mode, ` +
+        `priority select, the raw priority channels and four timers — so one ` +
+        `cannot be built from scratch.\n\n` +
+        `Editing and deleting still work. To add one, use the vendor CPS.`
     );
   }
 
-  // The decoded record is the base; only what the UI can edit is overlaid.
-  return detailed.map((record) => {
-    const ui = bySlot.get(record.slot);
-    if (!ui) return record;
-    return { ...record, name: ui.name, channels: ui.channels ?? record.channels };
-  });
+  // Deleted lists simply drop out: the slot keeps its hole and the masked-table
+  // planner clears the presence bit for it.
+  return detailed
+    .filter((record) => bySlot.has(record.slot))
+    .map((record) => {
+      const ui = bySlot.get(record.slot)!;
+      return { ...record, name: ui.name, channels: ui.channels ?? record.channels };
+    });
 }
 
 /** Zones exactly as the UI holds them. */
@@ -461,6 +441,23 @@ export function buildD890WriteOriginals(effectiveModel: string | null) {
       DMRReceiveGroupCallList: useRXGroupsStore.getState().groups.length,
       RadioIDList: useDMRRadioIDsStore.getState().radioIds.length,
       AESEncryptionCode: useEncryptionKeysStore.getState().keys.length,
+    },
+    // The slots these tables ACTUALLY occupy, which is not the same as how many
+    // there are. Radio IDs and scan lists leave a HOLE when an entry is deleted
+    // — measured from a vendor CPS delete on 2026-09-10, where removing radio ID
+    // slot 2 of 0-3 left the survivors on slots 0, 1 and 3. A count of 3 would
+    // then call a channel referencing slot 3 out of range and refuse a write
+    // that is perfectly valid.
+    //
+    // Talk groups are deliberately absent: they COMPACT, so their count and
+    // their slot set say the same thing, and the count is the simpler truth.
+    occupiedSlots: {
+      RadioIDList: new Set(useDMRRadioIDsStore.getState().radioIds.map((r) => r.index)),
+      ScanList: new Set(
+        scanListsNow
+          .map((l) => l.slot)
+          .filter((slot): slot is number => slot !== undefined)
+      ),
     },
     // What still points AT channels, so the plan can refuse to clear a channel
     // a zone or scan list is using.

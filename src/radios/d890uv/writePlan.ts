@@ -16,6 +16,7 @@ import {
 } from './channelWrite';
 import {
   findDanglingReferences,
+  type D890OccupiedSlots,
   type DanglingReference,
   type D890TableCounts,
 } from './references';
@@ -117,6 +118,14 @@ export interface D890ChannelWriteInput {
   /** Entry counts for the tables channels reference. */
   counts: D890TableCounts;
   /**
+   * Which slots each table actually occupies, where known.
+   *
+   * Radio IDs and scan lists leave a HOLE when an entry is deleted (measured
+   * from a vendor CPS delete, 2026-09-10), so a count is not equivalent to a
+   * slot set for them and a count alone refuses valid writes.
+   */
+  occupiedSlots?: D890OccupiedSlots;
+  /**
    * TRANSMIT frequency limits. Optional; when absent, no band check runs.
    *
    * ⚠️ TX ONLY. The receive range is wider and is not the same question — this
@@ -185,7 +194,7 @@ export function planChannelWrite(input: D890ChannelWriteInput): D890ChannelWrite
   // Refusing on them would block every write to every real radio while making
   // nothing safer. Out-of-range is different: we model the table, we know how
   // many entries it has, and the channel points past the end.
-  const allFindings = findDanglingReferences(channels, counts);
+  const allFindings = findDanglingReferences(channels, counts, input.occupiedSlots);
   const dangling = allFindings.filter((d) => d.reason === 'out-of-range');
   if (dangling.length > 0) {
     const lines = dangling

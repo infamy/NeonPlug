@@ -23,6 +23,7 @@ import { parseChannel, parseZone, radioIdAddress } from '../../src/radios/d890uv
 import type { Channel } from '../../src/models/Channel';
 import type { DMRRadioID } from '../../src/models/DMRRadioID';
 import { d890RadioIds } from '../../src/services/d890WriteInput';
+import { findDanglingReferences } from '../../src/radios/d890uv/references';
 import { useRadioStore } from '../../src/store/radioStore';
 import { useDMRRadioIDsStore } from '../../src/store/dmrRadioIdsStore';
 
@@ -128,15 +129,15 @@ describe('d890RadioIds — the store path', () => {
     expect(d890RadioIds()!.map((r) => r.index)).toEqual([0, 3]);
   });
 
-  it('REFUSES a delete — hole vs compact is unknown for this table', () => {
-    // Zones leave a hole (hardware 2026-09-03); talk groups compact (vendor CPS
-    // 2026-09-10). Nothing says which this is, and channels reference radio IDs
-    // by index, so guessing wrong repoints them in a codeplug that reads clean.
-    stage([0, 1, 2]);
+  it('DELETE leaves a hole — survivors keep their slots', () => {
+    // Measured 2026-09-10: deleting radio ID slot 2 of 0-3 left the read
+    // fetching 0x3680000 (slots 0-1) and 0x36800c0 (slot 3). Nothing shifted,
+    // so channels referencing slot 3 still resolve and need no renumbering.
+    stage([0, 1, 2, 3]);
     useDMRRadioIDsStore.setState({
-      radioIds: [rid(0, 'A', 1), rid(2, 'C', 3)], radioIdsLoaded: true,
+      radioIds: [rid(0, 'A', 1), rid(1, 'B', 2), rid(3, 'D', 4)], radioIdsLoaded: true,
     });
-    expect(() => d890RadioIds()).toThrow(/deleting a DMR radio ID is not safe yet/);
+    expect(d890RadioIds()!.map((r) => r.index)).toEqual([0, 1, 3]);
   });
 
   it('ALLOWS an edit — same slots, changed contents', () => {
@@ -158,5 +159,48 @@ describe('d890RadioIds — the store path', () => {
   it('passes through untouched when nothing was staged', () => {
     useDMRRadioIDsStore.setState({ radioIds: [rid(5, 'A', 1)], radioIdsLoaded: true });
     expect(d890RadioIds()!.map((r) => r.index)).toEqual([5]);
+  });
+});
+
+/**
+ * The dangling-reference gate has to understand holes.
+ *
+ * It was count-based: a reference of N was out of range when N exceeded the
+ * number of entries. That is only equivalent to "does this slot exist" for a
+ * CONTIGUOUS table, and radio IDs and scan lists are not — deleting radio ID
+ * slot 2 of 0-3 leaves three entries occupying slots 0, 1 and 3, and a count of
+ * 3 would refuse a channel referencing slot 3.
+ */
+describe('findDanglingReferences with holes', () => {
+  const counts = {
+    DMRTalkGroups: 6, ScanList: 2, DMRReceiveGroupCallList: 1,
+    RadioIDList: 3, AESEncryptionCode: 2,
+  };
+  const chan = (n: number, radioIdIndex: number) =>
+    ({ number: n, name: `CH${n}`, dmrRadioIdIndex: radioIdIndex } as Channel);
+
+  it('accepts a reference to a high slot when the slot set says it exists', () => {
+    // Slots 0, 1 and 3 occupied. The count is 3, so a count-based check calls
+    // slot 3 out of range and refuses a perfectly valid write.
+    const out = findDanglingReferences([chan(1, 3)], counts, {
+      RadioIDList: new Set([0, 1, 3]),
+    });
+    expect(out).toEqual([]);
+  });
+
+  it('still catches a reference to the HOLE itself', () => {
+    const out = findDanglingReferences([chan(1, 2)], counts, {
+      RadioIDList: new Set([0, 1, 3]),
+    });
+    expect(out.map((d) => d.reason)).toEqual(['out-of-range']);
+  });
+
+  it('falls back to the count for a table with no slot set', () => {
+    // Talk groups compact, so a count and a slot set say the same thing and the
+    // count is the simpler truth.
+    const out = findDanglingReferences(
+      [{ number: 1, name: 'CH1', contactId: 99 } as Channel], counts, {}
+    );
+    expect(out.map((d) => d.reason)).toEqual(['out-of-range']);
   });
 });

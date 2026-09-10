@@ -755,8 +755,8 @@ the prerequisite, not a hardware session.
   | Table | Emitter keys on | Does the slot survive? |
   |---|---|---|
   | Encryption keys | `(encryptionType, id)` | ✅ **WIRED 2026-09-10** — `id` IS the slot, the store never renumbers |
-  | Radio IDs | `.index` | ✅ **WIRED 2026-09-10** — `index` IS the slot (`readDMRRadioIDs` walks the mask); delete refused, see below |
-  | Scan lists | `list.slot` | ✅ **WIRED 2026-09-10** — `ScanList.slot` now carries it, and the decoded record is kept in `tables.scanListsDetailed` |
+  | Radio IDs | `.index` | ✅ **WIRED 2026-09-10** — edit, add and delete; deletes leave a HOLE (measured) |
+  | Scan lists | `list.slot` | ✅ **WIRED 2026-09-10** — edit and delete; add still refused (no record to patch) |
   | RX groups | `.index` | ❌ `deleteGroup` reindexes survivors to `idx` |
   | Quick messages | slot-indexed | ❌ renumbers on READ and on delete — the same fault `predefinedSms` was added to work around |
 
@@ -785,15 +785,19 @@ the prerequisite, not a hardware session.
   occupied slot to `parseRadioId`, and the store renumbers on neither add nor
   delete. Holes are honoured rather than packed down.
 
-  ⚠️ **DELETE REFUSED — an unknown, not a known fault.** Two masked tables on
-  this radio disagree about removal: ZONES leave a hole (hardware 2026-09-03,
-  survivors kept their slots) and TALK GROUPS COMPACT (vendor CPS 2026-09-10).
-  Nothing says which radio IDs are, and **channels reference them by index**
-  (`dmrRadioIdIndex`, channel `+0x18`). Guess "hole" when it compacts and every
-  channel above the deletion points at the wrong ID, in a codeplug that reads
-  back clean. **To settle it:** delete a radio ID in the vendor CPS with the
-  serial log capturing and see whether the mask gains a hole or the records
-  shift.
+  ✅ **DELETE LEAVES A HOLE — measured 2026-09-10**, from a vendor CPS delete
+  captured either side (`7x2_predelete.txt` / `7x2_postdelete.txt`, read
+  direction). Deleting radio ID slot 2 of 0-3 left the read fetching
+  `0x3680000` (slots 0-1) and `0x36800c0` (slot 3) — nothing shifted. Scan lists
+  behave identically: deleting slot 0 of {0,1} left the read fetching
+  `0x2100200` alone. Same as zones, and UNLIKE talk groups, which compact.
+
+  Because slots do not move, a delete needs no reference renumbering. It did
+  need the dangling-reference gate to stop being count-based: with slots
+  {0,1,3} a count of 3 called a channel referencing slot 3 out of range and
+  refused a valid write. `findDanglingReferences` now takes an optional
+  `occupiedSlots` set per table and prefers it. Talk groups deliberately do NOT
+  supply one — they compact, so their count and slot set agree.
 
   Fixed on the way: `handleAddRadioId` assigned `radioIds.length` as the new
   index — a POSITION. On a radio with slots 0, 1 and 3 occupied that is 3, which
