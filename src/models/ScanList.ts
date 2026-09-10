@@ -6,6 +6,20 @@
 
 export interface ScanList {
   name: string;                    // Max 10 chars (11 bytes with null terminator)
+  /**
+   * Hardware slot, when the radio that produced this list has one.
+   *
+   * The DA-7X2 reads scan lists by walking a presence mask, so array position
+   * is NOT the slot — the two diverge the moment a slot in the middle is
+   * unused. `ScanListDecoded` carries this, but that type never leaves
+   * `radios/d890uv/`, so without it here the slot is lost the instant a list
+   * reaches the store and a write would place every list after a gap into the
+   * wrong record.
+   *
+   * Optional: the DM-32 has no equivalent, and a list the user just created has
+   * no slot until one is allocated.
+   */
+  slot?: number;
   channels: number[];              // Up to 15 channel numbers (1-65535)
   channelCount?: number;           // Number of channels (auto-calculated, 0-15)
   ctcScanMode: number;             // 0-3: CTC Scan Mode (bits 0-1)

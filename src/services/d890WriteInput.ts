@@ -20,6 +20,7 @@ import type { Zone } from '../models/Zone';
 import type { QuickContact } from '../models/QuickContact';
 import type { Channel } from '../models/Channel';
 import type { DMRRadioID } from '../models/DMRRadioID';
+import type { ScanListDecoded } from '../radios/d890uv/structures';
 import {
   buildTalkgroupRenumber,
   isNoOpRenumber,
@@ -72,6 +73,7 @@ export function buildD890CodeplugTables(
     // `entryNumber` is a position in the flattened list and is NOT used.
     encryptionKeys: useEncryptionKeysStore.getState().keys,
     radioIds: d890RadioIds(),
+    scanLists: d890ScanLists(),
     clearedEncryptionKeys: d890ClearedEncryptionKeys(),
     // ⚠️ Receive groups are DELIBERATELY ABSENT and must stay that way until the
     // presence-mask address is proven. `D890_ADDR.RX_GROUP_SET` is 0x3701510,
@@ -376,6 +378,59 @@ export function d890RadioIds(): DMRRadioID[] | undefined {
     }
   }
   return [...ids];
+}
+
+/**
+ * Scan lists, as the DECODED records with the user's edits overlaid.
+ *
+ * Two problems make this the awkward one of the five tables in the audit, and
+ * both come from the shared `ScanList` model being shaped around the DM-32:
+ *
+ *   1. It has no slot. The DA-7X2 reads scan lists off a presence mask, so
+ *      array position is not the slot and a write placing by position would
+ *      relocate every list after a gap. `ScanList.slot` now carries it.
+ *   2. It has no home for scan mode, priority select, the raw priority
+ *      channels, or the four timers — all of which `applyScanListToRecord`
+ *      writes. Narrowing at read time loses them, so the DECODED record from
+ *      `tables.scanListsDetailed` is the base and only the fields the UI can
+ *      actually edit — name and channels — are overlaid.
+ *
+ * ⚠️ ADD and DELETE are refused. Channels reference a scan list by index
+ * (`scanListId`, channel `+0x1b`), and it is not known whether removing one
+ * leaves a HOLE as zones do or COMPACTS as talk groups do. Guess wrong and every
+ * channel above the deletion points at another list, in a codeplug that reads
+ * back clean. An added list has no decoded record to patch either.
+ */
+export function d890ScanLists(): ScanListDecoded[] | undefined {
+  const detailed = useRadioStore.getState().tables.scanListsDetailed;
+  if (!detailed || detailed.length === 0) return undefined;
+  const edited = useScanListsStore.getState().scanLists;
+
+  const bySlot = new Map<number, (typeof edited)[number]>();
+  for (const list of edited) {
+    if (list.slot !== undefined) bySlot.set(list.slot, list);
+  }
+
+  const added = edited.filter((l) => l.slot === undefined);
+  const removed = detailed.filter((d) => !bySlot.has(d.slot));
+  if (added.length > 0 || removed.length > 0) {
+    throw new Error(
+      `Refusing to write: adding or removing a scan list is not safe yet.\n\n` +
+        `Channels reference a scan list by index, and it is not known whether ` +
+        `removing one leaves a hole (as zones do) or compacts the table (as ` +
+        `talk groups do). Guessing wrong points channels at the wrong list in a ` +
+        `codeplug that reads back clean.\n\n` +
+        `Editing a scan list — its name and its channels — still works. To add ` +
+        `or remove one, use the vendor CPS.`
+    );
+  }
+
+  // The decoded record is the base; only what the UI can edit is overlaid.
+  return detailed.map((record) => {
+    const ui = bySlot.get(record.slot);
+    if (!ui) return record;
+    return { ...record, name: ui.name, channels: ui.channels ?? record.channels };
+  });
 }
 
 /** Zones exactly as the UI holds them. */

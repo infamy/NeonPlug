@@ -213,6 +213,19 @@ export interface RadioTables {
    * Captured at read time, before the store renumbers.
    */
   predefinedSms: { slot: number; text: string }[];
+  /**
+   * Scan lists in their FULL decoded form, keyed by hardware slot.
+   *
+   * The shared `ScanList` the store holds was shaped around the DM-32 and has
+   * no home for this radio's scan mode, priority select, raw priority channels,
+   * look-back timers, dropout delay or dwell time — and the encoder needs every
+   * one of them. Narrowing at read time therefore loses more than the slot.
+   *
+   * So the decoded records are kept here, and the UI-editable fields (name and
+   * channels) are overlaid onto them at write time, matched by slot.
+   */
+  scanListsDetailed: import('../radios/d890uv/structures').ScanListDecoded[];
+
   /** Power-on screen text and password. */
   powerOnDisplay: D890PowerOnDisplay;
   /**

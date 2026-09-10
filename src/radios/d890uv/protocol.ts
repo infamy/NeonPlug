@@ -929,6 +929,9 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     const detailed = await this.readScanListsDetailed();
     return detailed.map((sl) => ({
       name: sl.name,
+      // The hardware slot, carried through the narrowing. Without it the write
+      // has no way to put an edited list back where the radio holds it.
+      slot: sl.slot,
       channels: sl.channels,
       channelCount: sl.channels.length,
       // DM-32 wire concepts with no D890 equivalent; left at neutral defaults

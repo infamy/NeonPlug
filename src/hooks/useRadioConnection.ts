@@ -352,6 +352,13 @@ export function useRadioConnection() {
         configSteps.push({
           label: 'Scan lists',
           run: async () => {
+            // The DA-7X2 keeps its FULL decoded records as well as the narrowed
+            // ones: the shared model has no home for scan mode, priority
+            // select, the raw priority channels or the four timers, and the
+            // encoder needs every one of them. One read serves both.
+            if (proto instanceof D890UVProtocol) {
+              setTable('scanListsDetailed', await proto.readScanListsDetailed());
+            }
             setScanLists(await proto.readScanLists());
             if (dm32) setRawScanListData(dm32.rawScanListData);
           },

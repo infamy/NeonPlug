@@ -756,9 +756,29 @@ the prerequisite, not a hardware session.
   |---|---|---|
   | Encryption keys | `(encryptionType, id)` | ✅ **WIRED 2026-09-10** — `id` IS the slot, the store never renumbers |
   | Radio IDs | `.index` | ✅ **WIRED 2026-09-10** — `index` IS the slot (`readDMRRadioIDs` walks the mask); delete refused, see below |
-  | Scan lists | `list.slot` | ❌ **`ScanListDecoded` never leaves `d890uv/`.** The store holds the shared `ScanList`, which has NO slot field, so the decoded slots are discarded at the store boundary |
+  | Scan lists | `list.slot` | ✅ **WIRED 2026-09-10** — `ScanList.slot` now carries it, and the decoded record is kept in `tables.scanListsDetailed` |
   | RX groups | `.index` | ❌ `deleteGroup` reindexes survivors to `idx` |
   | Quick messages | slot-indexed | ❌ renumbers on READ and on delete — the same fault `predefinedSms` was added to work around |
+
+  ☑ **Scan lists are wired (2026-09-10)** — edits only. The awkward one, for two
+  reasons that both come from the shared `ScanList` being DM-32 shaped:
+
+  1. **No slot.** `ScanListDecoded.slot` never left `radios/d890uv/`, so the slot
+     died at the store boundary and a write would have placed every list after a
+     gap into the wrong record. `ScanList.slot` now carries it, and the store's
+     edit operations spread, so it survives a rename.
+  2. **No home for the D890's own fields** — scan mode, priority select, the raw
+     priority channels and the four timers, all of which
+     `applyScanListToRecord` writes. Narrowing at read time loses more than the
+     slot. So the DECODED record from `tables.scanListsDetailed` is the base and
+     only what the UI can actually edit — name and channels — is overlaid onto
+     it, matched by slot. The overlay is explicit rather than a spread, so the
+     boundary of "what the UI may edit" is visible and the DM-32-shaped fields
+     cannot leak into a record the D890 encoder reads.
+
+  ⚠️ **ADD and DELETE refused.** Channels reference a scan list by index
+  (`scanListId`, channel `+0x1b`), and hole-vs-compact is unknown here for the
+  same reason as radio IDs. An added list also has no decoded record to patch.
 
   ☑ **DMR radio IDs are wired (2026-09-10)** — edits and adds. `index` IS the
   hardware slot: `readDMRRadioIDs` walks the presence mask and hands each
