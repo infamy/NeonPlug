@@ -450,8 +450,29 @@ export function applyZoneNameToRecord(original: Uint8Array, zone: Zone): Uint8Ar
  * bytes are carried for diagnostics and are not written back blindly, or a
  * stale capture would override an edit.
  */
+/**
+ * An ERASED record reads as all 0xFF; treat it as zeros instead.
+ *
+ * Patching erased flash leaves 0xFF in every byte the encoder does not own, and
+ * for a radio ID that is 28 bytes (0x24-0x3f) — so a record added into the hole
+ * a delete left would differ from every populated record on the radio.
+ *
+ * Zero is not a guess. The vendor CPS writes the WHOLE radio ID table on every
+ * write (0x3680000, 256 bytes, all four slots) and every record it writes has a
+ * zero tail — checked across three separate write captures. All three populated
+ * records read off the reference radio are zero there too. 0xFF appears only in
+ * slots nothing has ever written.
+ *
+ * A populated record can never be all-0xFF: the ID is BCD and the name UTF-16,
+ * so 0xFF bytes are not a value either field can hold.
+ */
+function zeroIfErased(original: Uint8Array): Uint8Array {
+  for (const b of original) if (b !== 0xff) return original;
+  return new Uint8Array(original.length);
+}
+
 export function applyRadioIdToRecord(original: Uint8Array, id: DMRRadioID): Uint8Array {
-  const rec = patch(original, D890_ADDR.RADIO_ID_STRIDE);
+  const rec = patch(zeroIfErased(original), D890_ADDR.RADIO_ID_STRIDE);
   // `Number('abc')` is NaN, not nullish, so a `??` chain here would never
   // reach its fallback and encodeBcdAsHexU32 would throw on the NaN.
   const idValue = id.dmrIdValue ?? Number(id.dmrId);

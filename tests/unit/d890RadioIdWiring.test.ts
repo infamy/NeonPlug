@@ -26,6 +26,7 @@ import { d890RadioIds } from '../../src/services/d890WriteInput';
 import { findDanglingReferences } from '../../src/radios/d890uv/references';
 import { useRadioStore } from '../../src/store/radioStore';
 import { useDMRRadioIDsStore } from '../../src/store/dmrRadioIdsStore';
+import { applyRadioIdToRecord } from '../../src/radios/d890uv/tableWrite';
 
 const DIR = join(__dirname, '../fixtures/d890uv');
 const REAL_MASK = new Uint8Array(readFileSync(join(DIR, 'channel-mask-512.bin')));
@@ -99,6 +100,34 @@ describe('radio IDs reach the plan', () => {
     const maskFrame = plan.frames.find((f) => f.address === D890_ADDR.RADIO_ID_SET);
     expect(maskFrame).toBeDefined();
     expect(maskFrame!.data[0] & 0b1111).toBe(0b1001);
+  });
+
+  it('starts an ERASED slot from zeros, not from 0xFF', () => {
+    // A slot a delete emptied reads back as erased flash. Patching that leaves
+    // 0xFF in the 28 bytes (0x24-0x3f) the encoder does not own, so a record
+    // added into the hole would look like nothing else on the radio.
+    //
+    // Zero is the vendor's own shape: the CPS rewrites the WHOLE table on every
+    // write and every record it produces has a zero tail (three write captures),
+    // as do all three populated records read off the reference radio.
+    const erased = new Uint8Array(D890_ADDR.RADIO_ID_STRIDE).fill(0xff);
+    const out = applyRadioIdToRecord(erased, rid(2, 'RID Hole', 222));
+    expect(Array.from(out.subarray(0x24))).toEqual(
+      Array.from(new Uint8Array(D890_ADDR.RADIO_ID_STRIDE - 0x24))
+    );
+    // …and the fields it DOES own are still written.
+    expect(Array.from(out.subarray(0, 4))).toEqual([0x00, 0x00, 0x02, 0x22]);
+  });
+
+  it('leaves a populated record alone apart from its own fields', () => {
+    // The erased check must not fire on a real record: 0xFF bytes scattered in
+    // an unmodelled tail are still somebody's data.
+    const populated = new Uint8Array(D890_ADDR.RADIO_ID_STRIDE);
+    populated.fill(0x5a, 0x24);
+    const out = applyRadioIdToRecord(populated, rid(0, 'X', 1));
+    expect(Array.from(out.subarray(0x24))).toEqual(
+      Array.from(new Uint8Array(D890_ADDR.RADIO_ID_STRIDE - 0x24).fill(0x5a))
+    );
   });
 
   it('REFUSES a slot the session never read rather than inventing one', () => {
