@@ -18,6 +18,7 @@ import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import type { EncryptionKey } from '../../models/EncryptionKey';
 import { LIMITS } from '../../radios/dm32uv/constants';
+import { lowestFreeSlot } from '../../utils/lowestFreeSlot';
 import {
   ENCRYPTION_TYPES,
   clearEncryptionKey,
@@ -193,8 +194,11 @@ export const DigitalTab: React.FC = () => {
     // `radioIds.length` would hand the new ID slot 3 and overwrite the one
     // already there.
     const used = new Set(radioIds.map((r) => r.index));
-    let newIndex = 0;
-    while (used.has(newIndex)) newIndex += 1;
+    const newIndex = lowestFreeSlot(used, dmrRadioIdsMax);
+    if (newIndex === undefined) {
+      showAlert(`No free DMR Radio ID slot: all ${dmrRadioIdsMax} are in use.`);
+      return;
+    }
     addRadioId({
       index: newIndex,
       name: 'New Radio ID',

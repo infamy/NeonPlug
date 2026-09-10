@@ -24,6 +24,7 @@ const decoded = (slot: number, name: string): ScanListDecoded => ({
   slot, name, channels: [1, 2, 3],
   prioritySelect: 2, scanMode: 1,
   lookBackTimeA: 50, lookBackTimeB: 60, dropoutDelay: 70, dwellTime: 80,
+  priorityChannel1Raw: 60, priorityChannel2Raw: 0xffff,
   revertChannel: 0, digitalGroupHold: 0,
 } as ScanListDecoded);
 
@@ -111,6 +112,85 @@ describe('d890ScanLists', () => {
       scanLists: [uiList(0, 'A', [1]), uiList(undefined, 'brand new', [2])],
     });
     expect(() => d890ScanLists()).toThrow(/adding a scan list is not supported yet/);
+  });
+
+  it('still REFUSES an add once the UI has allocated it a slot', () => {
+    // The UI now hands a new list the lowest free slot so a hole gets reused, so
+    // `slot === undefined` no longer identifies an add. The test that matters is
+    // that having a slot is not enough: there must be a RECORD behind it, or
+    // there is nothing to patch and the unknown fields would be invented.
+    stage([decoded(1, 'B')]);
+    useScanListsStore.setState({
+      scanLists: [uiList(1, 'B', [1]), uiList(0, 'new in the hole', [2])],
+    });
+    expect(() => d890ScanLists()).toThrow(/adding a scan list is not supported yet/);
+  });
+
+  it('names the offending list and its slot in the refusal', () => {
+    stage([decoded(1, 'B')]);
+    useScanListsStore.setState({
+      scanLists: [uiList(1, 'B', [1]), uiList(0, 'new in the hole', [2])],
+    });
+    // Slot 1 in the message, 0 on the wire — the user counts from 1.
+    expect(() => d890ScanLists()).toThrow(/"new in the hole" \(slot 1\)/);
+  });
+});
+
+describe('d890ScanLists — the three fields that used to be discarded', () => {
+  it('writes Hang Time back as the dwell time', () => {
+    // It DISPLAYED the radio's real dwell time, accepted an edit, and reverted.
+    stage([decoded(0, 'A')]);
+    useScanListsStore.setState({
+      scanLists: [{ ...uiList(0, 'A', [1]), hangTime: 45 } as ScanList],
+    });
+    expect(d890ScanLists()![0].dwellTime).toBe(45);
+  });
+
+  it('keeps the radio dwell time when the UI has no hang time', () => {
+    stage([decoded(0, 'A')]);
+    useScanListsStore.setState({ scanLists: [uiList(0, 'A', [1])] });
+    expect(d890ScanLists()![0].dwellTime).toBe(80);
+  });
+
+  it('never turns a blank or absurd hang time into a 0-decisecond timer', () => {
+    stage([decoded(0, 'A')]);
+    useScanListsStore.setState({
+      scanLists: [{ ...uiList(0, 'A', [1]), hangTime: NaN } as ScanList],
+    });
+    expect(d890ScanLists()![0].dwellTime).toBe(80);
+  });
+
+  it('writes both priority channels from the UI pair', () => {
+    stage([decoded(0, 'A')]);
+    useScanListsStore.setState({
+      scanLists: [{
+        ...uiList(0, 'A', [1]),
+        priority1Type: 2, priorityChannel1: 7,
+        priority2Type: 1, priorityChannel2: undefined,
+      } as ScanList],
+    });
+    const out = d890ScanLists()![0];
+    expect(out.priorityChannel1Raw).toBe(7);
+    expect(out.priorityChannel2Raw).toBe(0x0000);
+  });
+
+  it('lets the user turn a priority OFF', () => {
+    // The record holds channel 60; the user sets Priority 1 Type to None.
+    stage([decoded(0, 'A')]);
+    useScanListsStore.setState({
+      scanLists: [{ ...uiList(0, 'A', [1]), priority1Type: 0 } as ScanList],
+    });
+    expect(d890ScanLists()![0].priorityChannel1Raw).toBe(0xffff);
+  });
+
+  it('KEEPS the radio priority when the UI carries no type at all', () => {
+    // A list from an importer or an older .neonplug has no priority fields.
+    // Encoding undefined would write 0xffff and silently delete channel 60.
+    stage([decoded(0, 'A')]);
+    useScanListsStore.setState({ scanLists: [uiList(0, 'A', [1])] });
+    const out = d890ScanLists()![0];
+    expect(out.priorityChannel1Raw).toBe(60);
+    expect(out.priorityChannel2Raw).toBe(0xffff);
   });
 
   it('returns undefined when the radio was never read', () => {

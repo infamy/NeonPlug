@@ -21,6 +21,7 @@ import type { QuickContact } from '../models/QuickContact';
 import type { Channel } from '../models/Channel';
 import type { DMRRadioID } from '../models/DMRRadioID';
 import type { ScanListDecoded } from '../radios/d890uv/structures';
+import { encodeScanPriority } from '../radios/d890uv/scanListPriority';
 import {
   buildTalkgroupRenumber,
   isNoOpRenumber,
@@ -381,6 +382,16 @@ export function d890RadioIds(): DMRRadioID[] | undefined {
  * ⚠️ ADD is still refused: a new list has no decoded record to patch, and this
  * radio's scan list record has fields the shared model cannot describe.
  */
+/**
+ * Clamp a UI number into the u16 the record holds, falling back to what the
+ * radio already had rather than to zero. A blank or NaN input must not silently
+ * become a 0-decisecond timer.
+ */
+function u16(value: number | undefined, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(Math.max(Math.trunc(value!), 0), 0xffff);
+}
+
 export function d890ScanLists(): ScanListDecoded[] | undefined {
   const detailed = useRadioStore.getState().tables.scanListsDetailed;
   if (!detailed || detailed.length === 0) return undefined;
@@ -391,15 +402,26 @@ export function d890ScanLists(): ScanListDecoded[] | undefined {
     if (list.slot !== undefined) bySlot.set(list.slot, list);
   }
 
-  const added = edited.filter((l) => l.slot === undefined);
+  // An add is a list with no DECODED RECORD behind its slot, not merely one
+  // with no slot. The UI now allocates the lowest free slot on add (so a hole
+  // left by a delete gets reused instead of being stranded), which means
+  // `slot === undefined` no longer identifies a new list.
+  const haveRecord = new Set(detailed.map((r) => r.slot));
+  const added = edited.filter((l) => l.slot === undefined || !haveRecord.has(l.slot));
   if (added.length > 0) {
+    const where = added
+      .map((l) => (l.slot === undefined ? `"${l.name}"` : `"${l.name}" (slot ${l.slot + 1})`))
+      .join(', ');
     throw new Error(
-      `Refusing to write: adding a scan list is not supported yet.\n\n` +
-        `A new list has no record read from the radio to patch, and this radio's ` +
-        `scan list holds fields the shared model cannot describe — scan mode, ` +
-        `priority select, the raw priority channels and four timers — so one ` +
-        `cannot be built from scratch.\n\n` +
-        `Editing and deleting still work. To add one, use the vendor CPS.`
+      `Refusing to write: adding a scan list is not supported yet (${where}).\n\n` +
+        `A new list has no record read from the radio to patch. Its layout is ` +
+        `otherwise fully known — every byte from 0x98 to the end of the record is ` +
+        `zero in all six scan lists captured so far — but four fields the UI cannot ` +
+        `show have no known default: look-back time A and B, dropout delay and ` +
+        `revert channel. Both lists on the reference radio hold deliberately ` +
+        `distinct sweep values, so neither is a default.\n\n` +
+        `ONE scan list created fresh in the vendor CPS would settle them for good. ` +
+        `Until then, editing and deleting work; add one with the vendor CPS.`
     );
   }
 
@@ -409,7 +431,27 @@ export function d890ScanLists(): ScanListDecoded[] | undefined {
     .filter((record) => bySlot.has(record.slot))
     .map((record) => {
       const ui = bySlot.get(record.slot)!;
-      return { ...record, name: ui.name, channels: ui.channels ?? record.channels };
+      return {
+        ...record,
+        name: ui.name,
+        channels: ui.channels ?? record.channels,
+        // Hang time IS this radio's dwell time — the read already maps it that
+        // way, so not writing it back meant the field displayed a real value,
+        // accepted an edit, and silently reverted.
+        dwellTime: u16(ui.hangTime, record.dwellTime),
+        // An ABSENT type keeps the radio's value; it never means "Off". The read
+        // always populates these, so undefined here means the list came from
+        // somewhere else — an importer, or a .neonplug saved before this was
+        // wired — and forcing 0xffff would silently delete a real priority.
+        priorityChannel1Raw:
+          ui.priority1Type === undefined
+            ? record.priorityChannel1Raw
+            : encodeScanPriority(ui.priority1Type, ui.priorityChannel1),
+        priorityChannel2Raw:
+          ui.priority2Type === undefined
+            ? record.priorityChannel2Raw
+            : encodeScanPriority(ui.priority2Type, ui.priorityChannel2),
+      };
     });
 }
 

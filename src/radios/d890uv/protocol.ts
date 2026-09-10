@@ -38,6 +38,7 @@ import type { Contact } from '../../models/Contact';
 import type { QuickContact } from '../../models/QuickContact';
 import type { RXGroup } from '../../models/RXGroup';
 import type { DMRRadioID } from '../../models/DMRRadioID';
+import { narrowScanList } from './scanListPriority';
 import type { RadioInfo } from '../../types/radio';
 import type { RadioSettings } from '../../models/RadioSettings';
 import { parseD890Settings } from './settingsFormat';
@@ -927,19 +928,9 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
    */
   async readScanLists(): Promise<import('../../models/ScanList').ScanList[]> {
     const detailed = await this.readScanListsDetailed();
-    return detailed.map((sl) => ({
-      name: sl.name,
-      // The hardware slot, carried through the narrowing. Without it the write
-      // has no way to put an edited list back where the radio holds it.
-      slot: sl.slot,
-      channels: sl.channels,
-      channelCount: sl.channels.length,
-      // DM-32 wire concepts with no D890 equivalent; left at neutral defaults
-      // rather than invented.
-      ctcScanMode: 0,
-      scanTxMode: 0,
-      hangTime: sl.dwellTime,
-    }));
+    // The narrowing lives in `scanListPriority.ts` so it can be tested without
+    // a radio — it is where fields go missing.
+    return detailed.map(narrowScanList);
   }
 
   /** Full D890 scan-list decode, without the lossy narrowing above. */

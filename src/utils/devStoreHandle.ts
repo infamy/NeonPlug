@@ -29,6 +29,8 @@ import { useRadioSettingsStore } from '../store/radioSettingsStore';
 import { useChannelsStore } from '../store/channelsStore';
 import { useZonesStore } from '../store/zonesStore';
 import { useQuickMessagesStore } from '../store/quickMessagesStore';
+import { useScanListsStore } from '../store/scanListsStore';
+import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
 
 export function installDevStoreHandle(): void {
   if (!import.meta.env.DEV) return;
@@ -38,6 +40,8 @@ export function installDevStoreHandle(): void {
     channels: useChannelsStore,
     zones: useZonesStore,
     quickMessages: useQuickMessagesStore,
+    scanLists: useScanListsStore,
+    radioIds: useDMRRadioIDsStore,
   };
   console.log('[NeonPlug] dev store handle at window.neonplug (dev builds only)');
 }

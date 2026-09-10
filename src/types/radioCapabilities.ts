@@ -7,6 +7,18 @@ import type { RadioSettings } from '../models/RadioSettings';
 import type { DigitalEmergency, DigitalEmergencyConfig } from '../models/DigitalEmergency';
 import type { EncryptionKey } from '../models/EncryptionKey';
 
+/**
+ * A scan-list detail field the settings panel can offer. See
+ * `RadioCapabilities.scanListFields`.
+ */
+export type ScanListField =
+  | 'ctcScanMode'
+  | 'scanTxMode'
+  | 'hangTime'
+  | 'designatedTxChannel'
+  | 'priority1'
+  | 'priority2';
+
 /** Result shape for CTCSS/DCS decode (radio-agnostic). */
 export interface CTCSSDCSResultLike {
   type: 'CTCSS' | 'DCS' | 'None';
@@ -278,6 +290,20 @@ export interface RadioCapabilities {
   maxScanListChannels?: number;
   /** Max scan list count when supportsScanLists is true (e.g. 32 for DM32). */
   maxScanLists?: number;
+  /**
+   * Which scan-list detail fields this radio actually STORES AND WRITES BACK.
+   *
+   * The scan-list settings panel was shaped around the DM-32's record, so it
+   * offered all of these to every radio. On the D890UV every one of them was
+   * editable and silently discarded on write — and `hangTime` was the worst of
+   * them, because it displayed a real value read off the radio, accepted an
+   * edit, and reverted.
+   *
+   * Undefined means "all of them", which is the DM-32's behaviour and keeps
+   * every existing radio unchanged. A radio that lists a subset gets editors
+   * only for what it can honour.
+   */
+  scanListFields?: readonly ScanListField[];
   /** If true, protocol supports readBootImage / writeBootImage. */
   supportsBootImage?: boolean;
   /** If true, protocol supports readQuickMessages. */

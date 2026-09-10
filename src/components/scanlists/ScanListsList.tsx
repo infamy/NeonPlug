@@ -4,6 +4,8 @@ import { formatPlural } from '../../utils/formatPlural';
 import { createPortal } from 'react-dom';
 import { useScanListsStore } from '../../store/scanListsStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { lowestFreeSlot } from '../../utils/lowestFreeSlot';
+import type { ScanListField } from '../../types/radioCapabilities';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { ScanList } from '../../models/ScanList';
 import type { Channel } from '../../models/Channel';
@@ -41,8 +43,27 @@ export const ScanListsList: React.FC = () => {
       return;
     }
     const scanListName = newScanListName.trim().slice(0, 16);
+    // The LOWEST FREE slot, not the list length. `slot` is a hardware slot and
+    // the table can have holes: deleting a list clears its presence bit and
+    // leaves the survivors where they are, so a radio holding one list in slot 1
+    // has length 1 and slot 0 empty. Appending by length would target slot 1 and
+    // overwrite it, while never reusing the hole — which is how slot 0 ended up
+    // stranded. Radios whose lists carry no slot (the DM-32) are unaffected:
+    // `used` is empty and this resolves to undefined. So does a D890 whose every
+    // list has been deleted — there is then no slot to infer from — and that add
+    // is refused by `d890ScanLists` with an explanation either way.
+    const used = new Set(scanLists.map((sl) => sl.slot).filter((n): n is number => n !== undefined));
+    let slot: number | undefined;
+    if (used.size > 0) {
+      slot = lowestFreeSlot(used, maxLists);
+      if (slot === undefined) {
+        showAlert(`No free scan list slot: all ${maxLists} are in use.`);
+        return;
+      }
+    }
     addScanList({
       name: scanListName,
+      slot,
       ctcScanMode: 0,
       scanTxMode: 0,
       channels: [],
@@ -203,7 +224,7 @@ export const ScanListsList: React.FC = () => {
     <>
       <ListDetailLayout
         listTitle="Scan Lists"
-        listSubtitle={`${scanLists.length}/32 scan lists`}
+        listSubtitle={`${scanLists.length}/${caps?.maxScanLists ?? 32} scan lists`}
         addInputPlaceholder="Scan list name..."
         addInputValue={newScanListName}
         onAddInputChange={setNewScanListName}
@@ -412,6 +433,14 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
   const { channels } = useChannelsStore();
   const [showSettings, setShowSettings] = useState(true);
 
+  // Only offer an editor for a field the radio actually stores. Undefined means
+  // "all of them" — the DM-32's shape, which every radio got before this.
+  const shows = (field: ScanListField) =>
+    caps?.scanListFields === undefined || caps.scanListFields.includes(field);
+  const anySettings = (['ctcScanMode', 'scanTxMode', 'hangTime', 'designatedTxChannel'] as const)
+    .some(shows);
+  const anyPriority = shows('priority1') || shows('priority2');
+
   const availableItems = channels
     .filter(ch => !scanList.channels.includes(ch.number))
     .sort((a, b) => a.number - b.number)
@@ -434,8 +463,9 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
         
         {showSettings && (
           <div className="p-4 pt-0 space-y-3 relative">
+            {anySettings && (
             <div className="grid grid-cols-2 gap-4 relative">
-              {/* CTC Scan Mode */}
+              {shows('ctcScanMode') && (
               <div>
                 <label className="block text-cool-gray text-xs mb-1">CTC Scan Mode</label>
                 <select
@@ -448,9 +478,9 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   <option value={2}>Detection CTC Priority</option>
                   <option value={3}>Detection CTC</option>
                 </select>
-              </div>
+              </div>)}
 
-              {/* Scan TX Mode */}
+              {shows('scanTxMode') && (
               <div>
                 <label className="block text-cool-gray text-xs mb-1">Scan TX Mode</label>
                 <select
@@ -462,9 +492,9 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   <option value={1}>Last Active Channel</option>
                   <option value={2}>Designed Channel</option>
                 </select>
-              </div>
+              </div>)}
 
-              {/* Hang Time */}
+              {shows('hangTime') && (
               <div>
                 <label className="block text-cool-gray text-xs mb-1">Hang Time (tenths of second)</label>
                 <input
@@ -477,9 +507,9 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   placeholder="30 = 3.0s"
                 />
                 <p className="text-cool-gray text-xs mt-0.5">{((scanList.hangTime || 30) / 10).toFixed(1)}s</p>
-              </div>
+              </div>)}
 
-              {/* Designated TX Channel */}
+              {shows('designatedTxChannel') && (
               <div>
                 <label className="block text-cool-gray text-xs mb-1">Designated TX Channel</label>
                 <SearchableChannelSelect
@@ -489,15 +519,15 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   includeNone={true}
                   includeCurrent={true}
                 />
-                <p className="text-cool-gray text-xs mt-0.5">ENCODED (stored as value-2)</p>
-              </div>
-            </div>
+              </div>)}
+            </div>)}
 
-            {/* Priority Settings */}
+            {anyPriority && (
             <div className="pt-2 border-t border-neon-cyan border-opacity-20">
               <h5 className="text-white text-xs font-medium mb-2">Priority Settings</h5>
               <div className="grid grid-cols-2 gap-4">
                 {/* Priority 1 Type */}
+                {shows('priority1') && (
                 <div>
                   <label className="block text-cool-gray text-xs mb-1">Priority 1 Type</label>
                   <select
@@ -509,9 +539,10 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                     <option value={1}>Current Channel</option>
                     <option value={2}>Specific Channel</option>
                   </select>
-                </div>
+                </div>)}
 
                 {/* Priority Channel 1 */}
+                {shows('priority1') && (
                 <div>
                   <label className="block text-cool-gray text-xs mb-1">Priority Channel 1</label>
                   <SearchableChannelSelect
@@ -521,9 +552,10 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                     disabled={(scanList.priority1Type || 0) !== 2}
                     placeholder="Select channel..."
                   />
-                </div>
+                </div>)}
 
                 {/* Priority 2 Type */}
+                {shows('priority2') && (
                 <div>
                   <label className="block text-cool-gray text-xs mb-1">Priority 2 Type</label>
                   <select
@@ -535,9 +567,10 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                     <option value={1}>Current Channel</option>
                     <option value={2}>Specific Channel</option>
                   </select>
-                </div>
+                </div>)}
 
                 {/* Priority Channel 2 */}
+                {shows('priority2') && (
                 <div>
                   <label className="block text-cool-gray text-xs mb-1">Priority Channel 2</label>
                   <SearchableChannelSelect
@@ -547,10 +580,9 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                     disabled={(scanList.priority2Type || 0) !== 2}
                     placeholder="Select channel..."
                   />
-                  <p className="text-cool-gray text-xs mt-0.5">ENCODED (stored as value-2)</p>
-                </div>
+                </div>)}
               </div>
-            </div>
+            </div>)}
           </div>
         )}
       </div>
