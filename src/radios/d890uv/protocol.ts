@@ -129,6 +129,7 @@ import {
   zoneNameAddress,
   zoneChannelsAddress,
   talkgroupAddress,
+  D890_TALKGROUPS_PER_BANK,
   rxGroupAddress,
   scanListAddress,
   type ScanListDecoded,
@@ -864,10 +865,55 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
       )
     );
 
-    const out: QuickContact[] = [];
+    // Read contiguous RUNS of occupied slots, not one request per record.
+    //
+    // Two reasons, and the second is a correctness one.
+    //
+    // 1. `D890_ADDR.TALKGROUP_READ` is `alignRead(0xC8)` = 208, because a read
+    //    length must be 16-aligned while the record stride is 200. So a
+    //    per-record read overshoots by 8 bytes and starts mid-frame. On a
+    //    1,010-talkgroup radio that produced two half-read 16-byte frames at
+    //    the end of each bank, which the write path then cannot preserve — it
+    //    will not invent the missing bytes. Run reads are aligned outward at
+    //    both ends, so every frame they touch is whole.
+    //
+    // 2. It is fewer round trips. `readMemory` chunks at the negotiated length
+    //    (240 B here), so a 1,000-record bank costs ~834 requests instead of
+    //    1,000 — and the read log holds one span per run rather than 1,010
+    //    overlapping ones.
+    //
+    // Runs rather than first..last: talk groups can be sparse, and a single
+    // span from slot 0 to slot 9,999 would pull 2 MB to fetch two records. A
+    // run breaks at any gap and at every bank boundary, since banks are
+    // 0x80000 apart and share no frame.
+    const runs: number[][] = [];
     for (const index of present) {
-      const record = await conn.readMemory(talkgroupAddress(index), D890_ADDR.TALKGROUP_READ);
-      out.push(parseTalkgroupQuick(record, index));
+      const current = runs[runs.length - 1];
+      const contiguous =
+        current !== undefined &&
+        index === current[current.length - 1]! + 1 &&
+        Math.floor(index / D890_TALKGROUPS_PER_BANK) ===
+          Math.floor(current[current.length - 1]! / D890_TALKGROUPS_PER_BANK);
+      if (contiguous) current.push(index);
+      else runs.push([index]);
+    }
+
+    const out: QuickContact[] = [];
+    for (const run of runs) {
+      const first = run[0]!;
+      const last = run[run.length - 1]!;
+      const from = talkgroupAddress(first);
+      const to = talkgroupAddress(last) + D890_ADDR.TALKGROUP_STRIDE;
+      // Align outward so the span covers whole frames at both ends.
+      const start = from - (from % D890_BLOCK.ALIGNMENT);
+      const end = Math.ceil(to / D890_BLOCK.ALIGNMENT) * D890_BLOCK.ALIGNMENT;
+      const span = await conn.readMemory(start, end - start);
+      for (const index of run) {
+        const at = talkgroupAddress(index) - start;
+        out.push(parseTalkgroupQuick(
+          span.subarray(at, at + D890_ADDR.TALKGROUP_STRIDE), index
+        ));
+      }
     }
     return out;
   }

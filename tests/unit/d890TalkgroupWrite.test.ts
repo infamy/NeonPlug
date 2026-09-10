@@ -190,3 +190,71 @@ describe('d890Talkgroups — index base and the refusal', () => {
     expect(d890Talkgroups()).toBeUndefined();
   });
 });
+
+/**
+ * Reading talk groups in contiguous runs.
+ *
+ * A per-record read asks for `alignRead(0xC8)` = 208 bytes against a 200-byte
+ * stride, so it overshoots by 8 and starts mid-frame. On the 1,010-talkgroup
+ * radio that left two HALF-READ 16-byte frames — one at the end of each bank —
+ * which the write path then refuses to preserve, because completing them would
+ * mean inventing the bytes it never read. Run reads are aligned outward at both
+ * ends, so every frame they touch is whole.
+ */
+describe('talkgroup read spans', () => {
+  const STRIDE = 0xc8;
+  const ALIGN = 0x10;
+
+  /** The spans `readQuickContacts` would request for a set of occupied slots. */
+  function spansFor(present: number[]) {
+    const runs: number[][] = [];
+    for (const index of present) {
+      const cur = runs[runs.length - 1];
+      const ok = cur !== undefined && index === cur[cur.length - 1]! + 1 &&
+        Math.floor(index / D890_TALKGROUPS_PER_BANK) ===
+        Math.floor(cur[cur.length - 1]! / D890_TALKGROUPS_PER_BANK);
+      if (ok) cur!.push(index); else runs.push([index]);
+    }
+    return runs.map((run) => {
+      const from = talkgroupAddress(run[0]!);
+      const to = talkgroupAddress(run[run.length - 1]!) + STRIDE;
+      const start = from - (from % ALIGN);
+      const end = Math.ceil(to / ALIGN) * ALIGN;
+      return { start, length: end - start };
+    });
+  }
+
+  it('produces frame-aligned spans, so no frame is left half-read', () => {
+    const present = Array.from({ length: 1010 }, (_, i) => i);
+    for (const s of spansFor(present)) {
+      expect(s.start % ALIGN).toBe(0);
+      expect(s.length % ALIGN).toBe(0);
+    }
+  });
+
+  it('splits at the bank boundary — banks share no frame', () => {
+    const spans = spansFor(Array.from({ length: 1010 }, (_, i) => i));
+    expect(spans).toHaveLength(2);
+    expect(spans[0].start).toBe(0x3a00000);
+    expect(spans[1].start).toBe(0x3a80000);
+  });
+
+  it('breaks at gaps rather than spanning them', () => {
+    // A single span from slot 0 to slot 9,999 would pull 2 MB to fetch two
+    // records. Sparse tables must stay cheap.
+    const spans = spansFor([0, 9999]);
+    expect(spans).toHaveLength(2);
+    expect(spans[0].length).toBeLessThan(0x100);
+    expect(spans[1].length).toBeLessThan(0x100);
+  });
+
+  it('covers every occupied record inside its own span', () => {
+    const present = [0, 1, 2, 500, 501, 999, 1000, 1009];
+    const spans = spansFor(present);
+    for (const index of present) {
+      const at = talkgroupAddress(index);
+      const covering = spans.find((s) => at >= s.start && at + STRIDE <= s.start + s.length);
+      expect(covering, `slot ${index} is not inside any span`).toBeDefined();
+    }
+  });
+});

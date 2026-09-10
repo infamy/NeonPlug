@@ -61,7 +61,15 @@ function setup(zoneSlots = [0, 1]) {
 describe('planCodeplugWrite', () => {
   it('writes channels and zones in one plan', () => {
     const plan = planCodeplugWrite(setup());
-    expect(plan.written.map((w) => w.region)).toEqual(['channels', 'zones']);
+    expect(plan.written.map((w) => w.region)).toEqual([
+      'channels',
+      'zones',
+      // Everything else the session READ goes back verbatim. This used to be
+      // absent because the preserve pass walked the vendor's captured run list
+      // instead of the read log — which is how 994 talk groups were destroyed
+      // on 2026-09-09. See `d890PreserveReadLog.test.ts`.
+      'unmodelled regions (verbatim)',
+    ]);
     expect(plan.payloadBytes).toBeGreaterThan(0);
   });
 

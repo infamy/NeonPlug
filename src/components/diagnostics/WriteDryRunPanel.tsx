@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { useChannelsStore } from '../../store/channelsStore';
 import { D890UVProtocol } from '../../radios/d890uv/protocol';
-import { VENDOR_WRITE_RUNS } from '../../radios/d890uv/codeplugWrite';
+import { describeCoverage, VENDOR_WRITE_RUNS } from '../../radios/d890uv/codeplugWrite';
 import { diffPlanAgainstRead, renderWriteDiff } from '../../radios/d890uv/writeDiff';
 import { dryRunWrite } from '../../radios/d890uv/writeDryRun';
 import type { D890WriteDiff } from '../../radios/d890uv/writeDiff';
@@ -73,6 +73,7 @@ export function WriteDryRunPanel() {
       // them. The vendor total is here for the same reason — a plan an order of
       // magnitude short of it is not a codeplug write, whatever it is called.
       const vendorBytes = VENDOR_WRITE_RUNS.reduce((n, r) => n + r.bytes, 0);
+      const coverage = describeCoverage(plan, readLog!);
       setReport(
         renderWriteDiff(
           d,
@@ -82,6 +83,20 @@ export function WriteDryRunPanel() {
             `payload ${plan.payloadBytes} bytes in ${plan.frames.length} frames\n` +
             `vendor write covers ${vendorBytes} bytes ` +
             `(${Math.round((plan.payloadBytes / vendorBytes) * 100)}% of it planned here)\n` +
+            // ⚠️ THE LINE THAT MATTERS on a radio that erases a block when
+            // written. The percentage above compares us to a capture from
+            // ANOTHER radio; on 2026-09-09 it read 102% while 61% of what this
+            // session had read was being dropped, and 994 talk groups were
+            // destroyed. This one compares the plan against the radio in front
+            // of us, and must be 0.
+            `read but NOT written back: ${coverage.bytesReadNotWritten} bytes` +
+            (coverage.bytesReadNotWritten > 0
+              ? ` ⚠️ DO NOT WRITE\n` +
+                coverage.readNotWrittenByBlock
+                  .slice(0, 8)
+                  .map((b) => `  - block 0x${b.block.toString(16)}: ${b.bytes} bytes`)
+                  .join('\n') + '\n'
+              : ' ✓\n') +
             `wire ${validated.wireBytes} bytes, ~${validated.estimatedSeconds.toFixed(1)}s\n` +
             `all ${validated.frames} frames passed the checksum and address guards\n` +
             `skipped regions ${plan.skipped.length}` +

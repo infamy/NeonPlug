@@ -956,19 +956,86 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
     for (const f of frames) {
       for (let i = 0; i < f.data.length; i += 1) planned.add(f.address + i);
     }
-    const verbatim: D890WriteFrame[] = [];
-    for (const run of VENDOR_WRITE_RUNS) {
-      for (let off = 0; off < run.bytes; off += 0x10) {
-        const address = run.address + off;
-        // Whole frames only: a frame half-planned and half-verbatim would mix
-        // an edit with a stale original inside one 16-byte write.
-        let anyPlanned = false;
-        for (let i = 0; i < 0x10; i += 1) if (planned.has(address + i)) { anyPlanned = true; break; }
-        if (anyPlanned) continue;
-        const original = sliceFromReadLog(input.readLog, address, 0x10);
-        if (!original) continue;
-        verbatim.push({ address, data: Uint8Array.from(original), what: 'unchanged' });
+
+    // ── Driven by the READ LOG, not by VENDOR_WRITE_RUNS ─────────────────────
+    //
+    // This used to walk the vendor's captured run list. That list is the CPS's
+    // own write session, which made it look authoritative — but it was captured
+    // from a radio holding SIX talk groups, so it says `0x3A00000, 1200 bytes`.
+    // On a radio holding 1,010, we wrote back six records and the rest had
+    // nothing to restore them. 994 talk groups were destroyed on 2026-09-09
+    // exactly this way, and an audit of that radio found 227,032 of the 369,920
+    // bytes we had READ — 61% — would never have been written back.
+    //
+    // The vendor is not doing something different in kind. Its write is
+    // CONTENT-SIZED: in the same capture it writes the talk group locator at
+    // its full fixed 40,000 bytes and the presence mask at its full 1,264,
+    // because those are fixed tables — and 1,200 bytes of RECORDS, because that
+    // radio had six. Freezing all 74 lengths turned a content-sized rule into a
+    // fixed one.
+    //
+    // The read log is that same rule derived from THIS radio: the readers fetch
+    // what the presence masks say is occupied, so whatever is in the log is
+    // what the radio holds. Writing all of it back is what the CPS does.
+    //
+    // Every byte is one the radio gave us this session, so this cannot corrupt:
+    // the worst case is writing back a byte that was already there.
+    // Assembled byte by byte, STITCHING ACROSS SPANS.
+    //
+    // `sliceFromReadLog` needs one span to cover all 16 bytes, and read spans
+    // do not line up with the 16-byte write grid: the talkgroup stride is 0xC8,
+    // so a frame routinely straddles two records. Using it here silently
+    // dropped 8,080 bytes of a 1,010-talkgroup read — frames that were fully
+    // read, just not by a single request. Skipping those is the same fault in
+    // miniature as the one this change exists to fix.
+    //
+    // A frame is emitted only when all 16 bytes are accounted for. Partial
+    // frames are dropped, never padded: the bytes we did not read are the bytes
+    // we must not invent.
+    const filled = new Map<number, { data: Uint8Array; seen: Uint8Array; have: number }>();
+    for (const [start, bytes] of input.readLog) {
+      for (let i = 0; i < bytes.length; i += 1) {
+        const at = start + i;
+        const frameAt = at - (at % 0x10);
+        let slot = filled.get(frameAt);
+        if (!slot) {
+          slot = { data: new Uint8Array(0x10), seen: new Uint8Array(0x10), have: 0 };
+          filled.set(frameAt, slot);
+        }
+        const off = at - frameAt;
+        // Overlapping reads return the same bytes for the same address, so each
+        // position is counted once and `have` stays a true completeness count.
+        if (!slot.seen[off]) {
+          slot.seen[off] = 1;
+          slot.have += 1;
+        }
+        slot.data[off] = bytes[i]!;
       }
+    }
+
+    // Regions the driver must NEVER write, whatever is in the read log.
+    //
+    // Widening the preserve pass from "what the vendor writes" to "everything
+    // we read" is what fixes the under-write — and it opens the opposite
+    // failure: writing somewhere we have no business writing. `Local info` is
+    // the radio identifying itself and is flagged `neverWrite`; today it never
+    // reaches the log because `negotiateReadLength` uses `readChunk`, which
+    // does not log, but that is an accident of which method reads it and not a
+    // guarantee. Enforce the flag here, where the frames are actually made.
+    const isForbidden = (at: number) =>
+      NEVER_WRITE_RANGES.some((r) => at + 0x10 > r.from && at < r.to);
+
+    const verbatim: D890WriteFrame[] = [];
+    for (const address of [...filled.keys()].sort((a, b) => a - b)) {
+      const slot = filled.get(address)!;
+      if (slot.have !== 0x10) continue;
+      if (isForbidden(address)) continue;
+      // Whole frames only: a frame half-planned and half-verbatim would mix
+      // an edit with a stale original inside one 16-byte write.
+      let anyPlanned = false;
+      for (let i = 0; i < 0x10; i += 1) if (planned.has(address + i)) { anyPlanned = true; break; }
+      if (anyPlanned) continue;
+      verbatim.push({ address, data: slot.data, what: 'unchanged' });
     }
     take('unmodelled regions (verbatim)', verbatim[0]?.address ?? 0, verbatim);
   }
@@ -1021,6 +1088,21 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
  * computation rather than an opinion. Sizes are the vendor's, not ours — a run
  * we cover only partially is still a gap, and this is what makes that visible.
  */
+/**
+ * Address ranges this driver must NEVER write, whatever a read log holds.
+ *
+ * Declared from `constants` rather than derived from `D890_MEMORY_MAP` on
+ * purpose: importing the memory map here pulls its entire annotated table into
+ * the main bundle (+67 KB measured), and the deployed page IS the offline app.
+ *
+ * ⚠️ `tests/unit/d890PreserveReadLog.test.ts` asserts this covers every region
+ * `recordLayout.ts` flags `neverWrite`, so the two cannot drift — add one there
+ * without adding it here and the suite fails.
+ */
+const NEVER_WRITE_RANGES: readonly { from: number; to: number }[] = [
+  { from: D890_ADDR.LOCAL_INFO, to: D890_ADDR.LOCAL_INFO + D890_ADDR.LOCAL_INFO_SIZE },
+];
+
 export const VENDOR_WRITE_RUNS: readonly { address: number; bytes: number }[] = [
   { address: 0x01000000, bytes: 13056 }, { address: 0x01003d80, bytes: 640 },
   { address: 0x01080000, bytes: 512 },   { address: 0x01083f00, bytes: 256 },
@@ -1071,6 +1153,21 @@ export interface D890WriteCoverage {
   percentOfVendorBytes: number;
   /** Vendor runs this plan does not touch at all, largest first. */
   uncovered: { address: number; bytes: number }[];
+  /**
+   * Bytes this session READ that the plan would not write back.
+   *
+   * ⚠️ THE NUMBER THAT MATTERS on a radio that erases a block when written.
+   * `percentOfVendorBytes` measures us against a capture from someone else's
+   * radio and read 102% while 61% of what we had read was being dropped — it
+   * cannot see this class of fault at all, because the vendor runs are the very
+   * thing that was too small.
+   *
+   * Must be 0. Anything above it is data the radio gave us and would not get
+   * back.
+   */
+  bytesReadNotWritten: number;
+  /** Where those bytes are, by 0x80000 block, largest first. */
+  readNotWrittenByBlock: { block: number; bytes: number }[];
 }
 
 /**
@@ -1080,7 +1177,13 @@ export interface D890WriteCoverage {
  * this reports 100%, a NeonPlug write and a vendor write are different
  * operations, and the difference is exactly the regions listed in `uncovered`.
  */
-export function describeCoverage(plan: D890CodeplugWritePlan): D890WriteCoverage {
+export function describeCoverage(
+  plan: D890CodeplugWritePlan,
+  /** The session's read log. Without it `bytesReadNotWritten` reports 0, which
+   *  is honest — there is nothing to compare against — but it is the whole
+   *  point of this report, so pass it. */
+  readLog?: ReadonlyMap<number, Uint8Array>
+): D890WriteCoverage {
   const touched = new Set<number>();
   for (const f of plan.frames) {
     for (let i = 0; i < f.data.length; i += 1) touched.add(f.address + i);
@@ -1096,6 +1199,22 @@ export function describeCoverage(plan: D890CodeplugWritePlan): D890WriteCoverage
     else { none += 1; uncovered.push(run); }
   }
   const vendorBytes = VENDOR_WRITE_RUNS.reduce((n, r) => n + r.bytes, 0);
+
+  // What we read and would not put back. Counted per byte rather than per run,
+  // because the failure is partial runs: 1,200 bytes of a 202,000-byte table
+  // looks like a covered run and is a destroyed one.
+  let bytesReadNotWritten = 0;
+  const byBlock = new Map<number, number>();
+  for (const [start, bytes] of readLog ?? []) {
+    for (let i = 0; i < bytes.length; i += 1) {
+      const at = start + i;
+      if (touched.has(at)) continue;
+      bytesReadNotWritten += 1;
+      const block = Math.floor(at / 0x80000) * 0x80000;
+      byBlock.set(block, (byBlock.get(block) ?? 0) + 1);
+    }
+  }
+
   return {
     vendorRuns: VENDOR_WRITE_RUNS.length,
     runsFullyCovered: fully,
@@ -1105,5 +1224,9 @@ export function describeCoverage(plan: D890CodeplugWritePlan): D890WriteCoverage
     bytesCovered,
     percentOfVendorBytes: Math.round((bytesCovered / vendorBytes) * 100),
     uncovered: uncovered.sort((a, b) => b.bytes - a.bytes),
+    bytesReadNotWritten,
+    readNotWrittenByBlock: [...byBlock]
+      .map(([block, bytes]) => ({ block, bytes }))
+      .sort((a, b) => b.bytes - a.bytes),
   };
 }
