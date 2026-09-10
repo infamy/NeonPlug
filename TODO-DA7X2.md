@@ -201,8 +201,11 @@ written a slot down exactly this way on 2026-09-03.
   slot set cannot change and WRONG the moment add/delete is allowed. Both must
   land together.
 
-⚠️ **No talk group write has reached a radio.** The edit path is unit-tested and
-unproven; it needs the Tier-2 round trip in `HW-ROUNDTRIP-TESTS.md`.
+✅ **VERIFIED ON HARDWARE 2026-09-09.** `TG1005` renamed to `RTTG1005` with DMR
+ID `2345678` read back as `02 34 56 78` at `0x3A80322` — slot 1004, **bank 1**,
+which proves the writer's bank arithmetic. Neighbours untouched and all 1,009
+other records byte-perfect, so the record offsets inside a whole-bank span are
+right too. Add and delete are still refused.
 
 ### What is actually ready
 
@@ -671,7 +674,8 @@ the prerequisite, not a hardware session.
 - ☑ **Status messages · hot keys · both address books · SMS store · DTMF** —
   wired 2026-09-09 and all six now have hardware round trips.
 - ☑ **Talk groups — EDITS**, wired with banking and the index base fixed
-  2026-09-09. Add/delete still refuses; see the section above.
+  2026-09-09 and **round-tripped on hardware the same day**. Add/delete still
+  refuses; see the section above.
 - ☐ **Scan lists · RX groups · radio IDs · encryption keys · quick messages** —
   same missing wiring in `buildD890CodeplugTables`. Every one is editable in the
   UI today and silently discarded on write. **Not individually verified** — the

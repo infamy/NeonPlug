@@ -91,7 +91,13 @@ record of what is PROVEN, not what was hoped for.
 | ☑ | **DTMF settings** | First Digit `250`, Pretime `360`, Time-Lapse `470` | `+0x04` = `19`, `+0x03` = `24`, `+0x0a` = `2f`. **`+0x05` (Auto Reset) still read `9`** — the units check: raw seconds were not run through the ms÷10 path. |
 | ☑ | **DTMF encode list** | Entry **2** → `4567` | `0x3500820` = `04 05 06 07 ff`. Entry 0 came back `01 02 03 01 02` — a **built** table reconstructing real flash byte-identically, which is the riskiest encoder class. |
 
-**What the three dry runs predicted, and got right to the byte:** 13 bytes for
+**The talk group edit was predicted to the byte before it ran too:** 12 bytes in
+2 frames — 4 for the BCD id, 8 for the name's low bytes (its UTF-16 high bytes
+were already `00`) — and the dry run reported exactly that, in a region labelled
+`talkgroups 1001-1010`. That label is itself the bank arithmetic showing its
+work before a frame went out.
+
+**What the three earlier dry runs predicted, and got right to the byte:** 13 bytes for
 the status message (12 ASCII low bytes plus the mask — the UTF-16 high bytes were
 already zero), 10 for the four-region write, 22 for the two deletes. Every
 prediction reconciled by hand before the write went out. The dry run is now the
@@ -140,9 +146,9 @@ and its **header**.
 
 | | Region | Test | Note |
 |---|---|---|---|
-| ☐ | **Talk group — EDIT** | Rename `TG1005` and set its DMR ID to `2345678`. Slot 1004, record **`0x3A80320`**, bank 1. This is the one that proves the WRITER's bank arithmetic — the reader's was confirmed 2026-09-08, the writer's never has been. Falsifiable: a flat writer puts slot 1000 at `0x3A30D40`, which reads `0xFF` on hardware and the vendor never writes. Add `TG0500` (slot 499, `0x3A185D8`) to cover bank 0 in the same write. |
+| ☑ | **Talk group — EDIT** | `TG1005` → `RTTG1005`, DMR ID `2345678`. **MEASURED:** `0x3A80322` = `02 34 56 78` (BCD), name `RTTG1005`. Slot 1004 landed in **bank 1**, proving the WRITER's bank arithmetic — the reader's was confirmed 2026-09-08, the writer's never had been, and a flat writer puts slot 1000 at `0x3A30D40`, which reads `0xFF` on hardware. Neighbours 1003/1005 untouched, and **all 1,009 other records byte-perfect** — the whole bank goes out as one span, so this is also the proof that record offsets inside a span are right. |
 | ☐ | **Zone roam mask** | Read, write unchanged, read | It is carried **verbatim** and zero on every radio anyone has seen. The test is that a write does not disturb it. If it comes back changed, our write is wrong. |
-| ☐ | **Talk group locator** | Needs the locator WIRED first — it is called from nothing | A write must emit `V = slot index`, `0xFFFFFFFF` for absent — **not** a packed `0..N-1`. With contiguous talk groups the two coincide, so this test needs a **hole**: delete a middle talk group, write, and confirm the survivors still resolve. |
+| ☐ | **Talk group locator** | Needs the locator WIRED first — it is called from nothing. Only matters for ADD/DELETE: an edit leaves the slot set unchanged, so the locator stays valid, which is why the edit above could run without it. | A write must emit `V = slot index`, `0xFFFFFFFF` for absent — **not** a packed `0..N-1`. With contiguous talk groups the two coincide, so this test needs a **hole**: delete a middle talk group, write, and confirm the survivors still resolve. |
 
 ## Tier 3 — the Extra regions
 
