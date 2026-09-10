@@ -36,7 +36,7 @@ import {
 import { encodeBcdAsHexU32, encodeFrequencyMHz, encodeWideCharString } from './channelWrite';
 import { D890_TALKGROUPS_PER_BANK } from './structures';
 import { D890_BROADCAST, type D890BroadcastBand, type D890BroadcastChannel } from './broadcastChannels';
-import { blankBroadcastChannel, blankAmZone } from './blankRecords';
+import { blankBroadcastChannel, blankAmZone, blankScanList } from './blankRecords';
 import {
   D890_TONES,
   TWO_TONE_NAME_AT,
@@ -325,6 +325,9 @@ export const D890_MASKED_TABLES = {
     maskAddress: D890_ADDR.SCAN_LIST_SET,
     stride: D890_ADDR.SCAN_LIST_STRIDE,
     slots: D890_LIMITS.SCAN_LISTS_MAX,
+    // The vendor's own defaults for a fresh list, captured 2026-09-10. Every
+    // byte of the record is accounted for, so one can be built from scratch.
+    blank: () => blankScanList(),
   },
   radioIds: {
     label: 'radio ID',
@@ -466,9 +469,13 @@ export function applyZoneNameToRecord(original: Uint8Array, zone: Zone): Uint8Ar
  * A populated record can never be all-0xFF: the ID is BCD and the name UTF-16,
  * so 0xFF bytes are not a value either field can hold.
  */
+function isErased(original: Uint8Array): boolean {
+  for (const b of original) if (b !== 0xff) return false;
+  return true;
+}
+
 function zeroIfErased(original: Uint8Array): Uint8Array {
-  for (const b of original) if (b !== 0xff) return original;
-  return new Uint8Array(original.length);
+  return isErased(original) ? new Uint8Array(original.length) : original;
 }
 
 export function applyRadioIdToRecord(original: Uint8Array, id: DMRRadioID): Uint8Array {
@@ -584,7 +591,14 @@ export function applyRoamingChannelToRecord(
  *  - Timers are units of 0.1 s and pass through unscaled, matching the parser.
  */
 export function applyScanListToRecord(original: Uint8Array, list: ScanListDecoded): Uint8Array {
-  const rec = patch(original, 0x98);
+  // An erased slot is a slot a delete emptied: patching it would leave 0xFF
+  // across the zero tail and the two bytes at 0x2e, unlike any record the
+  // vendor writes. The blank carries the CPS's own defaults instead.
+  //
+  // A populated record can never be entirely 0xFF — the name is UTF-16 and the
+  // timers are small integers — so this cannot fire on real data. A list with
+  // no members has an 0xFF member array but not an 0xFF header.
+  const rec = patch(isErased(original) ? blankScanList() : original, 0x98);
   rec[0x00] = (list.scanMode ?? 0) & 0xff;
   rec[0x01] = (list.prioritySelect ?? 0) & 0xff;
 

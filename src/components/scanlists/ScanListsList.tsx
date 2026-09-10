@@ -48,18 +48,18 @@ export const ScanListsList: React.FC = () => {
     // leaves the survivors where they are, so a radio holding one list in slot 1
     // has length 1 and slot 0 empty. Appending by length would target slot 1 and
     // overwrite it, while never reusing the hole — which is how slot 0 ended up
-    // stranded. Radios whose lists carry no slot (the DM-32) are unaffected:
-    // `used` is empty and this resolves to undefined. So does a D890 whose every
-    // list has been deleted — there is then no slot to infer from — and that add
-    // is refused by `d890ScanLists` with an explanation either way.
+    // stranded.
+    //
+    // Allocated unconditionally, including when no list currently has a slot.
+    // Guarding on "some list already has one" left a D890 whose lists had ALL
+    // been deleted with no slot to infer from, so the next add could not be
+    // placed at all. A radio that does not use slots — the DM-32 — simply never
+    // reads the field.
     const used = new Set(scanLists.map((sl) => sl.slot).filter((n): n is number => n !== undefined));
-    let slot: number | undefined;
-    if (used.size > 0) {
-      slot = lowestFreeSlot(used, maxLists);
-      if (slot === undefined) {
-        showAlert(`No free scan list slot: all ${maxLists} are in use.`);
-        return;
-      }
+    const slot = lowestFreeSlot(used, maxLists);
+    if (slot === undefined) {
+      showAlert(`No free scan list slot: all ${maxLists} are in use.`);
+      return;
     }
     addScanList({
       name: scanListName,

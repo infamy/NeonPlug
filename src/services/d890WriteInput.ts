@@ -22,6 +22,7 @@ import type { Channel } from '../models/Channel';
 import type { DMRRadioID } from '../models/DMRRadioID';
 import type { ScanListDecoded } from '../radios/d890uv/structures';
 import { encodeScanPriority } from '../radios/d890uv/scanListPriority';
+import { D890_SCAN_LIST_DEFAULTS } from '../radios/d890uv/blankRecords';
 import {
   buildTalkgroupRenumber,
   isNoOpRenumber,
@@ -402,33 +403,40 @@ export function d890ScanLists(): ScanListDecoded[] | undefined {
     if (list.slot !== undefined) bySlot.set(list.slot, list);
   }
 
-  // An add is a list with no DECODED RECORD behind its slot, not merely one
-  // with no slot. The UI now allocates the lowest free slot on add (so a hole
-  // left by a delete gets reused instead of being stranded), which means
-  // `slot === undefined` no longer identifies a new list.
+  // An ADD is a list with no decoded record behind its slot. It is no longer
+  // refused: the vendor's own defaults for a fresh list were captured on
+  // 2026-09-10 (`blankScanList`), so the four fields the UI cannot show —
+  // look-back A and B, dropout delay, revert channel — have known values rather
+  // than invented ones. What still cannot be placed is a list with NO slot,
+  // which means the UI could not find a free one.
   const haveRecord = new Set(detailed.map((r) => r.slot));
-  const added = edited.filter((l) => l.slot === undefined || !haveRecord.has(l.slot));
-  if (added.length > 0) {
-    const where = added
-      .map((l) => (l.slot === undefined ? `"${l.name}"` : `"${l.name}" (slot ${l.slot + 1})`))
-      .join(', ');
+  const unplaced = edited.filter((l) => l.slot === undefined);
+  if (unplaced.length > 0) {
     throw new Error(
-      `Refusing to write: adding a scan list is not supported yet (${where}).\n\n` +
-        `A new list has no record read from the radio to patch. Its layout is ` +
-        `otherwise fully known — every byte from 0x98 to the end of the record is ` +
-        `zero in all six scan lists captured so far — but four fields the UI cannot ` +
-        `show have no known default: look-back time A and B, dropout delay and ` +
-        `revert channel. Both lists on the reference radio hold deliberately ` +
-        `distinct sweep values, so neither is a default.\n\n` +
-        `ONE scan list created fresh in the vendor CPS would settle them for good. ` +
-        `Until then, editing and deleting work; add one with the vendor CPS.`
+      `Refusing to write: ${unplaced.map((l) => `"${l.name}"`).join(', ')} ` +
+        `${unplaced.length === 1 ? 'has' : 'have'} no hardware slot.\n\n` +
+        `A scan list is placed by slot, not by list position. This happens when ` +
+        `every slot is already in use, or when the list came from an import that ` +
+        `predates slot tracking. Re-read the radio and add it again.`
     );
   }
 
+  const added: ScanListDecoded[] = edited
+    .filter((l) => l.slot !== undefined && !haveRecord.has(l.slot))
+    .map((l) => ({
+      ...D890_SCAN_LIST_DEFAULTS,
+      slot: l.slot!,
+      name: l.name,
+      channels: l.channels ?? [],
+      dwellTime: u16(l.hangTime, D890_SCAN_LIST_DEFAULTS.dwellTime),
+      priorityChannel1Raw: encodeScanPriority(l.priority1Type, l.priorityChannel1),
+      priorityChannel2Raw: encodeScanPriority(l.priority2Type, l.priorityChannel2),
+    }));
+
   // Deleted lists simply drop out: the slot keeps its hole and the masked-table
   // planner clears the presence bit for it.
-  return detailed
-    .filter((record) => bySlot.has(record.slot))
+  return [...detailed.filter((record) => bySlot.has(record.slot)), ...added]
+    .sort((a, b) => a.slot - b.slot)
     .map((record) => {
       const ui = bySlot.get(record.slot)!;
       return {

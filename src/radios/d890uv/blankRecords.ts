@@ -102,3 +102,79 @@ export const blankAmZone = (): Uint8Array => {
  * See `DA7X2-NEEDS-CONFIRMING.md`.
  */
 export const CHANNEL_BLANK_IS_UNKNOWN = true;
+
+/**
+ * Scan list — a 0x200 record with the vendor's own defaults for the fields the
+ * shared model cannot describe.
+ *
+ * HARDWARE-DERIVED, and confirmed twice from independent codeplugs. A new scan
+ * list was created in the vendor CPS on 2026-09-10 and written to the radio
+ * (`7x2_slreadaddwrite.txt`); its record is byte-for-byte:
+ *
+ *   0x00: 00 03 ff ff ff ff 05 00 1a 00 1f 00 20 00 <name…>
+ *   0x30: <members…> ff ff ff … ff
+ *   0x94: 04 00 00 00 00 … 00
+ *
+ * The same values appear in `SL Alpha`, the untouched list present in the very
+ * first reads of this radio — which is what those numbers always were, though
+ * they were mistaken for a deliberate sweep until this capture named them.
+ *
+ * Four of these could not be derived any other way, and are the reason adding a
+ * scan list was refused until now: look-back A (5) and B (26), dropout delay
+ * (31) and revert channel (4). Zero is NOT a safe stand-in for any of them —
+ * they are timers in deciseconds, and a 0-decisecond look-back is not a setting
+ * the radio offers.
+ *
+ * Two more are worth stating because they are counter-intuitive:
+ *
+ *   - **Both priority channels default to 0xffff (Off), while `prioritySelect`
+ *     defaults to 3.** Whatever byte 0x01 means, it is NOT a pair of "this
+ *     priority is in use" bits — the vendor's own default sets it to 3 with
+ *     both priorities off. It is carried here verbatim and never derived.
+ *   - **The member array is 0xFF-filled**, unlike the zero tail from 0x98. The
+ *     encoder writes members plus one terminator and leaves the rest, so the
+ *     fill is what a short list's unused entries end up holding.
+ */
+export function blankScanList(): Uint8Array {
+  const rec = new Uint8Array(D890_ADDR.SCAN_LIST_STRIDE);
+  const u16 = (at: number, v: number) => {
+    rec[at] = v & 0xff;
+    rec[at + 1] = (v >> 8) & 0xff;
+  };
+  rec[0x00] = 0x00; // scan mode
+  rec[0x01] = 0x03; // prioritySelect — the vendor's default, meaning unknown
+  u16(0x02, 0xffff); // priority channel 1: Off
+  u16(0x04, 0xffff); // priority channel 2: Off
+  u16(0x06, 5); // look-back time A, deciseconds
+  u16(0x08, 26); // look-back time B
+  u16(0x0a, 31); // dropout delay
+  u16(0x0c, 32); // dwell time
+  // 0x0e-0x2d name, 0x2e-0x2f zero: left as the zeros above.
+  rec.fill(0xff, 0x30, 0x94); // member array: 50 u16, all "empty"
+  rec[0x94] = 4; // revert channel
+  // 0x95-0x97 holds and 0x98-0x1ff are zero on every record ever captured.
+  return rec;
+}
+
+/**
+ * The same defaults as `blankScanList`, in decoded form.
+ *
+ * `blankScanList` is the bytes an ADD is built on; this is what the write input
+ * hands the encoder for the fields the shared `ScanList` cannot carry. They are
+ * one capture, expressed twice, so they must not drift — `blankScanList` is the
+ * authority and the round-trip test pins them together.
+ */
+export const D890_SCAN_LIST_DEFAULTS = {
+  scanMode: 0,
+  prioritySelect: 3,
+  priorityChannel1Raw: 0xffff,
+  priorityChannel2Raw: 0xffff,
+  lookBackTimeA: 5,
+  lookBackTimeB: 26,
+  dropoutDelay: 31,
+  dwellTime: 32,
+  revertChannel: 4,
+  digitalGroupHold: 0,
+  digitalPriorityHold: 0,
+  analogHold: 0,
+} as const;

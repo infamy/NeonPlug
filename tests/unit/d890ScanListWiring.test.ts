@@ -106,34 +106,64 @@ describe('d890ScanLists', () => {
     expect(out[0].name).toBe('B');
   });
 
-  it('REFUSES an add — a new list has no decoded record to patch', () => {
+  it('ADDS a list on a free slot, using the vendor defaults', () => {
+    // Refused until 2026-09-10, when a scan list created in the vendor CPS and
+    // written to the radio gave the four fields the UI cannot show. They are no
+    // longer invented, so an add can be built.
+    stage([decoded(1, 'B')]);
+    useScanListsStore.setState({
+      scanLists: [uiList(1, 'B', [1]), uiList(0, 'SL Delta', [17, 41, 72])],
+    });
+    const out = d890ScanLists()!;
+    expect(out.map((l) => [l.slot, l.name])).toEqual([[0, 'SL Delta'], [1, 'B']]);
+    const fresh = out[0];
+    expect(fresh.lookBackTimeA).toBe(5);
+    expect(fresh.lookBackTimeB).toBe(26);
+    expect(fresh.dropoutDelay).toBe(31);
+    expect(fresh.dwellTime).toBe(32);
+    expect(fresh.revertChannel).toBe(4);
+    expect(fresh.channels).toEqual([17, 41, 72]);
+  });
+
+  it('gives a new list both priorities OFF and prioritySelect 3', () => {
+    // Counter-intuitive and taken verbatim from the capture: the vendor's own
+    // default has byte 0x01 = 3 with BOTH priority channels off, which is why
+    // that byte is carried and never derived from the channels.
+    stage([decoded(1, 'B')]);
+    useScanListsStore.setState({
+      scanLists: [uiList(1, 'B', [1]), uiList(0, 'SL Delta', [1])],
+    });
+    const fresh = d890ScanLists()![0];
+    expect(fresh.priorityChannel1Raw).toBe(0xffff);
+    expect(fresh.priorityChannel2Raw).toBe(0xffff);
+    expect(fresh.prioritySelect).toBe(3);
+  });
+
+  it('lets an added list carry the fields the UI CAN set', () => {
+    stage([decoded(1, 'B')]);
+    useScanListsStore.setState({
+      scanLists: [uiList(1, 'B', [1]), {
+        ...uiList(0, 'SL Delta', [2]), hangTime: 44,
+        priority1Type: 2, priorityChannel1: 9,
+      } as ScanList],
+    });
+    const fresh = d890ScanLists()![0];
+    expect(fresh.dwellTime).toBe(44);
+    expect(fresh.priorityChannel1Raw).toBe(9);
+    // …while the ones it cannot set stay at the vendor default.
+    expect(fresh.lookBackTimeA).toBe(5);
+  });
+
+  it('REFUSES a list with no hardware slot at all', () => {
+    // Not an add — an add now has a slot. This is the UI failing to find a free
+    // one, or an import that predates slot tracking.
     stage([decoded(0, 'A')]);
     useScanListsStore.setState({
-      scanLists: [uiList(0, 'A', [1]), uiList(undefined, 'brand new', [2])],
+      scanLists: [uiList(0, 'A', [1]), uiList(undefined, 'nowhere', [2])],
     });
-    expect(() => d890ScanLists()).toThrow(/adding a scan list is not supported yet/);
+    expect(() => d890ScanLists()).toThrow(/no hardware slot/);
   });
 
-  it('still REFUSES an add once the UI has allocated it a slot', () => {
-    // The UI now hands a new list the lowest free slot so a hole gets reused, so
-    // `slot === undefined` no longer identifies an add. The test that matters is
-    // that having a slot is not enough: there must be a RECORD behind it, or
-    // there is nothing to patch and the unknown fields would be invented.
-    stage([decoded(1, 'B')]);
-    useScanListsStore.setState({
-      scanLists: [uiList(1, 'B', [1]), uiList(0, 'new in the hole', [2])],
-    });
-    expect(() => d890ScanLists()).toThrow(/adding a scan list is not supported yet/);
-  });
-
-  it('names the offending list and its slot in the refusal', () => {
-    stage([decoded(1, 'B')]);
-    useScanListsStore.setState({
-      scanLists: [uiList(1, 'B', [1]), uiList(0, 'new in the hole', [2])],
-    });
-    // Slot 1 in the message, 0 on the wire — the user counts from 1.
-    expect(() => d890ScanLists()).toThrow(/"new in the hole" \(slot 1\)/);
-  });
 });
 
 describe('d890ScanLists — the three fields that used to be discarded', () => {
