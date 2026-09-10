@@ -210,7 +210,19 @@ together.
 ID `2345678` read back as `02 34 56 78` at `0x3A80322` — slot 1004, **bank 1**,
 which proves the writer's bank arithmetic. Neighbours untouched and all 1,009
 other records byte-perfect, so the record offsets inside a whole-bank span are
-right too. Add and delete are still refused.
+right too.
+
+✅ **DELETE VERIFIED ON HARDWARE 2026-09-10** — the Tier-2 hole test. Deleting
+`TG0501` (slot 500) changed exactly **5 bytes**: 4 in the locator and 1 in the
+presence mask, with **zero** record frames differing. Read-back:
+`locator[500]` = `ff ff ff ff`, **`locator[501]` = `f5 01 00 00` = 501, not
+500**, and all 1,009 surviving entries still equal their own slot. That is the
+only test that can distinguish `V = slot` from `V = packed position` — with a
+contiguous table the two are byte-identical.
+
+☐ **ADD is still unproven on hardware.** Unit-tested only, and it exercises a
+path delete does not: the new slot was never read, so its record is BUILT rather
+than patched, and the locator gains an entry rather than losing one.
 
 ### What is actually ready
 
@@ -678,17 +690,15 @@ the prerequisite, not a hardware session.
 
 - ☑ **Status messages · hot keys · both address books · SMS store · DTMF** —
   wired 2026-09-09 and all six now have hardware round trips.
-- ☑ **Talk groups — EDITS**, wired with banking and the index base fixed
-  2026-09-09 and **round-tripped on hardware the same day**. Add/delete still
-  refuses; see the section above.
+- ☑ **Talk groups** — wired with banking and the index base fixed 2026-09-09.
+  EDIT round-tripped 2026-09-09, DELETE 2026-09-10. ADD is unit-tested only.
 - ☐ **Scan lists · RX groups · radio IDs · encryption keys · quick messages** —
   same missing wiring in `buildD890CodeplugTables`. Every one is editable in the
   UI today and silently discarded on write. **Not individually verified** — the
   absence in that function is confirmed; which of them have working planners
   behind it is not.
-- ☐ **Talk group locator** (`talkgroupLocator.ts`) — decoded, tested, wired to
-  nothing. Harmless for an edit; wrong for a delete, which is why the Tier-2
-  hole test cannot run.
+- ☑ **Talk group locator** (`talkgroupLocator.ts`) — wired 2026-09-10 and
+  proven by the hole test the same day. `V` is the SLOT INDEX, measured.
 - ☐ Roaming ZONES — encoder and tests exist, nothing calls it
 - ☐ FM broadcast `scanAdd` — read, no encoder at all
 
