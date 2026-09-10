@@ -30,6 +30,18 @@ export const SCAN_PRIORITY_SPECIFIC = 2;
 const RAW_OFF = 0xffff;
 const RAW_CURRENT = 0x0000;
 
+/**
+ * Is this priority IN USE?
+ *
+ * Off is the only "no" — `0x0000` means "the current channel", which is a live
+ * setting. Used to derive `prioritySelect`, the byte that gates both priority
+ * channels: measured 2026-09-10, a channel written with that byte left clear is
+ * stored and ignored by the radio.
+ */
+export function isPriorityOn(raw: number): boolean {
+  return raw !== RAW_OFF;
+}
+
 export interface ScanPriorityUi {
   /** 0=None, 1=Current, 2=Specific. */
   type: number;

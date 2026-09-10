@@ -21,7 +21,7 @@ import type { QuickContact } from '../models/QuickContact';
 import type { Channel } from '../models/Channel';
 import type { DMRRadioID } from '../models/DMRRadioID';
 import type { ScanListDecoded } from '../radios/d890uv/structures';
-import { encodeScanPriority } from '../radios/d890uv/scanListPriority';
+import { encodeScanPriority, isPriorityOn } from '../radios/d890uv/scanListPriority';
 import {
   buildTalkgroupRenumber,
   isNoOpRenumber,
@@ -431,6 +431,14 @@ export function d890ScanLists(): ScanListDecoded[] | undefined {
     .filter((record) => bySlot.has(record.slot))
     .map((record) => {
       const ui = bySlot.get(record.slot)!;
+      const p1 =
+        ui.priority1Type === undefined
+          ? record.priorityChannel1Raw
+          : encodeScanPriority(ui.priority1Type, ui.priorityChannel1);
+      const p2 =
+        ui.priority2Type === undefined
+          ? record.priorityChannel2Raw
+          : encodeScanPriority(ui.priority2Type, ui.priorityChannel2);
       return {
         ...record,
         name: ui.name,
@@ -443,14 +451,22 @@ export function d890ScanLists(): ScanListDecoded[] | undefined {
         // always populates these, so undefined here means the list came from
         // somewhere else — an importer, or a .neonplug saved before this was
         // wired — and forcing 0xffff would silently delete a real priority.
-        priorityChannel1Raw:
-          ui.priority1Type === undefined
-            ? record.priorityChannel1Raw
-            : encodeScanPriority(ui.priority1Type, ui.priorityChannel1),
-        priorityChannel2Raw:
-          ui.priority2Type === undefined
-            ? record.priorityChannel2Raw
-            : encodeScanPriority(ui.priority2Type, ui.priorityChannel2),
+        priorityChannel1Raw: p1,
+        priorityChannel2Raw: p2,
+        // Byte 0x01 GATES the two priority channels, so it has to agree with
+        // them or the channel is stored and ignored.
+        //
+        // MEASURED 2026-09-10: priority 2 was written as channel 63 while this
+        // byte was left at 1 ("first only"), and the radio's own menu showed
+        // Priority 2 as OFF. Both records captured from the radio agree with the
+        // same rule — slot 0 holds channels in both with 3, slot 1 holds one
+        // channel and Off with 1 — so the byte is the pair of "is this priority
+        // in use" bits and nothing more.
+        //
+        // Derived rather than carried because the shared model has no field for
+        // it: the UI's only statement about a priority is its Type, and "None"
+        // is exactly "not selected".
+        prioritySelect: (isPriorityOn(p1) ? 1 : 0) | (isPriorityOn(p2) ? 2 : 0),
       };
     });
 }
