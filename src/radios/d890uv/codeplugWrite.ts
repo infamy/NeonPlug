@@ -338,6 +338,41 @@ export function framesForChanges(
   return frames;
 }
 
+/**
+ * Lay a record down on 16-byte frame boundaries, seeding each frame from the
+ * read log so bytes the record does not own survive untouched.
+ *
+ * Writes are always whole frames, and a record is under no obligation to start
+ * on one or to be a multiple of 16 — the encryption key record is 0x28 bytes and
+ * every odd slot starts 8 bytes into a frame. Hand-rolling that at the call site
+ * is what produced `offset is out of bounds`: a 40-byte record was copied into a
+ * single 16-byte frame.
+ *
+ * Returns nothing for a span the read never covered, rather than inventing the
+ * missing bytes.
+ */
+function overlayOntoFrames(
+  readLog: ReadonlyMap<number, Uint8Array>,
+  address: number,
+  record: Uint8Array,
+  what: string
+): D890WriteFrame[] {
+  const out: D890WriteFrame[] = [];
+  const first = address - (address % 0x10);
+  const last = address + record.length - 1;
+  for (let frameAt = first; frameAt <= last; frameAt += 0x10) {
+    const base = sliceFromReadLog(readLog, frameAt, 0x10);
+    if (!base) return [];
+    const data = Uint8Array.from(base);
+    for (let i = 0; i < 0x10; i += 1) {
+      const at = frameAt + i;
+      if (at >= address && at < address + record.length) data[i] = record[at - address]!;
+    }
+    out.push({ address: frameAt, data, what });
+  }
+  return out;
+}
+
 export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWritePlan {
   // Gate 0 — a read we do not trust must not be written back. Checked first
   // because every other gate reasons about a plan built ON that read.
@@ -1003,15 +1038,24 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
       const idFrame = sliceFromReadLog(input.readLog, idFrameAt, 0x10);
       const keyFrame = sliceFromReadLog(input.readLog, keyFrameAt, 0x10);
       if (!idFrame || !keyFrame) continue;
-      const idOut = Uint8Array.from(idFrame);
-      idOut.set(applyEncryptionIdToRecord(idOriginal, key.encryptionId ?? 0), idAt - idFrameAt);
-      const keyOut = Uint8Array.from(keyFrame);
-      keyOut.set(
-        applyEncryptionKeyRefToRecord(keyOriginal, parseInt(key.key, 16) || 0),
-        keyAt - keyFrameAt
+      // Overlay onto WHOLE frames from the read log. The ID really is sub-frame
+      // sized (2 bytes) but the key record is 0x28 — only +0x10/+0x11 of it
+      // carry the key, yet the encoder patches and returns all 40 bytes. Copying
+      // that into a single 16-byte frame threw `offset is out of bounds` and
+      // took the entire plan with it, so no write could be built at all on a
+      // radio with a BASIC key. Caught by the dry run on hardware 2026-09-10.
+      keyFrames.push(
+        ...overlayOntoFrames(
+          input.readLog, idAt,
+          applyEncryptionIdToRecord(idOriginal, key.encryptionId ?? 0),
+          `encryption ID ${key.id}`
+        ),
+        ...overlayOntoFrames(
+          input.readLog, keyAt,
+          applyEncryptionKeyRefToRecord(keyOriginal, parseInt(key.key, 16) || 0),
+          `encryption key ${key.id}`
+        )
       );
-      keyFrames.push({ address: idFrameAt, data: idOut, what: `encryption ID ${key.id}` });
-      keyFrames.push({ address: keyFrameAt, data: keyOut, what: `encryption key ${key.id}` });
     }
     take('encryption', D890_ADDR.AES_KEY_TABLE, keyFrames);
   }
