@@ -5,9 +5,15 @@ written (**55/55** — `Local info` is the radio identifying itself and is flagg
 `neverWrite`, so it is excluded from the write and round-trip denominators).
 
 **What most of it still lacks is proof that a change survives the trip**: Core HW
-round-trip is **20/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
-and **radio IDs + scan lists on 2026-09-10**, the first two established by the
-radio's own menu and the vendor CPS rather than by our own read-back.
+round-trip is **23/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
+and on 2026-09-10 **radio IDs, the radio ID mask and scan lists**, the first two
+established by the radio's own menu and the third by the vendor CPS, rather than
+by our own read-back.
+
+The radio ID mask is the one that also gained an OWNER: it was `Unclaimed mask`
+in `recordLayout.ts`, a 32-byte gap no vendor marshaller touches, named from a
+live read alone. Writing `0x0b` -> `0x0f` while adding an ID into a hole, and
+seeing the radio list four, is what a presence mask does and nothing else.
 
 That gap is the whole point. Our encoders **patch** the original record, so a
 write-back reproduces the input by construction — including for every field we

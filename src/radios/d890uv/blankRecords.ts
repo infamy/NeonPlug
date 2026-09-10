@@ -178,3 +178,25 @@ export const D890_SCAN_LIST_DEFAULTS = {
   digitalPriorityHold: 0,
   analogHold: 0,
 } as const;
+
+/**
+ * Receive group — 0xFF from end to end.
+ *
+ * HARDWARE-DERIVED, and the fill really is 0xFF rather than zero. The vendor
+ * CPS writes only the first **0x120** bytes of each 0x200 record — 64 u32
+ * members from 0x00 and a 0x20-byte name at 0x100 — and leaves the remaining
+ * 0xE0 bytes alone. Measured 2026-09-10 from `7x2_rxgroupsadded.txt`, where
+ * each written run is exactly 288 bytes.
+ *
+ * A NeonPlug read of the radio then shows what those untouched bytes hold: both
+ * populated records, `RXG Alpha` and `RXG Bravo`, read 0xFF for the whole span
+ * from 0x120, the same as a slot that has never been written. So the vendor
+ * never puts anything there and neither do we.
+ *
+ * `applyRxGroupToRecord` fills every one of the 64 member slots — with the
+ * 0xFFFFFFFF sentinel past the end of the list — so the member area is fully
+ * rewritten regardless of what this fill puts there.
+ */
+export function blankRxGroup(): Uint8Array {
+  return filled(D890_ADDR.RX_GROUP_STRIDE, 0xff);
+}

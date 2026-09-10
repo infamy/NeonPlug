@@ -36,7 +36,7 @@ import {
 import { encodeBcdAsHexU32, encodeFrequencyMHz, encodeWideCharString } from './channelWrite';
 import { D890_TALKGROUPS_PER_BANK } from './structures';
 import { D890_BROADCAST, type D890BroadcastBand, type D890BroadcastChannel } from './broadcastChannels';
-import { blankBroadcastChannel, blankAmZone, blankScanList } from './blankRecords';
+import { blankBroadcastChannel, blankAmZone, blankScanList, blankRxGroup } from './blankRecords';
 import {
   D890_TONES,
   TWO_TONE_NAME_AT,
@@ -342,6 +342,9 @@ export const D890_MASKED_TABLES = {
     maskAddress: D890_ADDR.RX_GROUP_SET,
     stride: D890_ADDR.RX_GROUP_STRIDE,
     slots: D890_LIMITS.RX_GROUPS_MAX,
+    // Members and name cover 0x00-0x11f and the vendor leaves 0x120-0x1ff at
+    // 0xFF, which is what a populated record reads as. Fully determined.
+    blank: () => blankRxGroup(),
   },
   roamingChannels: {
     label: 'roaming channel',

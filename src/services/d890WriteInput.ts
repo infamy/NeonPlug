@@ -23,6 +23,7 @@ import type { DMRRadioID } from '../models/DMRRadioID';
 import type { ScanListDecoded } from '../radios/d890uv/structures';
 import { encodeScanPriority } from '../radios/d890uv/scanListPriority';
 import { D890_SCAN_LIST_DEFAULTS } from '../radios/d890uv/blankRecords';
+import type { RXGroup } from '../models/RXGroup';
 import {
   buildTalkgroupRenumber,
   isNoOpRenumber,
@@ -76,13 +77,11 @@ export function buildD890CodeplugTables(
     encryptionKeys: useEncryptionKeysStore.getState().keys,
     radioIds: d890RadioIds(),
     scanLists: d890ScanLists(),
+    // Wired 2026-09-10, once the presence mask address was confirmed on
+    // hardware. Until then these rode out through the verbatim pass, because
+    // writing a mask to an unproven address is how a neighbouring table dies.
+    rxGroups: d890RxGroups(),
     clearedEncryptionKeys: d890ClearedEncryptionKeys(),
-    // ⚠️ Receive groups are DELIBERATELY ABSENT and must stay that way until the
-    // presence-mask address is proven. `D890_ADDR.RX_GROUP_SET` is 0x3701510,
-    // which `D890_HOT_KEYS.MASK` also claims, and it reads zero on a radio that
-    // holds two lists. Passing them here would make `maskedTable` write a
-    // presence mask to an address we have not established. Reading them is
-    // fixed (protocol.ts scans the records); writing them is not.
     // Position→slot. The read compacts empty slots away, so these two indexings
     // diverge the moment a zone in the middle is empty.
     zoneCurrentChannels:
@@ -276,19 +275,25 @@ export function d890RenumberedChannels(channels: readonly Channel[]): Channel[] 
   const r = d890TalkgroupRenumber();
   if (!r) return [...channels];
 
+  // Receive groups used to force a refusal here, because they were not written
+  // and so could not be fixed. They ARE written now, so a pure SHIFT is
+  // renumbered silently by `d890RxGroups` — the same treatment channels get.
+  //
+  // A DANGLING member is still the user's call: the talk group it named is
+  // gone, and dropping it changes which traffic that group receives.
   const rx = renumberRxGroupMembers(useRXGroupsStore.getState().groups, r);
-  const rxAffected =
-    rx.dangling.length > 0 ||
-    rx.groups.some((g, i) => g !== useRXGroupsStore.getState().groups[i]);
-  if (rxAffected) {
+  if (rx.dangling.length > 0) {
+    const shown = rx.dangling
+      .slice(0, 8)
+      .map((d) => `  receive group "${d.group}" -> talk group slot ${d.slot + 1}`)
+      .join('\n');
     throw new Error(
-      `Refusing to write: deleting a talk group would leave receive groups ` +
-        `pointing at the wrong ones.\n\n` +
-        `Talk groups compact, so everything after the deleted one moves down a ` +
-        `slot — and receive groups reference them by slot. NeonPlug does not ` +
-        `write receive groups yet, so it cannot fix them.\n\n` +
-        `Remove the talk group in the vendor CPS instead, or delete one that no ` +
-        `receive group uses.`
+      `Refusing to write: ${rx.dangling.length} receive group member(s) name a ` +
+        `talk group that was DELETED.\n\n${shown}` +
+        `${rx.dangling.length > 8 ? `\n  …and ${rx.dangling.length - 8} more` : ''}\n\n` +
+        `Dropping them would change which traffic those groups receive, which is ` +
+        `your decision rather than ours. Remove the members first, or keep the ` +
+        `talk group.`
     );
   }
 
@@ -352,6 +357,28 @@ export function d890ClearedEncryptionKeys():
  * need the dangling-reference gate to be slot-aware, or a channel pointing at
  * slot 3 of {0,1,3} is refused against a count of 3 — see `occupiedSlots`.
  */
+/**
+ * Receive groups for the write plan.
+ *
+ * `index` IS the hardware slot: the read walks the presence mask at
+ * `RX_GROUP_SET` and hands each occupied slot to `parseRxGroup`, and the store
+ * no longer renumbers on delete. A delete leaves a HOLE — measured 2026-09-10
+ * from a vendor CPS delete captured either side, where removing slot 0 of {0,1}
+ * moved the mask from 0x03 to 0x02 and left slot 1 byte-for-byte identical.
+ *
+ * Members are talk group SLOTS, and talk groups COMPACT, so a talk group delete
+ * moves every member above it. That shift is applied here rather than refused —
+ * the refusal existed only because receive groups were not written and so could
+ * not be fixed. `d890RenumberedChannels` still refuses on a DANGLING member,
+ * whose talk group is gone entirely.
+ */
+export function d890RxGroups(): RXGroup[] | undefined {
+  const groups = useRXGroupsStore.getState().groups;
+  if (groups.length === 0) return undefined;
+  const r = d890TalkgroupRenumber();
+  return r ? [...renumberRxGroupMembers(groups, r).groups] : [...groups];
+}
+
 export function d890RadioIds(): DMRRadioID[] | undefined {
   const ids = useDMRRadioIDsStore.getState().radioIds;
   if (ids.length === 0) return undefined;
@@ -503,6 +530,10 @@ export function buildD890WriteOriginals(effectiveModel: string | null) {
     // their slot set say the same thing, and the count is the simpler truth.
     occupiedSlots: {
       RadioIDList: new Set(useDMRRadioIDsStore.getState().radioIds.map((r) => r.index)),
+      // Receive groups leave a hole too — measured 2026-09-10, the same way.
+      DMRReceiveGroupCallList: new Set(
+        useRXGroupsStore.getState().groups.map((g) => g.index)
+      ),
       ScanList: new Set(
         scanListsNow
           .map((l) => l.slot)
