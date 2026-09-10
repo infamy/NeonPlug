@@ -21,7 +21,7 @@ import type {
   D890ReferencingTables,
 } from './writePlan';
 import { planChannelWrite, D890WriteRefusedError } from './writePlan';
-import type { D890TableCounts } from './references';
+import type { D890TableCounts, D890OccupiedSlots } from './references';
 import {
   D890_MASK_CHECKS,
   checkMaskAgainstRecords,
@@ -715,6 +715,13 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
         originals: this.writeOriginals.channelRecords,
         originalMask: this.writeOriginals.channelMask,
         counts: this.writeOriginals.counts,
+        // The slot set, NOT just the count. `buildD890WriteOriginals` has built
+        // this since holes were measured, but it stopped here and the gate fell
+        // back to counting — so on a radio whose only scan list sits in slot 1,
+        // all 59 channels referencing list 2 were called out-of-range against a
+        // count of 1 and the whole write was refused. Caught by the dry run
+        // before anything was sent, 2026-09-10.
+        occupiedSlots: this.writeOriginals.occupiedSlots,
         referencingTables: this.writeOriginals.referencingTables,
         txBandLimits: this.writeOriginals.txBandLimits,
       },
@@ -734,6 +741,8 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     channelRecords: ReadonlyMap<number, Uint8Array>;
     channelMask: Uint8Array;
     counts: D890TableCounts;
+    /** Which slots each table occupies, where holes make that differ from the count. */
+    occupiedSlots?: D890OccupiedSlots;
     referencingTables: D890ReferencingTables;
     txBandLimits?: { vhfMin: number; vhfMax: number; uhfMin?: number; uhfMax?: number };
     /** Findings from the read these originals came from. A blocker stops the write. */
