@@ -755,10 +755,29 @@ the prerequisite, not a hardware session.
   | Table | Emitter keys on | Does the slot survive? |
   |---|---|---|
   | Encryption keys | `(encryptionType, id)` | ✅ **WIRED 2026-09-10** — `id` IS the slot, the store never renumbers |
-  | Radio IDs | `.index` | ⚠️ model carries `index` and the store does not renumber, but nothing confirms `index` is the hardware slot rather than a list position |
+  | Radio IDs | `.index` | ✅ **WIRED 2026-09-10** — `index` IS the slot (`readDMRRadioIDs` walks the mask); delete refused, see below |
   | Scan lists | `list.slot` | ❌ **`ScanListDecoded` never leaves `d890uv/`.** The store holds the shared `ScanList`, which has NO slot field, so the decoded slots are discarded at the store boundary |
   | RX groups | `.index` | ❌ `deleteGroup` reindexes survivors to `idx` |
   | Quick messages | slot-indexed | ❌ renumbers on READ and on delete — the same fault `predefinedSms` was added to work around |
+
+  ☑ **DMR radio IDs are wired (2026-09-10)** — edits and adds. `index` IS the
+  hardware slot: `readDMRRadioIDs` walks the presence mask and hands each
+  occupied slot to `parseRadioId`, and the store renumbers on neither add nor
+  delete. Holes are honoured rather than packed down.
+
+  ⚠️ **DELETE REFUSED — an unknown, not a known fault.** Two masked tables on
+  this radio disagree about removal: ZONES leave a hole (hardware 2026-09-03,
+  survivors kept their slots) and TALK GROUPS COMPACT (vendor CPS 2026-09-10).
+  Nothing says which radio IDs are, and **channels reference them by index**
+  (`dmrRadioIdIndex`, channel `+0x18`). Guess "hole" when it compacts and every
+  channel above the deletion points at the wrong ID, in a codeplug that reads
+  back clean. **To settle it:** delete a radio ID in the vendor CPS with the
+  serial log capturing and see whether the mask gains a hole or the records
+  shift.
+
+  Fixed on the way: `handleAddRadioId` assigned `radioIds.length` as the new
+  index — a POSITION. On a radio with slots 0, 1 and 3 occupied that is 3, which
+  overwrites the ID already there. It now takes the lowest free slot.
 
   ☑ **Encryption keys are wired (2026-09-10)** — the only one that needed no
   slot map and no refusal. Edits, adds and deletes all work: a deleted key is

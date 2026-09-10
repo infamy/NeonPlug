@@ -188,7 +188,13 @@ export const DigitalTab: React.FC = () => {
       showAlert(`Maximum of ${dmrRadioIdsMax} DMR Radio IDs allowed.`);
       return;
     }
-    const newIndex = radioIds.length;
+    // The lowest FREE slot, not the list length. `index` is a hardware slot, and
+    // the table can have holes — a radio with slots 0, 1 and 3 has length 3, so
+    // `radioIds.length` would hand the new ID slot 3 and overwrite the one
+    // already there.
+    const used = new Set(radioIds.map((r) => r.index));
+    let newIndex = 0;
+    while (used.has(newIndex)) newIndex += 1;
     addRadioId({
       index: newIndex,
       name: 'New Radio ID',

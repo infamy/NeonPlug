@@ -19,6 +19,7 @@ import type { D890CodeplugWriteInput } from '../radios/d890uv/codeplugWrite';
 import type { Zone } from '../models/Zone';
 import type { QuickContact } from '../models/QuickContact';
 import type { Channel } from '../models/Channel';
+import type { DMRRadioID } from '../models/DMRRadioID';
 import {
   buildTalkgroupRenumber,
   isNoOpRenumber,
@@ -70,6 +71,7 @@ export function buildD890CodeplugTables(
     // unlike every other table, these need no slot map and no refusal.
     // `entryNumber` is a position in the flattened list and is NOT used.
     encryptionKeys: useEncryptionKeysStore.getState().keys,
+    radioIds: d890RadioIds(),
     clearedEncryptionKeys: d890ClearedEncryptionKeys(),
     // ⚠️ Receive groups are DELIBERATELY ABSENT and must stay that way until the
     // presence-mask address is proven. `D890_ADDR.RX_GROUP_SET` is 0x3701510,
@@ -326,6 +328,54 @@ export function d890ClearedEncryptionKeys():
     useEncryptionKeysStore.getState().keys.map((k) => `${k.encryptionType}:${k.id}`)
   );
   return atRead.filter((k) => !now.has(`${k.encryptionType}:${k.id}`));
+}
+
+/**
+ * DMR radio IDs, keyed by the hardware slot each one occupies.
+ *
+ * `DMRRadioID.index` IS the slot: `readDMRRadioIDs` walks the presence mask and
+ * hands each occupied slot to `parseRadioId`, and `dmrRadioIdsStore` renumbers
+ * on neither add nor delete. So an edit needs no mapping — unlike scan lists,
+ * receive groups and quick messages, which all lose their slots.
+ *
+ * ⚠️ DELETE IS REFUSED, and the reason is an unknown rather than a known fault.
+ * Two masked tables on this radio behave differently when an entry is removed:
+ *
+ *   - ZONES leave a hole. Proven on hardware 2026-09-03: the mask bit cleared
+ *     and every survivor kept its slot.
+ *   - TALK GROUPS COMPACT. Proven from the vendor CPS 2026-09-10: everything
+ *     after the removed entry shifts down and the last slot is freed.
+ *
+ * Nothing tells us which of those radio IDs are, and CHANNELS REFERENCE THEM BY
+ * INDEX (`dmrRadioIdIndex`, channel `+0x18`). Guess "hole" when it compacts and
+ * every channel above the deletion points at the wrong ID — in a codeplug that
+ * reads back perfectly clean. The talk group delete looked exactly that
+ * convincing before it crashed the radio.
+ *
+ * To settle it: delete a radio ID in the vendor CPS with the serial log
+ * capturing, and see whether the mask gains a hole or the records shift.
+ */
+export function d890RadioIds(): DMRRadioID[] | undefined {
+  const ids = useDMRRadioIDsStore.getState().radioIds;
+  if (ids.length === 0) return undefined;
+
+  const atRead = useRadioStore.getState().tables.writeOriginals?.radioIdSlotsAtRead;
+  if (atRead) {
+    const now = new Set(ids.map((r) => r.index));
+    const removed = atRead.filter((slot) => !now.has(slot));
+    if (removed.length > 0) {
+      throw new Error(
+        `Refusing to write: deleting a DMR radio ID is not safe yet.\n\n` +
+          `It is not known whether this table leaves a HOLE when an entry is ` +
+          `removed, as zones do, or COMPACTS, as talk groups do — and channels ` +
+          `reference radio IDs by index. If it compacts and we leave a hole, ` +
+          `every channel above the deleted ID points at the wrong one, in a ` +
+          `codeplug that reads back clean.\n\n` +
+          `Editing and adding still work. To remove one, use the vendor CPS.`
+      );
+    }
+  }
+  return [...ids];
 }
 
 /** Zones exactly as the UI holds them. */

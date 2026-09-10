@@ -88,6 +88,15 @@ export interface RadioTables {
      * used to place a key — slot 1 exists in three tables at once.
      */
     encryptionKeysAtRead?: readonly { encryptionType: number; id: number }[];
+    /**
+     * The DMR radio ID slots the read found.
+     *
+     * `DMRRadioID.index` IS the hardware slot — `readDMRRadioIDs` walks the
+     * presence mask and hands each slot to `parseRadioId` — and
+     * `dmrRadioIdsStore` never renumbers, so identity survives an edit. This is
+     * staged only to detect a DELETE, which is refused: see `d890RadioIds`.
+     */
+    radioIdSlotsAtRead?: readonly number[];
     /** Channel records by 1-based channel number, including VFO A/B at 4001/4002. */
     channelRecords: Map<number, Uint8Array>;
     /** The channel presence mask exactly as read — patched on write, never rebuilt. */

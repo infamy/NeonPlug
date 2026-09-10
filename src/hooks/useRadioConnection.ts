@@ -501,6 +501,7 @@ export function useRadioConnection() {
           encryptionKeysAtRead: useEncryptionKeysStore
             .getState()
             .keys.map((k) => ({ encryptionType: k.encryptionType, id: k.id })),
+          radioIdSlotsAtRead: useDMRRadioIDsStore.getState().radioIds.map((r) => r.index),
         });
       }
 
