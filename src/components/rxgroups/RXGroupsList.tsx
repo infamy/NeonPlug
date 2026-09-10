@@ -198,7 +198,7 @@ export const RXGroupsList: React.FC = () => {
     <>
       <ListDetailLayout
         listTitle="RX Groups"
-        listSubtitle={`${groups.length}/32 groups`}
+        listSubtitle={`${groups.length}/${caps?.digital?.limits?.RX_GROUPS_MAX ?? 32} groups`}
         addInputPlaceholder="Group name..."
         addInputValue={newGroupName}
         onAddInputChange={setNewGroupName}
