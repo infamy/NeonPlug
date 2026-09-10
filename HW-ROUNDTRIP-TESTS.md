@@ -5,8 +5,9 @@ written (**55/55** — `Local info` is the radio identifying itself and is flagg
 `neverWrite`, so it is excluded from the write and round-trip denominators).
 
 **What most of it still lacks is proof that a change survives the trip**: Core HW
-round-trip is **18/55** — up from 9 on 2026-09-09, when the whole Tier-1 table
-below was cleared in one session across three writes.
+round-trip is **20/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
+and **radio IDs + scan lists on 2026-09-10**, the first two established by the
+radio's own menu and the vendor CPS rather than by our own read-back.
 
 That gap is the whole point. Our encoders **patch** the original record, so a
 write-back reproduces the input by construction — including for every field we
@@ -124,6 +125,23 @@ evidence; see `HW-ROUNDTRIP-TESTS.md` for the per-row detail.
 | MDC1200 contacts slot table / second table | Both halves, same shape as the analog book |
 | DTMF | `+0x03/+0x04/+0x0a` are ms÷10 while `+0x05` is RAW seconds — Auto Reset stayed at 9 through a write that changed all three timings |
 | DTMF encode list | A **built** table (not patched) reconstructed real flash byte-identically |
+
+**Earned 2026-09-10 (2)** — DMR radio IDs and scan lists, in one write of 84
+bytes inside a whole-codeplug write of 22,051 frames. Both are unusual in this
+file for being confirmed WITHOUT relying on our own read-back.
+
+| Region | What the round trip proved |
+|---|---|
+| DMR radio IDs | **The radio's own menu** showed four IDs with `RID Zulu` LAST after slot 3 was renamed and a new ID was written into the slot-2 hole. Records do NOT compact, an add reuses a hole, and a record built over erased flash is valid once its unmodelled tail is zeroed the way every vendor write does |
+| Scan lists | The **vendor CPS**, reading the radio, returned `dwellTime = 55`, `pri1 = 0x3e` (62) and `pri2 = 0x3f` (63) — exactly what we wrote — while look-back A/B, dropout and revert came back untouched at 20/31/37/6. Hang time is invisible on the radio's own menu, so the CPS is the only independent check available for it |
+
+Three write-path bugs were found BEFORE sending, by planning against a real read
+and diffing every frame: the occupied-slot set never reached the reference gate
+(every write refused), the BASIC encryption key record was copied into a frame a
+quarter its size (planner aborted), and every encryption key was written one slot
+too high because the parsers return 1-based ids. **The last of those is the case
+for diffing rather than reading back** — the shifted keys are exactly what the
+radio would then hold, so a read-back would have agreed with itself.
 
 **Extra, 3 of 6: all three pictures** — boot, background 1, background 2, all
 2026-09-03. Still the strongest evidence on this radio, because the proof is the
