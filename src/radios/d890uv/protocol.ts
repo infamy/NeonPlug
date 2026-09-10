@@ -915,7 +915,31 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     return lists;
   }
 
-  /** Receive group lists. Members are talkgroup bank indices, not DMR IDs. */
+  /**
+   * Receive group lists. Members are talkgroup bank indices, not DMR IDs.
+   *
+   * ⚠️ THE MASK CANNOT BE TRUSTED HERE. `D890_ADDR.RX_GROUP_SET` is 0x3701510 —
+   * the address `D890_HOT_KEYS.MASK` also claims — and on 2026-09-09 it read 32
+   * zero bytes on a radio that demonstrably held two receive group lists. With
+   * no groups read, `findDanglingReferences` saw 79 channels pointing at lists
+   * 1 and 2 against "DMRReceiveGroupCallList has 0" and refused every write.
+   *
+   * So the mask is used when it says something, and the RECORDS are scanned
+   * when it does not. That ordering matters: where the mask is right it stays
+   * authoritative, and the scan only rescues the case that is otherwise fatal.
+   *
+   * The scan is bounded rather than covering all 250 slots, which would be
+   * 128 KB and about 13 seconds on this link. It stops after a run of empty
+   * records, so the usual cost is a handful of reads.
+   *
+   * ⚠️ This fixes the READ ONLY. Receive groups are still deliberately absent
+   * from `buildD890CodeplugTables`, so nothing plans a write for them and both
+   * the records and whatever the real mask is ride out through the verbatim
+   * pass untouched. DO NOT add them to the write until the mask address is
+   * established — writing a presence mask to an address we have not proven is
+   * exactly how a neighbouring table gets destroyed. See the note on
+   * `RX_GROUP_SET` in constants.ts for the experiment that settles it.
+   */
   async readRXGroups(): Promise<RXGroup[]> {
     const conn = this.requireConnection();
     const mask = await conn.readMemory(
@@ -933,6 +957,38 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
         D890_ADDR.RX_GROUP_STRIDE
       );
       groups.push(parseRxGroup(record, index));
+    }
+    if (groups.length > 0) return groups;
+
+    // Fallback: the mask told us nothing. A record is present when its first
+    // word is not erased flash — the two real records read
+    // `00000000 00000001 ffffffff…`, so 0xFFFFFFFF at the head is absence.
+    const SCAN_SLOTS = 64;
+    const EMPTY_RUN_LIMIT = 8;
+    let emptyRun = 0;
+    for (let index = 0; index < SCAN_SLOTS; index += 1) {
+      const record = await conn.readMemory(
+        rxGroupAddress(index),
+        D890_ADDR.RX_GROUP_STRIDE
+      );
+      const erased =
+        (record[0] ?? 0xff) === 0xff && (record[1] ?? 0xff) === 0xff &&
+        (record[2] ?? 0xff) === 0xff && (record[3] ?? 0xff) === 0xff;
+      if (erased) {
+        emptyRun += 1;
+        if (emptyRun >= EMPTY_RUN_LIMIT) break;
+        continue;
+      }
+      emptyRun = 0;
+      groups.push(parseRxGroup(record, index));
+    }
+    if (groups.length > 0) {
+      log.warn(
+        `DA-7X2 receive-group mask at 0x${D890_ADDR.RX_GROUP_SET.toString(16)} read empty; ` +
+          `recovered ${groups.length} list(s) by scanning records. The mask address is ` +
+          `unconfirmed — see constants.ts.`,
+        'D890'
+      );
     }
     return groups;
   }

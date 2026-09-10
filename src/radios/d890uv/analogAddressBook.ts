@@ -54,7 +54,18 @@ export const D890_ANALOG_ADDRESS_BOOK = {
    * slots read 0x00 and 0x01, i.e. their own index.
    *
    * RESOLVED ON HARDWARE 2026-09-08: **deletion COMPACTS the records and
-   * renumbers this table**, so it is the compacted-list reading. A slot index is
+   * renumbers this table**, so it is the compacted-list reading.
+   *
+   * CONFIRMED AGAIN 2026-09-09, this time by a NeonPlug write rather than the
+   * CPS: adding an entry then deleting the FIRST one renumbered the survivors
+   * to slots 0 and 1 exactly as modelled. The delisted record's bytes stay in
+   * flash and the reader no longer even fetches that slot.
+   *
+   * ⭐ AND THE RADIO'S OWN MENU DISPLAYED THE BOOK CORRECTLY afterwards. That is
+   * a stronger class of evidence than a read-back: a read-back only proves our
+   * decoder agrees with our encoder, while the radio rendering the entries
+   * proves its FIRMWARE parses what we wrote. Prefer this check for any region
+   * that is visible on the radio. A slot index is
    * therefore NOT a stable identifier — anything that remembers "the contact in
    * slot 3" is wrong the moment an earlier entry is deleted.
    *

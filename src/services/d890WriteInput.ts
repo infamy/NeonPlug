@@ -55,6 +55,12 @@ export function buildD890CodeplugTables(
     // one IS carried by slot.
     smsStore: t.smsStore,
     dtmf: t.dtmf,
+    // ⚠️ Receive groups are DELIBERATELY ABSENT and must stay that way until the
+    // presence-mask address is proven. `D890_ADDR.RX_GROUP_SET` is 0x3701510,
+    // which `D890_HOT_KEYS.MASK` also claims, and it reads zero on a radio that
+    // holds two lists. Passing them here would make `maskedTable` write a
+    // presence mask to an address we have not established. Reading them is
+    // fixed (protocol.ts scans the records); writing them is not.
     // Position→slot. The read compacts empty slots away, so these two indexings
     // diverge the moment a zone in the middle is empty.
     zoneCurrentChannels:

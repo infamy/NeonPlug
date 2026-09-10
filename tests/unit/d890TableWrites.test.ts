@@ -316,6 +316,36 @@ describe('DTMF', () => {
   });
 });
 
+describe('the 0x3701510 collision', () => {
+  // 0x3701510 is claimed by BOTH D890_HOT_KEYS.MASK and D890_ADDR.RX_GROUP_SET.
+  // The hot-key region write must leave that frame alone, or planning a write
+  // with receive groups present hits the duplicate-address guard and refuses
+  // outright — which is what would happen the moment the receive-group read
+  // starts returning entries.
+  it('does not plan the frame at 0x3701510', () => {
+    const plan = planCodeplugWrite(setup({
+      statusMessages: [{ slot: 0, text: 'A' }],
+      hotKeys: [{ slot: 0, mode: 0, menu: 1, callType: 0, digiCallType: 0,
+        callObject: null, contentSmsIndex: null }],
+    }));
+    expect(plan.frames.some((f) => f.address === 0x3701510)).toBe(false);
+    // The status-message mask is one frame lower and MUST still be written.
+    expect(plan.frames.some((f) => f.address === 0x3701500)).toBe(true);
+  });
+
+  it('plans hot keys and receive groups together without refusing', () => {
+    const base = setup({
+      statusMessages: [{ slot: 0, text: 'A' }],
+      hotKeys: [{ slot: 0, mode: 0, menu: 1, callType: 0, digiCallType: 0,
+        callObject: null, contentSmsIndex: null }],
+      rxGroups: [{ index: 0, name: 'RX 1', contacts: [] }],
+    });
+    // The receive-group records live at their own address; give the plan one.
+    base.readLog.set(0x3780000, new Uint8Array(0x200));
+    expect(() => planCodeplugWrite(base)).not.toThrow();
+  });
+});
+
 describe('the plan as a whole', () => {
   it('emits nothing for a table the caller did not pass', () => {
     const plan = planCodeplugWrite(setup({}));

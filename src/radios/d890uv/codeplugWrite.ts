@@ -636,7 +636,19 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
   // already sends all 339 frames on every write. This only changes what is IN
   // them.
   if (T.statusMessages || T.hotKeys) {
-    const spec = { label: 'hot keys / status messages', address: 0x3700000, size: 0x1530 };
+    // 0x1510, NOT the full 0x1530 the reader fetches. The frame at 0x3701510 is
+    // deliberately left out: it is `D890_ADDR.RX_GROUP_SET` as well as
+    // `D890_HOT_KEYS.MASK`, and planning it here would collide with
+    // `maskedTable('RX groups', ...)` the moment the receive-group read starts
+    // returning entries — two frames at one address, which the guard at the end
+    // of this function refuses outright.
+    //
+    // Nothing is lost. `encodeHotKey` never touches that mask (it marks rows
+    // differing from a CPS default nobody has established) and the status
+    // message mask is one frame lower at 0x3701500, so both encoders stay
+    // in bounds. The excluded frames ride out through the verbatim pass with
+    // the radio's own bytes, exactly as they do today.
+    const spec = { label: 'hot keys / status messages', address: 0x3700000, size: 0x1510 };
     const original = sliceFromReadLog(input.readLog, spec.address, spec.size);
     if (!original) {
       skipped.push({
