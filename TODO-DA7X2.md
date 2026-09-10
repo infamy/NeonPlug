@@ -820,6 +820,15 @@ the prerequisite, not a hardware session.
   lists. `lowestFreeSlot` (shared with scan lists) allocates an add, so a new ID
   fills slot 2 rather than colliding with slot 3 and leaving the hole forever.
 
+  ✅ **CONFIRMED ON THE RADIO'S OWN SCREEN, 2026-09-10.** Slot 3 was renamed
+  `RID Max` → `RID Zulu` and a new `RID Hole` / 222 written into the slot 2 hole,
+  in one whole-codeplug write (84 bytes changed of 22,051 frames). **The radio
+  menu then showed four IDs with `RID Zulu` LAST** — so records do not compact,
+  an add reuses the hole, and a record built from erased flash is valid provided
+  its unmodelled tail is zeroed the way every vendor write does. Established by
+  the radio's own menu, not by reading back what we sent. Detail and the three
+  bugs the plan-vs-read diff caught first: `D890UV-HARDWARE-CHECKLIST.md`.
+
   ✅ **DELETE LEAVES A HOLE — measured 2026-09-10**, from a vendor CPS delete
   captured either side (`7x2_predelete.txt` / `7x2_postdelete.txt`, read
   direction). Deleting radio ID slot 2 of 0-3 left the read fetching
