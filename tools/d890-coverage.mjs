@@ -87,6 +87,22 @@ const rows = [
  */
 const writeTo = process.argv.includes('--write');
 if (writeTo) {
+  // OVERALL PROGRESS — every milestone earned over every milestone available.
+  //
+  // Deliberately the sum of the SAME six rows below rather than a new count, so
+  // it can never disagree with them. Each region earns up to three: read, write
+  // (the offline parse->encode round trip) and the hardware round trip. A
+  // `neverWrite` region can earn only one, and its other two are not in the
+  // denominator, so the ceiling is genuinely reachable.
+  //
+  // This is a progress figure, not a quality one. 100% would mean every region
+  // is read, re-encoded byte-exactly, and proven on a radio — which is the
+  // actual finish line for a driver that writes to hardware.
+  const earned = rows.reduce((n, r) => n + r.n, 0);
+  const available = rows.reduce((n, r) => n + r.total, 0);
+  const overall = { n: earned, total: available, pct: pct(earned, available), bar: bar(earned, available, 40) };
+  const remaining = available - earned;
+
   const gap = core.filter((r) => r.read && !r.write && !r.neverWrite).map((r) => r.name);
   const never = core.filter((r) => r.neverWrite).map((r) => r.name);
   const out = [
@@ -95,6 +111,20 @@ if (writeTo) {
     '> **GENERATED. Do not edit.** Run `node tools/d890-coverage.mjs --write`.',
     '> The numbers come from the flags in `src/radios/d890uv/recordLayout.ts`;',
     '> editing them here changes nothing and creates a second, wrong answer.',
+    '',
+    '## Overall progress',
+    '',
+    `\`${overall.bar}\``,
+    '',
+    `### ${overall.pct}% — ${overall.n} of ${overall.total} milestones`,
+    '',
+    'Every region can earn up to three: **read**, **write** (parse → encode',
+    'reproducing vendor bytes) and a **hardware round trip**. This is the sum of',
+    'the six rows below, so it can never disagree with them.',
+    '',
+    `Reading and re-encoding this radio are **done**. The ${remaining} still open are`,
+    'almost entirely the third kind — proof on real hardware that a change',
+    'survives the trip — which costs a radio, a write and a later read each.',
     '',
     '| | Coverage | |',
     '|---|---|---|',

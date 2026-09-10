@@ -4,6 +4,20 @@
 > The numbers come from the flags in `src/radios/d890uv/recordLayout.ts`;
 > editing them here changes nothing and creates a second, wrong answer.
 
+## Overall progress
+
+`█████████████████████████████████░░░░░░░`
+
+### 82% — 150 of 184 milestones
+
+Every region can earn up to three: **read**, **write** (parse → encode
+reproducing vendor bytes) and a **hardware round trip**. This is the sum of
+the six rows below, so it can never disagree with them.
+
+Reading and re-encoding this radio are **done**. The 34 still open are
+almost entirely the third kind — proof on real hardware that a change
+survives the trip — which costs a radio, a write and a later read each.
+
 | | Coverage | |
 |---|---|---|
 | **Core read** | `████████████████████` | **100%** — 56 of 56 |
