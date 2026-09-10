@@ -65,6 +65,12 @@ export function buildD890CodeplugTables(
     smsStore: t.smsStore,
     dtmf: t.dtmf,
     talkgroups: d890Talkgroups(),
+    // Identity here is genuinely stable: `id` IS the hardware slot,
+    // `encryptionType` picks the table, and the store never renumbers — so
+    // unlike every other table, these need no slot map and no refusal.
+    // `entryNumber` is a position in the flattened list and is NOT used.
+    encryptionKeys: useEncryptionKeysStore.getState().keys,
+    clearedEncryptionKeys: d890ClearedEncryptionKeys(),
     // ⚠️ Receive groups are DELIBERATELY ABSENT and must stay that way until the
     // presence-mask address is proven. `D890_ADDR.RX_GROUP_SET` is 0x3701510,
     // which `D890_HOT_KEYS.MASK` also claims, and it reads zero on a radio that
@@ -298,6 +304,28 @@ export function d890RenumberedChannels(channels: readonly Channel[]): Channel[] 
     );
   }
   return result.channels;
+}
+
+/**
+ * Key slots the read saw that the user has since removed.
+ *
+ * A write emits only the keys it is handed, so without this a delete is a
+ * SILENT NO-OP: the removed key's record stays on the radio untouched and the
+ * user's deletion simply does not happen. These get written back as empty
+ * records instead — zeroing the key bytes is what makes the parser call a slot
+ * empty.
+ *
+ * Matched on `(encryptionType, id)` because slot 1 exists in three tables at
+ * once; matching on `id` alone would clear the wrong table's key.
+ */
+export function d890ClearedEncryptionKeys():
+  { encryptionType: number; id: number }[] | undefined {
+  const atRead = useRadioStore.getState().tables.writeOriginals?.encryptionKeysAtRead;
+  if (!atRead) return undefined;
+  const now = new Set(
+    useEncryptionKeysStore.getState().keys.map((k) => `${k.encryptionType}:${k.id}`)
+  );
+  return atRead.filter((k) => !now.has(`${k.encryptionType}:${k.id}`));
 }
 
 /** Zones exactly as the UI holds them. */

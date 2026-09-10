@@ -75,6 +75,19 @@ export interface RadioTables {
      * renumbered, a delete is refused rather than written.
      */
     talkgroupCountAtRead?: number;
+    /**
+     * The encryption key slots the read found, as `(encryptionType, id)`.
+     *
+     * Identity here is genuinely stable — `id` IS the hardware slot and
+     * `encryptionType` picks which of the four tables it lives in, and
+     * `encryptionKeysStore` never renumbers. This is staged only so a DELETE can
+     * be spotted: a key removed from the list has to be written back as an EMPTY
+     * record, or the radio simply keeps it and the deletion is a silent no-op.
+     *
+     * ⚠️ `entryNumber` is a position in the flattened list and must never be
+     * used to place a key — slot 1 exists in three tables at once.
+     */
+    encryptionKeysAtRead?: readonly { encryptionType: number; id: number }[];
     /** Channel records by 1-based channel number, including VFO A/B at 4001/4002. */
     channelRecords: Map<number, Uint8Array>;
     /** The channel presence mask exactly as read — patched on write, never rebuilt. */

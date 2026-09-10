@@ -754,16 +754,25 @@ the prerequisite, not a hardware session.
 
   | Table | Emitter keys on | Does the slot survive? |
   |---|---|---|
-  | Encryption keys | `(encryptionType, id)` | ✅ `id` IS the slot; the store never renumbers |
+  | Encryption keys | `(encryptionType, id)` | ✅ **WIRED 2026-09-10** — `id` IS the slot, the store never renumbers |
   | Radio IDs | `.index` | ⚠️ model carries `index` and the store does not renumber, but nothing confirms `index` is the hardware slot rather than a list position |
   | Scan lists | `list.slot` | ❌ **`ScanListDecoded` never leaves `d890uv/`.** The store holds the shared `ScanList`, which has NO slot field, so the decoded slots are discarded at the store boundary |
   | RX groups | `.index` | ❌ `deleteGroup` reindexes survivors to `idx` |
   | Quick messages | slot-indexed | ❌ renumbers on READ and on delete — the same fault `predefinedSms` was added to work around |
 
-  So encryption keys are the only one that could be wired as-is. The other four
-  need their slots carried the way `talkgroupSlotByUid` and `predefinedSms` now
-  do, and none of them should get add/delete until it is round-tripped — the
-  talk group delete looked perfect on read-back and crashed the radio.
+  ☑ **Encryption keys are wired (2026-09-10)** — the only one that needed no
+  slot map and no refusal. Edits, adds and deletes all work: a deleted key is
+  written back as an EMPTY record, because emitting only the survivors leaves
+  the removed key exactly where it was and the deletion silently does not
+  happen. `entryNumber` is a list position and is not used to place anything —
+  slot 1 exists in three tables at once. Type changes are refused by
+  `applyKeySlotToRecord` itself, as they always were.
+
+  ⚠️ NOT round-tripped on hardware.
+
+  The other four still need their slots carried the way `predefinedSms` and
+  `readSlot` now do, and none should get add/delete until it is round-tripped —
+  the talk group delete looked perfect on read-back and crashed the radio.
 
   ⚠️ Do not wire and write in the same sitting. Wire, dry-run, then verify one
   table at a time on a codeplug backed up in the CPS.

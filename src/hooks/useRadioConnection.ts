@@ -497,6 +497,10 @@ export function useRadioConnection() {
           })(),
           // Only to detect a later DELETE — see `talkgroupCountAtRead`.
           talkgroupCountAtRead: useQuickContactsStore.getState().contacts.length,
+          // Which key slots exist right now, so a later delete can clear them.
+          encryptionKeysAtRead: useEncryptionKeysStore
+            .getState()
+            .keys.map((k) => ({ encryptionType: k.encryptionType, id: k.id })),
         });
       }
 

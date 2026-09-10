@@ -198,6 +198,16 @@ export interface D890CodeplugWriteInput {
      */
     encryptionKeys?: readonly EncryptionKey[];
     /**
+     * Key slots the read saw that are no longer in the list — written back as
+     * EMPTY records.
+     *
+     * Without this a delete is a silent no-op: the plan writes only the keys it
+     * is given, so a removed key's record simply stays on the radio and the
+     * user's deletion never happens. Zeroing the key bytes is exactly what makes
+     * the parser report a slot as empty.
+     */
+    clearedEncryptionKeys?: readonly { encryptionType: number; id: number }[];
+    /**
      * Status messages, by SLOT. A slot missing from this list has its presence
      * bit cleared and its text left alone — the mask is what the radio reads,
      * so clearing the bit is the deletion.
@@ -927,14 +937,14 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
   // A key's TYPE is never changed here: each key is written to the table it was
   // read from. Converting one is a delete plus a create, and
   // `applyKeySlotToRecord` refuses it outright.
-  if (T.encryptionKeys?.length) {
+  if (T.encryptionKeys?.length || T.clearedEncryptionKeys?.length) {
     const byTable: { type: number; kind: 'aes' | 'arc4'; address: number; stride: number }[] = [
       { type: D890_ENCRYPTION_TYPE.AES128, kind: 'aes', address: D890_ADDR.AES_KEY_TABLE, stride: D890_ADDR.AES_KEY_STRIDE },
       { type: D890_ENCRYPTION_TYPE.AES256, kind: 'aes', address: D890_ADDR.AES_KEY_TABLE, stride: D890_ADDR.AES_KEY_STRIDE },
       { type: D890_ENCRYPTION_TYPE.ARC4, kind: 'arc4', address: D890_ADDR.ARC4_KEY_TABLE, stride: D890_ADDR.ARC4_KEY_STRIDE },
     ];
     const keyFrames: D890WriteFrame[] = [];
-    for (const key of T.encryptionKeys) {
+    for (const key of T.encryptionKeys ?? []) {
       const table = byTable.find((t) => t.type === key.encryptionType);
       if (!table) continue; // BASIC lives in its own ID/key pair, handled below.
       const at = table.address + key.id * table.stride;
@@ -954,8 +964,32 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
         });
       }
     }
+    // Deleted keys: the same records, written EMPTY. A slot the user removed
+    // has to be actively zeroed — writing only the surviving keys leaves the
+    // deleted one exactly where it was.
+    for (const gone of T.clearedEncryptionKeys ?? []) {
+      const table = byTable.find((t) => t.type === gone.encryptionType);
+      if (!table) continue; // BASIC is cleared below, with its own pair.
+      const at = table.address + gone.id * table.stride;
+      const original = sliceFromReadLog(input.readLog, at, table.stride);
+      if (!original) continue;
+      const record = applyKeySlotToRecord(
+        original,
+        { slot: gone.id, keyId: original[0] ?? 0, keyHex: '', empty: true },
+        table.kind,
+        table.kind
+      );
+      for (let off = 0; off < record.length; off += 0x10) {
+        keyFrames.push({
+          address: at + off,
+          data: record.slice(off, off + 0x10),
+          what: `${table.kind.toUpperCase()} key ${gone.id} (cleared)`,
+        });
+      }
+    }
+
     // The basic table is a 16-bit ID and a 16-bit key in two separate regions.
-    for (const key of T.encryptionKeys) {
+    for (const key of T.encryptionKeys ?? []) {
       if (key.encryptionType !== D890_ENCRYPTION_TYPE.BASIC) continue;
       const idAt = D890_ADDR.ENCRYPTION_ID_TABLE + key.id * D890_ADDR.ENCRYPTION_ID_STRIDE;
       const keyAt = D890_ADDR.ENCRYPTION_KEY_TABLE + key.id * D890_ADDR.ENCRYPTION_KEY_STRIDE;
