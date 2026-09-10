@@ -517,7 +517,6 @@ export function parseTalkgroupQuick(bytes: Uint8Array, index: number): QuickCont
     index: index + 1,
     // The hardware SLOT, carried in a form the store cannot renumber away.
     // `index` is rewritten to a list position on the first add or delete; this
-    // is what a write resolves records by afterwards. See QuickContact.uid.
     uid: `tg-${index}`,
     offset: 0,
     name: contact.name,

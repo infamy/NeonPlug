@@ -189,94 +189,68 @@ export function d890ZoneCurrentBySlot(
 }
 
 /**
- * Talk groups, resolved onto the hardware SLOTS they belong in.
+ * Talk groups, in the order they will occupy slots.
  *
- * The record for a talk group must go to the slot the radio holds it in, and
- * `QuickContact.index` cannot say which that is once the list has been edited:
- * `quickContactsStore.deleteContact` re-indexes survivors to `idx + 1` and
- * `addContact` assigns `length + 1`. So identity comes from `uid`, assigned at
- * read time and untouched by either operation, resolved against the map staged
- * with the read.
+ * ⚠️ THIS TABLE COMPACTS. Entry i goes to slot i, always, and the table always
+ * occupies 0..N-1 with no holes — MEASURED from the vendor CPS on 2026-09-10 by
+ * clearing one row and diffing the write it produced:
  *
- * This mirrors `resolveZoneSlots` exactly, including why: placing records by
- * list position after a delete writes every survivor one slot down, which on
- * 2026-09-03 moved seven zones and left their A/B pointers behind.
+ *     slot 500   TG0501 -> TG0502        500 records shifted down by one
+ *     slot 999   TG1000 -> TG1001
+ *     bank 1     10 records -> 9
+ *     locator[1009]  0x000003f1 -> 0xffffffff
+ *     mask           slot 1009 becomes absent
  *
- * Returns undefined when nothing was staged, so a codeplug loaded from a file
- * writes as it always did rather than failing outright.
+ * That also explains the locator. It is an identity table in every capture not
+ * because `V = slot index` is a rule worth preserving, but because slot ALWAYS
+ * equals position when the table cannot have holes. `V = slot` is true and
+ * vacuous.
+ *
+ * The previous version kept survivors on the slots they were read from and
+ * punched a hole. It wrote exactly that, read back byte-perfect, and left the
+ * radio reporting 1010 talk groups and CRASHING on the deleted entry — it had
+ * dereferenced a locator entry that said "not there". See the retraction in
+ * `HW-ROUNDTRIP-TESTS.md`.
+ *
+ * So no identity map is needed, and there is nothing to refuse: add, delete and
+ * edit are all just "write the list in order".
  */
 export function d890Talkgroups(): QuickContact[] | undefined {
-  const byUid = useRadioStore.getState().tables.writeOriginals?.talkgroupSlotByUid;
   const contacts = useQuickContactsStore.getState().contacts;
-  if (!byUid || contacts.length === 0) return undefined;
+  if (contacts.length === 0) return undefined;
 
-  const slots = resolveTalkgroupSlots(contacts, byUid);
-
-  // ⚠️ REFUSED: any change to the SLOT SET. Editing in place is fine.
+  // ⚠️ DELETE IS REFUSED until reference renumbering exists.
   //
-  // A delete was written to hardware on 2026-09-10 and left the radio in a
-  // broken state: it reported 1010 talk groups and CRASHED when the user
-  // navigated to the deleted one. The mask bit was clear and the locator entry
-  // read 0xFFFFFFFF — both correct — but `planSpanTableWrite` copies the
-  // original into the gap, so the RECORD was written back fully populated. The
-  // radio's list evidently does not come from the mask, so it counted a record
-  // that the locator then said was not there.
+  // Compaction is only half of a delete. Channels reference a talk group by
+  // SLOT (u32 at channel +0x14, 0-based, 0xFFFFFFFF = none) and receive groups
+  // reference them the same way (`decodeU32Members`). When the table shifts,
+  // every reference ABOVE the deleted entry has to shift with it or it silently
+  // retargets — a channel pointing at talk group 600 would transmit on 601's.
   //
-  // The read-back looked perfect, which is exactly the trap: it proves our
-  // decoder agrees with our encoder and nothing about what the radio does with
-  // the result. The radio's own menu is the authority.
+  // Writing a correctly compacted table with stale references is a WORSE
+  // failure than refusing: the codeplug reads back clean and the radio talks to
+  // the wrong group.
   //
-  // Do NOT lift this by guessing which of "blank the record", "compact the
-  // table" or "update a count we have not found" is right. Delete a talk group
-  // in the vendor CPS with the serial log capturing and read what it actually
-  // does.
-  const staged = new Set(Object.values(byUid));
-  const wanted = new Set(slots);
-  const changed =
-    wanted.size !== staged.size || [...wanted].some((slot) => !staged.has(slot));
-  if (changed) {
+  // ADD is allowed: a new entry lands on the end and shifts nothing.
+  //
+  // To lift this: record each talk group's read slot, build old -> new from it,
+  // and apply that map to channel `contactId` and receive-group members before
+  // planning. A reference to the DELETED talk group needs a decision of its own
+  // — clear it, or refuse the write and name the channels.
+  const staged = useRadioStore.getState().tables.writeOriginals;
+  const readCount = staged?.talkgroupCountAtRead;
+  if (readCount !== undefined && contacts.length < readCount) {
     throw new Error(
-      `Refusing to write talk groups: adding or deleting one is not safe yet.\n\n` +
-        `A delete on 2026-09-10 left the radio reporting 1010 talk groups and ` +
-        `crashing on the deleted entry. The presence mask and the locator were ` +
-        `both written correctly; the record itself was not cleared, and the ` +
-        `radio counts something other than the mask.\n\n` +
-        `Editing a talk group in place still works. To add or remove one, use ` +
-        `the vendor CPS until this is understood.`
+      `Refusing to write talk groups: deleting one is not safe yet.\n\n` +
+        `The table compacts, so every talk group after the deleted one moves ` +
+        `down a slot — and channels and receive groups reference them BY SLOT. ` +
+        `Renumbering those references is not implemented, so the write would ` +
+        `produce a codeplug that reads back clean while channels transmit on ` +
+        `the wrong talk group.\n\n` +
+        `Editing and adding still work. To remove one, use the vendor CPS.`
     );
   }
-  return slots.map((slot, i) => ({ ...contacts[i]!, index: slot }));
-}
-
-/**
- * The pure half, so the allocation rules can be tested without a store.
- *
- * A contact the read gave us keeps its slot. One the user ADDED has no uid the
- * map knows — either none at all, or one from a codeplug imported off a
- * different radio — and gets the lowest slot nothing else claims. A deleted
- * talk group simply stops appearing and its slot falls out, which is what makes
- * the presence mask clear exactly that bit and the locator retire exactly that
- * entry.
- */
-export function resolveTalkgroupSlots(
-  contacts: readonly { uid?: string }[],
-  slotByUid: Readonly<Record<string, number>>
-): number[] {
-  // Claim every slot a survivor already owns BEFORE allocating, or a new
-  // contact could be handed a slot a later existing one still holds.
-  const taken = new Set<number>();
-  for (const c of contacts) {
-    const slot = c.uid === undefined ? undefined : slotByUid[c.uid];
-    if (slot !== undefined) taken.add(slot);
-  }
-  let next = 0;
-  return contacts.map((c) => {
-    const known = c.uid === undefined ? undefined : slotByUid[c.uid];
-    if (known !== undefined) return known;
-    while (taken.has(next)) next += 1;
-    taken.add(next);
-    return next;
-  });
+  return contacts.map((c, i) => ({ ...c, index: i }));
 }
 
 /** Zones exactly as the UI holds them. */

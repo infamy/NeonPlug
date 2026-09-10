@@ -67,20 +67,14 @@ export interface RadioTables {
     zoneSlotById?: Readonly<Record<string, number>>;
     zoneCurrentById?: Readonly<Record<string, { a: number; b: number }>>;
     /**
-     * Talk group uid -> hardware slot, staged at read time.
+     * How many talk groups the read saw.
      *
-     * The same problem zones have and the same solution. `QuickContact.index`
-     * arrives as `slot + 1` from the read, but `quickContactsStore` re-indexes
-     * survivors to `idx + 1` on delete and assigns `length + 1` on add — so a
-     * list position stops meaning a hardware slot as soon as anything changes.
-     * Records placed by position after an edit go into the wrong slots; that is
-     * how seven zones were written a slot down on 2026-09-03.
-     *
-     * Keyed by uid rather than parsed out of it, so a codeplug IMPORTED from
-     * another radio does not claim that radio's slots: an unknown uid is
-     * treated as new and allocated a free one.
+     * Only to detect a DELETE. Talk groups compact, so records need no identity
+     * to place — but a delete shifts every entry after it, and channels and
+     * receive groups reference talk groups by SLOT. Until those references are
+     * renumbered, a delete is refused rather than written.
      */
-    talkgroupSlotByUid?: Readonly<Record<string, number>>;
+    talkgroupCountAtRead?: number;
     /** Channel records by 1-based channel number, including VFO A/B at 4001/4002. */
     channelRecords: Map<number, Uint8Array>;
     /** The channel presence mask exactly as read — patched on write, never rebuilt. */

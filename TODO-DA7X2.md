@@ -212,25 +212,52 @@ which proves the writer's bank arithmetic. Neighbours untouched and all 1,009
 other records byte-perfect, so the record offsets inside a whole-bank span are
 right too.
 
-❌ **DELETE FAILED ON THE RADIO 2026-09-10 — add/delete is refused again.**
-The write did exactly what was designed: mask bit clear, `locator[500]` =
-`ff ff ff ff`, `locator[501]` = 501 not 500, every survivor on its own slot, and
-the read-back matched byte for byte. The RADIO then reported **1010** talk groups
-and **crashed** on the deleted entry.
+✅ **SOLVED 2026-09-10 — talk groups COMPACT.** Measured from the vendor CPS by
+clearing one row and diffing the write against the restored state
+(`~/Downloads/7x2_restoredalltg.txt` vs `7x2_onecleared.txt`, parse with
+`tools/parse-serial-capture.mjs --writes`):
 
-`planSpanTableWrite` copies the original into the gap, so slot 500's RECORD was
-written back fully populated while the mask and locator both said absent. The
-radio's list evidently does not come from the mask.
+```
+slot 500        TG0501 -> TG0502     500 records shifted down by one
+slot 1008       TG1009 -> TG1010
+slot 1009       TG1010 -> (empty)    the LAST slot is freed, not the cleared one
+locator[1009]   0x3f1  -> 0xffffffff
+mask            slot 1009 becomes absent
+```
 
-⚠️ **A clean read-back is not a pass.** It proves our decoder agrees with our
-encoder and nothing about what the radio does with the result — the same trap
-`analogAddressBook.ts` already warns about, written the day before and not
-applied here.
+The table always occupies 0..N-1 with no holes. **The locator is an identity
+table because slot always equals position** — not a rule to preserve, a
+consequence of the table being unable to have holes. `V = slot` is true and
+vacuous, and the earlier hole test wrote a structure the radio cannot represent.
 
-**Do not guess the fix.** "Blank the record", "compact the table" and "there is a
-count field we have not found" are all consistent with what was seen. Delete a
-talk group in the vendor CPS with the serial log capturing, parse it with
-`tools/parse-serial-capture.mjs --writes`, and read what it actually does.
+Records are now placed by POSITION and the identity apparatus built for the hole
+model (`QuickContact.uid`, `talkgroupSlotByUid`, `resolveTalkgroupSlots`) is
+gone — compaction needs none of it.
+
+⚠️ **DELETE IS STILL REFUSED**, for a different reason than before. Compaction is
+only half of a delete: channels reference a talk group by SLOT (u32 at channel
+`+0x14`, 0-based, `0xFFFFFFFF` = none) and receive groups reference them the same
+way (`decodeU32Members`). When the table shifts, every reference above the
+deleted entry must shift with it. Writing a correctly compacted table with stale
+references is WORSE than refusing — the codeplug reads back clean and the radio
+transmits on the wrong talk group. ADD is allowed; it lands on the end and shifts
+nothing.
+
+**To lift it:** record each talk group's read slot, build `old -> new` from it,
+apply to channel `contactId` and receive-group members before planning, and
+decide what a reference to the DELETED talk group becomes — cleared, or the write
+refused naming the channels.
+
+**Whether the CPS renumbers is UNKNOWN and the captures cannot say.** All 102
+channels with a TX contact on this radio reference slot 0, and nothing
+references at or above the shift point, so the CPS had no opportunity to show
+us. Alex believes it does. Renumbering is correct either way: references are
+slot-based and the table compacts. To settle it, point one channel at a talk
+group above the one being cleared and capture again.
+
+⚠️ Also seen in that capture pair, unrelated to talk groups: **the CPS wiped the
+RX group reference on 68 channels** (`+0x1c`, `0x00`/`0x01` -> `0xff`). Consistent
+with the vendor-CPS-destroys-settings warning above.
 
 ☐ **ADD is still unproven on hardware.** Unit-tested only, and it exercises a
 path delete does not: the new slot was never read, so its record is BUILT rather

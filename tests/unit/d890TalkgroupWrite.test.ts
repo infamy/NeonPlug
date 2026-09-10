@@ -30,7 +30,7 @@ import {
 } from '../../src/radios/d890uv/structures';
 import { useRadioStore } from '../../src/store/radioStore';
 import { useQuickContactsStore } from '../../src/store/quickContactsStore';
-import { d890Talkgroups, resolveTalkgroupSlots } from '../../src/services/d890WriteInput';
+import { d890Talkgroups } from '../../src/services/d890WriteInput';
 import type { Channel } from '../../src/models/Channel';
 import type { QuickContact } from '../../src/models/QuickContact';
 
@@ -146,97 +146,83 @@ describe('planning a banked talkgroup write', () => {
   });
 });
 
-describe('resolveTalkgroupSlots — identity, add and delete', () => {
-  // The pure allocation rules. Identity comes from `uid`, assigned at read time,
-  // because `quickContactsStore` re-indexes survivors on delete and assigns
-  // `length + 1` on add — so list position stops meaning a hardware slot the
-  // moment anything changes. Placing records by position after a delete writes
-  // every survivor one slot down; that is what moved seven zones on 2026-09-03.
-  const staged = { 'tg-0': 0, 'tg-5': 5, 'tg-9': 9 };
-
-  it('keeps each read contact on the slot it came from', () => {
-    const contacts = [{ uid: 'tg-0' }, { uid: 'tg-5' }, { uid: 'tg-9' }];
-    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([0, 5, 9]);
-  });
-
-  it('DELETE leaves survivors on their own slots, not packed down', () => {
-    // The middle one removed. If this packed to [0, 1] the surviving talk group
-    // would be written over a different record and every channel pointing at it
-    // would resolve somewhere else.
-    const contacts = [{ uid: 'tg-0' }, { uid: 'tg-9' }];
-    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([0, 9]);
-  });
-
-  it('ADD takes the lowest free slot', () => {
-    const contacts = [{ uid: 'tg-0' }, { uid: 'tg-5' }, { uid: 'tg-9' }, {}];
-    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([0, 5, 9, 1]);
-  });
-
-  it('claims every existing slot BEFORE allocating a new one', () => {
-    // A new contact listed FIRST must not be handed a slot a later existing one
-    // still holds. Zones had this exact bug.
-    const contacts = [{}, { uid: 'tg-0' }, { uid: 'tg-5' }];
-    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([1, 0, 5]);
-  });
-
-  it('treats a uid from another radio as new rather than claiming its slot', () => {
-    // An imported codeplug carries the exporting radio's uids. Keying the map
-    // rather than parsing the uid is what stops those claiming slots here.
-    const contacts = [{ uid: 'tg-0' }, { uid: 'tg-777' }];
-    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([0, 1]);
-  });
-
-  it('fills gaps left by deletes when new contacts are added', () => {
-    const contacts = [{ uid: 'tg-5' }, {}, {}];
-    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([5, 0, 1]);
-  });
-});
-
-describe('d890Talkgroups — the store path', () => {
+describe('talk groups COMPACT — position is the slot', () => {
+  // MEASURED from the vendor CPS on 2026-09-10 by clearing one row and diffing
+  // the write it produced against the restored state:
+  //
+  //     slot 500   TG0501 -> TG0502     500 records shifted down by one
+  //     slot 1008  TG1009 -> TG1010
+  //     slot 1009  TG1010 -> (empty)    the LAST slot is what is freed
+  //     locator[1009]  0x3f1 -> 0xffffffff
+  //
+  // The table always occupies 0..N-1 with no holes. That is also why the
+  // locator is an identity table in every capture — not a rule to preserve, a
+  // consequence of the table being unable to have holes.
+  //
+  // The previous implementation kept survivors on their read slots and punched
+  // a hole. It read back byte-perfect and left the radio reporting 1010 talk
+  // groups and CRASHING on the deleted one.
   beforeEach(() => {
     useRadioStore.setState({ tables: {} });
     useQuickContactsStore.setState({ contacts: [], contactsLoaded: false });
   });
 
-  it('REFUSES a delete — it broke a radio on 2026-09-10', () => {
-    // The mask and the locator were both written correctly; the RECORD was not
-    // cleared, because planSpanTableWrite copies the original into the gap. The
-    // radio then reported 1010 talk groups and crashed on the deleted one, so
-    // its list does not come from the mask. Until the vendor CPS shows what a
-    // delete actually does, any change to the slot set is refused.
-    useRadioStore.setState({
-      tables: { writeOriginals: { talkgroupSlotByUid: { 'tg-0': 0, 'tg-1': 1 } } as never },
-    });
+  it('writes entry i to slot i, whatever index the store carries', () => {
+    // The store hands out 1-based positions and renumbers on delete; neither
+    // matters now, because position IS the slot.
     useQuickContactsStore.setState({
-      contacts: [{ ...tg(1, 'a'), uid: 'tg-0' }], contactsLoaded: true,
+      contacts: [tg(7, 'a'), tg(9, 'b'), tg(3, 'c')], contactsLoaded: true,
     });
-    expect(() => d890Talkgroups()).toThrow(/adding or deleting one is not safe yet/);
+    expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0, 1, 2]);
   });
 
-  it('REFUSES an add for the same reason', () => {
-    useRadioStore.setState({
-      tables: { writeOriginals: { talkgroupSlotByUid: { 'tg-0': 0 } } as never },
-    });
+  it('after a delete the survivors shift down — no hole is left', () => {
+    // Three talk groups, the middle one removed. The radio must end up with two
+    // occupying slots 0 and 1, not 0 and 2.
     useQuickContactsStore.setState({
-      contacts: [{ ...tg(1, 'a'), uid: 'tg-0' }, tg(2, 'new')], contactsLoaded: true,
+      contacts: [tg(1, 'first'), tg(3, 'third')], contactsLoaded: true,
     });
-    expect(() => d890Talkgroups()).toThrow(/adding or deleting one is not safe yet/);
+    const out = d890Talkgroups()!;
+    expect(out.map((c) => c.index)).toEqual([0, 1]);
+    expect(out.map((c) => c.name)).toEqual(['first', 'third']);
   });
 
-  it('still allows an EDIT in place — that one IS proven on hardware', () => {
-    useRadioStore.setState({
-      tables: { writeOriginals: { talkgroupSlotByUid: { 'tg-0': 0, 'tg-1': 1 } } as never },
-    });
+  it('an added talk group lands on the end', () => {
     useQuickContactsStore.setState({
-      contacts: [{ ...tg(1, 'a'), uid: 'tg-0' }, { ...tg(2, 'b'), uid: 'tg-1' }],
-      contactsLoaded: true,
+      contacts: [tg(1, 'a'), tg(2, 'b'), tg(3, 'new')], contactsLoaded: true,
     });
-    expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0, 1]);
+    expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0, 1, 2]);
   });
 
-  it('returns undefined when nothing was staged, so a file-loaded codeplug still writes', () => {
+  it('REFUSES a delete — compaction alone would leave references stale', () => {
+    // Channels reference a talk group by SLOT, and so do receive groups. When
+    // the table shifts, a channel pointing at 600 would transmit on 601's talk
+    // group. That codeplug reads back CLEAN, which makes it worse than a
+    // refusal, not better.
+    useRadioStore.setState({
+      tables: { writeOriginals: { talkgroupCountAtRead: 3 } as never },
+    });
+    useQuickContactsStore.setState({
+      contacts: [tg(1, 'a'), tg(2, 'b')], contactsLoaded: true,
+    });
+    expect(() => d890Talkgroups()).toThrow(/deleting one is not safe yet/);
+  });
+
+  it('ALLOWS an add — a new entry lands on the end and shifts nothing', () => {
+    useRadioStore.setState({
+      tables: { writeOriginals: { talkgroupCountAtRead: 2 } as never },
+    });
+    useQuickContactsStore.setState({
+      contacts: [tg(1, 'a'), tg(2, 'b'), tg(3, 'new')], contactsLoaded: true,
+    });
+    expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0, 1, 2]);
+  });
+
+  it('needs nothing staged — there is no identity to preserve', () => {
+    // No read log, no slot map. Compaction makes both unnecessary, which is why
+    // the uid apparatus built for this was removed.
     useQuickContactsStore.setState({ contacts: [tg(1, 'a')], contactsLoaded: true });
-    expect(d890Talkgroups()).toBeUndefined();
+    expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0]);
   });
 });
 
