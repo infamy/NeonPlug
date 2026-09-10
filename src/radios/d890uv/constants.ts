@@ -527,41 +527,24 @@ export const D890_ADDR = {
 
   /** Receive group lists. */
   /**
-   * ⚠️ WRONG, OR AT LEAST NOT THIS ALONE — and it currently BLOCKS EVERY WRITE.
+   * Receive group presence mask, bit N = slot N. **CONFIRMED ON HARDWARE
+   * 2026-09-10** by a controlled experiment, after two days of being the one
+   * address blocking this table.
    *
-   * MEASURED 2026-09-09 on a radio holding two receive group lists: this
-   * address reads 32 bytes of ZERO, so `readRXGroups` returns none, so
-   * `findDanglingReferences` sees 79 channels pointing at lists 1 and 2 with
-   * "DMRReceiveGroupCallList has 0" and `planCodeplugWrite` throws. The Write
-   * button and the dry run both refuse. No hardware round-trip can run until
-   * this is settled.
+   * Two receive groups were created in the vendor CPS and written with the
+   * capture running (`7x2_rxgroupsadded.txt`). Diffed against a write of the
+   * same codeplug with none (`7x2_slreadaddwrite.txt`), **exactly one byte
+   * changed in the entire 500 KB write**: this one, 0x00 -> 0x03. Two records
+   * appeared at 0x3780000 and 0x3780200 at the same time.
    *
-   * What the same read shows, against that zero mask:
-   *   - The RECORDS are populated. 0x3780000 holds 00000000 00000001 ffffffff
-   *     and 0x3780200 holds 00000000 00000001 00000002 ffffffff — member lists
-   *     with a terminator, not erased flash.
-   *   - 79 channels reference lists 1 and 2, i.e. records 0 and 1.
-   *   - The vendor capture writes exactly two runs here, 0x3780000 and
-   *     0x3780200 — two records, matching.
+   * Two added rather than one on purpose: a mask goes 0x03 -> 0x0f while a
+   * COUNT goes 0x02 -> 0x04, and one added cannot tell them apart.
    *
-   * This address is ALSO claimed by `D890_HOT_KEYS.MASK`, which read 0x03 in an
-   * older capture and was read as "hot key entries 0 and 1 are non-default".
-   * Two modules cannot both be right about one byte, and 0x03 is equally
-   * consistent with "receive group lists 0 and 1 are present" — which is what
-   * this radio actually has. Neither reading is established.
-   *
-   * NOT YET FIXED, deliberately. Candidate masks were checked and rejected:
-   * 0x3482c20 (the unclaimed gap in the mask block, where zones/radio IDs/scan
-   * lists sit at 0x3482c00/c40/c60) reads zero, and a scan of every span in a
-   * full read for a "0x03 then 31 zero bytes" signature found only the
-   * scan-list mask and hot key 1's content byte. The likeliest answer is that
-   * receive groups have NO presence mask and are present-by-record, as GPS
-   * roaming is — but that is a hypothesis, and guessing an address is how a
-   * write ends up in the wrong region.
-   *
-   * To settle it: add a third receive group in the vendor CPS, write, re-read,
-   * and diff. Whatever byte moves from 0x03 to 0x07 is the mask; if nothing
-   * does, presence is by record.
+   * ⚠️ It was long believed to collide with `D890_HOT_KEYS.MASK`. It does not.
+   * The hot key / status message bitmask is `0x3701500`, sixteen bytes lower,
+   * and it read `0f` unchanged across both writes. 0x3701510 was read as "two
+   * configured hot keys" when it in fact meant "two receive groups" — the two
+   * counts happened to match. Nothing else ever claimed this address.
    */
   RX_GROUP_SET: 0x3701510,
   RX_GROUP_SET_SIZE: 0x20,

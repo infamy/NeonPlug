@@ -29,20 +29,21 @@ export const D890_HOT_KEYS = {
   /** 6 Hot Key rows + 12 Fun rows, matching the CPS grid and the byte table. */
   SLOTS: 18,
   /**
-   * ⚠️ DISPUTED — this address is also `D890_ADDR.RX_GROUP_SET`.
+   * ⚠️ There is NO hot key mask here. The address once recorded as one,
+   * 0x3701510, is `D890_ADDR.RX_GROUP_SET` — confirmed on hardware 2026-09-10,
+   * when creating two receive groups in the vendor CPS changed that byte from
+   * 0x00 to 0x03 and nothing else in a 500 KB write moved.
    *
-   * Read as 0x03 in a capture where entries 0 and 1 were the only rows
-   * differing from the CPS grid default, which is where "configured mask" came
-   * from. But 0x03 is equally consistent with "receive group lists 0 and 1 are
-   * present", and on 2026-09-09 a radio with exactly two receive group lists
-   * read ZERO here — while its hot keys were unchanged from the same defaults.
+   * It had read 0x03 in a capture where entries 0 and 1 were the only hot key
+   * rows differing from the CPS grid default, which is where "configured mask"
+   * came from. That radio also held exactly two receive groups. The two counts
+   * matching was a coincidence, and it cost this table two days.
    *
-   * Nothing depends on this constant: `parseHotKeys` reads all 18 entries and
-   * `encodeHotKey` does not touch the mask, both because the entries are live
-   * regardless of it. It is kept only so the collision is recorded rather than
-   * rediscovered. See the note on `RX_GROUP_SET` in constants.ts.
+   * The status message bitmask at `0x3701500` is real and confirmed
+   * (`statusMessages.ts`), which is probably why a second mask a frame higher
+   * seemed plausible. Nothing needs one: `parseHotKeys` reads all 18 entries and
+   * `encodeHotKey` writes them, because every entry is live regardless.
    */
-  MASK: 0x3701510,
   /** +0x04..07 and +0x08 use 0xFF fill for "Off". */
   NONE_BYTE: 0xff,
 } as const;
@@ -87,25 +88,6 @@ export function parseHotKey(bytes: Uint8Array, offset: number, slot: number): D8
     callObject: u32 === 0xffffffff ? null : u32,
     contentSmsIndex: content === D890_HOT_KEYS.NONE_BYTE ? null : content,
   };
-}
-
-/**
- * Which entries the mask marks.
- *
- * ⚠️ The mask does NOT mean "in use" — all 18 entries exist and the radio acts
- * on every one. It read 0x03 when entries 0 and 1 were the only rows differing
- * from the grid default, so it tracks "configured", and a caller must still
- * parse every slot rather than only these.
- */
-export function configuredHotKeys(region: Uint8Array): number[] {
-  const at = D890_HOT_KEYS.MASK - 0x3700000;
-  const out: number[] = [];
-  for (let slot = 0; slot < D890_HOT_KEYS.SLOTS; slot += 1) {
-    const byte = region[at + (slot >> 3)] ?? 0;
-    if (byte === 0xff) continue;
-    if (byte >> (slot & 7) & 1) out.push(slot);
-  }
-  return out;
 }
 
 /** Every hot key, from a buffer starting at the region base 0x3700000. */

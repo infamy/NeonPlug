@@ -967,27 +967,22 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
   /**
    * Receive group lists. Members are talkgroup bank indices, not DMR IDs.
    *
-   * ⚠️ THE MASK CANNOT BE TRUSTED HERE. `D890_ADDR.RX_GROUP_SET` is 0x3701510 —
-   * the address `D890_HOT_KEYS.MASK` also claims — and on 2026-09-09 it read 32
-   * zero bytes on a radio that demonstrably held two receive group lists. With
-   * no groups read, `findDanglingReferences` saw 79 channels pointing at lists
-   * 1 and 2 against "DMRReceiveGroupCallList has 0" and refused every write.
+   * The presence mask at `D890_ADDR.RX_GROUP_SET` is authoritative, CONFIRMED
+   * on hardware 2026-09-10: creating two receive groups in the vendor CPS
+   * changed exactly one byte in a 500 KB write, 0x3701510 from 0x00 to 0x03.
    *
-   * So the mask is used when it says something, and the RECORDS are scanned
-   * when it does not. That ordering matters: where the mask is right it stays
-   * authoritative, and the scan only rescues the case that is otherwise fatal.
+   * ⚠️ A RECORD-SCAN FALLBACK USED TO LIVE HERE AND HAS BEEN REMOVED. It read
+   * the records directly whenever the mask came back empty, on the theory that
+   * the mask address was wrong. The address was right and the mask was telling
+   * the truth: a record whose bit is clear is a DELETED group whose bytes have
+   * not been erased, and the fallback presented those as live. The reference
+   * radio showed two of them — `RXG Alpha` and `RXG Bravo` — for days after a
+   * vendor CPS write had set the mask to zero and cleared the channel
+   * references pointing at them.
    *
-   * The scan is bounded rather than covering all 250 slots, which would be
-   * 128 KB and about 13 seconds on this link. It stops after a run of empty
-   * records, so the usual cost is a handful of reads.
-   *
-   * ⚠️ This fixes the READ ONLY. Receive groups are still deliberately absent
-   * from `buildD890CodeplugTables`, so nothing plans a write for them and both
-   * the records and whatever the real mask is ride out through the verbatim
-   * pass untouched. DO NOT add them to the write until the mask address is
-   * established — writing a presence mask to an address we have not proven is
-   * exactly how a neighbouring table gets destroyed. See the note on
-   * `RX_GROUP_SET` in constants.ts for the experiment that settles it.
+   * That is why the mask is trusted even when it reads zero: stale records are
+   * not data, and preferring them to the mask is how a deleted group comes back
+   * from the dead.
    */
   async readRXGroups(): Promise<RXGroup[]> {
     const conn = this.requireConnection();
@@ -1006,38 +1001,6 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
         D890_ADDR.RX_GROUP_STRIDE
       );
       groups.push(parseRxGroup(record, index));
-    }
-    if (groups.length > 0) return groups;
-
-    // Fallback: the mask told us nothing. A record is present when its first
-    // word is not erased flash — the two real records read
-    // `00000000 00000001 ffffffff…`, so 0xFFFFFFFF at the head is absence.
-    const SCAN_SLOTS = 64;
-    const EMPTY_RUN_LIMIT = 8;
-    let emptyRun = 0;
-    for (let index = 0; index < SCAN_SLOTS; index += 1) {
-      const record = await conn.readMemory(
-        rxGroupAddress(index),
-        D890_ADDR.RX_GROUP_STRIDE
-      );
-      const erased =
-        (record[0] ?? 0xff) === 0xff && (record[1] ?? 0xff) === 0xff &&
-        (record[2] ?? 0xff) === 0xff && (record[3] ?? 0xff) === 0xff;
-      if (erased) {
-        emptyRun += 1;
-        if (emptyRun >= EMPTY_RUN_LIMIT) break;
-        continue;
-      }
-      emptyRun = 0;
-      groups.push(parseRxGroup(record, index));
-    }
-    if (groups.length > 0) {
-      log.warn(
-        `DA-7X2 receive-group mask at 0x${D890_ADDR.RX_GROUP_SET.toString(16)} read empty; ` +
-          `recovered ${groups.length} list(s) by scanning records. The mask address is ` +
-          `unconfirmed — see constants.ts.`,
-        'D890'
-      );
     }
     return groups;
   }

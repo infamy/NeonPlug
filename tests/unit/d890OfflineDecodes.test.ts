@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { D890_ADDR } from '../../src/radios/d890uv/constants';
 import {
   parseStatusMessages,
   occupiedStatusSlots,
@@ -12,7 +13,6 @@ import {
 } from '../../src/radios/d890uv/analogAddressBook';
 import {
   parseHotKeys,
-  configuredHotKeys,
   D890_HOT_KEYS,
   HOT_KEY_MODE,
   HOT_KEY_CALL_TYPE,
@@ -182,11 +182,10 @@ describe('DA-7X2 hot keys', () => {
    */
   it('stops at 18 entries, matching the CPS grid', () => {
     expect(D890_HOT_KEYS.SLOTS).toBe(18);
-    expect(D890_HOT_KEYS.BASE + 18 * D890_HOT_KEYS.STRIDE).toBeLessThan(D890_HOT_KEYS.MASK);
-  });
-
-  /** The mask marks CONFIGURED rows, not existing ones — all 18 are live. */
-  it('marks exactly the two rows that differ from the default', () => {
-    expect(configuredHotKeys(region())).toEqual([0, 1]);
+    // The entries must end before the receive-group presence mask, which is
+    // what 0x3701510 actually is — it was misread as a hot key mask until a
+    // controlled CPS write settled it on 2026-09-10.
+    expect(D890_HOT_KEYS.BASE + 18 * D890_HOT_KEYS.STRIDE)
+      .toBeLessThan(D890_ADDR.RX_GROUP_SET);
   });
 });
