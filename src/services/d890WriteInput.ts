@@ -189,43 +189,58 @@ export function d890ZoneCurrentBySlot(
 }
 
 /**
- * Talk groups, resolved onto the hardware SLOTS they were read from.
+ * Talk groups, resolved onto the hardware SLOTS they belong in.
  *
- * `QuickContact.index` is `slot + 1` straight off a read, and the masked-table
- * planner keys 0-based slots — so an edit maps position i onto
- * `talkgroupSlots[i]`, which is correct even when the presence mask has holes.
+ * The record for a talk group must go to the slot the radio holds it in, and
+ * `QuickContact.index` cannot say which that is once the list has been edited:
+ * `quickContactsStore.deleteContact` re-indexes survivors to `idx + 1` and
+ * `addContact` assigns `length + 1`. So identity comes from `uid`, assigned at
+ * read time and untouched by either operation, resolved against the map staged
+ * with the read.
  *
- * ⚠️ REFUSES when the list length has changed, and that is the point.
- * `quickContactsStore.deleteContact` RE-INDEXES the survivors to `idx + 1` and
- * `addContact` assigns `length + 1`, so by the time a write is planned the
- * mapping from list position to hardware slot is already gone, and
- * `QuickContact` has no stable id to rebuild it from the way `Zone.id` does.
+ * This mirrors `resolveZoneSlots` exactly, including why: placing records by
+ * list position after a delete writes every survivor one slot down, which on
+ * 2026-09-03 moved seven zones and left their A/B pointers behind.
  *
- * Writing anyway is the dangerous half-fix: with a contiguous table, position
- * and slot coincide and it would appear to work — right up to the first radio
- * with a gap, where it would move every record after the gap and silently
- * repoint every channel that referenced one. Zones were written a slot down
- * exactly this way on 2026-09-03.
- *
- * Returns undefined rather than throwing when nothing was staged, so a codeplug
- * loaded from a file writes as it always did instead of failing outright.
+ * Returns undefined when nothing was staged, so a codeplug loaded from a file
+ * writes as it always did rather than failing outright.
  */
 export function d890Talkgroups(): QuickContact[] | undefined {
-  const staged = useRadioStore.getState().tables.writeOriginals?.talkgroupSlots;
+  const byUid = useRadioStore.getState().tables.writeOriginals?.talkgroupSlotByUid;
   const contacts = useQuickContactsStore.getState().contacts;
-  if (!staged || contacts.length === 0) return undefined;
+  if (!byUid || contacts.length === 0) return undefined;
+  return resolveTalkgroupSlots(contacts, byUid).map((slot, i) => ({ ...contacts[i]!, index: slot }));
+}
 
-  if (contacts.length !== staged.length) {
-    throw new Error(
-      `Refusing to write talk groups: the list has changed since the radio was read ` +
-        `(${contacts.length} now against ${staged.length} read). Adding or deleting a talk ` +
-        `group renumbers the whole list in the store, which destroys the mapping to the ` +
-        `hardware slots — writing now could move every talk group after the edit and ` +
-        `repoint the channels that use them. Read the radio again to write the current ` +
-        `list, or undo the add/delete. Editing a talk group in place is unaffected.`
-    );
+/**
+ * The pure half, so the allocation rules can be tested without a store.
+ *
+ * A contact the read gave us keeps its slot. One the user ADDED has no uid the
+ * map knows — either none at all, or one from a codeplug imported off a
+ * different radio — and gets the lowest slot nothing else claims. A deleted
+ * talk group simply stops appearing and its slot falls out, which is what makes
+ * the presence mask clear exactly that bit and the locator retire exactly that
+ * entry.
+ */
+export function resolveTalkgroupSlots(
+  contacts: readonly { uid?: string }[],
+  slotByUid: Readonly<Record<string, number>>
+): number[] {
+  // Claim every slot a survivor already owns BEFORE allocating, or a new
+  // contact could be handed a slot a later existing one still holds.
+  const taken = new Set<number>();
+  for (const c of contacts) {
+    const slot = c.uid === undefined ? undefined : slotByUid[c.uid];
+    if (slot !== undefined) taken.add(slot);
   }
-  return contacts.map((c, i) => ({ ...c, index: staged[i]! }));
+  let next = 0;
+  return contacts.map((c) => {
+    const known = c.uid === undefined ? undefined : slotByUid[c.uid];
+    if (known !== undefined) return known;
+    while (taken.has(next)) next += 1;
+    taken.add(next);
+    return next;
+  });
 }
 
 /** Zones exactly as the UI holds them. */

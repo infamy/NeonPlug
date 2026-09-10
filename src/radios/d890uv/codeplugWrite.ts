@@ -70,6 +70,10 @@ import type { DMRRadioID } from '../../models/DMRRadioID';
 import type { EncryptionKey } from '../../models/EncryptionKey';
 import type { ScanListDecoded, D890RoamingChannel } from './structures';
 import type { D890BroadcastChannel } from './broadcastChannels';
+import {
+  D890_TALKGROUP_LOCATOR,
+  encodeTalkgroupLocator,
+} from './talkgroupLocator';
 import { encodeStatusMessages, type D890StatusMessage } from './statusMessages';
 import { encodeHotKey, type D890HotKey } from './hotKeys';
 import {
@@ -469,6 +473,49 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
   const T = input.tables ?? {};
   maskedTable('talkgroups', D890_MASKED_TABLES.talkgroups, T.talkgroups,
     applyTalkgroupToRecord, planSpanTableWrite);
+
+  // ── The talk group LOCATOR, at 0x3900000 ────────────────────────────────
+  //
+  // 40,000 bytes, one u32 per slot, and the radio uses it to FIND a record:
+  //
+  //     record = 0x3A00000 + (V / 1000) * 0x80000 + (V % 1000) * 0xC8
+  //
+  // BUILT, not patched, and written in full whenever talk groups are — which is
+  // exactly what the vendor does: the same capture that writes 1,200 bytes of
+  // records writes all 40,000 bytes of this. Every byte is determined by the
+  // presence set, so there is nothing of the radio's own to preserve, and a
+  // stale entry for a slot that is no longer present points the radio at a
+  // record that is no longer there.
+  //
+  // ⚠️ V is the SLOT INDEX, never a packed 0..N-1. With contiguous talk groups
+  // the two coincide, which is why every capture looks like an identity table
+  // and why this was safe to leave unwired while only EDITS were possible. A
+  // delete puts a hole in the mask and they diverge immediately.
+  if (T.talkgroups) {
+    const address = D890_TALKGROUP_LOCATOR.ADDRESS;
+    const size = D890_TALKGROUP_LOCATOR.SLOTS * D890_TALKGROUP_LOCATOR.STRIDE;
+    const slots = T.talkgroups
+      .map((t) => t.index)
+      .filter((i) => i >= 0 && i < D890_TALKGROUP_LOCATOR.SLOTS);
+    const encoded = encodeTalkgroupLocator(slots);
+    // Built from the presence set, so unlike every other region here it does
+    // not need an original — but it still must not be written into a span the
+    // session never read, or a partial write would leave half a table.
+    if (sliceFromReadLog(input.readLog, address, size)) {
+      take('talk group locator', address,
+        Array.from({ length: Math.ceil(size / 0x10) }, (_, i) => ({
+          address: address + i * 0x10,
+          data: encoded.slice(i * 0x10, (i + 1) * 0x10),
+          what: 'talk group locator',
+        })));
+    } else {
+      skipped.push({
+        region: 'talk group locator', address, reason: 'not-read',
+        detail: 'the locator table is not in the read log, so a write cannot be planned ' +
+          'without leaving it inconsistent with the presence mask.',
+      });
+    }
+  }
   // Scan lists carry their hardware slot (`ScanListDecoded.slot`), so they can
   // be placed back where the radio has them rather than by array position.
   // Mapped onto `index` because that is what the masked-table planner keys on.

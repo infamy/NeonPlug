@@ -186,20 +186,25 @@ because a 0xC8 stride means one frame carries bytes from two records. The first
 talkgroup write would have refused, claiming its own neighbour was never read.
 That path had never executed, since the table was never passed.
 
-**Still refused: adding or deleting a talk group.** `quickContactsStore`
-re-indexes survivors to `idx + 1` on delete and assigns `length + 1` on add, so
-by the time a write is planned the mapping from list position to hardware slot
-is gone — and `QuickContact` has no stable id to rebuild it from the way
-`Zone.id` does. `d890Talkgroups()` compares against `talkgroupSlots` staged at
-read time and throws with an explanation rather than guessing. Zones were
-written a slot down exactly this way on 2026-09-03.
+**Add and delete now work (2026-09-10).** `QuickContact` gained an optional
+`uid`, assigned at read time as `tg-<slot>` and staged as
+`talkgroupSlotByUid` — the same shape `zoneSlotById` uses, for the same reason.
+`resolveTalkgroupSlots` keeps every read contact on its own slot, gives a new
+one the lowest free slot, and claims existing slots BEFORE allocating so a new
+contact listed first cannot take one a later existing contact still holds.
 
-- ☐ Give `QuickContact` a stable id, then stage `talkgroupSlotById` the way
-  `zoneSlotById` is staged, and lift the refusal.
-- ☐ **Wire `talkgroupLocator.ts`** — decoded, tested, called from nothing. The
-  40 KB locator at `0x3900000` rides out verbatim, which is harmless while the
-  slot set cannot change and WRONG the moment add/delete is allowed. Both must
-  land together.
+Keyed by uid rather than parsed out of it, deliberately: a codeplug imported
+from another radio carries that radio's uids, and parsing would let them claim
+slots here. An unknown uid is treated as new.
+
+**`talkgroupLocator.ts` is wired.** The 40,000-byte table at `0x3900000` is
+BUILT and written in full whenever talk groups are, which is what the vendor
+does — the same capture that writes 1,200 bytes of records writes all 40,000 of
+this. `V` is the SLOT INDEX with `0xFFFFFFFF` for absent, never a packed
+`0..N-1`. Leaving it unwired was survivable while only edits were possible,
+because an edit does not change the slot set; a delete puts a hole in the mask
+and the two readings diverge immediately. That is why these two had to land
+together.
 
 ✅ **VERIFIED ON HARDWARE 2026-09-09.** `TG1005` renamed to `RTTG1005` with DMR
 ID `2345678` read back as `02 34 56 78` at `0x3A80322` — slot 1004, **bank 1**,

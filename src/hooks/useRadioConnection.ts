@@ -494,13 +494,14 @@ export function useRadioConnection() {
             });
             return { zoneSlotById, zoneCurrentById };
           })(),
-          // Talk group slots, positionally. Captured HERE because this is the
-          // last point at which `QuickContact.index` is still `slot + 1` from
-          // the read — the store rewrites it to a position on the first add or
-          // delete, and there is no id to recover it from afterwards.
-          talkgroupSlots: useQuickContactsStore
-            .getState()
-            .contacts.map((c) => c.index - 1),
+          // Talk group uid -> slot. Captured HERE, the last point at which the
+          // read's own identities are still the only ones in the list — the
+          // store rewrites `index` to a position on the first add or delete.
+          talkgroupSlotByUid: Object.fromEntries(
+            useQuickContactsStore
+              .getState()
+              .contacts.flatMap((c) => (c.uid ? [[c.uid, c.index - 1] as const] : []))
+          ),
         });
       }
 

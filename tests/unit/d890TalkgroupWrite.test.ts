@@ -30,7 +30,7 @@ import {
 } from '../../src/radios/d890uv/structures';
 import { useRadioStore } from '../../src/store/radioStore';
 import { useQuickContactsStore } from '../../src/store/quickContactsStore';
-import { d890Talkgroups } from '../../src/services/d890WriteInput';
+import { d890Talkgroups, resolveTalkgroupSlots } from '../../src/services/d890WriteInput';
 import type { Channel } from '../../src/models/Channel';
 import type { QuickContact } from '../../src/models/QuickContact';
 
@@ -146,48 +146,127 @@ describe('planning a banked talkgroup write', () => {
   });
 });
 
-describe('d890Talkgroups — index base and the refusal', () => {
+describe('resolveTalkgroupSlots — identity, add and delete', () => {
+  // The pure allocation rules. Identity comes from `uid`, assigned at read time,
+  // because `quickContactsStore` re-indexes survivors on delete and assigns
+  // `length + 1` on add — so list position stops meaning a hardware slot the
+  // moment anything changes. Placing records by position after a delete writes
+  // every survivor one slot down; that is what moved seven zones on 2026-09-03.
+  const staged = { 'tg-0': 0, 'tg-5': 5, 'tg-9': 9 };
+
+  it('keeps each read contact on the slot it came from', () => {
+    const contacts = [{ uid: 'tg-0' }, { uid: 'tg-5' }, { uid: 'tg-9' }];
+    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([0, 5, 9]);
+  });
+
+  it('DELETE leaves survivors on their own slots, not packed down', () => {
+    // The middle one removed. If this packed to [0, 1] the surviving talk group
+    // would be written over a different record and every channel pointing at it
+    // would resolve somewhere else.
+    const contacts = [{ uid: 'tg-0' }, { uid: 'tg-9' }];
+    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([0, 9]);
+  });
+
+  it('ADD takes the lowest free slot', () => {
+    const contacts = [{ uid: 'tg-0' }, { uid: 'tg-5' }, { uid: 'tg-9' }, {}];
+    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([0, 5, 9, 1]);
+  });
+
+  it('claims every existing slot BEFORE allocating a new one', () => {
+    // A new contact listed FIRST must not be handed a slot a later existing one
+    // still holds. Zones had this exact bug.
+    const contacts = [{}, { uid: 'tg-0' }, { uid: 'tg-5' }];
+    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([1, 0, 5]);
+  });
+
+  it('treats a uid from another radio as new rather than claiming its slot', () => {
+    // An imported codeplug carries the exporting radio's uids. Keying the map
+    // rather than parsing the uid is what stops those claiming slots here.
+    const contacts = [{ uid: 'tg-0' }, { uid: 'tg-777' }];
+    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([0, 1]);
+  });
+
+  it('fills gaps left by deletes when new contacts are added', () => {
+    const contacts = [{ uid: 'tg-5' }, {}, {}];
+    expect(resolveTalkgroupSlots(contacts, staged)).toEqual([5, 0, 1]);
+  });
+});
+
+describe('d890Talkgroups — the store path', () => {
   beforeEach(() => {
     useRadioStore.setState({ tables: {} });
     useQuickContactsStore.setState({ contacts: [], contactsLoaded: false });
   });
 
-  const stage = (slots: number[]) =>
+  it('maps a read list onto its hardware slots', () => {
     useRadioStore.setState({
-      tables: { writeOriginals: { talkgroupSlots: slots } as never },
+      tables: { writeOriginals: { talkgroupSlotByUid: { 'tg-0': 0, 'tg-1': 1 } } as never },
     });
-
-  it('maps list position onto the staged hardware slot', () => {
-    // QuickContact.index is slot + 1 off a read; the planner keys 0-based slots.
-    stage([0, 1, 2]);
     useQuickContactsStore.setState({
-      contacts: [tg(1, 'a'), tg(2, 'b'), tg(3, 'c')], contactsLoaded: true,
+      contacts: [{ ...tg(1, 'a'), uid: 'tg-0' }, { ...tg(2, 'b'), uid: 'tg-1' }],
+      contactsLoaded: true,
     });
-    expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0, 1, 2]);
-  });
-
-  it('resolves against slots correctly when the mask has a HOLE', () => {
-    // Three talk groups occupying slots 0, 5 and 9. Position and slot diverge,
-    // and writing by position would put two of them in the wrong records.
-    stage([0, 5, 9]);
-    useQuickContactsStore.setState({
-      contacts: [tg(1, 'a'), tg(6, 'b'), tg(10, 'c')], contactsLoaded: true,
-    });
-    expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0, 5, 9]);
-  });
-
-  it('REFUSES when the list length changed, rather than guessing', () => {
-    // deleteContact re-indexes the survivors, so the mapping is already gone.
-    stage([0, 1, 2]);
-    useQuickContactsStore.setState({
-      contacts: [tg(1, 'a'), tg(2, 'b')], contactsLoaded: true,
-    });
-    expect(() => d890Talkgroups()).toThrow(/list has changed since the radio was read/);
+    expect(d890Talkgroups()!.map((c) => c.index)).toEqual([0, 1]);
   });
 
   it('returns undefined when nothing was staged, so a file-loaded codeplug still writes', () => {
     useQuickContactsStore.setState({ contacts: [tg(1, 'a')], contactsLoaded: true });
     expect(d890Talkgroups()).toBeUndefined();
+  });
+});
+
+/**
+ * The locator at 0x3900000.
+ *
+ * One u32 per slot, and the radio uses it to LOCATE a record. V is the SLOT
+ * INDEX, never a packed 0..N-1 — with contiguous talk groups the two coincide,
+ * which is why every capture looks like an identity table and why leaving this
+ * unwired was survivable while only EDITS were possible. A delete puts a hole in
+ * the mask and they diverge immediately.
+ */
+describe('talk group locator', () => {
+  const LOC = 0x3900000;
+
+  function withLocator(contacts: QuickContact[], neededSlots: number[]) {
+    const base = setup(contacts, neededSlots);
+    base.readLog.set(LOC, new Uint8Array(10000 * 4).fill(0xff));
+    return base;
+  }
+
+  const entryAt = (plan: ReturnType<typeof planCodeplugWrite>, slot: number) => {
+    const at = LOC + slot * 4;
+    const frame = plan.frames.find((f) => f.address === at - (at % 0x10));
+    if (!frame) return null;
+    const o = at - frame.address;
+    return ((frame.data[o]! | (frame.data[o+1]! << 8) |
+             (frame.data[o+2]! << 16) | (frame.data[o+3]! << 24)) >>> 0);
+  };
+
+  it('writes V = the slot index for present slots', () => {
+    const plan = planCodeplugWrite(withLocator([tg(1004, 'x')], [1004, 1005]));
+    expect(entryAt(plan, 1004)).toBe(1004);
+  });
+
+  it('retires an absent slot to 0xFFFFFFFF, leaving a HOLE not a packed list', () => {
+    // Slots 0 and 2 present, 1 deleted. A packed writer would emit 0 and 1 and
+    // send the radio to the wrong record for the survivor.
+    const plan = planCodeplugWrite(
+      withLocator([tg(0, 'a'), tg(2, 'c')], [0, 1, 2, 3])
+    );
+    expect(entryAt(plan, 0)).toBe(0);
+    expect(entryAt(plan, 1)).toBe(0xffffffff);
+    expect(entryAt(plan, 2)).toBe(2);
+  });
+
+  it('writes the full 40,000 bytes, as the vendor does', () => {
+    const plan = planCodeplugWrite(withLocator([tg(1, 'a')], [0, 1]));
+    const region = plan.written.find((w) => w.region === 'talk group locator');
+    expect(region?.bytes).toBe(10000 * 4);
+  });
+
+  it('is skipped, not invented, when the locator was never read', () => {
+    const plan = planCodeplugWrite(setup([tg(1, 'a')], [0, 1]));
+    expect(plan.skipped.map((r) => r.region)).toContain('talk group locator');
   });
 });
 
