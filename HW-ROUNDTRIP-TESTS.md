@@ -5,10 +5,10 @@ written (**55/55** — `Local info` is the radio identifying itself and is flagg
 `neverWrite`, so it is excluded from the write and round-trip denominators).
 
 **What most of it still lacks is proof that a change survives the trip**: Core HW
-round-trip is **23/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
-and on 2026-09-10 **radio IDs, the radio ID mask and scan lists**, the first two
-established by the radio's own menu and the third by the vendor CPS, rather than
-by our own read-back.
+round-trip is **25/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
+and five on 2026-09-10: **radio IDs, the radio ID mask, scan lists, zone names
+and the scan-list mask**. Not one of the five leans on our own read-back — four
+were confirmed on the radio's own screen and the fifth by the vendor CPS.
 
 The radio ID mask is the one that also gained an OWNER: it was `Unclaimed mask`
 in `recordLayout.ts`, a 32-byte gap no vendor marshaller touches, named from a
@@ -140,6 +140,19 @@ file for being confirmed WITHOUT relying on our own read-back.
 |---|---|
 | DMR radio IDs | **The radio's own menu** showed four IDs with `RID Zulu` LAST after slot 3 was renamed and a new ID was written into the slot-2 hole. Records do NOT compact, an add reuses a hole, and a record built over erased flash is valid once its unmodelled tail is zeroed the way every vendor write does |
 | Scan lists | The **vendor CPS**, reading the radio, returned `dwellTime = 55`, `pri1 = 0x3e` (62) and `pri2 = 0x3f` (63) — exactly what we wrote — while look-back A/B, dropout and revert came back untouched at 20/31/37/6. Hang time is invisible on the radio's own menu, so the CPS is the only independent check available for it |
+
+**Second write, same day (2):** `Z1 Single` -> `Z1 Zulu` and a third scan list
+added, 40 bytes across 6 frames. The radio showed the new zone name when
+switching zones and three lists in its scan menu. `SL Echo` is the first scan
+list this driver BUILT rather than patched — its four unshowable fields came
+from a vendor-created list captured hours earlier — so the blank is validated
+too.
+
+That write also carried the first bytes NeonPlug has ever sent to the RECEIVE
+GROUP table, whose presence mask address was pinned down the same day. The radio
+does not expose receive groups in its menu, so it is **not** counted yet: a
+successful write is not evidence the radio accepted the record. One vendor CPS
+read settles it.
 
 Three write-path bugs were found BEFORE sending, by planning against a real read
 and diffing every frame: the occupied-slot set never reached the reference gate
