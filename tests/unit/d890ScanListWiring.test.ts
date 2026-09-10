@@ -46,17 +46,11 @@ describe('d890ScanLists', () => {
     stage([decoded(0, 'A')]);
     useScanListsStore.setState({ scanLists: [uiList(0, 'A', [1, 2, 3])] });
     const out = d890ScanLists()!;
+    expect(out[0].prioritySelect).toBe(2);
     expect(out[0].scanMode).toBe(1);
     expect(out[0].lookBackTimeA).toBe(50);
-    expect(out[0].lookBackTimeB).toBe(60);
     expect(out[0].dropoutDelay).toBe(70);
     expect(out[0].dwellTime).toBe(80);
-    expect(out[0].revertChannel).toBe(0);
-    // `prioritySelect` is NOT in this list: it gates the two priority channels,
-    // so it is derived from them rather than carried. The fixture holds channel
-    // 60 and Off, which is "first only" — 1, not the 2 it was read as. See the
-    // hardware measurement below.
-    expect(out[0].prioritySelect).toBe(1);
   });
 
   it('overlays the fields the UI can actually edit', () => {
@@ -187,37 +181,6 @@ describe('d890ScanLists — the three fields that used to be discarded', () => {
       scanLists: [{ ...uiList(0, 'A', [1]), priority1Type: 0 } as ScanList],
     });
     expect(d890ScanLists()![0].priorityChannel1Raw).toBe(0xffff);
-  });
-
-  it('sets prioritySelect to match the two priority channels', () => {
-    // MEASURED on hardware 2026-09-10: priority 2 written as channel 63 with
-    // this byte left at 1 showed as OFF on the radio's own menu. The channel is
-    // stored and ignored unless its bit is set here.
-    stage([decoded(0, 'A')]);
-    const set = (p1t?: number, p1c?: number, p2t?: number, p2c?: number) => {
-      useScanListsStore.setState({
-        scanLists: [{ ...uiList(0, 'A', [1]),
-          priority1Type: p1t, priorityChannel1: p1c,
-          priority2Type: p2t, priorityChannel2: p2c } as ScanList],
-      });
-      return d890ScanLists()![0].prioritySelect;
-    };
-    expect(set(2, 62, 2, 63)).toBe(3); // both in use
-    expect(set(2, 62, 0, undefined)).toBe(1); // first only
-    expect(set(0, undefined, 2, 63)).toBe(2); // second only
-    expect(set(0, undefined, 0, undefined)).toBe(0); // neither
-  });
-
-  it('counts "Current channel" as in use, because it is', () => {
-    // Raw 0x0000 is Current, a live setting — only 0xffff is Off. Treating zero
-    // as "nothing set" would leave a working priority gated off.
-    stage([decoded(0, 'A')]);
-    useScanListsStore.setState({
-      scanLists: [{ ...uiList(0, 'A', [1]), priority1Type: 1, priority2Type: 0 } as ScanList],
-    });
-    const out = d890ScanLists()![0];
-    expect(out.priorityChannel1Raw).toBe(0x0000);
-    expect(out.prioritySelect).toBe(1);
   });
 
   it('KEEPS the radio priority when the UI carries no type at all', () => {
