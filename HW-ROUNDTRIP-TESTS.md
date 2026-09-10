@@ -5,10 +5,11 @@ written (**55/55** — `Local info` is the radio identifying itself and is flagg
 `neverWrite`, so it is excluded from the write and round-trip denominators).
 
 **What most of it still lacks is proof that a change survives the trip**: Core HW
-round-trip is **25/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
-and five on 2026-09-10: **radio IDs, the radio ID mask, scan lists, zone names
-and the scan-list mask**. Not one of the five leans on our own read-back — four
-were confirmed on the radio's own screen and the fifth by the vendor CPS.
+round-trip is **26/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
+and six on 2026-09-10: **radio IDs, the radio ID mask, scan lists, zone names,
+the scan-list mask and RX group lists**. Not one of the six leans on our own
+read-back — four were confirmed on the radio's own screen and two by the vendor
+CPS reading the radio.
 
 The radio ID mask is the one that also gained an OWNER: it was `Unclaimed mask`
 in `recordLayout.ts`, a 32-byte gap no vendor marshaller touches, named from a
@@ -149,10 +150,15 @@ from a vendor-created list captured hours earlier — so the blank is validated
 too.
 
 That write also carried the first bytes NeonPlug has ever sent to the RECEIVE
-GROUP table, whose presence mask address was pinned down the same day. The radio
-does not expose receive groups in its menu, so it is **not** counted yet: a
-successful write is not evidence the radio accepted the record. One vendor CPS
-read settles it.
+GROUP table, whose presence mask address was pinned down hours earlier the same
+day. The radio does not expose receive groups in its own menu, so the vendor CPS
+was the check — and it read back `RXG Zulu` **at index 0**, by name, with the
+empty contact list it was sent.
+
+That single row confirms three separate things: the record was written, the
+presence mask moved `0x02` -> `0x03`, and the add REUSED THE HOLE a CPS delete
+had left rather than appending past it. `lowestFreeSlot` choosing slot 0 over
+slot 2 had been true only in tests until then.
 
 Three write-path bugs were found BEFORE sending, by planning against a real read
 and diffing every frame: the occupied-slot set never reached the reference gate
