@@ -8,6 +8,8 @@ import { D890_IMAGE, type D890ImageKind } from '../../radios/d890uv/bootImage';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { createProtocolForModel } from '../../radios';
 import { D890_ADDR, D890_LIMITS } from '../../radios/d890uv/constants';
+import { channelAddresses } from '../../radios/d890uv/structures';
+import { D890_BROADCAST } from '../../radios/d890uv/broadcastChannels';
 import { D890UVProtocol } from '../../radios/d890uv/protocol';
 
 /**
@@ -67,6 +69,44 @@ const REGIONS: RegionChoice[] = [
     address: D890_ADDR.CHANNEL_DATA + D890_ADDR.CHANNEL_BLOCK_STRIDE,
     length: D890_ADDR.CHANNEL_STRIDE,
     note: 'Should be channel 129, not 129 * 0x80. Confirms the block stride.',
+  },
+  {
+    key: 'channel-unused-201',
+    label: 'Channel 201 — NEVER-USED slot',
+    address: channelAddresses(200).primary,
+    length: D890_ADDR.CHANNEL_STRIDE,
+    note:
+      'The blank a new channel must be built from. About 40% of the record is ' +
+      'undecoded and no capture anywhere holds an unused slot, so planChannelWrite ' +
+      'refuses to ADD a channel rather than invent ~50 bytes. This is the dump ' +
+      'that settles it.',
+  },
+  {
+    key: 'channel-unused-501',
+    label: 'Channel 501 — NEVER-USED slot (second sample)',
+    address: channelAddresses(500).primary,
+    length: D890_ADDR.CHANNEL_STRIDE,
+    note: 'A second one, to tell a pattern from one slot\'s accident.',
+  },
+  {
+    key: 'channel-deleted-102',
+    label: 'Channel 102 — DELETED slot',
+    address: channelAddresses(101).primary,
+    length: D890_ADDR.CHANNEL_STRIDE,
+    note:
+      'Deleted by NeonPlug on 2026-09-11 and confirmed gone in the vendor CPS. ' +
+      'Adding INTO a previously-used slot is a real case, so this shows whether ' +
+      'a delete erases the record or only clears the mask bit and leaves stale bytes.',
+  },
+  {
+    key: 'fm-scan-mask',
+    label: 'FM broadcast scan mask',
+    address: D890_BROADCAST.fm.scanMask,
+    length: 0x10,
+    note:
+      'One bit per FM channel, set = in scan. A write cleared bit 0 and the vendor ' +
+      'CPS still shows that channel as Add — 00 here means the radio kept our write ' +
+      'and the CPS column is fed from elsewhere; 01 means the write did not stick.',
   },
   {
     key: 'zone-set',
