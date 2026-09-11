@@ -41,6 +41,15 @@ export const D890_DIGITAL_CONTACTS = {
    * bytes of each — 16.4 MB over about a million frames, which is why this is
    * never part of a codeplug read.
    */
+  /**
+   * The record INDEX — `(count + 1) * 8` bytes of (key, offset) pairs.
+   *
+   * FOUND 2026-09-10 in the vendor's contact upload, which writes three regions
+   * and this was the one nothing knew about. Without it the records are on the
+   * radio but unreachable: the key is `bcdAsHex(dmrId) << 1` and the entries are
+   * ascending, which is what a binary search by ID needs.
+   */
+  INDEX: 0x07080000,
   BASE: 0x07900000,
   BANK_STRIDE: 0x80000,
   /** Bytes of each bank that actually hold records. */
@@ -73,10 +82,11 @@ export const D890_DIGITAL_CONTACTS = {
  * (count, endAddress) pair for a second database that is currently empty. That
  * would read all-zero for the same reason a blank contact header does.
  *
- * HOW TO TELL: load a contact list of a different size and re-read this block.
- * Both known fields must change; if the second 8 stay zero across databases of
- * different sizes, padding is the working answer. A second pair appearing when
- * some other table is populated would point at the alternative instead.
+ * SETTLED 2026-09-10 — PADDING. The test this note set for itself has been
+ * run: a vendor CPS upload of 1,005 contacts wrote count 1,005 and end pointer
+ * 0x079171de here, and left the second 8 bytes ZERO. Two databases differing by
+ * two orders of magnitude, both zero, so it is not a second (count, endAddress)
+ * pair and not any quantity that scales with the list.
  */
 export interface D890ContactHeader {
   /** Number of records in the database. */
