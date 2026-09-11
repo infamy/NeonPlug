@@ -766,7 +766,7 @@ the prerequisite, not a hardware session.
   | Radio IDs | `.index` | ✅ **WIRED 2026-09-10** — edit, add and delete; deletes leave a HOLE (measured) |
   | Scan lists | `list.slot` | ✅ **WIRED 2026-09-10** — edit and delete; add still refused (no record to patch) |
   | RX groups | `.index` | ✅ **WIRED 2026-09-10** — `deleteGroup` no longer reindexes; deletes leave a HOLE (measured) |
-  | Quick messages | text slot | ✅ **WIRED 2026-09-11** — `QuickTextMessage.slot` carries the text slot past the store's renumbering. The texts and the SMS store chain are written TOGETHER (the chain is the list the radio shows), the reader follows the chain, deletes keep slots, and a delete that strands a hot key is refused |
+  | Quick messages | text slot | ✅ **WIRED AND ROUND-TRIPPED 2026-09-11**, on the radio's own quick-text list — `QuickTextMessage.slot` carries the text slot past the store's renumbering. The texts and the SMS store chain are written TOGETHER (the chain is the list the radio shows), the reader follows the chain, deletes keep slots, and a delete that strands a hot key is refused |
 
   ☑ **Scan lists are wired (2026-09-10)** — edits only. The awkward one, for two
   reasons that both come from the shared `ScanList` being DM-32 shaped:

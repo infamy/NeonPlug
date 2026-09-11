@@ -5,11 +5,11 @@ written (**55/55** — `Local info` is the radio identifying itself and is flagg
 `neverWrite`, so it is excluded from the write and round-trip denominators).
 
 **What most of it still lacks is proof that a change survives the trip**: Core HW
-round-trip is **26/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
-and six on 2026-09-10: **radio IDs, the radio ID mask, scan lists, zone names,
-the scan-list mask and RX group lists**. Not one of the six leans on our own
-read-back — four were confirmed on the radio's own screen and two by the vendor
-CPS reading the radio.
+round-trip is **27/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
+six on 2026-09-10 (**radio IDs, the radio ID mask, scan lists, zone names, the
+scan-list mask and RX group lists**) and **pre-defined SMS** — quick messages —
+on 2026-09-11. Not one of those seven leans on our own read-back: five were
+confirmed on the radio's own screen and two by the vendor CPS reading the radio.
 
 The radio ID mask is the one that also gained an OWNER: it was `Unclaimed mask`
 in `recordLayout.ts`, a 32-byte gap no vendor marshaller touches, named from a
@@ -168,6 +168,19 @@ too high because the parsers return 1-based ids. **The last of those is the case
 for diffing rather than reading back** — the shifted keys are exactly what the
 radio would then hold, so a read-back would have agreed with itself.
 
+**Earned 2026-09-11 (1): pre-defined SMS — quick messages.** On a radio holding
+*Welcome!*, *Good bye!* and *Happy every day!* in slots 0-2, ONE write added
+*RT Zulu 42*, deleted *Good bye!* and edited *Welcome!* to *Welcome Zulu* —
+1,048 bytes in 70 frames, exactly what the dry run predicted. The radio's own
+quick-text list then read *Welcome Zulu, Happy every day!, RT Zulu 42*.
+
+That one screen confirms three things we had only from captures: the radio
+follows the SMS store CHAIN (0→2→3, stepping over the hole at slot 1), it takes
+each text from the slot its envelope names, and it accepts an envelope built
+from zeros the way the vendor builds them. The reader follows that chain now
+too — the vendor CPS dropped a text whose envelope had been retired, and a slot
+scan would have shown it.
+
 **Extra, 5 of 6: three pictures, the DMR CONTACT DATABASE and its HEADER.**
 
 The contact database earned its round trip on 2026-09-10, written BY NEONPLUG
@@ -279,14 +292,8 @@ findings this week came from a byte that did not move.
 
 Tier 1 is done. What is left, in the order it is worth doing:
 
-1. **Quick messages** (pre-defined SMS) — wired 2026-09-11, not yet
-   round-tripped. One write covers all three operations if they are done in
-   this order on a radio holding three messages in slots 0-2: ADD first (it
-   takes slot 3), then DELETE the middle one, then EDIT the first. The radio's
-   own quick-text list should then read *edited first, old third, new* — the
-   proof that it parses our texts and chain. A NeonPlug read-back should show
-   slot 1 as the hole: the chain runs 0→2→3, and the new envelope is built from
-   zeros the way the vendor's are.
+1. ~~**Quick messages**~~ (pre-defined SMS) — ROUND-TRIPPED 2026-09-11; see
+   "What has earned a round trip so far".
 2. **Zone roam mask** (Tier 2) — a "did anything disturb this" check, so it can
    ride along with any other write at no extra cost.
 3. ~~**The RX-group mask**~~ — SETTLED 2026-09-10: `0x3701510`, confirmed by two

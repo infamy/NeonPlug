@@ -6,15 +6,15 @@
 
 ## Overall progress
 
-`█████████████████████████████████░░░░░░░`
+`██████████████████████████████████░░░░░░`
 
-### 84% — 154 of 184 milestones
+### 84% — 155 of 184 milestones
 
 Every region can earn up to three: **read**, **write** (parse → encode
 reproducing vendor bytes) and a **hardware round trip**. This is the sum of
 the six rows below, so it can never disagree with them.
 
-Reading and re-encoding this radio are **done**. The 30 still open are
+Reading and re-encoding this radio are **done**. The 29 still open are
 almost entirely the third kind — proof on real hardware that a change
 survives the trip — which costs a radio, a write and a later read each.
 
@@ -22,7 +22,7 @@ survives the trip — which costs a radio, a write and a later read each.
 |---|---|---|
 | **Core read** | `████████████████████` | **100%** — 56 of 56 |
 | **Core write** | `████████████████████` | **100%** — 55 of 55 |
-| **Core HW round-trip** | `█████████░░░░░░░░░░░` | **47%** — 26 of 55 |
+| **Core HW round-trip** | `██████████░░░░░░░░░░` | **49%** — 27 of 55 |
 | **Extra read** | `████████████████████` | **100%** — 6 of 6 |
 | **Extra write** | `████████████████████` | **100%** — 6 of 6 |
 | **Extra HW round-trip** | `█████████████████░░░` | **83%** — 5 of 6 |
