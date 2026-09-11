@@ -206,13 +206,27 @@ One write of 41 bytes in 12 frames, exactly the dry run, against a radio read
 | AM airband channels | index 0 `CZBB TWR` 118.100 → `ZULU AM` 119.300 | First channel of airband zone CZBB |
 | AM airband zones | zone 2 `VYVR` → `ZULU ZONE` | Airband zone list |
 
-Three more regions went out in the same write and CANNOT be checked on the
-radio, so they are not claimed: the **channel presence mask** (channel 102 was
-deleted, but it belongs to no zone and this radio browses channels through
-zones, so it is invisible), the **FM scan mask** (one FM channel, nothing to
-see) and the **power-on display** (the text was written, but the radio boots to
-the image — `powerOnInterface` is 2, and the setting that would switch it to
-text was dropped from this write). A vendor CPS read settles all three.
+Three more regions went out in the same write and could not be checked ON the
+radio — channel 102 belongs to no zone and this radio browses channels through
+zones; the boot screen draws the image while `powerOnInterface` is 2. A vendor
+CPS read of the radio settled them, and it did NOT settle them all the same way:
+
+| Region | CPS read after the write | Verdict |
+|---|---|---|
+| Channel presence mask | 102 gone, 101 `Sixteen Chars XY` still there | ✅ confirmed |
+| Power-on display | line 1 `ZULU ONE`, line 2 still `ANYTONE` | ✅ confirmed |
+| FM scan mask | first FM channel still shows **Add** | ❌ CONTRADICTED |
+
+⚠️ **The FM scan mask did not do what the write said.** The staged edit was
+`scanAdd: false` on FM index 0 (read back as `true` beforehand), the dry run
+showed one byte at `0x3402050`, and the write sent 12 frames with no refusal —
+yet the CPS still reads that channel as `Add`. Two explanations survive, and the
+cheap test separates them: read `0x3402050` again with NeonPlug. `00` means the
+radio holds our value and the CPS's Add/Del column is not that bit; `01` means
+the write to that address did not stick. Until then the region is NOT claimed,
+and the polarity itself is not in doubt — the vendor's own read capture
+(`7x2_read_new.txt`) holds `01 00 00 …` there, and set = scanned is what our
+read and write both assume.
 
 ⚠️ **Two regions never reached the plan at all**: zone current channel A and B.
 `buildD890CodeplugTables` prefers the READ-TIME `zoneCurrentById` over the table

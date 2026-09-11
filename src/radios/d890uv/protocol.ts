@@ -635,7 +635,20 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     settings: RadioSettings,
     options?: { changedFields?: string[] }
   ): Promise<void> {
-    const changed = options?.changedFields ?? [];
+    this.stageSettings(settings, options?.changedFields ?? []);
+  }
+
+  /**
+   * The staging half of `writeRadioSettings`: no I/O, no Promise.
+   *
+   * Split out so the write confirmation can stage exactly what the write
+   * stages. On 2026-09-11 the panel offered a 41-byte write for a 43-byte plan,
+   * because only the write path staged settings and `previewChannelWrite`
+   * planned without them — the two disagreed, and the guard aborted a write the
+   * user had already authorised. Nothing here touches the port, so the sync
+   * preview can call it rather than keeping a second copy of these rules.
+   */
+  stageSettings(settings: RadioSettings, changed: readonly string[]): void {
     const aprsChanged = changed
       .map((f) => f.replace(/^radioSpecific\./, ''))
       .filter((f) => f.startsWith('aprs'));

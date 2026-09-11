@@ -341,15 +341,22 @@ were once in the same position as talk groups — editable in the UI and silentl
 discarded. All five are wired now, quick messages last (2026-09-11); see Tier 4
 below. For talk groups, see the ⛔ section above.
 
-⚠️ **One more of the same kind, found 2026-09-11: the ZONE CURRENT A/B channel.**
-`ZonesList` edits `tables.zoneCurrentChannels`, but `buildD890CodeplugTables`
-takes `d890ZoneCurrentBySlot(...)` first, and that is built from the READ-TIME
-`writeOriginals.zoneCurrentById`. A staged read always has it, so the `??`
-fallback to the edited table never runs and the edit is dropped — the write
-carries the values as read. Found when a staged edit produced no region in the
-dry-run diff. Fix: prefer the edited table where the user changed it, keyed by
-zone id like the slots are, and keep the read-time map only for zones the user
-never touched. Both `Zone current channel A` and `B` stay untestable until then.
+☑ **One more of the same kind, found AND FIXED 2026-09-11: the ZONE CURRENT A/B
+channel.** `ZonesList` edited `tables.zoneCurrentChannels`, but
+`buildD890CodeplugTables` took `d890ZoneCurrentBySlot(...)` first, and that was
+built from the READ-TIME `writeOriginals.zoneCurrentById`. A staged read always
+has it, so the `??` fallback to the edited table never ran and the edit was
+dropped — the write carried the values as read. Found when a staged edit
+produced no region in the dry-run diff at all.
+
+Fixed by keying edits the way slots are keyed: `ZonesList` now also records each
+change against the zone's ID in `tables.zoneCurrentEdits`, and
+`resolveZoneCurrentBySlot` overlays those on the read-time baseline per field —
+so an edited zone moves, an unedited one keeps what the radio holds, and
+position never enters the write path. A read clears the edits, because they
+belong to the codeplug they were made against. Covered by
+`tests/unit/d890ZoneCurrentEdits.test.ts` (8 of its cases fail if the overlay is
+removed). Still needs a hardware round trip — see Tier 4.
 
 The wire protocol is fully known from the vendor CPS's own programming session
 (`~/Downloads/WriteTo7x2.txt`, parse with `tools/parse-serial-capture.mjs`):
@@ -637,9 +644,11 @@ Each is a `hardwareRoundTrip` flag in `recordLayout.ts` waiting to be earned.
 - ☐ Zone hidden — **never tested at all.** `hiddenZoneSlots` used to be derived
   from nothing, so the checkbox did nothing. Reversible, and it exercises a
   mask bit that changes.
-- ☐ Zone current channel A/B — **suspect.** Read is by POSITION, encode is by
-  SLOT; `zoneCurrentChannelsBySlot` bridges them but has never run on hardware.
-  Test with a zone that is NOT slot 0, and check a neighbouring zone too.
+- ☐ Zone current channel A/B — **now reachable, still untested.** The edit used
+  to be dropped before the plan (fixed 2026-09-11, id-keyed overlay); read is by
+  POSITION and encode by SLOT, and `zoneCurrentChannelsBySlot` bridges them but
+  has never run on hardware. Test with a zone that is NOT slot 0, and check a
+  neighbouring zone too.
 - ☐ FM broadcast channel — frequency
 - ☐ AM airband channel — frequency
 - ☐ AM zone — membership

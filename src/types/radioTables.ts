@@ -148,6 +148,22 @@ export interface RadioTables {
    */
   zoneCurrentChannels: { a: number[]; b: number[] };
   /**
+   * A/B edits the user has made, keyed by ZONE ID rather than by position.
+   *
+   * `zoneCurrentChannels` above is the read's own form, indexed by position, and
+   * position stops being a key the moment a zone is added, deleted or reordered
+   * — which is why the write path resolves A/B from the id-keyed
+   * `writeOriginals.zoneCurrentById`. That baseline is right for every zone the
+   * user did not touch and wrong for every zone they did: on 2026-09-11 a staged
+   * A/B edit produced no region in the dry run at all, because the read-time
+   * value simply won. Edits are recorded here so they can be overlaid on that
+   * baseline by id, with position never entering the write path.
+   *
+   * Cleared when a read installs a new baseline — the values would otherwise
+   * outlive the codeplug they were edited against.
+   */
+  zoneCurrentEdits: Record<string, { a?: number; b?: number }>;
+  /**
    * Auto-repeater offsets in MHz, by slot. Null is an unused slot.
    *
    * Index is identity: the `autoRepeater1Uhf` / `autoRepeater1Vhf` settings are

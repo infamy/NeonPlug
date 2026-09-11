@@ -473,6 +473,11 @@ export function useRadioConnection() {
         rawZoneIndices?: readonly number[];
       };
       if (staging.rawChannelRecords && staging.rawChannelMask) {
+        // A/B edits belong to the codeplug they were made against. This read
+        // installs a new baseline, so anything staged against the old one is
+        // stale — keeping it would write a pointer the user set for a zone list
+        // that no longer exists.
+        setTable('zoneCurrentEdits', null);
         setTable('writeOriginals', {
           channelRecords: new Map(staging.rawChannelRecords),
           channelMask: Uint8Array.from(staging.rawChannelMask),
@@ -1040,6 +1045,18 @@ export function useRadioConnection() {
       // different operation from the one it authorises is worse than none.
       const proto = new D890UVProtocol();
       proto.setWriteOriginals(staged);
+
+      // Stage settings the way the write does, from the same two store reads it
+      // uses (see the settings block in `writeToRadio`). Without this the panel
+      // planned a codeplug with no settings in it and offered a smaller write
+      // than the one the button would send — 41 bytes against 43 on
+      // 2026-09-11 — and the guard that compares them aborted the write.
+      const settingsStore = useRadioSettingsStore.getState();
+      const pendingSettings = settingsStore.settings;
+      const changedSettingFields = settingsStore.getChangedFields();
+      if (pendingSettings && changedSettingFields.length > 0) {
+        proto.stageSettings(pendingSettings, changedSettingFields);
+      }
       const wholeCodeplug = !!staged.readLog && staged.readLog.size > 0;
 
       const zones = d890Zones();

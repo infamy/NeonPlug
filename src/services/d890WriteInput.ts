@@ -204,24 +204,43 @@ export function resolveZoneSlots(
  * with the zones list, and pairing them by index is what left the A/B pointers
  * one zone behind.
  */
-export function d890ZoneCurrentBySlot(
-  zones: readonly Zone[],
-  slots: readonly number[]
+export function resolveZoneCurrentBySlot(
+  zones: readonly { id: string }[],
+  slots: readonly number[],
+  byId: Readonly<Record<string, { a: number; b: number }>> | undefined,
+  edits: Readonly<Record<string, { a?: number; b?: number }>> | undefined
 ): { a: Map<number, number>; b: Map<number, number> } | undefined {
-  const byId = useRadioStore.getState().tables.writeOriginals?.zoneCurrentById;
-  if (!byId) return undefined;
+  // Nothing known either way: the caller falls back to the position-indexed
+  // table, which is still better than writing a fabricated A/B pointer.
+  if (!byId && !edits) return undefined;
   const a = new Map<number, number>();
   const b = new Map<number, number>();
   zones.forEach((z, i) => {
     const slot = slots[i];
-    const v = byId[z.id];
-    // A zone the user just added has no stored current channel; leaving it out
-    // means the encoder does not touch that slot's bytes at all.
-    if (slot === undefined || v === undefined) return;
-    a.set(slot, v.a);
-    b.set(slot, v.b);
+    if (slot === undefined) return;
+    const base = byId?.[z.id];
+    const edit = edits?.[z.id];
+    // The EDIT wins, per field. The baseline is what the radio already holds,
+    // so a zone with no edit must keep it — and a zone with one must not.
+    const av = edit?.a ?? base?.a;
+    const bv = edit?.b ?? base?.b;
+    // A zone the user just added has neither; leaving it out means the encoder
+    // does not touch that slot's bytes at all.
+    if (av !== undefined) a.set(slot, av);
+    if (bv !== undefined) b.set(slot, bv);
   });
   return { a, b };
+}
+
+/** The store-reading half of `resolveZoneCurrentBySlot`. */
+export function d890ZoneCurrentBySlot(
+  zones: readonly Zone[],
+  slots: readonly number[]
+): { a: Map<number, number>; b: Map<number, number> } | undefined {
+  const tables = useRadioStore.getState().tables;
+  return resolveZoneCurrentBySlot(
+    zones, slots, tables.writeOriginals?.zoneCurrentById, tables.zoneCurrentEdits
+  );
 }
 
 /**

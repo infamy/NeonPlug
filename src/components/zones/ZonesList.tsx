@@ -83,6 +83,14 @@ const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
     };
     next[which][zoneIndex] = position;
     setTable('zoneCurrentChannels', next);
+    // The array above is what this panel RENDERS, and it is indexed by
+    // position. The write path cannot use position — a zone added or deleted
+    // since the read makes it point at the wrong zone — so the edit is also
+    // recorded against the zone's id, which is what reaches the radio.
+    setTable('zoneCurrentEdits', {
+      ...tables.zoneCurrentEdits,
+      [zone.id]: { ...tables.zoneCurrentEdits?.[zone.id], [which]: position },
+    });
   };
 
   return (
