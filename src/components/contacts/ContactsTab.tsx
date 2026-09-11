@@ -228,20 +228,6 @@ export const ContactsTab: React.FC = () => {
   
   const contactCapacity = radioInfo?.maxContacts ?? 50000;
 
-  // Estimate time based on 150k contacts = 6 minutes
-  const estimateTime = (contactCount: number): string => {
-    // 150,000 contacts = 6 minutes = 360 seconds
-    const seconds = Math.ceil((contactCount / 150000) * 360);
-    if (seconds < 60) {
-      return `~${seconds}s`;
-    }
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    if (remainingSeconds === 0) {
-      return `~${minutes}m`;
-    }
-    return `~${minutes}m ${remainingSeconds}s`;
-  };
 
   const handleReadContacts = async () => {
     setIsReading(true);
@@ -312,37 +298,14 @@ export const ContactsTab: React.FC = () => {
     setProgress(0);
     setProgressMessage('');
     setDownloadError(null);
-    const startTime = Date.now();
     
     try {
       await writeContacts(contacts, (progress, message) => {
+        // The protocol measures real throughput and already reports the time
+        // remaining. Appending this tab's own estimate as well printed two
+        // ETAs on one line ("37s left - ETA: 38s").
         setProgress(progress);
-        
-        // Calculate ETA based on progress, or use initial estimate if no progress yet
-        const elapsed = (Date.now() - startTime) / 1000; // seconds
-        let etaMessage = message;
-        
-        if (progress > 0 && progress < 100) {
-          // Use actual progress-based ETA
-          const estimatedTotal = elapsed / (progress / 100);
-          const remaining = estimatedTotal - elapsed;
-          
-          if (remaining > 0) {
-            const minutes = Math.floor(remaining / 60);
-            const seconds = Math.floor(remaining % 60);
-            
-            if (minutes > 0) {
-              etaMessage = `${message} - ETA: ${minutes}m ${seconds}s`;
-            } else {
-              etaMessage = `${message} - ETA: ${seconds}s`;
-            }
-          }
-        } else if (progress === 0) {
-          // Show initial estimate before progress starts
-          etaMessage = `${message} - Estimated time: ${estimateTime(contacts.length)}`;
-        }
-        
-        setProgressMessage(etaMessage);
+        setProgressMessage(message);
       }, () => cancelWrite.current);
     } catch (err) {
       console.error('Error writing contacts:', err);
@@ -737,7 +700,7 @@ export const ContactsTab: React.FC = () => {
           </div>
         )}
 
-        {(isDownloading || progressMessage) && (
+        {(isDownloading || (progressMessage && !isWriting && !isReading)) && (
           <div className="mt-3">
             <ProgressBar progress={progress} message={progressMessage} />
           </div>
