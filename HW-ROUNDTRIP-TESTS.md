@@ -188,8 +188,9 @@ shrink to TG0001-TG0020, one NeonPlug write deleted TG0005 and TG0010 and added
 the list without crashing — the same place the 2026-09-10 delete crashed it. That
 delete had left the freed record populated; this one wrote the tail the way the
 vendor does, a zero tail where the freed slot shares a frame and the rest erased.
-The same write moved channel 56's TX contact 15 → 13 to follow TG0015; that is
-not yet checked on the radio.
+The same write moved channel 56's TX contact 15 → 13 to follow TG0015, and the
+radio showed that channel's group call as TG0015's ID. Reference renumbering is
+confirmed too: without it the channel would have shown TG0017.
 
 **Extra, 5 of 6: three pictures, the DMR CONTACT DATABASE and its HEADER.**
 

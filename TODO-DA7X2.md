@@ -255,9 +255,8 @@ TX contact (`contactId`, 1-based, 0 = none) and a receive group's members (raw
   cannot fix them, and leaving them stale points them at the wrong talk groups.
   Wiring receive groups lifts this.
 
-⚠️ **NOT ROUND-TRIPPED.** Renumbering is unit-tested only; no delete has been
-written to a radio since it landed. The last one that was — before this existed
-— left the radio reporting 1010 talk groups and crashing.
+✅ **Round-tripped 2026-09-11** — see below. Before that, the last delete
+written to a radio left it reporting 1010 talk groups and crashing.
 
 **Whether the CPS renumbers is UNKNOWN and the captures cannot say.** All 102
 channels with a TX contact on this radio reference slot 0, and nothing
@@ -301,8 +300,10 @@ scrolled to the end without crashing.
 
 ☐ The freed slot in that write shared a frame, like the vendor's. One that
 starts on a frame boundary still rests on the erase rule alone.
-☐ Channel 56's TX contact moved 15 → 13 to follow TG0015. That is not yet
-checked on the radio, so reference renumbering is still unit-tested only.
+✅ **Reference renumbering confirmed on the radio.** Channel 56's TX contact
+moved 15 → 13 to follow TG0015, and the radio showed that channel's group call
+as TG0015's ID. It was reported as 20015; TG0015 is 200015, and no talk group
+is 20015. Had the reference not moved, it would have shown TG0017's.
 
 ### What is actually ready
 
