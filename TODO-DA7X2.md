@@ -163,7 +163,7 @@ became a sixth extra the same day. Finding a region you were ignoring makes the
 score worse and the driver better. Do not "fix" that by editing the table —
 there is nothing to edit any more.
 
-### Talk groups — edits round-tripped; add and delete fixed, not yet round-tripped
+### Talk groups — edits, adds and deletes round-tripped
 
 Three faults were found and fixed together, deliberately: fixing only the first
 is the dangerous outcome, because on a codeplug under 1000 entries it appears to
@@ -291,9 +291,18 @@ got all three parts wrong:
   over the record it was READ from (`readSlot`).
 
 `tests/unit/d890TalkgroupCompaction.test.ts` holds all three to the vendor's
-bytes. ☐ **Neither add nor delete is round-tripped on hardware yet.** The only
-vendor delete on record freed a slot that shares a frame; a freed slot that
-starts on a frame boundary rests on the erase rule alone.
+bytes.
+
+✅ **ROUND-TRIPPED ON HARDWARE 2026-09-11.** After a vendor-CPS shrink to
+TG0001-TG0020, one NeonPlug write deleted TG0005 and TG0010 and added `RT Zulu
+TG`. That was 246 bytes, exactly the dry run, including slot 19 freed with a
+zero tail and 12 erased frames. The radio listed 19 with the new one last, and
+scrolled to the end without crashing.
+
+☐ The freed slot in that write shared a frame, like the vendor's. One that
+starts on a frame boundary still rests on the erase rule alone.
+☐ Channel 56's TX contact moved 15 → 13 to follow TG0015. That is not yet
+checked on the radio, so reference renumbering is still unit-tested only.
 
 ### What is actually ready
 

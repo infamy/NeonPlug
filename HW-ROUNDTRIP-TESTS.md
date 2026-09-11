@@ -5,11 +5,12 @@ written (**55/55** — `Local info` is the radio identifying itself and is flagg
 `neverWrite`, so it is excluded from the write and round-trip denominators).
 
 **What most of it still lacks is proof that a change survives the trip**: Core HW
-round-trip is **27/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
+round-trip is **28/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
 six on 2026-09-10 (**radio IDs, the radio ID mask, scan lists, zone names, the
-scan-list mask and RX group lists**) and **pre-defined SMS** — quick messages —
-on 2026-09-11. Not one of those seven leans on our own read-back: five were
-confirmed on the radio's own screen and two by the vendor CPS reading the radio.
+scan-list mask and RX group lists**) and two on 2026-09-11: **pre-defined SMS**
+(quick messages) and the **talk group locator** (talk group add and delete). Not
+one of those eight leans on our own read-back: six were confirmed on the radio's
+own screen and two by the vendor CPS reading the radio.
 
 The radio ID mask is the one that also gained an OWNER: it was `Unclaimed mask`
 in `recordLayout.ts`, a 32-byte gap no vendor marshaller touches, named from a
@@ -168,7 +169,7 @@ too high because the parsers return 1-based ids. **The last of those is the case
 for diffing rather than reading back** — the shifted keys are exactly what the
 radio would then hold, so a read-back would have agreed with itself.
 
-**Earned 2026-09-11 (1): pre-defined SMS — quick messages.** On a radio holding
+**Earned 2026-09-11 (2): pre-defined SMS — quick messages.** On a radio holding
 *Welcome!*, *Good bye!* and *Happy every day!* in slots 0-2, ONE write added
 *RT Zulu 42*, deleted *Good bye!* and edited *Welcome!* to *Welcome Zulu* —
 1,048 bytes in 70 frames, exactly what the dry run predicted. The radio's own
@@ -180,6 +181,15 @@ each text from the slot its envelope names, and it accepts an envelope built
 from zeros the way the vendor builds them. The reader follows that chain now
 too — the vendor CPS dropped a text whose envelope had been retired, and a slot
 scan would have shown it.
+
+**And the talk group locator — talk group add and delete.** After a vendor-CPS
+shrink to TG0001-TG0020, one NeonPlug write deleted TG0005 and TG0010 and added
+*RT Zulu TG*. The radio listed 19, the new one last, and scrolled to the end of
+the list without crashing — the same place the 2026-09-10 delete crashed it. That
+delete had left the freed record populated; this one wrote the tail the way the
+vendor does, a zero tail where the freed slot shares a frame and the rest erased.
+The same write moved channel 56's TX contact 15 → 13 to follow TG0015; that is
+not yet checked on the radio.
 
 **Extra, 5 of 6: three pictures, the DMR CONTACT DATABASE and its HEADER.**
 
@@ -262,7 +272,7 @@ One extra remains: the **satellite table**.
 |---|---|---|---|
 | ☑ | **Talk group — EDIT** | `TG1005` → `RTTG1005`, DMR ID `2345678`. **MEASURED:** `0x3A80322` = `02 34 56 78` (BCD), name `RTTG1005`. Slot 1004 landed in **bank 1**, proving the WRITER's bank arithmetic — the reader's was confirmed 2026-09-08, the writer's never had been, and a flat writer puts slot 1000 at `0x3A30D40`, which reads `0xFF` on hardware. Neighbours 1003/1005 untouched, and **all 1,009 other records byte-perfect** — the whole bank goes out as one span, so this is also the proof that record offsets inside a span are right. |
 | ☐ | **Zone roam mask** | Read, write unchanged, read | It is carried **verbatim** and zero on every radio anyone has seen. The test is that a write does not disturb it. If it comes back changed, our write is wrong. |
-| ⛔ | **Talk group locator / delete** | **The question it existed to answer is SOLVED, without a round trip.** The vendor CPS capture pair shows talk groups COMPACT: clearing a row shifts every later record down and frees the LAST slot. The locator is an identity table because slot always equals position — so `V = slot` was true and vacuous, and the hole this test wrote is a structure the radio cannot represent, which is why it crashed. Delete is refused until channel and receive-group references are renumbered; that is what needs a round trip, not this. |
+| ☑ | **Talk group add / delete + locator** | **ROUND-TRIPPED 2026-09-11** on a radio holding TG0001-TG0020: one write deleted TG0005 and TG0010 and added `RT Zulu TG`, 246 bytes and exactly the dry run. The radio listed 19 with the new one last, and did not crash at the end of the list. What made it work is laying the tail out as the vendor does (`7x2_onecleared.txt`): the table compacts, the bytes of the freed slot that share the last frame are zero, and the rest of the freed record is erased. The 2026-09-10 hole test left that record populated while the mask and locator said absent — the crash. |
 
 ## Tier 3 — the Extra regions
 
@@ -298,8 +308,8 @@ Tier 1 is done. What is left, in the order it is worth doing:
    ride along with any other write at no extra cost.
 3. ~~**The RX-group mask**~~ — SETTLED 2026-09-10: `0x3701510`, confirmed by two
    vendor captures; receive groups are wired and round-tripped.
-4. **Talk group locator** (Tier 2) — needs talk group writing first, which needs
-   the banking fix. See `TODO-DA7X2.md`.
+4. ~~**Talk group locator**~~ — ROUND-TRIPPED 2026-09-11 with talk group add and
+   delete.
 5. **Satellite table** (Tier 3) — the last Extra without a round trip.
 
 ### What the Tier-1 session established about method
