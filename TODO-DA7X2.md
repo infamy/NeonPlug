@@ -341,6 +341,16 @@ were once in the same position as talk groups — editable in the UI and silentl
 discarded. All five are wired now, quick messages last (2026-09-11); see Tier 4
 below. For talk groups, see the ⛔ section above.
 
+⚠️ **One more of the same kind, found 2026-09-11: the ZONE CURRENT A/B channel.**
+`ZonesList` edits `tables.zoneCurrentChannels`, but `buildD890CodeplugTables`
+takes `d890ZoneCurrentBySlot(...)` first, and that is built from the READ-TIME
+`writeOriginals.zoneCurrentById`. A staged read always has it, so the `??`
+fallback to the edited table never runs and the edit is dropped — the write
+carries the values as read. Found when a staged edit produced no region in the
+dry-run diff. Fix: prefer the edited table where the user changed it, keyed by
+zone id like the slots are, and keep the read-time map only for zones the user
+never touched. Both `Zone current channel A` and `B` stay untestable until then.
+
 The wire protocol is fully known from the vendor CPS's own programming session
 (`~/Downloads/WriteTo7x2.txt`, parse with `tools/parse-serial-capture.mjs`):
 

@@ -5,12 +5,13 @@ written (**55/55** — `Local info` is the radio identifying itself and is flagg
 `neverWrite`, so it is excluded from the write and round-trip denominators).
 
 **What most of it still lacks is proof that a change survives the trip**: Core HW
-round-trip is **28/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
+round-trip is **34/55** — 9 on 2026-09-03, the whole Tier-1 table on 2026-09-09,
 six on 2026-09-10 (**radio IDs, the radio ID mask, scan lists, zone names, the
-scan-list mask and RX group lists**) and two on 2026-09-11: **pre-defined SMS**
-(quick messages) and the **talk group locator** (talk group add and delete). Not
-one of those eight leans on our own read-back: six were confirmed on the radio's
-own screen and two by the vendor CPS reading the radio.
+scan-list mask and RX group lists**) and eight on 2026-09-11: **pre-defined SMS**
+(quick messages), the **talk group locator** (talk group add and delete), and the
+six of Write A below. Not one of those leans on our own read-back: twelve were
+confirmed on the radio's own screen and two by the vendor CPS reading the
+radio.
 
 The radio ID mask is the one that also gained an OWNER: it was `Unclaimed mask`
 in `recordLayout.ts`, a 32-byte gap no vendor marshaller touches, named from a
@@ -191,6 +192,32 @@ vendor does, a zero tail where the freed slot shares a frame and the rest erased
 The same write moved channel 56's TX contact 15 → 13 to follow TG0015, and the
 radio showed that channel's group call as TG0015's ID. Reference renumbering is
 confirmed too: without it the channel would have shown TG0017.
+
+**Write A, 2026-09-11 — six regions in one write, all checked on the radio.**
+One write of 41 bytes in 12 frames, exactly the dry run, against a radio read
+3.5 s earlier:
+
+| Region | Edit | Seen on the radio |
+|---|---|---|
+| Zone hidden mask | Hid `Z5 Tones` of six zones | The zone menu listed five |
+| VFO A / VFO B | VFO A 435.06250 → 438.73750 | The VFO display, before the dial was touched |
+| FM broadcast channels | `FM-001` 108.0 → `ZULU FM` 101.9 | FM channel list, name and frequency |
+| FM VFO | 108.0 → 99.5 | FM VFO tuned there |
+| AM airband channels | index 0 `CZBB TWR` 118.100 → `ZULU AM` 119.300 | First channel of airband zone CZBB |
+| AM airband zones | zone 2 `VYVR` → `ZULU ZONE` | Airband zone list |
+
+Three more regions went out in the same write and CANNOT be checked on the
+radio, so they are not claimed: the **channel presence mask** (channel 102 was
+deleted, but it belongs to no zone and this radio browses channels through
+zones, so it is invisible), the **FM scan mask** (one FM channel, nothing to
+see) and the **power-on display** (the text was written, but the radio boots to
+the image — `powerOnInterface` is 2, and the setting that would switch it to
+text was dropped from this write). A vendor CPS read settles all three.
+
+⚠️ **Two regions never reached the plan at all**: zone current channel A and B.
+`buildD890CodeplugTables` prefers the READ-TIME `zoneCurrentById` over the table
+the Zones tab edits, so the edit is silently dropped — found because the staged
+edit produced no region in the dry-run diff. See `TODO-DA7X2.md`.
 
 **Extra, 5 of 6: three pictures, the DMR CONTACT DATABASE and its HEADER.**
 
