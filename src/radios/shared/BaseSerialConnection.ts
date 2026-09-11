@@ -77,8 +77,20 @@ export abstract class BaseSerialConnection {
         next.set(this.buf);
         next.set(value, this.buf.length);
         this.buf = next;
+      } else {
+        // An EMPTY chunk is the only time to pause: `read()` came back with
+        // nothing, so going straight round could spin. Every real chunk goes
+        // straight back to `read()`, which itself blocks until the radio sends
+        // more — the only wait this loop needs.
+        //
+        // This used to sleep 10 ms after EVERY partial chunk. That cost at least
+        // 10 ms per piece of a multi-packet reply in the foreground, and far more
+        // in a background tab, where Chrome throttles timers to about one a
+        // second: a DA-7X2 read session of ~335 requests took 208 s behind the
+        // vendor CPS on 2026-09-11. tests/unit/serialReadExact.test.ts runs a
+        // reply with the clock frozen, so a timer back on this path fails it.
+        await this.delay(10);
       }
-      if (this.buf.length < n) await this.delay(10);
     }
     const result = new Uint8Array(this.buf.slice(0, n));
     this.buf = this.buf.length > n ? this.buf.slice(n) : new Uint8Array(0);
