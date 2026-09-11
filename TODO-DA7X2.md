@@ -450,10 +450,18 @@ a one-field change moves only that field's bytes.
   `tests/unit/d890BankedAddressing.test.ts` now pins every table with a reader
   address helper against the planner's addressing across each bank boundary, so
   a banked table added without a `bank:` fails immediately.
-- ☐ **Member capacity off-by-one.** Scan lists decode 50 members but
-  `writeU16Members` throws at >= 50; AM zones are 47 vs 46. A maximally-full list
-  read off a radio makes an untouched codeplug **unwritable**. Loud, not
-  corrupting.
+- ☑ **Member capacity off-by-one — FIXED 2026-09-11.** The encoders reserved a
+  slot for the 0xFFFF terminator and refused a FULL array, so a 50-member scan
+  list (or a 32-member AM zone) read off a radio made the whole codeplug
+  unwritable — a D890 write carries everything, so one full list blocked a
+  rename. A full array cannot hold a terminator and does not need one: the array
+  bound ends it. For scan lists that bound is hardware-confirmed — members run
+  0x30..0x93, exactly 50 entries, and 0x94 is `revertChannel`, so a sentinel at
+  member 50 would corrupt a real field. Writing a full list back now reproduces
+  the radio's own bytes exactly. (The "47 vs 46" above was stale: AM zone
+  capacity became 32 when `MEMBERS_END` was confirmed at 0x62.) RX groups and
+  roaming zones were already correct — both fill a fixed-length array with
+  sentinels instead of appending a terminator. `tests/unit/d890FullMemberLists.test.ts`.
 - ☐ **Talkgroup call type is decoded to a STRING** in `Contact.remark`, so there
   is no numeric field to encode from. `applyContactToRecord` drops it and is
   itself uncalled.

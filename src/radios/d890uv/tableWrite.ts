@@ -216,10 +216,10 @@ export function applyAmZoneToRecord(original: Uint8Array, zone: D890AmZone): Uin
   // From MEMBERS_END, not the record length: the list stops at 0x62 and the
   // bytes above it belong to something the radio uses and we do not model.
   const capacity = (D890_AM_ZONES.MEMBERS_END - D890_AM_ZONES.MEMBERS_AT) >> 1;
-  if (zone.members.length >= capacity) {
+  if (zone.members.length > capacity) {
     throw new Error(
       `AM zone "${zone.name}" has ${zone.members.length} members; the record holds ` +
-        `${capacity - 1} plus a terminator`
+        `${capacity}`
     );
   }
   let at = D890_AM_ZONES.MEMBERS_AT;
@@ -235,8 +235,13 @@ export function applyAmZoneToRecord(original: Uint8Array, zone: D890AmZone): Uin
   // rewriting the tail would change bytes on every radio NeonPlug has already
   // written with a 0x00 fill, breaking read->write byte-identity to normalise
   // padding the terminator already makes unreachable.
-  rec[at] = 0xff;
-  rec[at + 1] = 0xff;
+  // Only when it fits — a full 32-member list ends at MEMBERS_END, and a
+  // sentinel there would land on the bytes at 0x62 that the radio uses for
+  // something we do not model. See `writeU16Members`.
+  if (zone.members.length < capacity) {
+    rec[at] = 0xff;
+    rec[at + 1] = 0xff;
+  }
   return rec;
 }
 
@@ -410,9 +415,9 @@ function writeU16Members(
   members: readonly number[],
   capacity: number
 ): void {
-  if (members.length >= capacity) {
+  if (members.length > capacity) {
     throw new Error(
-      `${members.length} members do not fit: the record holds ${capacity - 1} plus a terminator`
+      `${members.length} members do not fit: the record holds ${capacity}`
     );
   }
   let at = offset;
@@ -421,8 +426,26 @@ function writeU16Members(
     dest[at + 1] = (m >> 8) & 0xff;
     at += 2;
   }
-  dest[at] = 0xff;
-  dest[at + 1] = 0xff;
+  // The terminator exists only when there is ROOM for it.
+  //
+  // This used to refuse a FULL array, on the reasoning that the sentinel had to
+  // fit inside it — so a 50-member scan list, read off a radio that plainly
+  // holds 50, could not be written back at all. The whole codeplug became
+  // unwritable because of one full list, untouched.
+  //
+  // A full array cannot carry a terminator and does not need one: the array
+  // bound ends it. For scan lists that bound is hardware-confirmed — members
+  // run 0x30..0x93, exactly 50 u16 entries, and 0x94 is `revertChannel`, which
+  // reads as zero rather than the 0xffff padding that fills the rest of the
+  // array. Writing a sentinel at member 50 would land on that field.
+  //
+  // Writing a full list back therefore reproduces the radio's own bytes
+  // exactly, which is the strongest form this can take: an untouched full list
+  // round-trips byte-identical.
+  if (members.length < capacity) {
+    dest[at] = 0xff;
+    dest[at + 1] = 0xff;
+  }
 }
 
 /**

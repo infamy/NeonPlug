@@ -72,9 +72,17 @@ describe('AM zone member area stops at 0x62', () => {
     expect(D890_AM_ZONES.MEMBERS_END).toBeLessThan(D890_AM_ZONES.STRIDE);
 
     const rec = build('FULL', [], 0);
-    const members = Array.from({ length: capacity }, (_, i) => i);
-    expect(() => applyAmZoneToRecord(rec, { index: 0, name: 'FULL', members, currentChannel: 0 }))
-      .toThrow(/do(es)? not fit|holds/i);
+    const zone = (n: number) =>
+      ({ index: 0, name: 'FULL', members: Array.from({ length: n }, (_, i) => i), currentChannel: 0 });
+
+    // Exactly 32 FITS: it fills 0x22..0x61 and ends at the array bound, with no
+    // terminator — the same bytes a radio holding 32 members gives back.
+    // Refusing it (until 2026-09-11) made such a codeplug unwritable entirely.
+    expect(() => applyAmZoneToRecord(rec, zone(capacity))).not.toThrow();
+    // One more does not, and neither does the stride-derived count that would
+    // have run into the bytes above 0x62.
+    expect(() => applyAmZoneToRecord(rec, zone(capacity + 1))).toThrow(/do(es)? not fit|holds|members/i);
+    expect(() => applyAmZoneToRecord(rec, zone(47))).toThrow(/do(es)? not fit|holds|members/i);
   });
 
   it('never writes above 0x62, even at maximum members', () => {
