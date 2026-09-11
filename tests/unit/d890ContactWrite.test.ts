@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { planDigitalContactWrite, contactEndAddress } from '../../src/radios/d890uv/digitalContactWrite';
 import { D890_DIGITAL_CONTACTS } from '../../src/radios/d890uv/digitalContacts';
 import { D890_LIMITS } from '../../src/radios/d890uv/constants';
+import { dryRunWrite } from '../../src/radios/d890uv/writeDryRun';
 import { parseDigitalContactBank, type D890DigitalContact } from '../../src/radios/d890uv/digitalContacts';
 
 const DIR = join(__dirname, '../fixtures/d890uv/contactwrite');
@@ -165,5 +166,28 @@ describe('contact capacity', () => {
       isFriend: false, flags: 0,
     }));
     expect(() => planDigitalContactWrite(huge)).toThrow(/NOT the radio's limit/);
+  });
+});
+
+/**
+ * The index ceiling. A 133,699-contact write was refused by the address guard,
+ * because a 1 MB index runs into the flash-management marker at 0x3fbf0 of its
+ * 256 KB unit. The planner now refuses first, and says the limit is ours.
+ */
+describe('contact index ceiling', () => {
+  const make = (n: number) => Array.from({ length: n }, (_, i) => ({
+    dmrId: 1000000 + i, name: 'N', city: '', callSign: 'C', province: '', country: '',
+    isFriend: false, flags: 0,
+  }));
+
+  it('plans the largest list whose index stops short of the marker', () => {
+    const plan = planDigitalContactWrite(make(32637));
+    // Every frame must pass the same guard the radio write uses.
+    expect(() => dryRunWrite(plan.frames)).not.toThrow();
+  });
+
+  it('refuses one more, clearly, instead of the raw guard error', () => {
+    expect(() => planDigitalContactWrite(make(32638))).toThrow(/at most 32,637/);
+    expect(() => planDigitalContactWrite(make(32638))).toThrow(/NOT the radio's limit/);
   });
 });

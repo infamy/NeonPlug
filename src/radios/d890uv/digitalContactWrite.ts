@@ -60,6 +60,7 @@ import {
   type D890DigitalContact,
 } from './digitalContacts';
 import type { D890WriteFrame } from './writePlan';
+import { D890_FLASH_MARKER_STRIDE, D890_FORBIDDEN_UNIT_OFFSETS } from './constants';
 
 export interface D890ContactWritePlan {
   frames: D890WriteFrame[];
@@ -139,8 +140,39 @@ export function planDigitalContactWrite(
     at += record.length;
   }
 
+  // The index must stop short of the radio's flash-management markers.
+  //
+  // FOUND 2026-09-10 when a 133,699-contact write was refused by the address
+  // guard at 0x070bfbf0 — 261,104 bytes into the index. Every 0x40000 unit of
+  // flash reserves 0x3fbf0 and 0x3fff0 (hardware-confirmed, see framing.ts),
+  // and a 1 MB index cannot be one contiguous run through them. The record
+  // banks avoid them by construction — 200,000 bytes per 0x80000 bank never
+  // reaches 0x3fbf0 — and the vendor must lay a large index out the same kind
+  // of way. HOW is unknown: its 1,005-contact upload wrote an 8 KB index that
+  // never got near a marker, and its 163,467-contact READ never touched the
+  // index region at all. A capture of a large vendor upload settles it.
+  //
+  // So this is the limit of our EVIDENCE, not of the radio.
+  const indexBytes = (sorted.length + 1) * 8;
+  const indexUnitOffset = D890_DIGITAL_CONTACTS.INDEX % D890_FLASH_MARKER_STRIDE;
+  const firstMarker = Math.min(...D890_FORBIDDEN_UNIT_OFFSETS);
+  const indexRoom = firstMarker - indexUnitOffset;
+  if (indexBytes > indexRoom) {
+    const maxContacts = Math.floor(indexRoom / 8) - 1;
+    throw new Error(
+      `Refusing to write ${sorted.length.toLocaleString()} contacts: this driver can ` +
+        `write at most ${maxContacts.toLocaleString()}.\n\n` +
+        `That is NOT the radio's limit — it holds 163,000+ and is rated for ` +
+        `${D890_DIGITAL_CONTACTS.MAX_CONTACTS.toLocaleString()}. It is where the ` +
+        `contact INDEX would run into the flash-management markers the radio ` +
+        `reserves in every 256 KB of flash. The vendor lays a large index out ` +
+        `around them somehow; nobody has captured how yet, and guessing would put ` +
+        `index entries where the radio does not look for them.`
+    );
+  }
+
   // Index: key, offset, then the 0xFF terminator the CPS writes.
-  const index = new Uint8Array((sorted.length + 1) * 8);
+  const index = new Uint8Array(indexBytes);
   const putU32 = (buf: Uint8Array, pos: number, value: number) => {
     buf[pos] = value & 0xff;
     buf[pos + 1] = (value >>> 8) & 0xff;
