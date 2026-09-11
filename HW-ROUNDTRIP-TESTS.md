@@ -168,14 +168,18 @@ too high because the parsers return 1-based ids. **The last of those is the case
 for diffing rather than reading back** — the shifted keys are exactly what the
 radio would then hold, so a read-back would have agreed with itself.
 
-**Extra, 4 of 6: three pictures and the DMR CONTACT DATABASE.**
+**Extra, 5 of 6: three pictures, the DMR CONTACT DATABASE and its HEADER.**
 
 The contact database earned its round trip on 2026-09-10, written BY NEONPLUG
 and read back by the VENDOR CPS, which listed all 200 contacts with every field
-in its own column. One read confirms all three of its regions: the records, the
-header count, and the INDEX at `0x07080000` — a region nothing knew existed
-until a vendor upload capture showed the CPS writing three regions rather than
-two. A wrong index leaves records on the radio that nothing can find.
+in its own column.
+
+**Corrected 2026-09-11:** this paragraph said that one read confirmed all three
+of the database's regions, the INDEX at `0x07080000` included. It could not
+have. The CPS's contact read is a probe, the header and the record banks
+(`7x2_read_contacts.txt`, 85 runs) — it never reads the index, so no CPS
+read-back can vouch for it. What the 200 confirmed is the records and the
+header count. The index is covered below.
 
 It took TWO attempts, and the first is the more useful entry. The writer was
 built deliberately NOT to truncate fields, on the reasoning that the vendor's
@@ -204,6 +208,25 @@ own multi-bank write, which needs a NeonPlug restore read back by the CPS. Our
 32,637-contact write (17 banks) was read back as "32k+ entries" and then
 overwritten by the 500,000 upload before its records could be checked.
 
+**The multi-bank round trip, 2026-09-11.** NeonPlug restored the owner's
+133,699 contacts — 68 record banks with 66 records split across a seam, 5 index
+banks, 914,862 frames in 386 s. The vendor CPS, reading the radio, listed
+**133,699** with the last record written (`9990001`) in slot 133,699, and the
+owner browsed the whole list. That round-trips the multi-bank records and the
+**header**, whose count and end address the CPS read is sized by.
+
+The index needed a different check, because the CPS never reads it. One
+NeonPlug read session took the header, both sides of all 4 index-bank seams,
+the index's final entry and its `0xFF` pad, both sides of all 67 record-bank
+seams, and 25 lookups done the radio's way — index entry, then offset, then
+record. **34,864 bytes, zero differences** from the plan. An independent Python
+encoder that shares no code with the planner agrees, and rebuilds all 66 split
+records from the radio's two halves.
+
+That is a NeonPlug read-back, so it proves the index is ON the radio as planned,
+not that the firmware searches it the way we believe. The check still owed is
+the radio's own: a received call from someone in the list showing their name.
+
 **Extra, 3 of 6: all three pictures** — boot, background 1, background 2, all
 2026-09-03. Still the strongest evidence on this radio, because the proof is the
 radio's own screen rather than a read-back: a wrong pixel or byte order writes
@@ -216,8 +239,7 @@ read-back: it proves the RADIO'S FIRMWARE parses what we wrote, where a
 read-back only proves our decoder agrees with our encoder. Prefer this check
 wherever a region is visible on the radio.
 
-Three extras remain: the **satellite table**, the **digital contact database**
-and its **header**.
+One extra remains: the **satellite table**.
 
 ---
 
@@ -234,7 +256,7 @@ and its **header**.
 | | Region | Test |
 |---|---|---|
 | ☐ | **Satellite table** | Edit one TLE field, write, read back. The last Extra without a round trip — its encode/decode currently prove only that they are inverses of each other, which a matched pair of *wrong* functions satisfies equally well. |
-| ☐ | **Digital contact database** | Not started. Needs the write path first; the header at `0x07000000` (count + end pointer) has never been written by anything. |
+| ☑ | **Digital contact database + header** | 2026-09-11: 133,699 contacts restored by NeonPlug and read back by the vendor CPS (count, last record, a full browse). The index, which the CPS never reads, verified by a NeonPlug seam read. |
 
 ---
 

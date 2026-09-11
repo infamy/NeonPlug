@@ -332,14 +332,20 @@ reasoning that closed each one.
 
 ### 2. Encoders — REGION coverage is closed, FIELD coverage is not
 
-**40 of the 43 readable regions have a tested encoder.** The three that do not
-are deliberate and should stay that way:
+**Every readable region but one now has a tested encoder** — `DA7X2-COVERAGE.md`
+has the live count. The one that does not is deliberate and should stay that
+way:
 
 | Region | Why never |
 |---|---|
-| Device identity | The model string the radio returns to identify itself |
 | Local info | Device info block, and the read-length negotiation probe |
-| Digital Contact List | 16.4 MB across 83 banks, read on demand. A write path for it is its own feature, with its own progress and cancellation. |
+
+Two rows left this table in September 2026. **Device identity** was never a
+region: it was the DMR contact database HEADER under a wrong label (see its note
+in `recordLayout.ts`), and it is now written and round-tripped with the
+database. The **Digital Contact List** got its own write path — the Contacts
+tab, with progress and cancel, never part of a codeplug write — and
+round-tripped on hardware at 133,699 contacts on 2026-09-11.
 
 Everything else a codeplug read produces can now be encoded back, each held to
 the same two tests: `parse -> encode` reproduces real vendor bytes exactly, and
