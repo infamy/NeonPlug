@@ -2,11 +2,13 @@ import React from 'react';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { useRadioStore } from '../../store/radioStore';
+import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import {
   D890_HOT_KEYS,
   HOT_KEY_CALL_TYPE,
   HOT_KEY_DIGI_CALL,
   HOT_KEY_MODE,
+  hotKeyLabel,
   type D890HotKey,
 } from '../../radios/d890uv/hotKeys';
 
@@ -37,13 +39,19 @@ import {
  * below its slot. Resolving against the store displayed the wrong message and
  * would have WRITTEN the wrong one. `tables.predefinedSms` keeps the slots.
  */
-const ROW_LABEL = (slot: number) => (slot < 6 ? `Hot Key ${slot + 1}` : `Fun ${slot - 5}`);
+const ROW_LABEL = hotKeyLabel;
 
 export const D890HotKeysArea: React.FC = () => {
   const { tables, setTable } = useRadioStore();
-  // By SLOT. `quickMessagesStore` renumbers to array position, and Content is
-  // a slot — the two differ by however many empty slots sit below a message.
-  const predefinedSms = tables.predefinedSms ?? [];
+  const { messages, messagesLoaded } = useQuickMessagesStore();
+  // By SLOT — Content is a text slot, and the store's `index` is a list
+  // position. The CURRENT messages when they carry their slots, so an edited or
+  // newly added message can be picked here; the read-time table only when they
+  // do not (a list that came from somewhere other than this radio's read).
+  const predefinedSms =
+    messagesLoaded && messages.every((m) => m.slot !== undefined)
+      ? messages.map((m) => ({ slot: m.slot!, text: m.text }))
+      : tables.predefinedSms ?? [];
   const keys = tables.hotKeys;
   if (!keys) return null;
 

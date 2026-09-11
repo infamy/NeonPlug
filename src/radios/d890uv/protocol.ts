@@ -48,7 +48,7 @@ import type { EncryptionKey } from '../../models/EncryptionKey';
 import { log } from '../../utils/protocolLogger';
 import { D890_IMAGE, D890_IMAGE_ADDRESS, D890_IMAGE_LABEL, planImageWrite, type D890ImageKind } from './bootImage';
 import { D890_ENCRYPTION_TYPE } from './constants';
-import { predefinedSmsAddress, parsePredefinedSms } from './predefinedSms';
+import { predefinedSmsAddress, quickMessagesFromChain } from './predefinedSms';
 import { D890_EMERGENCY, parseEmergencySettings, parseEmergencyContact } from './emergency';
 import {
   D890_BROADCAST,
@@ -1141,34 +1141,27 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
    * Read pre-defined SMS — what the vendor calls "Pre-defined SMS" and what this
    * app already models as quick messages.
    *
-   * Slots are read until `emptyRunLimit` consecutive empties, rather than all
-   * 100. The presence mask at 0x2980000 would be the exact answer, but its
-   * layout is unconfirmed, and reading 100 banked slots to find five messages is
-   * 100 round trips for nothing. Stopping after a run of empties costs one extra
-   * bank read in the worst case and is honest about what it assumes.
+   * FOLLOWS THE SMS STORE CHAIN, as the radio and the vendor CPS do: the list is
+   * the chain at 0x2980000, and each envelope names the text slot to fetch. This
+   * replaced a scan of the text slots that stopped after a run of empties, which
+   * listed any text whose envelope had been retired — a message the radio no
+   * longer shows. See `quickMessagesFromChain`. It is also cheaper: one read per
+   * message, not every slot up to twenty past the last one.
    */
   async readQuickMessages(): Promise<QuickTextMessage[]> {
     const conn = this.requireConnection();
-    const out: QuickTextMessage[] = [];
-    const emptyRunLimit = D890_ADDR.PREDEFINED_SMS_PER_BANK;
-    let emptyRun = 0;
-    for (let index = 0; index < D890_ADDR.PREDEFINED_SMS_MAX; index += 1) {
-      const bytes = await conn.readMemory(
-        predefinedSmsAddress(index),
-        D890_ADDR.PREDEFINED_SMS_STRIDE
+    const chain = await this.readSmsStore();
+    const messages = await quickMessagesFromChain(chain, (textSlot) =>
+      conn.readMemory(predefinedSmsAddress(textSlot), D890_ADDR.PREDEFINED_SMS_STRIDE)
+    );
+    if (messages.length < chain.length) {
+      log.warn(
+        `DA-7X2 SMS chain holds ${chain.length} envelopes but ${messages.length} readable ` +
+          `texts; the rest name an empty or out-of-range text slot and are not listed.`,
+        'D890'
       );
-      const text = parsePredefinedSms(bytes);
-      if (text === null) {
-        emptyRun += 1;
-        if (emptyRun >= emptyRunLimit) break;
-        continue;
-      }
-      emptyRun = 0;
-      // `flag` and `checkValue` are DM-32 fields with no counterpart here; the
-      // model requires them, so they are zero rather than invented.
-      out.push({ index, text, flag: 0, checkValue: 0 });
     }
-    return out;
+    return messages;
   }
 
   /**

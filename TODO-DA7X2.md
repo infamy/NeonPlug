@@ -305,9 +305,10 @@ That 102% is REGION coverage, not proof. The Coverage table above splits it: wha
 is modelled and encoded, versus what merely rides through unchanged, versus the
 33% that has a changed-field hardware round trip behind it.
 
-**Still not writable: talk groups**, and scan lists, radio IDs, encryption keys
-and quick messages are in the same position — editable in the UI and silently
-discarded. See the ⛔ section above.
+**Scan lists, radio IDs, encryption keys, receive groups and quick messages**
+were once in the same position as talk groups — editable in the UI and silently
+discarded. All five are wired now, quick messages last (2026-09-11); see Tier 4
+below. For talk groups, see the ⛔ section above.
 
 The wire protocol is fully known from the vendor CPS's own programming session
 (`~/Downloads/WriteTo7x2.txt`, parse with `tools/parse-serial-capture.mjs`):
@@ -748,11 +749,12 @@ the prerequisite, not a hardware session.
   wired 2026-09-09 and all six now have hardware round trips.
 - ☑ **Talk groups** — wired with banking and the index base fixed 2026-09-09.
   EDIT round-tripped 2026-09-09, DELETE 2026-09-10. ADD is unit-tested only.
-- ☐ **Scan lists · RX groups · radio IDs · encryption keys · quick messages** —
-  AUDITED 2026-09-10, and the "not individually verified" caveat is now closed.
-  All five have a working emitter in `planCodeplugWrite`, all five are editable
-  in the UI, and **none is passed by `buildD890CodeplugTables`**. Every edit to
-  any of them is silently discarded on write.
+- ☑ **Scan lists · RX groups · radio IDs · encryption keys · quick messages** —
+  ALL FIVE WIRED by 2026-09-11, quick messages last. The audit that follows is
+  kept for its reasoning: as of 2026-09-10 all five had a working emitter in
+  `planCodeplugWrite` and were editable in the UI, but **none was passed by
+  `buildD890CodeplugTables`**, so every edit to any of them was silently
+  discarded on write.
 
   Wiring is NOT the whole job, and the amount left differs per table. What
   decides it is whether the HARDWARE SLOT survives an edit — the talk group
@@ -763,8 +765,8 @@ the prerequisite, not a hardware session.
   | Encryption keys | `(encryptionType, id)` | ✅ **WIRED 2026-09-10** — `id` IS the slot, the store never renumbers |
   | Radio IDs | `.index` | ✅ **WIRED 2026-09-10** — edit, add and delete; deletes leave a HOLE (measured) |
   | Scan lists | `list.slot` | ✅ **WIRED 2026-09-10** — edit and delete; add still refused (no record to patch) |
-  | RX groups | `.index` | ❌ `deleteGroup` reindexes survivors to `idx` |
-  | Quick messages | slot-indexed | ❌ renumbers on READ and on delete — the same fault `predefinedSms` was added to work around |
+  | RX groups | `.index` | ✅ **WIRED 2026-09-10** — `deleteGroup` no longer reindexes; deletes leave a HOLE (measured) |
+  | Quick messages | text slot | ✅ **WIRED 2026-09-11** — `QuickTextMessage.slot` carries the text slot past the store's renumbering. The texts and the SMS store chain are written TOGETHER (the chain is the list the radio shows), the reader follows the chain, deletes keep slots, and a delete that strands a hot key is refused |
 
   ☑ **Scan lists are wired (2026-09-10)** — edits only. The awkward one, for two
   reasons that both come from the shared `ScanList` being DM-32 shaped:

@@ -279,14 +279,21 @@ findings this week came from a byte that did not move.
 
 Tier 1 is done. What is left, in the order it is worth doing:
 
-1. **Zone roam mask** (Tier 2) — a "did anything disturb this" check, so it can
+1. **Quick messages** (pre-defined SMS) — wired 2026-09-11, not yet
+   round-tripped. One write covers all three operations if they are done in
+   this order on a radio holding three messages in slots 0-2: ADD first (it
+   takes slot 3), then DELETE the middle one, then EDIT the first. The radio's
+   own quick-text list should then read *edited first, old third, new* — the
+   proof that it parses our texts and chain. A NeonPlug read-back should show
+   slot 1 as the hole: the chain runs 0→2→3, and the new envelope is built from
+   zeros the way the vendor's are.
+2. **Zone roam mask** (Tier 2) — a "did anything disturb this" check, so it can
    ride along with any other write at no extra cost.
-2. **The RX-group mask** — not a round trip but the thing blocking the most:
-   add a third receive group in the vendor CPS, write, re-read, diff. See the
-   section at the top of this file.
-3. **Talk group locator** (Tier 2) — needs talk group writing first, which needs
+3. ~~**The RX-group mask**~~ — SETTLED 2026-09-10: `0x3701510`, confirmed by two
+   vendor captures; receive groups are wired and round-tripped.
+4. **Talk group locator** (Tier 2) — needs talk group writing first, which needs
    the banking fix. See `TODO-DA7X2.md`.
-4. **Satellite table** (Tier 3) — the last Extra without a round trip.
+5. **Satellite table** (Tier 3) — the last Extra without a round trip.
 
 ### What the Tier-1 session established about method
 

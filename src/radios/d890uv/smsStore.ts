@@ -157,6 +157,14 @@ export function encodeSmsStore(
 
   slots.forEach(({ slot, textSlot }, i) => {
     const at = slot * D890_SMS_STORE.STRIDE;
+    // An envelope built over ERASED flash starts from zeros — every byte the
+    // vendor writes besides `next` and `textSlot`, across two uploads
+    // (`WriteTo7x2.txt`, `7x2_onecleared.txt`). Patching the 0xFF instead would
+    // leave attr at 0xFF and the code non-decimal, an envelope no capture has
+    // ever shown. A slot that already holds an envelope is patched, as before.
+    if (envelopes.subarray(at, at + D890_SMS_STORE.STRIDE).every((b) => b === 0xff)) {
+      envelopes.fill(0x00, at, at + D890_SMS_STORE.STRIDE);
+    }
     const next = slots[i + 1];
     envelopes[at + 0x02] = next ? next.slot : D890_SMS_STORE.END;
     envelopes[at + 0x03] = textSlot ?? slot;

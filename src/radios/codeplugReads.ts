@@ -114,7 +114,7 @@ export const CODEPLUG_READS: CodeplugRead[] = [
             // radio checked, slot 0 was.
             s.setTable(
               'predefinedSms',
-              messages.map((m) => ({ slot: m.index, text: m.text }))
+              messages.map((m) => ({ slot: m.slot ?? m.index, text: m.text }))
             );
             s.setMessages(messages);
             s.setMessagesLoaded(true);

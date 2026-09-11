@@ -72,6 +72,10 @@ export interface D890HotKey {
   contentSmsIndex: number | null;
 }
 
+/** The row label the vendor grid uses: six Hot Keys, then twelve Fun keys. */
+export const hotKeyLabel = (slot: number): string =>
+  slot < 6 ? `Hot Key ${slot + 1}` : `Fun ${slot - 5}`;
+
 export function parseHotKey(bytes: Uint8Array, offset: number, slot: number): D890HotKey {
   const u32 =
     ((bytes[offset + 0x04] ?? 0) |

@@ -153,6 +153,26 @@ describe('hot keys area', () => {
     expect(content.value).toBe('3');
   });
 
+  it('offers the CURRENT messages by slot — one added this session included', () => {
+    // Once the list carries slots, Content is picked from it rather than from
+    // the read-time table, so a message added before writing can be chosen, and
+    // one already deleted is no longer offered.
+    useQuickMessagesStore.setState({
+      messages: [
+        { index: 0, slot: 1, text: 'Welcome!', flag: 0, checkValue: 0 },
+        { index: 1, slot: 4, text: 'RT Zulu 42', flag: 0, checkValue: 0 },
+      ],
+      messagesLoaded: true,
+    });
+    useRadioStore.setState({ tables: { hotKeys, predefinedSms: PREDEFINED_SMS } });
+    const { container } = render(<D890HotKeysArea />);
+    const row = container.querySelectorAll('tbody tr')[0] as HTMLElement;
+    const content = within(row).getAllByRole('combobox').slice(-1)[0] as HTMLSelectElement;
+    const labels = Array.from(content.options).map((o) => o.textContent);
+    expect(labels).toContain('4. RT Zulu 42');
+    expect(labels.some((l) => l?.includes('On my way'))).toBe(false);
+  });
+
   it('keeps an unknown Digi Call Type selectable instead of silently rewriting it', () => {
     // 1 and 2 are legal bytes nobody has enumerated. Rendering a row must not
     // quietly turn one into DMR Group.
@@ -220,9 +240,12 @@ describe('address books — these COMPACT', () => {
 });
 
 describe('SMS store — this does NOT compact', () => {
-  it('deleting a MIDDLE message leaves every survivor on its own slot', () => {
-    // The mirror of the address-book test above, and the reason they are next
-    // to each other: same-looking table, opposite deletion semantics.
+  it('is read-only — a write rebuilds the chain from Quick Text Messages', () => {
+    // It used to delete envelopes on its own. A write now builds this chain FROM
+    // the message list, so a delete here would be silently discarded — and one
+    // that did land would leave its text behind. The hole-keeping delete this
+    // test used to pin now lives where the chain is built:
+    // tests/unit/d890QuickMessageWiring.test.ts.
     useRadioStore.setState({
       tables: {
         smsStore: [
@@ -234,12 +257,8 @@ describe('SMS store — this does NOT compact', () => {
       },
     });
     render(<D890SmsStoreArea />);
-    fireEvent.click(screen.getAllByTitle(/Retires this slot/i)[1]);
-
-    const after = tables().smsStore!;
-    expect(after.map((e) => e.slot)).toEqual([0, 2]);
-    // Slot 2 kept its number. Had this compacted, it would now be slot 1.
-    expect(after[1].slot).toBe(2);
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    expect(screen.getByText('Digital → Quick Text Messages')).toBeTruthy();
   });
 
   it('shows the predefined text the envelope POINTS AT, not its own slot', () => {
@@ -256,7 +275,7 @@ describe('SMS store — this does NOT compact', () => {
     expect(screen.queryByText('On my way')).toBeNull();
   });
 
-  it('offers no way to compose — allocating a slot and a text slot is unproven', () => {
+  it('offers no way to compose here — messages are added under Quick Text Messages', () => {
     useRadioStore.setState({
       tables: { smsStore: [{ slot: 0, next: null, textSlot: 0, attr: 0, code: null }] },
     });

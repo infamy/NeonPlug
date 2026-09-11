@@ -23,6 +23,11 @@ import type { DMRRadioID } from '../models/DMRRadioID';
 import type { ScanListDecoded } from '../radios/d890uv/structures';
 import { encodeScanPriority } from '../radios/d890uv/scanListPriority';
 import { D890_SCAN_LIST_DEFAULTS } from '../radios/d890uv/blankRecords';
+import { useQuickMessagesStore } from '../store/quickMessagesStore';
+import { D890_ADDR } from '../radios/d890uv/constants';
+import { D890_SMS_STORE, type D890SmsEnvelope } from '../radios/d890uv/smsStore';
+import { hotKeyLabel } from '../radios/d890uv/hotKeys';
+import { lowestFreeSlot } from '../utils/lowestFreeSlot';
 import type { RXGroup } from '../models/RXGroup';
 import {
   buildTalkgroupRenumber,
@@ -44,6 +49,9 @@ export function buildD890CodeplugTables(
   zoneSlots: readonly number[]
 ): D890CodeplugWriteInput['tables'] {
   const t = useRadioStore.getState().tables;
+  // Pre-defined SMS and the SMS store chain that lists them, built together from
+  // the quick message list — see d890QuickMessages.
+  const quick = d890QuickMessages();
   return {
     roamingChannels: t.roaming?.channels,
     amChannels: t.broadcast?.am,
@@ -65,9 +73,18 @@ export function buildD890CodeplugTables(
     // the `slot` each entry was read from is deliberately not carried.
     analogContacts: t.analogAddressBook,
     mdc1200Contacts: t.mdc1200Contacts,
-    // The SMS store does the opposite — a survivor keeps its own slot — so this
-    // one IS carried by slot.
-    smsStore: t.smsStore,
+    // The texts and the chain move TOGETHER: the chain is the list the radio
+    // shows, so a text without an envelope is not a message, and an envelope
+    // left behind keeps a deleted one listed. Survivors keep their slots — the
+    // radio's own delete leaves a hole. Not read this session, the chain rides
+    // out as it was read.
+    ...(quick
+      ? {
+          quickMessages: quick.quickMessages,
+          smsStore: quick.smsStore,
+          clearedQuickMessageSlots: quick.clearedQuickMessageSlots,
+        }
+      : { smsStore: t.smsStore }),
     dtmf: t.dtmf,
     talkgroups: d890Talkgroups(),
     // Identity here is genuinely stable: `id` IS the hardware slot,
@@ -488,6 +505,161 @@ export function d890ScanLists(): ScanListDecoded[] | undefined {
             : encodeScanPriority(ui.priority2Type, ui.priorityChannel2),
       };
     });
+}
+
+/**
+ * Pre-defined SMS ("quick messages") for the write plan: the texts, the SMS
+ * store chain that lists them, and the text slots a delete erased.
+ *
+ * THE CHAIN IS THE LIST. The radio and the vendor CPS both walk the SMS store at
+ * 0x2980000 from its head and fetch each envelope's text slot, and a text no
+ * envelope names is not a message. So the two move together, and the chain is
+ * built here from the message list rather than edited on its own.
+ *
+ * SLOTS ARE KEPT, as the radio's own delete keeps them — MEASURED 2026-09-08:
+ * deleting message 1 on the radio retired its envelope, erased its text and left
+ * slots 1-4 where they were. The vendor CPS goes further and COMPACTS on every
+ * write (`7x2_onecleared.txt` rewrote three survivors into slots 0-2), and the
+ * radio reads either shape; keeping slots is what keeps a hot key, which names a
+ * TEXT slot, on the message it was set to. A message with no slot yet takes the
+ * lowest one nothing uses, a hot key's included, and a new envelope takes the
+ * same number as its text whenever that is free — as in every capture.
+ *
+ * Refuses rather than guess: a delete that strands a hot key, an empty message
+ * (it reads back as no message at all), two messages on one slot, and any edit
+ * when the SMS store itself was not read.
+ */
+export function d890QuickMessages():
+  | {
+      quickMessages: { index: number; text: string }[];
+      smsStore: D890SmsEnvelope[];
+      clearedQuickMessageSlots: number[];
+    }
+  | undefined {
+  const t = useRadioStore.getState().tables;
+  const read = t.predefinedSms;
+  const { messages, messagesLoaded } = useQuickMessagesStore.getState();
+  // Never read from this radio: there is nothing to place the list against.
+  if (!read || !messagesLoaded) return undefined;
+
+  const MAX = D890_ADDR.PREDEFINED_SMS_MAX;
+  const hotKeys = t.hotKeys ?? [];
+  const hotKeySlots = hotKeys
+    .map((k) => k.contentSmsIndex)
+    .filter((s): s is number => s !== null);
+
+  const used = new Set(
+    messages.map((m) => m.slot).filter((s): s is number => s !== undefined)
+  );
+  const placed = messages.map((m, position) => {
+    let slot = m.slot;
+    if (slot === undefined) {
+      slot = lowestFreeSlot(new Set([...used, ...hotKeySlots]), MAX);
+      if (slot === undefined) {
+        throw new Error(
+          `Refusing to write: quick message ${position + 1} has no slot, and all ${MAX} are in use.`
+        );
+      }
+      used.add(slot);
+    }
+    return { slot, text: m.text, position };
+  });
+
+  const outside = placed.find((p) => !Number.isInteger(p.slot) || p.slot < 0 || p.slot >= MAX);
+  if (outside) {
+    throw new Error(
+      `Refusing to write: quick message ${outside.position + 1} is in slot ${outside.slot}, ` +
+        `outside 0-${MAX - 1}.`
+    );
+  }
+  const owner = new Map<number, number>();
+  for (const p of placed) {
+    const prior = owner.get(p.slot);
+    if (prior !== undefined) {
+      throw new Error(
+        `Refusing to write: quick messages ${prior + 1} and ${p.position + 1} both claim slot ` +
+          `${p.slot}. Re-read the radio and make the change again.`
+      );
+    }
+    owner.set(p.slot, p.position);
+  }
+  const empty = placed.filter((p) => p.text.length === 0);
+  if (empty.length > 0) {
+    throw new Error(
+      `Refusing to write: quick message ${empty.map((p) => p.position + 1).join(', ')} ` +
+        `${empty.length === 1 ? 'is' : 'are'} empty.\n\n` +
+        `An empty message reads back as an empty slot — no message at all. Type ` +
+        `something, or delete ${empty.length === 1 ? 'it' : 'them'}.`
+    );
+  }
+
+  const readSlots = new Set(read.map((r) => r.slot));
+  const nowSlots = new Set(placed.map((p) => p.slot));
+
+  // A delete must not strand a hot key. One that ALREADY pointed at nothing when
+  // the radio was read is left alone: this write did not cause it.
+  const stranded = hotKeys.filter(
+    (k) =>
+      k.contentSmsIndex !== null &&
+      readSlots.has(k.contentSmsIndex) &&
+      !nowSlots.has(k.contentSmsIndex)
+  );
+  if (stranded.length > 0) {
+    const textAt = (slot: number) => read.find((r) => r.slot === slot)?.text ?? '';
+    throw new Error(
+      `Refusing to write: ${stranded.length === 1 ? 'a hot key sends' : `${stranded.length} hot keys send`} ` +
+        `a quick message that was deleted:\n` +
+        stranded.map((k) => `  ${hotKeyLabel(k.slot)} → "${textAt(k.contentSmsIndex!)}"`).join('\n') +
+        `\n\nPoint ${stranded.length === 1 ? 'it' : 'them'} at another message, or Off, ` +
+        `under Settings → Hot Keys.`
+    );
+  }
+
+  const chainRead = t.smsStore;
+  if (!chainRead) {
+    // Texts alone would write messages the radio cannot list, or leave a
+    // deleted one listed. Without the chain there is no safe half of this write.
+    const changed =
+      placed.length !== read.length ||
+      placed.some((p) => read.find((r) => r.slot === p.slot)?.text !== p.text);
+    if (changed) {
+      throw new Error(
+        `Refusing to write quick messages: the SMS store at 0x2980000 — the list the ` +
+          `radio actually shows — was not read. Re-read the radio, then make the change again.`
+      );
+    }
+    return undefined;
+  }
+
+  // Each message keeps the envelope it was read with. A new one takes the
+  // envelope slot equal to its text slot when that is free, and the lowest free
+  // one otherwise. `next` is derived from slot order by encodeSmsStore; attr and
+  // code are what every predefined envelope in every capture holds.
+  const envelopeOf = new Map(chainRead.map((e) => [e.textSlot, e.slot]));
+  const taken = new Set<number>();
+  for (const p of placed) {
+    const slot = envelopeOf.get(p.slot);
+    if (slot !== undefined) taken.add(slot);
+  }
+  const smsStore = placed.map((p): D890SmsEnvelope => {
+    let slot = envelopeOf.get(p.slot);
+    if (slot === undefined) {
+      slot = taken.has(p.slot) ? lowestFreeSlot(taken, D890_SMS_STORE.SLOTS) : p.slot;
+      if (slot === undefined) {
+        throw new Error(
+          `Refusing to write: no free SMS store envelope for quick message ${p.position + 1}.`
+        );
+      }
+      taken.add(slot);
+    }
+    return { slot, next: null, textSlot: p.slot, attr: 0, code: 0 };
+  });
+
+  return {
+    quickMessages: placed.map((p) => ({ index: p.slot, text: p.text })),
+    smsStore,
+    clearedQuickMessageSlots: [...readSlots].filter((s) => !nowSlots.has(s)).sort((a, b) => a - b),
+  };
 }
 
 /** Zones exactly as the UI holds them. */

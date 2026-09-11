@@ -205,6 +205,29 @@ describe('DA-7X2 SMS store encoder', () => {
     expect(head).toBe(D890_SMS_STORE.END);
     expect(valid.every((b) => b === 0xff)).toBe(true);
   });
+
+  /**
+   * A NEW envelope lands on erased flash. Patching only `next` and `textSlot`
+   * into 0xFF would leave attr 0xFF and a non-decimal code — an envelope no
+   * capture has shown. The vendor's are zeros apart from those two bytes.
+   */
+  it('builds an envelope over erased flash from zeros, as the vendor writes one', () => {
+    const erased = new Uint8Array(D890_SMS_STORE.SLOTS * D890_SMS_STORE.STRIDE).fill(0xff);
+    const { envelopes } = encodeSmsStore(erased, [{ slot: 0 }, { slot: 1 }]);
+    expect(Array.from(envelopes.subarray(0, 0x10))).toEqual(
+      [0x00, 0x00, 0x01, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    );
+    // Slot 2 is not in the chain, so it is left exactly as it was.
+    expect([...new Set(envelopes.subarray(0x20, 0x30))]).toEqual([0xff]);
+  });
+
+  it('patches an envelope that already exists, keeping its other bytes', () => {
+    const original = new Uint8Array(D890_SMS_STORE.SLOTS * D890_SMS_STORE.STRIDE);
+    original[0x07] = 0x05; // an attr nobody has decoded
+    const { envelopes } = encodeSmsStore(original, [{ slot: 0 }]);
+    expect(envelopes[0x07]).toBe(0x05);
+    expect(envelopes[0x02]).toBe(D890_SMS_STORE.END);
+  });
 });
 
 describe('DA-7X2 DTMF encoder', () => {

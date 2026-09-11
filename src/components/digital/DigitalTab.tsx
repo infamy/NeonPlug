@@ -167,13 +167,28 @@ export const DigitalTab: React.FC = () => {
   };
 
   const handleAddMessage = () => {
-    if (messages.length >= 20) {
-      showAlert('Maximum of 20 quick messages allowed.');
+    if (messages.length >= messagesMax) {
+      showAlert(`Maximum of ${messagesMax} quick messages allowed.`);
       return;
     }
-    const newIndex = messages.length;
+    // The lowest FREE slot, for radios that place messages by slot — the same
+    // hole rule as handleAddRadioId. A slot a hot key still names is not free:
+    // reusing it would silently hand that key the new message. (The DM-32
+    // places by list order and never reads `slot`.)
+    const used = new Set<number>(
+      messages.map((m) => m.slot).filter((s): s is number => s !== undefined)
+    );
+    for (const k of useRadioStore.getState().tables.hotKeys ?? []) {
+      if (k.contentSmsIndex !== null) used.add(k.contentSmsIndex);
+    }
+    const slot = lowestFreeSlot(used, messagesMax);
+    if (slot === undefined) {
+      showAlert(`No free quick message slot: all ${messagesMax} are in use.`);
+      return;
+    }
     addMessage({
-      index: newIndex,
+      index: messages.length,
+      slot,
       text: '',
       flag: 0, // Will be updated automatically when text is entered
       checkValue: 0,
@@ -820,7 +835,7 @@ export const DigitalTab: React.FC = () => {
               {' '}{messagesMax} messages.
             </p>
           </div>
-          {messagesLoaded && messages.length < 20 && (
+          {messagesLoaded && messages.length < messagesMax && (
             <button
               onClick={handleAddMessage}
               className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"

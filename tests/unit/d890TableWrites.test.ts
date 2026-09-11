@@ -22,6 +22,7 @@ import { D890_HOT_KEYS } from '../../src/radios/d890uv/hotKeys';
 import { D890_ANALOG_ADDRESS_BOOK } from '../../src/radios/d890uv/analogAddressBook';
 import { D890_MDC1200, MDC_CALL_TYPE } from '../../src/radios/d890uv/mdc1200';
 import { D890_SMS_STORE } from '../../src/radios/d890uv/smsStore';
+import { predefinedSmsAddress } from '../../src/radios/d890uv/predefinedSms';
 import { D890_DTMF, parseDtmfSettings } from '../../src/radios/d890uv/dtmf';
 import type { Channel } from '../../src/models/Channel';
 
@@ -269,6 +270,52 @@ describe('SMS store', () => {
   it('an empty store retires the head', () => {
     const plan = planCodeplugWrite(setup({ smsStore: [] }));
     expect(byteAt(plan, D890_SMS_STORE.HEAD)).toBe(D890_SMS_STORE.END);
+  });
+});
+
+describe('pre-defined SMS — the texts behind the chain', () => {
+  const S = D890_SMS_STORE;
+
+  it('writes each text into its own SLOT and erases a deleted one', () => {
+    // Delete the middle of three: the survivor in slot 2 must STAY in slot 2,
+    // its text going out there and the chain stepping over the hole.
+    const plan = planCodeplugWrite(setup({
+      quickMessages: [{ index: 0, text: 'Welcome Zulu' }, { index: 2, text: 'Happy every day!' }],
+      clearedQuickMessageSlots: [1],
+      smsStore: [
+        { slot: 0, next: 2, textSlot: 0, attr: 0, code: 0 },
+        { slot: 2, next: null, textSlot: 2, attr: 0, code: 0 },
+      ],
+    }));
+    expect(byteAt(plan, predefinedSmsAddress(0))).toBe(0x57); // 'W'
+    expect(byteAt(plan, predefinedSmsAddress(2))).toBe(0x48); // 'H', not moved down
+    const erased = plan.frames.filter(
+      (f) => f.address >= predefinedSmsAddress(1) && f.address < predefinedSmsAddress(2)
+    );
+    expect(erased).toHaveLength(0x200 / 0x10);
+    expect(erased.every((f) => f.data.every((b) => b === 0xff))).toBe(true);
+    expect(byteAt(plan, S.ENVELOPES + 0x02)).toBe(2);
+    expect(byteAt(plan, S.VALID + 1)).toBe(S.END);
+  });
+
+  it('places slot 20 in the second bank, not flat after slot 19', () => {
+    const plan = planCodeplugWrite(setup({ quickMessages: [{ index: 20, text: 'Bank two' }] }));
+    expect(byteAt(plan, 0x3200000)).toBe(0x42); // 'B'
+  });
+
+  it('refuses a slot past the end of the table', () => {
+    expect(() =>
+      planCodeplugWrite(setup({ quickMessages: [{ index: 100, text: 'x' }] }))
+    ).toThrow(/outside 0-99/);
+  });
+
+  it('refuses a slot both written and erased — two frames for one address', () => {
+    expect(() =>
+      planCodeplugWrite(setup({
+        quickMessages: [{ index: 1, text: 'x' }],
+        clearedQuickMessageSlots: [1],
+      }))
+    ).toThrow(/two frames/);
   });
 });
 

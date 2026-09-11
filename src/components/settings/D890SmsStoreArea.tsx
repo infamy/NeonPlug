@@ -2,21 +2,23 @@ import React from 'react';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { useRadioStore } from '../../store/radioStore';
+import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { D890_SMS_STORE } from '../../radios/d890uv/smsStore';
 import { formatPlural } from '../../utils/formatPlural';
 
 /**
- * The SMS message store — a LINKED LIST, not an array.
+ * The SMS message store — a LINKED LIST, not an array — shown as it was READ.
  *
- * ⚠️ This does NOT compact. Deleting a message retires its own slot to 0xFF and
- * repoints the previous envelope's `next` past the hole; every survivor stays
- * exactly where it was. The two address books do the opposite, and having the
- * pair backwards is the bug the round-trip tests exist to catch.
+ * READ-ONLY since quick messages were wired (2026-09-11). This chain IS the
+ * radio's list of pre-defined messages, and a write now builds it from Digital
+ * → Quick Text Messages together with the texts it points at: editing either
+ * alone leaves a message the radio cannot list, or a deleted one still listed.
+ * The delete this area used to offer retired an envelope and left its text
+ * behind; deleting the message under Quick Text Messages does both.
  *
- * Only deletion is offered. Composing a message means allocating a slot AND a
- * predefined-SMS text slot and splicing the chain, and nothing has confirmed
- * what the radio does with an envelope whose `attr` is not 0 — every capture so
- * far shows 0, which is one value, not a vocabulary.
+ * It does NOT compact. A deleted message retires its own slot and every
+ * survivor stays where it was — the radio's own delete, measured 2026-09-08.
+ * The two address books do the opposite.
  *
  * The TEXT is not in the envelope: `textSlot` is an index into the predefined
  * SMS table, and the reader must follow it rather than assume it equals the
@@ -24,28 +26,31 @@ import { formatPlural } from '../../utils/formatPlural';
  * dereferences the byte, so they are free to differ.
  */
 export const D890SmsStoreArea: React.FC = () => {
-  const { tables, setTable } = useRadioStore();
-  // By SLOT — `textSlot` dereferences the predefined table, and the store's
-  // position-renumbered copy cannot answer that. See `tables.predefinedSms`.
-  const predefinedSms = tables.predefinedSms ?? [];
+  const { tables } = useRadioStore();
+  const { messages, messagesLoaded } = useQuickMessagesStore();
+  // By SLOT — `textSlot` names a text slot, and the store's `index` is a list
+  // position. The current texts when the list carries its slots; the read-time
+  // table when it does not.
+  const bySlot =
+    messagesLoaded && messages.every((m) => m.slot !== undefined)
+      ? messages.map((m) => ({ slot: m.slot!, text: m.text }))
+      : tables.predefinedSms ?? [];
   const store = tables.smsStore;
   if (!store) return null;
 
   const textFor = (textSlot: number) =>
-    predefinedSms.find((m) => m.slot === textSlot)?.text ?? '(no message in this slot)';
-
-  const remove = (slot: number) =>
-    setTable('smsStore', store.filter((e) => e.slot !== slot));
+    bySlot.find((m) => m.slot === textSlot)?.text ?? '(no message in this slot)';
 
   return (
     <div className="mb-8">
       <div className="mb-4">
         <SectionTitle as="h3" size="xl">SMS Store</SectionTitle>
         <p className="text-cool-gray text-sm">
-          {store.length} of {D890_SMS_STORE.SLOTS} {formatPlural(store.length, 'slot')} in use,
-          shown in the radio&apos;s own chain order. Deleting one{' '}
-          <span className="text-white">leaves the others where they are</span> — this
-          is a linked list, not a list that renumbers.
+          {store.length} of {D890_SMS_STORE.SLOTS} {formatPlural(store.length, 'slot')} in use
+          when the radio was read, in the radio&apos;s own chain order. This is the list the
+          radio shows. Edit the messages under{' '}
+          <span className="text-white">Digital → Quick Text Messages</span> and a write
+          rebuilds this chain from them, keeping every survivor on its own slot.
         </p>
       </div>
 
@@ -72,7 +77,6 @@ export const D890SmsStoreArea: React.FC = () => {
                   Text
                 </th>
                 <th className="px-3 py-2 text-left text-neon-cyan font-bold">Message</th>
-                <th className="px-3 py-2 text-right text-neon-cyan font-bold w-20">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -85,15 +89,6 @@ export const D890SmsStoreArea: React.FC = () => {
                   <td className="px-3 py-2 text-muted font-mono">{e.textSlot}</td>
                   <td className="px-3 py-2 text-white truncate max-w-md">
                     {textFor(e.textSlot)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      onClick={() => remove(e.slot)}
-                      title="Retires this slot and repoints the chain past it. Every other message keeps its slot."
-                      className="text-muted hover:text-red-400 px-2"
-                    >
-                      ✕
-                    </button>
                   </td>
                 </tr>
               ))}

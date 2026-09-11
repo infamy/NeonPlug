@@ -61,7 +61,7 @@ import {
 import { encodePowerOnDisplay, type D890PowerOnDisplay } from './powerOnDisplay';
 import { encodeD890Settings, type D890Settings } from './settingsFormat';
 import { encodeD890AprsSettings, type D890AprsSettings } from './aprs';
-import { encodePredefinedSms, predefinedSmsAddress } from './predefinedSms';
+import { encodePredefinedSms, erasedPredefinedSms, predefinedSmsAddress } from './predefinedSms';
 import type { D890EmergencySettings, D890EmergencyContact } from './emergency';
 import { D890_GPS_ROAMING, type D890GpsRoamingEntry } from './gpsRoaming';
 import type { QuickContact } from '../../models/QuickContact';
@@ -186,10 +186,14 @@ export interface D890CodeplugWriteInput {
     } | null;
     /** Hardware slots of the zones that are hidden. */
     hiddenZoneSlots?: ReadonlySet<number>;
-    /** Slot-indexed, NOT positional — `readQuickMessages` compacts empty slots
-     *  away, so messages in slots 0 and 5 arrive as a 2-element list. Writing
-     *  those by array position would move the second one to slot 1. */
+    /** Pre-defined SMS texts keyed by TEXT SLOT (`index`), NOT list position —
+     *  hot keys and SMS envelopes point at the slot, so placing by position
+     *  would repoint them. Passed with `smsStore`: the chain is what the radio
+     *  lists, and a text no envelope names is not a message. */
     quickMessages?: readonly { readonly index: number; readonly text: string }[];
+    /** Text slots whose message was deleted, written back ERASED (0xFF) as the
+     *  radio's own delete leaves them. Never also in `quickMessages`. */
+    clearedQuickMessageSlots?: readonly number[];
     /**
      * Encryption keys as read. Identity is `(encryptionType, id)`: `id` is the
      * hardware slot and `encryptionType` says which of the three tables it
@@ -982,28 +986,38 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
     }
   }
 
-  // Pre-defined SMS: fixed-stride slots with no mask — a slot is empty when its
-  // text is. Each is built rather than patched because the slot holds nothing
-  // but the message, so there are no unmodelled bytes to preserve.
-  if (T.quickMessages) {
+  // Pre-defined SMS texts. Each is built rather than patched: the slot holds
+  // nothing but the message, and the build reproduces the vendor's records byte
+  // for byte (text, NUL, zeros). WHICH slots are messages is not decided here —
+  // that is the SMS store chain above, and the two arrive together from
+  // `d890QuickMessages`. A deleted message's slot goes out ERASED, the way the
+  // radio's own delete leaves it.
+  if (T.quickMessages || T.clearedQuickMessageSlots?.length) {
     const smsFrames: D890WriteFrame[] = [];
-      for (const { index, text } of T.quickMessages) {
-        const record = encodePredefinedSms(text);
-        // Banked exactly like talkgroups: 20 slots per bank, banks 0x80000
-        // apart. Flat `base + i * stride` arithmetic put slot 20 at 0x3182800
-        // when it belongs at 0x3200000 — an address that is not an SMS slot at
-        // all, and that `assertWritableAddress` would not have refused. The read
-        // has always used this helper; only the write had its own copy of the
-        // arithmetic, and the copy was wrong.
-        const base = predefinedSmsAddress(index);
-        for (let off = 0; off < record.length; off += 0x10) {
-          smsFrames.push({
-            address: base + off,
-            data: record.slice(off, off + 0x10),
-            what: `SMS ${index + 1}`,
-          });
-        }
+    const place = (index: number, record: Uint8Array, what: string) => {
+      if (!Number.isInteger(index) || index < 0 || index >= D890_ADDR.PREDEFINED_SMS_MAX) {
+        throw new D890WriteRefusedError(
+          `Refusing to write: pre-defined SMS slot ${index} is outside ` +
+            `0-${D890_ADDR.PREDEFINED_SMS_MAX - 1}.`
+        );
       }
+      // Banked exactly like talkgroups: 20 slots per bank, banks 0x80000
+      // apart. Flat `base + i * stride` arithmetic put slot 20 at 0x3182800
+      // when it belongs at 0x3200000 — an address that is not an SMS slot at
+      // all, and that `assertWritableAddress` would not have refused. The read
+      // has always used this helper; only the write had its own copy of the
+      // arithmetic, and the copy was wrong.
+      const base = predefinedSmsAddress(index);
+      for (let off = 0; off < record.length; off += 0x10) {
+        smsFrames.push({ address: base + off, data: record.slice(off, off + 0x10), what });
+      }
+    };
+    for (const { index, text } of T.quickMessages ?? []) {
+      place(index, encodePredefinedSms(text), `SMS ${index + 1}`);
+    }
+    for (const index of T.clearedQuickMessageSlots ?? []) {
+      place(index, erasedPredefinedSms(), `SMS ${index + 1} (deleted)`);
+    }
     take('pre-defined SMS', D890_ADDR.PREDEFINED_SMS_DATA, smsFrames);
   }
 
