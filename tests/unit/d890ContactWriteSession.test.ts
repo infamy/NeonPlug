@@ -14,6 +14,7 @@ import { D890UVProtocol } from '../../src/radios/d890uv/protocol';
 import { BaseDigitalProtocol } from '../../src/radios/shared/BaseProtocols';
 import { D890_DIGITAL_CONTACTS } from '../../src/radios/d890uv/digitalContacts';
 import type { Contact } from '../../src/models/Contact';
+import { planDigitalContactWrite } from '../../src/radios/d890uv/digitalContactWrite';
 
 const contacts: Contact[] = [
   { id: 1, name: 'Bravo', dmrId: 3340002, callSign: 'XE3N', city: 'Playa', province: 'QR', country: 'Mexico' },
@@ -25,7 +26,6 @@ function fakeConn() {
   const writes: { address: number; data: Uint8Array }[] = [];
   return {
     writes,
-    // eslint-disable-next-line @typescript-eslint/require-await
     async writeMemory(address: number, data: Uint8Array) { writes.push({ address, data }); },
   };
 }
@@ -53,15 +53,18 @@ describe('D890UVProtocol.writeContacts', () => {
     expect(conn.writes.every((w) => w.data.length === 0x10)).toBe(true);
   });
 
-  it('sorts by DMR ID before writing, whatever order it was handed', async () => {
-    // The list above is deliberately out of order. The radio searches by ID.
+  it('writes records in input order and the index in key order', async () => {
+    // The list above is deliberately out of order: Bravo, then Alpha.
     const conn = fakeConn();
     await withConn(new D890UVProtocol(), conn).writeContacts(contacts);
     const header = conn.writes.find((w) => w.address === D890_DIGITAL_CONTACTS.HEADER)!;
     expect(header.data[0]).toBe(2); // count
     const first = conn.writes.find((w) => w.address === D890_DIGITAL_CONTACTS.BASE)!;
-    // BCD 03 34 00 01 — Alpha, the LOWER id, is written first.
-    expect(Array.from(first.data.subarray(2, 6))).toEqual([0x03, 0x34, 0x00, 0x01]);
+    // Bravo was handed over first, so its record is first — BCD 03 34 00 02…
+    expect(Array.from(first.data.subarray(2, 6))).toEqual([0x03, 0x34, 0x00, 0x02]);
+    // …while the index leads with Alpha, the lower key.
+    const idx = conn.writes.find((w) => w.address === D890_DIGITAL_CONTACTS.INDEX)!;
+    expect(new DataView(idx.data.buffer, idx.data.byteOffset).getUint32(0, true)).toBe(0x06680002);
   });
 
   it('CANCELS between frames and says the database is incomplete', async () => {
@@ -80,5 +83,38 @@ describe('D890UVProtocol.writeContacts', () => {
     await withConn(new D890UVProtocol(), conn).writeContacts(contacts, (p) => seen.push(p));
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[seen.length - 1]).toBe(100);
+  });
+});
+
+/**
+ * The contact READ used to parse each 200,000-byte bank on its own, and a record
+ * split across two banks parses from neither half. Against the vendor's own
+ * 500,000-contact upload that dropped 11 of 36,957 records in 21 banks.
+ */
+describe('D890UVProtocol.readDigitalContacts', () => {
+  it('reads by the header and keeps records that straddle a bank', async () => {
+    const list = Array.from({ length: 5000 }, (_, i) => ({
+      dmrId: 1000000 + i, name: `Name ${i}`, city: 'Springfield', callSign: `K${i}`,
+      province: 'Illinois', country: 'United States', isFriend: false, flags: 0,
+    }));
+    const plan = planDigitalContactWrite(list);
+    expect(plan.streamBytes).toBeGreaterThan(2 * D890_DIGITAL_CONTACTS.BANK_BYTES);
+    const mem = new Map<number, Uint8Array>();
+    for (const f of plan.frames) mem.set(f.address, f.data);
+    const radio = {
+        async readMemory(address: number, length: number) {
+        const out = new Uint8Array(length).fill(0xff);
+        for (let o = 0; o < length; o += 0x10) {
+          const frame = mem.get(address + o);
+          if (frame) out.set(frame.subarray(0, Math.min(0x10, length - o)), o);
+        }
+        return out;
+      },
+    };
+    const proto = new D890UVProtocol();
+    (proto as unknown as { connection: unknown }).connection = radio;
+    const got = await proto.readDigitalContacts();
+    expect(got).toHaveLength(list.length);
+    expect(got.map((c) => c.dmrId)).toEqual(list.map((c) => c.dmrId));
   });
 });

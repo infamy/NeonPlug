@@ -42,32 +42,40 @@ export const D890_DIGITAL_CONTACTS = {
    * never part of a codeplug read.
    */
   /**
-   * The record INDEX — `(count + 1) * 8` bytes of (key, offset) pairs.
+   * The record INDEX: one 8-byte `(key, offset)` entry per contact, ascending
+   * by key, BANKED like the records.
    *
-   * FOUND 2026-09-10 in the vendor's contact upload, which writes three regions
-   * and this was the one nothing knew about. Without it the records are on the
-   * radio but unreachable: the key is `bcdAsHex(dmrId) << 1` and the entries are
-   * ascending, which is what a binary search by ID needs.
+   * FOUND 2026-09-10 in the vendor's 1,005-contact upload — the region nothing
+   * knew about; without it the records are on the radio and unreachable. Its
+   * LAYOUT at scale came from the 500,000-contact upload the same night: 256,000
+   * bytes (32,000 entries) at the start of every 0x80000, 16 banks for 500,000.
+   * That keeps each bank below the flash-management marker at 0x3fbf0 of its
+   * 0x40000 unit — an unbanked index runs into it after 32,637 entries.
+   *
+   * `key = bcdAsHex(dmrId) << 1`; `offset` is the record's position in the whole
+   * record stream. See `digitalContactWrite.ts`.
    */
   INDEX: 0x07080000,
+  INDEX_BANK_BYTES: 256000,
+  INDEX_BANK_ENTRIES: 32000,
+  INDEX_BANK_STRIDE: 0x80000,
+  /** Index banks the vendor used for 500,000 contacts — room for 512,000. */
+  INDEX_BANKS: 16,
   BASE: 0x07900000,
   BANK_STRIDE: 0x80000,
   /** Bytes of each bank that actually hold records. */
   BANK_BYTES: 200000,
   /**
-   * How many banks a 163,467-contact database OCCUPIED — not the capacity.
+   * Record banks this driver will write: the furthest ANY write has reached.
    *
-   * The vendor CPS walked 83 because that is where that database ended, and
-   * `readDigitalContacts` probes this many. The radio is rated for 500,000
-   * contacts, so the region plainly continues past here; where it ENDS is
-   * unknown, and nothing has ever read or written a bank above 82.
-   *
-   * ⚠️ A radio holding more than about 165,000 contacts would therefore be read
-   * SHORT by this driver. Raising it needs evidence of where the region stops —
-   * the banks are uniform at 0x80000 so extrapolating is tempting, but a read
-   * that runs off the end of the region is how you learn what is after it.
+   * The vendor's own 500,000-contact upload on 2026-09-10 put its header's end
+   * address in bank 277, so the region runs at least that far. Where it stops
+   * beyond is unknown, and a write past it would be guessing an address. (This
+   * was 83 — where the 163,467-contact reference database happened to end — and
+   * the read probed exactly that many, so a larger database would have been
+   * read short. The read now takes its extent from the header.)
    */
-  BANKS: 83,
+  RECORD_BANKS_MAX: 278,
   /**
    * The radio's rated capacity, 500,000 contacts.
    *

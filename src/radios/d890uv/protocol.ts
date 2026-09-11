@@ -21,7 +21,7 @@ import type {
   D890ReferencingTables,
 } from './writePlan';
 import { planChannelWrite, D890WriteRefusedError } from './writePlan';
-import { planDigitalContactWrite } from './digitalContactWrite';
+import { planDigitalContactWrite, contactStreamLength } from './digitalContactWrite';
 import type { D890TableCounts, D890OccupiedSlots } from './references';
 import {
   D890_MASK_CHECKS,
@@ -92,6 +92,7 @@ import {
   D890_DIGITAL_CONTACTS,
   isEmptyContactBank,
   parseDigitalContactBank,
+  parseDigitalContactHeader,
   type D890DigitalContact,
 } from './digitalContacts';
 import type { QuickTextMessage } from '../../models/QuickTextMessage';
@@ -1345,46 +1346,73 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     onProgress?: (percent: number, message: string) => void
   ): Promise<D890DigitalContact[]> {
     const conn = this.requireConnection();
-    const out: D890DigitalContact[] = [];
+    const { HEADER, HEADER_SIZE, BASE, BANK_STRIDE, BANK_BYTES, RECORD_BANKS_MAX } =
+      D890_DIGITAL_CONTACTS;
 
-    // Find out how much work there actually is BEFORE reporting any progress.
-    //
-    // A bank is 200,000 bytes; its first 16 tell you whether it holds anything.
-    // Probing all 83 costs 83 small reads — about a fifth of a second at this
-    // radio's ~10 KB/s — and buys an honest denominator. Without it the bar is
-    // measured against 83 banks while the loop stops at the first empty one, so
-    // a half-full database crawls to 10% and then snaps to done.
-    //
-    // It also handles a GAP correctly. Stopping at the first empty bank assumes
-    // the database is dense from the start; probing does not have to assume it.
-    const probeSize = 0x10;
-    const populated: number[] = [];
-    for (let bank = 0; bank < D890_DIGITAL_CONTACTS.BANKS; bank += 1) {
-      const address = D890_DIGITAL_CONTACTS.BASE + bank * D890_DIGITAL_CONTACTS.BANK_STRIDE;
-      const head = await conn.readMemory(address, probeSize);
-      if (!isEmptyContactBank(head)) populated.push(bank);
+    // The header says exactly how much stream there is — its end address is an
+    // ADDRESS one past the last record — so the read fetches precisely that,
+    // however many banks it spans. This replaced probing a fixed 83 banks, which
+    // is where the 163,467-contact reference database happened to end and would
+    // have read anything larger SHORT.
+    const header = parseDigitalContactHeader(await conn.readMemory(HEADER, HEADER_SIZE));
+    if (header && header.count === 0) return [];
+    let streamBytes = header ? contactStreamLength(header.endAddress) : null;
+
+    if (streamBytes === null) {
+      // No usable header — erased, or written by something else. Fall back to
+      // probing: a bank's first 16 bytes say whether it holds anything. Stops at
+      // the first empty bank, which assumes a contiguous stream; it always is
+      // when a header wrote it.
+      let banks = 0;
+      while (banks < RECORD_BANKS_MAX) {
+        const head = await conn.readMemory(BASE + banks * BANK_STRIDE, 0x10);
+        if (isEmptyContactBank(head)) break;
+        banks += 1;
+      }
+      streamBytes = banks * BANK_BYTES;
     }
-    if (populated.length === 0) return out;
+    if (streamBytes === 0) return [];
 
+    // Fetch the banks into ONE buffer, then parse it once.
+    //
+    // ⚠️ Parsing bank by bank DROPPED CONTACTS. Records span bank boundaries, and
+    // a record split across two banks parses from neither half: against the
+    // vendor's own 500,000-contact upload, a per-bank parse recovered 36,946 of
+    // the 36,957 complete records in 21 banks — 11 lost over 20 boundaries,
+    // silently. The reference radio's 163,467 would have lost dozens per read.
+    const stream = new Uint8Array(streamBytes);
+    const banks = Math.ceil(streamBytes / BANK_BYTES);
     const startedAt = Date.now();
     let bytesRead = 0;
-
-    for (const [done, bank] of populated.entries()) {
-      const address = D890_DIGITAL_CONTACTS.BASE + bank * D890_DIGITAL_CONTACTS.BANK_STRIDE;
-      const bytes = await conn.readMemory(address, D890_DIGITAL_CONTACTS.BANK_BYTES);
-      bytesRead += bytes.length;
-      out.push(...parseDigitalContactBank(bytes));
+    for (let bank = 0; bank < banks; bank += 1) {
+      const start = bank * BANK_BYTES;
+      const length = Math.min(BANK_BYTES, streamBytes - start);
+      // Whole frames, trimmed after: the last bank rarely ends on one.
+      const bytes = await conn.readMemory(
+        BASE + bank * BANK_STRIDE,
+        Math.ceil(length / 0x10) * 0x10
+      );
+      stream.set(bytes.subarray(0, length), start);
+      bytesRead += length;
 
       const seconds = (Date.now() - startedAt) / 1000;
       const rate = seconds > 0 ? Math.round(bytesRead / 1024 / seconds) : 0;
       onProgress?.(
-        Math.round(((done + 1) / populated.length) * 100),
-        `Read ${out.length.toLocaleString()} contacts · `
-        + `${Math.round(bytesRead / 1024).toLocaleString()} KB · ${rate} KB/s`
+        Math.round((bytesRead / streamBytes) * 100),
+        `Read ${Math.round(bytesRead / 1024).toLocaleString()} of `
+          + `${Math.round(streamBytes / 1024).toLocaleString()} KB · ${rate} KB/s`
+      );
+    }
+    const out = parseDigitalContactBank(stream);
+    if (header && out.length !== header.count) {
+      // How the per-bank bug would have been noticed, had anyone been looking.
+      log.warn(
+        `Digital contacts: the header says ${header.count}, the records parsed to ${out.length}.`,
+        'D890UV'
       );
     }
     log.info(
-      `Digital contacts: ${out.length} records from ${populated.length} banks, `
+      `Digital contacts: ${out.length} records from ${banks} banks, `
       + `${bytesRead} bytes in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
       'D890UV'
     );

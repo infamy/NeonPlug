@@ -1,41 +1,46 @@
 /**
  * Writing the DMR contact database.
  *
- * MEASURED END TO END on 2026-09-10 from a vendor CPS capture uploading 1,005
- * contacts (`7x2_dmrcontactlist.txt`), and every claim here comes from those
- * bytes rather than from inference. The whole session is:
+ * MEASURED END TO END from two vendor CPS uploads captured on 2026-09-10 —
+ * 1,005 contacts (`7x2_dmrcontactlist.txt`) and 500,000 (`7x2_500k.txt`) — and
+ * this module reproduces both byte for byte: the 1,005 in full, and every byte
+ * of the 500,000 the capture holds. That is the header, all 4,000,000 bytes of
+ * index across 16 banks, and 4,104,944 bytes of records across 20 bank
+ * boundaries, where the capture's logger stopped. The session is:
  *
  *   PROGRAM -> ack -> identify -> read 0x04f80020 (16 bytes, a probe)
- *   write 0x07000000  header    1 frame
- *   write 0x07080000  index     503 frames
- *   write 0x07900000  records   5,925 frames
- *   read 0x079171d0   (the final frame, read back)
+ *   write 0x07000000   header
+ *   write 0x07080000+  index, banked
+ *   write 0x07900000+  records, banked
  *   END
  *
- * **THERE IS NO ERASE.** The CPS sends ordinary 16-byte `57` frames — the same
- * machinery a codeplug write uses — in that order and nothing else. This was
- * the open question that made a contact writer risky, and the capture closes
- * it.
+ * **THERE IS NO ERASE.** Ordinary 16-byte `57` frames — the machinery a
+ * codeplug write uses — and nothing else.
  *
- * Three regions, and MISSING ANY ONE OF THEM LEAVES THE RADIO UNABLE TO FIND
- * CONTACTS:
+ * Three regions, and MISSING ANY ONE LEAVES THE RADIO UNABLE TO FIND CONTACTS:
  *
- *   1. **Header** at 0x07000000 — `count` and `endAddress`, then 8 bytes of
- *      padding. The padding reading is now settled: it stayed zero across
- *      databases of 1,005 and 163,467 contacts, which is the test
- *      `digitalContacts.ts` set for itself.
- *   2. **Index** at 0x07080000 — `(count + 1) * 8` bytes. Each entry is a u32
- *      key and a u32 byte offset of that record in the stream, ascending by
- *      key, terminated by eight 0xFF. The key is
- *      `bcdAsHex(dmrId) << 1`: ID 3340001 gives 0x03340001, doubled to
- *      0x06680002. Verified on all 1,005 entries.
- *   3. **Records** at 0x07900000 — one contiguous stream, chopped into
- *      200,000-byte pieces written at `BASE + n * 0x80000`.
+ *   1. **Header** at 0x07000000 — count, end address, 8 bytes of zero padding
+ *      (zero across databases of 1,005 and 500,000).
+ *   2. **Index** from 0x07080000 — one 8-byte entry per contact, `(key, offset)`,
+ *      ascending by key. `key = bcdAsHex(dmrId) << 1`; `offset` is the record's
+ *      position in the WHOLE record stream, not within its bank. Banked: 256,000
+ *      bytes — 32,000 entries — at the start of every 0x80000.
+ *   3. **Records** from 0x07900000 — one stream in INPUT order, banked 200,000
+ *      bytes to every 0x80000, records spanning the boundaries.
  *
- * CONTACTS MUST BE SORTED BY DMR ID. Every one of the 163,467 records on the
- * reference radio is in ascending order with no duplicates, and the index is
- * ordered by a key that is monotonic in the ID — which is what a binary search
- * needs. Writing them unsorted would produce a database the radio cannot search.
+ * Both banked layouts keep clear of the flash-management markers at 0x3fbf0 of
+ * every 0x40000 unit; that is what the banking is for. A small index never
+ * reaches one, which is why the 1,005-contact upload could not show it — and
+ * why this module briefly refused anything over 32,637 contacts, the point
+ * where an unbanked index runs into the first marker.
+ *
+ * ⚠️ ORDER. The INDEX is sorted. The RECORDS are not, and never needed to be.
+ * Every database seen before the 500,000 upload had records in ID order only
+ * because its source did — RadioID's list, a 1,005-row CSV already in order —
+ * and this module sorted records on that inference. The 500,000 upload used a
+ * shuffled CSV: the CPS wrote the records in file order and the sorted index
+ * pointed at each. Records now go in input order, which makes our bytes the
+ * vendor's for the same list.
  *
  * ⚠️ FIELDS HAVE HARD LENGTH LIMITS — see `D890_CONTACT_FIELD_MAX`. This module
  * originally did NOT truncate, on the reasoning that the vendor's truncation
@@ -44,13 +49,6 @@
  * column right from the first overlong record on. The reader stops at the limit
  * and continues from there rather than from the NUL, so an overrun field
  * desynchronises every field after it.
- *
- * ⚠️ The BANK CHOPPING is the one part not proven by a write capture: 1,005
- * contacts are 94,686 bytes and fit in the first bank, so that upload never
- * crossed a boundary. It is proven by the READ side instead — bank 1 of the
- * reference radio begins `ames E\0Loveland\0…`, the middle of a record whose
- * name started in bank 0. Records span banks; the stream is not padded per
- * bank.
  */
 
 import { encodeBcdAsHexU32 } from './channelWrite';
@@ -60,11 +58,10 @@ import {
   type D890DigitalContact,
 } from './digitalContacts';
 import type { D890WriteFrame } from './writePlan';
-import { D890_FLASH_MARKER_STRIDE, D890_FORBIDDEN_UNIT_OFFSETS } from './constants';
 
 export interface D890ContactWritePlan {
   frames: D890WriteFrame[];
-  /** Contacts written, in the order they were written. */
+  /** Contacts in the order their records were written: the order given. */
   contacts: readonly D890DigitalContact[];
   count: number;
   /** One past the last record, in radio address space — NOT a length. */
@@ -73,62 +70,117 @@ export interface D890ContactWritePlan {
   streamBytes: number;
 }
 
-/** Pad to a whole number of 16-byte frames, the only size this radio writes. */
-function framesFor(address: number, data: Uint8Array, what: string): D890WriteFrame[] {
+/**
+ * Whole 16-byte frames, the only size this radio writes.
+ *
+ * Full frames are VIEWS into `data` rather than copies: a 133,699-contact write
+ * is 914,862 frames, and a separate buffer for each was the difference between
+ * a plan that fits in a browser tab and one that might not. Only a partial last
+ * frame is allocated, its tail filled with `fill` — zero for records, as the
+ * vendor pads them, and 0xFF for the index, as the vendor's 1,005-entry index
+ * ends.
+ */
+function framesFor(address: number, data: Uint8Array, what: string, fill = 0x00): D890WriteFrame[] {
   const out: D890WriteFrame[] = [];
   for (let off = 0; off < data.length; off += 0x10) {
-    const chunk = new Uint8Array(0x10);
-    chunk.set(data.subarray(off, Math.min(off + 0x10, data.length)));
-    out.push({ address: address + off, data: chunk, what });
+    let frame = data.subarray(off, off + 0x10);
+    if (frame.length < 0x10) {
+      const padded = new Uint8Array(0x10).fill(fill);
+      padded.set(frame);
+      frame = padded;
+    }
+    out.push({ address: address + off, data: frame, what });
   }
   return out;
 }
 
 /**
- * The address one past the last record.
+ * Radio address of a byte of the record stream.
  *
- * Not `BASE + length`: the stream is chopped across banks that are 0x80000
- * apart while only 200,000 bytes of each hold records, so the address runs
- * ahead of the offset. Verified against the reference radio, whose 16,407,708
- * bytes over 82 full banks give 0x0a201e1c — the exact value in its header.
+ * The stream is chopped into 200,000-byte pieces laid 0x80000 apart, so the
+ * address runs ahead of the offset by the unused tail of every bank passed.
+ * Proven against the vendor's 500,000 upload across 20 boundaries.
+ */
+export function contactStreamAddress(offset: number): number {
+  const { BASE, BANK_STRIDE, BANK_BYTES } = D890_DIGITAL_CONTACTS;
+  return BASE + Math.floor(offset / BANK_BYTES) * BANK_STRIDE + (offset % BANK_BYTES);
+}
+
+/**
+ * The header's end address: one past the last record, as an ADDRESS.
+ *
+ * Reproduces every header on record: the vendor's 0x079171de for 94,686 bytes
+ * and 0x1039d304 for 55,519,556, and the reference radio's 0x0a201e1c for its
+ * 163,467 contacts.
  */
 export function contactEndAddress(streamBytes: number): number {
+  return contactStreamAddress(streamBytes);
+}
+
+/**
+ * Record-stream length from a header's end address — the inverse of
+ * `contactEndAddress`, and how a read knows how much to fetch. Null for an
+ * address that cannot end a stream: below the records, or in a bank's unused
+ * tail.
+ */
+export function contactStreamLength(endAddress: number): number | null {
   const { BASE, BANK_STRIDE, BANK_BYTES } = D890_DIGITAL_CONTACTS;
-  const fullBanks = Math.floor(streamBytes / BANK_BYTES);
-  return BASE + fullBanks * BANK_STRIDE + (streamBytes % BANK_BYTES);
+  const rel = endAddress - BASE;
+  if (rel < 0) return null;
+  const within = rel % BANK_STRIDE;
+  if (within > BANK_BYTES) return null;
+  return Math.floor(rel / BANK_STRIDE) * BANK_BYTES + within;
+}
+
+/** Radio address of index entry `n` — 32,000 to a bank, banks 0x80000 apart. */
+export function contactIndexAddress(n: number): number {
+  const { INDEX, INDEX_BANK_ENTRIES, INDEX_BANK_STRIDE } = D890_DIGITAL_CONTACTS;
+  return INDEX + Math.floor(n / INDEX_BANK_ENTRIES) * INDEX_BANK_STRIDE + (n % INDEX_BANK_ENTRIES) * 8;
+}
+
+/** The index key, `bcdAsHex(dmrId) << 1`: ID 3340001 -> 0x03340001 -> 0x06680002. */
+export function contactIndexKey(dmrId: number): number {
+  const bcd = encodeBcdAsHexU32(dmrId);
+  return (((bcd[0]! << 24) | (bcd[1]! << 16) | (bcd[2]! << 8) | bcd[3]!) >>> 0) * 2;
 }
 
 export function planDigitalContactWrite(
   contacts: readonly D890DigitalContact[]
 ): D890ContactWritePlan {
-  const { BASE, BANK_STRIDE, BANK_BYTES, BANKS, HEADER, HEADER_SIZE } = D890_DIGITAL_CONTACTS;
+  const {
+    HEADER, HEADER_SIZE, BASE, BANK_STRIDE, BANK_BYTES, RECORD_BANKS_MAX,
+    MAX_CONTACTS, INDEX, INDEX_BANK_BYTES, INDEX_BANK_STRIDE,
+  } = D890_DIGITAL_CONTACTS;
 
-  // Sorted, because the radio searches this by key and an unsorted database is
-  // one it cannot find anything in.
-  const sorted = [...contacts].sort((a, b) => a.dmrId - b.dmrId);
-  for (let i = 1; i < sorted.length; i += 1) {
-    if (sorted[i]!.dmrId === sorted[i - 1]!.dmrId) {
+  // The cheap refusals first, before a byte is encoded.
+  if (contacts.length > MAX_CONTACTS) {
+    throw new Error(
+      `Refusing to write ${contacts.length.toLocaleString()} contacts: the radio is ` +
+        `rated for ${MAX_CONTACTS.toLocaleString()}, the size its index region was ` +
+        `shown holding.`
+    );
+  }
+  const seen = new Set<number>();
+  for (const c of contacts) {
+    if (seen.has(c.dmrId)) {
       throw new Error(
-        `Refusing to write contacts: DMR ID ${sorted[i]!.dmrId} appears twice. ` +
+        `Refusing to write contacts: DMR ID ${c.dmrId} appears twice. ` +
           `The index is keyed by ID, so duplicates would make one of them unreachable.`
       );
     }
+    seen.add(c.dmrId);
   }
 
-  // Records first, because the index needs each one's offset.
-  const encoded = sorted.map(encodeDigitalContact);
+  // Records, in the order given.
+  const encoded = contacts.map(encodeDigitalContact);
   const streamBytes = encoded.reduce((n, r) => n + r.length, 0);
-  if (streamBytes > BANKS * BANK_BYTES) {
+  if (streamBytes > RECORD_BANKS_MAX * BANK_BYTES) {
     throw new Error(
-      `Refusing to write contacts: ${sorted.length} contacts need ` +
-        `${streamBytes.toLocaleString()} bytes, past bank ${BANKS - 1}.\n\n` +
-        `That is NOT the radio's limit — it is rated for ` +
-        `${D890_DIGITAL_CONTACTS.MAX_CONTACTS.toLocaleString()} contacts and the ` +
-        `region plainly continues. It is the furthest anything has ever read or ` +
-        `written: the vendor CPS walked ${BANKS} banks because that is where the ` +
-        `reference database ended, so where the region STOPS is unknown.\n\n` +
-        `Writing past it would be guessing at an address, which is how a ` +
-        `neighbouring table gets destroyed. Confirm the region's end first.`
+      `Refusing to write contacts: they need ${streamBytes.toLocaleString()} bytes ` +
+        `of records, past bank ${RECORD_BANKS_MAX - 1}.\n\n` +
+        `That is the furthest anything has written — the vendor's own ` +
+        `500,000-contact upload ended in bank 277 — and where the region stops ` +
+        `beyond it is unknown. Writing past it would mean guessing an address.`
     );
   }
   const stream = new Uint8Array(streamBytes);
@@ -140,71 +192,43 @@ export function planDigitalContactWrite(
     at += record.length;
   }
 
-  // The index must stop short of the radio's flash-management markers.
-  //
-  // FOUND 2026-09-10 when a 133,699-contact write was refused by the address
-  // guard at 0x070bfbf0 — 261,104 bytes into the index. Every 0x40000 unit of
-  // flash reserves 0x3fbf0 and 0x3fff0 (hardware-confirmed, see framing.ts),
-  // and a 1 MB index cannot be one contiguous run through them. The record
-  // banks avoid them by construction — 200,000 bytes per 0x80000 bank never
-  // reaches 0x3fbf0 — and the vendor must lay a large index out the same kind
-  // of way. HOW is unknown: its 1,005-contact upload wrote an 8 KB index that
-  // never got near a marker, and its 163,467-contact READ never touched the
-  // index region at all. A capture of a large vendor upload settles it.
-  //
-  // So this is the limit of our EVIDENCE, not of the radio.
-  const indexBytes = (sorted.length + 1) * 8;
-  const indexUnitOffset = D890_DIGITAL_CONTACTS.INDEX % D890_FLASH_MARKER_STRIDE;
-  const firstMarker = Math.min(...D890_FORBIDDEN_UNIT_OFFSETS);
-  const indexRoom = firstMarker - indexUnitOffset;
-  if (indexBytes > indexRoom) {
-    const maxContacts = Math.floor(indexRoom / 8) - 1;
-    throw new Error(
-      `Refusing to write ${sorted.length.toLocaleString()} contacts: this driver can ` +
-        `write at most ${maxContacts.toLocaleString()}.\n\n` +
-        `That is NOT the radio's limit — it holds 163,000+ and is rated for ` +
-        `${D890_DIGITAL_CONTACTS.MAX_CONTACTS.toLocaleString()}. It is where the ` +
-        `contact INDEX would run into the flash-management markers the radio ` +
-        `reserves in every 256 KB of flash. The vendor lays a large index out ` +
-        `around them somehow; nobody has captured how yet, and guessing would put ` +
-        `index entries where the radio does not look for them.`
-    );
-  }
-
-  // Index: key, offset, then the 0xFF terminator the CPS writes.
-  const index = new Uint8Array(indexBytes);
+  // The index, sorted by key — which is also ID order, since the key is the
+  // ID's decimal digits read as hex — but the key is what the radio searches.
+  // Keys are computed once: a comparator that re-derived them would be sorting
+  // half a million entries by allocating on every comparison.
+  const keys = contacts.map((c) => contactIndexKey(c.dmrId));
+  const order = contacts.map((_, i) => i).sort((a, b) => keys[a]! - keys[b]!);
+  const index = new Uint8Array(contacts.length * 8);
   const putU32 = (buf: Uint8Array, pos: number, value: number) => {
     buf[pos] = value & 0xff;
     buf[pos + 1] = (value >>> 8) & 0xff;
     buf[pos + 2] = (value >>> 16) & 0xff;
     buf[pos + 3] = (value >>> 24) & 0xff;
   };
-  sorted.forEach((contact, i) => {
-    const bcd = encodeBcdAsHexU32(contact.dmrId);
-    const key = (((bcd[0]! << 24) | (bcd[1]! << 16) | (bcd[2]! << 8) | bcd[3]!) >>> 0) * 2;
-    putU32(index, i * 8, key >>> 0);
-    putU32(index, i * 8 + 4, offsets[i]!);
+  order.forEach((i, n) => {
+    putU32(index, n * 8, keys[i]! >>> 0);
+    putU32(index, n * 8 + 4, offsets[i]!);
   });
-  index.fill(0xff, sorted.length * 8);
 
   const endAddress = contactEndAddress(streamBytes);
-
   const header = new Uint8Array(HEADER_SIZE);
-  putU32(header, 0, sorted.length);
+  putU32(header, 0, contacts.length);
   putU32(header, 4, endAddress);
   // +0x08..0x0f stay zero: see the padding note in digitalContacts.ts.
 
   // Header, then index, then records — the order the CPS uses.
-  const frames: D890WriteFrame[] = [
-    ...framesFor(HEADER, header, 'contact header'),
-    ...framesFor(D890_DIGITAL_CONTACTS.INDEX, index, 'contact index'),
-  ];
-  for (let bank = 0; bank * BANK_BYTES < streamBytes || bank === 0; bank += 1) {
-    const start = bank * BANK_BYTES;
-    if (start >= streamBytes && bank > 0) break;
+  const frames: D890WriteFrame[] = framesFor(HEADER, header, 'contact header');
+  for (let start = 0, bank = 0; start < index.length; start += INDEX_BANK_BYTES, bank += 1) {
+    const chunk = index.subarray(start, Math.min(start + INDEX_BANK_BYTES, index.length));
+    // 0xFF finishes a partial last frame. It is PADDING, not a terminator: the
+    // vendor's 1,005-entry index ends in eight 0xFF, and its frame-aligned
+    // 500,000-entry index ends with nothing after it at all.
+    frames.push(...framesFor(INDEX + bank * INDEX_BANK_STRIDE, chunk, 'contact index', 0xff));
+  }
+  for (let start = 0, bank = 0; start < streamBytes; start += BANK_BYTES, bank += 1) {
     const chunk = stream.subarray(start, Math.min(start + BANK_BYTES, streamBytes));
     frames.push(...framesFor(BASE + bank * BANK_STRIDE, chunk, `contact records bank ${bank}`));
   }
 
-  return { frames, contacts: sorted, count: sorted.length, endAddress, streamBytes };
+  return { frames, contacts: [...contacts], count: contacts.length, endAddress, streamBytes };
 }

@@ -14,11 +14,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { planDigitalContactWrite, contactEndAddress } from '../../src/radios/d890uv/digitalContactWrite';
+import { planDigitalContactWrite, contactEndAddress, contactStreamLength, contactIndexKey } from '../../src/radios/d890uv/digitalContactWrite';
 import { D890_DIGITAL_CONTACTS } from '../../src/radios/d890uv/digitalContacts';
 import { D890_LIMITS } from '../../src/radios/d890uv/constants';
 import { dryRunWrite } from '../../src/radios/d890uv/writeDryRun';
-import { parseDigitalContactBank, type D890DigitalContact } from '../../src/radios/d890uv/digitalContacts';
+import { parseDigitalContactBank, parseDigitalContact, type D890DigitalContact } from '../../src/radios/d890uv/digitalContacts';
 
 const DIR = join(__dirname, '../fixtures/d890uv/contactwrite');
 const bin = (name: string) => new Uint8Array(readFileSync(join(DIR, `${name}.bin`)));
@@ -68,8 +68,9 @@ describe('planDigitalContactWrite vs the vendor CPS', () => {
       .toEqual(Array.from(VENDOR.header));
   });
 
-  it('writes the INDEX byte for byte, terminator and all', () => {
-    // 8,048 bytes: 1,005 (key, offset) pairs plus eight 0xFF. The key is
+  it('writes the INDEX byte for byte, 0xFF padding and all', () => {
+    // 8,048 bytes: 1,005 (key, offset) pairs, then eight 0xFF finishing the frame
+    // — padding, not a terminator (a frame-aligned index gets none). The key is
     // bcdAsHex(id) << 1 and the offsets are real record positions, so this
     // catches a wrong key, a wrong order and a wrong record length at once.
     expect(Array.from(region(plan, D890_DIGITAL_CONTACTS.INDEX, VENDOR.index.length)))
@@ -96,12 +97,22 @@ describe('planDigitalContactWrite vs the vendor CPS', () => {
     expect(contactEndAddress(16_407_708)).toBe(0x0a201e1c);
   });
 
-  it('sorts by DMR ID, because the radio searches by it', () => {
-    const shuffled = [...contacts].reverse();
-    const out = planDigitalContactWrite(shuffled);
-    expect(out.contacts.map((c) => c.dmrId)).toEqual(contacts.map((c) => c.dmrId));
-    expect(Array.from(region(out, D890_DIGITAL_CONTACTS.INDEX, VENDOR.index.length)))
-      .toEqual(Array.from(VENDOR.index));
+  it('sorts the INDEX by key and leaves the RECORDS in input order', () => {
+    // The 500,000 upload used a shuffled CSV: the records went in file order and
+    // the sorted index pointed at each. Reversing the input must keep the index
+    // keys ascending while every offset follows its own record.
+    const reversed = [...contacts].reverse();
+    const out = planDigitalContactWrite(reversed);
+    expect(out.contacts.map((c) => c.dmrId)).toEqual(reversed.map((c) => c.dmrId));
+    const idx = region(out, D890_DIGITAL_CONTACTS.INDEX, contacts.length * 8);
+    const dv = new DataView(idx.buffer, idx.byteOffset);
+    const keys = contacts.map((_, i) => dv.getUint32(i * 8, true));
+    expect(keys).toEqual([...keys].sort((a, b) => a - b));
+    const recs = region(out, D890_DIGITAL_CONTACTS.BASE, out.streamBytes + 16);
+    for (const i of [0, 500, contacts.length - 1]) {
+      const at = dv.getUint32(i * 8 + 4, true);
+      expect(contactIndexKey(parseDigitalContact(recs, at)!.contact.dmrId)).toBe(keys[i]);
+    }
   });
 
   it('REFUSES duplicate IDs rather than hiding one of them', () => {
@@ -157,37 +168,46 @@ describe('contact capacity', () => {
     expect(D890_DIGITAL_CONTACTS.MAX_CONTACTS).toBeGreaterThan(163467);
   });
 
-  it('refuses past the last bank anything has touched, and says why', () => {
-    // 83 banks is the observed extent, NOT the rating — the message has to be
-    // clear about that or someone will read it as the radio being full.
-    const huge = Array.from({ length: 200000 }, (_, i) => ({
-      dmrId: 1000000 + i, name: 'NameIsSixteenX', city: 'CityIsFifteen1',
-      callSign: 'CALLSIGN', province: 'ProvinceIs16Chr', country: 'CountryIs14Ch',
+  it('refuses more than the rated 500,000 before encoding anything', () => {
+    const tooMany = Array.from({ length: 500001 }, (_, i) => ({
+      dmrId: 1000000 + i, name: 'N', city: '', callSign: 'C', province: '', country: '',
       isFriend: false, flags: 0,
     }));
-    expect(() => planDigitalContactWrite(huge)).toThrow(/NOT the radio's limit/);
+    expect(() => planDigitalContactWrite(tooMany)).toThrow(/rated for 500,000/);
+  });
+
+  it('writes records out to bank 277, where the vendor\'s 500,000 upload ended', () => {
+    expect(D890_DIGITAL_CONTACTS.RECORD_BANKS_MAX).toBe(278);
+    expect(contactStreamLength(0x1039d304)).toBe(55519556);
   });
 });
 
 /**
- * The index ceiling. A 133,699-contact write was refused by the address guard,
- * because a 1 MB index runs into the flash-management marker at 0x3fbf0 of its
- * 256 KB unit. The planner now refuses first, and says the limit is ours.
+ * The banked index: 32,000 entries to a bank, banks 0x80000 apart, each stopping
+ * short of the flash-management marker in its unit. Measured from the vendor's
+ * 500,000-contact upload; it replaced a 32,637-contact ceiling.
  */
-describe('contact index ceiling', () => {
+describe('the banked contact index', () => {
   const make = (n: number) => Array.from({ length: n }, (_, i) => ({
     dmrId: 1000000 + i, name: 'N', city: '', callSign: 'C', province: '', country: '',
     isFriend: false, flags: 0,
   }));
 
-  it('plans the largest list whose index stops short of the marker', () => {
-    const plan = planDigitalContactWrite(make(32637));
-    // Every frame must pass the same guard the radio write uses.
-    expect(() => dryRunWrite(plan.frames)).not.toThrow();
+  it('fills 32,000 entries per bank and starts the next 0x80000 on', () => {
+    const plan = planDigitalContactWrite(make(32001));
+    const at = plan.frames.filter((f) => f.what === 'contact index').map((f) => f.address);
+    expect(at).toContain(D890_DIGITAL_CONTACTS.INDEX + D890_DIGITAL_CONTACTS.INDEX_BANK_STRIDE);
+    expect(Math.max(...at.filter((a) => a < 0x07100000))).toBe(D890_DIGITAL_CONTACTS.INDEX + 256000 - 16);
   });
 
-  it('refuses one more, clearly, instead of the raw guard error', () => {
-    expect(() => planDigitalContactWrite(make(32638))).toThrow(/at most 32,637/);
-    expect(() => planDigitalContactWrite(make(32638))).toThrow(/NOT the radio's limit/);
+  it('passes the flash-marker guard far past the old 32,637 ceiling', () => {
+    expect(() => dryRunWrite(planDigitalContactWrite(make(100000)).frames)).not.toThrow();
+  });
+
+  it('pads a partial last frame with 0xFF and writes no terminator', () => {
+    const even = planDigitalContactWrite(make(2)).frames.filter((f) => f.what === 'contact index');
+    expect(even).toHaveLength(1);
+    const odd = planDigitalContactWrite(make(3)).frames.filter((f) => f.what === 'contact index');
+    expect(Array.from(odd[odd.length - 1]!.data.subarray(8))).toEqual(new Array(8).fill(0xff));
   });
 });

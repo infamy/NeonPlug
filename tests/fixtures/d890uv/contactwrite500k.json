@@ -1,0 +1,61 @@
+{
+ "_source": "7x2_500k.txt \u2014 vendor CPS uploading 500,000 contacts, 2026-09-10. Cut from the capture: records are in CSV (input) order, the index is sorted by key.",
+ "count": 500000,
+ "header": "20a1070004d339100000000000000000",
+ "streamBytes": 55519556,
+ "indexBankBoundary": {
+  "entries": [
+   31998,
+   31999,
+   32000,
+   32001
+  ],
+  "bytes": "c4f2e0003eae8b0002f3e00052ac01020000e100f00e4b003200e1008ab36b00"
+ },
+ "indexBanks": {
+  "firstBytes": 256000,
+  "lastBytes": 160000,
+  "banks": 16
+ },
+ "straddlers": [
+  {
+   "boundary": 1,
+   "dmrId": 6749107,
+   "name": "Ashley Adams",
+   "city": "Milton",
+   "callSign": "WH1RQA",
+   "province": "Michigan",
+   "country": "United States",
+   "streamOffset": 199906,
+   "bytes": "0000067491074100730068006c006500790020004100640061006d00730000004d0069006c0074006f006e00000057004800310052005100410000004d006900630068006900670061006e00000055006e006900740065006400200053007400610074006500730000000000",
+   "indexRank": 349953,
+   "indexEntry": "0e22e90ce20c0300"
+  },
+  {
+   "boundary": 10,
+   "dmrId": 5665803,
+   "name": "Daniel Allen",
+   "city": "Dayton",
+   "callSign": "WI1EKH",
+   "province": "Massachusetts",
+   "country": "United States",
+   "streamOffset": 1999928,
+   "bytes": "000005665803440061006e00690065006c00200041006c006c0065006e00000044006100790074006f006e00000057004900310045004b00480000004d00610073007300610063006800750073006500740074007300000055006e006900740065006400200053007400610074006500730000000000",
+   "indexRank": 292937,
+   "indexEntry": "06b0cc0a38841e00"
+  },
+  {
+   "boundary": 20,
+   "dmrId": 2581818,
+   "name": "Linda Wilson",
+   "city": "Greenville",
+   "callSign": "NC1MWF",
+   "province": "California",
+   "country": "United States",
+   "streamOffset": 3999972,
+   "bytes": "0000025818184c0069006e00640061002000570069006c0073006f006e00000047007200650065006e00760069006c006c00650000004e00430031004d00570046000000430061006c00690066006f0072006e0069006100000055006e006900740065006400200053007400610074006500730000000000",
+   "indexRank": 130622,
+   "indexEntry": "3030b004e4083d00"
+  }
+ ]
+}
