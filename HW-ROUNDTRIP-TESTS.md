@@ -168,6 +168,32 @@ too high because the parsers return 1-based ids. **The last of those is the case
 for diffing rather than reading back** — the shifted keys are exactly what the
 radio would then hold, so a read-back would have agreed with itself.
 
+**Extra, 4 of 6: three pictures and the DMR CONTACT DATABASE.**
+
+The contact database earned its round trip on 2026-09-10, written BY NEONPLUG
+and read back by the VENDOR CPS, which listed all 200 contacts with every field
+in its own column. One read confirms all three of its regions: the records, the
+header count, and the INDEX at `0x07080000` — a region nothing knew existed
+until a vendor upload capture showed the CPS writing three regions rather than
+two. A wrong index leaves records on the radio that nothing can find.
+
+It took TWO attempts, and the first is the more useful entry. The writer was
+built deliberately NOT to truncate fields, on the reasoning that the vendor's
+CSV-import truncation was a quirk — this radio's own database holds a
+16-character province while the import cut to 15. Writing 200 contacts with a
+16-character city produced a database the CPS read as **137** contacts with
+every field sliding one column right from the first overlong record on. The
+reader takes at most N characters and continues from THERE rather than from the
+NUL, so an overrun field desynchronises everything after it.
+
+That is a failure mode no offline test could have found: our encoder and decoder
+agreed with each other perfectly, and the bytes matched the vendor's own for
+every record the vendor had written — because the vendor never wrote an overlong
+one. Only a radio could say otherwise.
+
+Still unproven: the 200,000-byte bank chopping. 200 contacts are 19,180 bytes
+and fit bank 0, so nothing has crossed a boundary yet.
+
 **Extra, 3 of 6: all three pictures** — boot, background 1, background 2, all
 2026-09-03. Still the strongest evidence on this radio, because the proof is the
 radio's own screen rather than a read-back: a wrong pixel or byte order writes
