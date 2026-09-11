@@ -267,24 +267,35 @@ describe('span writes, for tables whose records straddle frames', () => {
     expect(data).toHaveLength(75);
   });
 
-  it('refuses when a record the span crosses was never read', () => {
-    // A frame straddling two records carries both, so writing record 5 without
-    // having read record 4 would invent its bytes.
-    const partial = new Map([[0, new Uint8Array(spanSpec.stride)], [5, new Uint8Array(spanSpec.stride)]]);
+  it('refuses a NEW record when the table has no known blank', () => {
+    // Record 5 has no original, and this spec carries no `blank` — so there is
+    // nothing to build it on, and inventing its unmodelled bytes is refused.
     expect(() =>
       planSpanTableWrite(spanSpec, {
         entries: [{ index: 0 }, { index: 5 }],
-        originals: partial,
+        originals: new Map([[0, new Uint8Array(spanSpec.stride)]]),
         originalMask: new Uint8Array(16).fill(0xff),
         encode: (o) => o,
       })
-    ).toThrow(/were never read/);
+    ).toThrow(/never read/);
   });
 
-  it('carries a neighbour through unchanged when a frame straddles both', () => {
-    // Record 1 starts at byte 200, which is 8 bytes into the frame beginning at
-    // 192 — so that frame carries the last 8 bytes of record 0 as well. Those
-    // bytes must survive a write that only edits record 1.
+  it('builds a new record on the blank when the table has one', () => {
+    const plan = planSpanTableWrite({ ...spanSpec, blank: () => new Uint8Array(spanSpec.stride) }, {
+      entries: [{ index: 0 }],
+      originals: new Map(),
+      originalMask: new Uint8Array(16).fill(0xff),
+      encode: (o) => o,
+    });
+    expect(plan.written).toEqual([0]);
+  });
+
+  it('zeroes what a straddling frame carries of a record that is NOT in the table', () => {
+    // `entries` is the whole table. Record 1 starts 8 bytes into the frame at
+    // 192, so that frame also carries the tail of record 0 — which is not in the
+    // table, so those bytes are ZERO: what the vendor writes over the head of a
+    // freed slot sharing its last frame. Carrying the old bytes through is how a
+    // deleted record stays populated.
     const plan = planSpanTableWrite(spanSpec, {
       entries: [{ index: 1 }],
       originals: originalsFor(8),
@@ -297,12 +308,30 @@ describe('span writes, for tables whose records straddle frames', () => {
 
     const span = new Uint8Array(data.length * 16);
     data.forEach((f, i) => span.set(f.data, i * 16));
-
-    // The first 8 bytes of the span are record 0's tail — still filled with 1.
     for (let i = 0; i < 8; i += 1) {
-      expect(span[i], `byte ${i} of the straddling frame belongs to record 0`).toBe(1);
+      expect(span[i], `byte ${i} belongs to record 0, which is not in the table`).toBe(0);
     }
-    // Record 1 itself is now 0xee.
     expect(span[1 * spanSpec.stride - spanStart]).toBe(0xee);
+  });
+
+  it('ERASES a record that was present at read and is gone now', () => {
+    // Inverted mask: records 0-2 present at read. The table is now just 0 and 1,
+    // so record 2 fell off the end. Its record starts on a frame boundary (400),
+    // so none of it shares a frame with the run — every frame of it goes out
+    // 0xFF, and the preserve pass has nothing stale left to put back.
+    const mask = new Uint8Array(16).fill(0xff);
+    mask[0] = 0xf8;
+    const plan = planSpanTableWrite(spanSpec, {
+      entries: [{ index: 0 }, { index: 1 }],
+      originals: originalsFor(8),
+      originalMask: mask,
+      encode: (o) => o,
+    });
+    expect(plan.cleared).toEqual([2]);
+    const erased = plan.frames.filter((f) => f.what.endsWith('erased'));
+    expect(erased.map((f) => f.address - spanSpec.dataAddress)).toEqual(
+      Array.from({ length: 200 / 16 + 1 }, (_, i) => 400 + i * 16).filter((a) => a < 600)
+    );
+    expect(erased.every((f) => f.data.every((b) => b === 0xff))).toBe(true);
   });
 });

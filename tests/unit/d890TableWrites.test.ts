@@ -273,6 +273,41 @@ describe('SMS store', () => {
   });
 });
 
+describe('talk groups — a delete through the whole plan', () => {
+  type TG = NonNullable<NonNullable<Parameters<typeof planCodeplugWrite>[0]['tables']>['talkgroups']>[number];
+  const tg = (index: number, readSlot: number, name: string): TG => ({
+    index, readSlot, name, contactNumber: 1000 + readSlot, callType: 0x04,
+    offset: 0, hasHeader: false, flag: 0, rawData: new Uint8Array(0),
+  });
+
+  it('encodes each survivor over ITS OWN record and erases the one that fell off', () => {
+    // Four talk groups at read, each carrying an unmodelled byte at +0x01 that
+    // says which record it is. Deleting the first moves the other three down.
+    const s = setup({ talkgroups: [tg(0, 1, 'B'), tg(1, 2, 'C'), tg(2, 3, 'D')] });
+    const records = new Uint8Array(4 * 0xc8);
+    for (let i = 0; i < 4; i += 1) records[i * 0xc8 + 0x01] = 0xa0 + i;
+    s.readLog.set(D890_ADDR.TALKGROUP_DATA, records);
+    const mask = new Uint8Array(1264).fill(0xff);
+    mask[0] = 0xf0; // inverted: slots 0-3 present
+    s.readLog.set(D890_ADDR.TALKGROUP_SET, mask);
+    s.readLog.set(0x3900000, new Uint8Array(40000).fill(0xff)); // the locator
+    const plan = planCodeplugWrite(s);
+
+    // A record that moves keeps its own bytes, not its new slot's old ones.
+    expect(byteAt(plan, D890_ADDR.TALKGROUP_DATA + 0x01)).toBe(0xa1);
+    expect(byteAt(plan, D890_ADDR.TALKGROUP_DATA + 0xc8 + 0x01)).toBe(0xa2);
+    expect(byteAt(plan, D890_ADDR.TALKGROUP_DATA + 2 * 0xc8 + 0x01)).toBe(0xa3);
+    // Slot 3 fell off the end: zero where it shares slot 2's last frame, as the
+    // vendor writes it, and ERASED from the next frame on.
+    expect(byteAt(plan, D890_ADDR.TALKGROUP_DATA + 3 * 0xc8)).toBe(0x00);
+    expect(byteAt(plan, D890_ADDR.TALKGROUP_DATA + 0x260)).toBe(0xff);
+    expect(byteAt(plan, D890_ADDR.TALKGROUP_DATA + 4 * 0xc8 - 1)).toBe(0xff);
+    expect(byteAt(plan, D890_ADDR.TALKGROUP_SET)).toBe(0xf8);
+    expect(byteAt(plan, 0x3900000 + 3 * 4)).toBe(0xff); // locator[3] retired
+    expect(byteAt(plan, 0x3900000 + 2 * 4)).toBe(0x02);
+  });
+});
+
 describe('pre-defined SMS — the texts behind the chain', () => {
   const S = D890_SMS_STORE;
 

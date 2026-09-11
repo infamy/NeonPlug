@@ -644,19 +644,37 @@ export function planMaskedTableWrite<T extends { index: number }>(
 }
 
 /**
- * Plan a write for a table whose records do NOT start on frame boundaries.
+ * Plan a write for a table whose records do NOT start on frame boundaries — the
+ * talk groups, whose 0xC8 stride puts record 1 eight bytes into a frame.
  *
- * The talkgroup stride is 0xc8, so record 1 begins at 0x3a000c8 — eight bytes
- * into a frame. There is no way to write that record without also writing parts
- * of its neighbours, so the vendor writes the table as one contiguous run of
- * aligned frames and lets the record boundaries fall where they may. Its own
- * session does exactly that: 75 frames covering 0x3a00000-0x3a004b0, six
- * 200-byte records, every address 16-aligned and every frame contiguous.
+ * `entries` IS THE WHOLE TABLE after the write, not a set of edits. Talk groups
+ * COMPACT — measured 2026-09-10, when clearing one row in the vendor CPS moved
+ * 500 records down a slot and freed the LAST one — so every write hands this
+ * the complete list as slots 0..N-1, and a slot missing from it is absent
+ * afterwards: its mask bit is cleared below.
  *
- * That means **every record the span touches must have been read**, including
- * ones the user did not edit — a frame that straddles two records carries both.
- * This refuses rather than filling a gap with zeros, because the bytes it
- * cannot account for belong to a talkgroup someone is using.
+ * Laid out exactly as the vendor CPS lays it out (`7x2_onecleared.txt`,
+ * reproduced byte for byte by tests/unit/d890TalkgroupCompaction.test.ts):
+ *
+ *   - each bank's records go out as ONE contiguous run of aligned frames, from
+ *     its first record to the frame holding its last;
+ *   - a byte in that run that no record in the table claims is ZERO. The vendor
+ *     wrote `00` x 8 over the head of the freed slot sharing its final frame,
+ *     and nothing after it.
+ *
+ * One deliberate departure: a record that was present at READ and is gone now
+ * has the rest of its frames written ERASED (0xFF). The vendor simply stops, and
+ * the radio's erase-on-write leaves those bytes 0xFF; a NeonPlug write cannot
+ * stop, because its verbatim preserve pass would put the stale record back — a
+ * fully populated record that the mask and the locator both call absent. That
+ * is precisely the write that left the radio reporting 1010 talk groups and
+ * crashing on 2026-09-10.
+ *
+ * Every record is encoded over ITS OWN original: `originals` is keyed by the
+ * slot an entry is written TO, but must hold the record it was READ from, so a
+ * talk group that moves down keeps its own unmodelled bytes instead of
+ * inheriting its new slot's previous occupant's. An entry with no original is
+ * new and is built on `spec.blank` — or refused, for a table with no known one.
  */
 export function planSpanTableWrite<T extends { index: number }>(
   spec: D890MaskedTableSpec,
@@ -683,101 +701,91 @@ export function planSpanTableWrite<T extends { index: number }>(
 
   const frames: D890WriteFrame[] = [];
   const written = inRange.map((e) => e.index).sort((a, b) => a - b);
+  const present = new Set(written);
 
-  // ── Planned one BANK at a time ───────────────────────────────────────────
-  //
-  // A banked table's records are contiguous WITHIN a bank and far apart across
-  // them — talk groups are 0xC8 apart inside a bank and 0x80000 between banks.
-  // One span across a boundary would be half a megabyte of mostly nothing, and
-  // every record above the boundary would land at an address the radio does not
-  // use. An unbanked table is simply the single-bank case.
-  const bankSize = spec.bank?.size ?? spec.slots;
-  const bankStride = spec.bank?.stride ?? 0;
-  const byBank = new Map<number, T[]>();
-  for (const e of inRange) {
-    const b = Math.floor(e.index / bankSize);
-    const list = byBank.get(b);
-    if (list) list.push(e);
-    else byBank.set(b, [e]);
+  const maskSays = (slot: number) =>
+    ((originalMask[slot >> 3] ?? 0) & (1 << (slot & 7))) !== 0;
+  const presentAtRead = (slot: number) => (spec.maskInverted ? !maskSays(slot) : maskSays(slot));
+  const freed: number[] = [];
+  for (let slot = 0; slot < spec.slots; slot += 1) {
+    if (presentAtRead(slot) && !present.has(slot)) freed.push(slot);
   }
 
-  for (const [bank, entries] of [...byBank].sort((a, b) => a[0] - b[0])) {
+  // Planned one BANK at a time. A banked table's records are contiguous WITHIN
+  // a bank and half a megabyte apart across them — talk groups are 0xC8 apart
+  // inside a bank and 0x80000 between banks — so a run never crosses one.
+  const bankSize = spec.bank?.size ?? spec.slots;
+  const bankStride = spec.bank?.stride ?? 0;
+  const bankOf = (slot: number) => Math.floor(slot / bankSize);
+  const banks = [...new Set([...written.map(bankOf), ...freed.map(bankOf)])].sort((a, b) => a - b);
+
+  for (const bank of banks) {
     const bankBase = spec.dataAddress + bank * bankStride;
-    const globalOf = (local: number) => bank * bankSize + local;
-    const local = entries.map((e) => e.index % bankSize).sort((a, b) => a - b);
-    const first = local[0];
-    const last = local[local.length - 1];
-    // Align the span outwards to frame boundaries.
-    const spanStart = Math.floor((first * spec.stride) / 0x10) * 0x10;
-    const spanEnd = Math.ceil(((last + 1) * spec.stride) / 0x10) * 0x10;
+    const slotOf = (local: number) => bank * bankSize + local;
+    const inBank = inRange.filter((e) => bankOf(e.index) === bank);
 
-    // Every record overlapping the span has to be present, or its bytes would
-    // be invented. Span offsets are LOCAL to the bank; `originals` is keyed by
-    // the GLOBAL slot, and mixing the two is the whole bug this loop fixes.
-    const firstNeeded = Math.floor(spanStart / spec.stride);
-    const lastNeeded = Math.ceil(spanEnd / spec.stride) - 1;
-    const missing: number[] = [];
-    for (let i = firstNeeded; i <= lastNeeded && i < bankSize; i += 1) {
-      const g = globalOf(i);
-      if (g < spec.slots && !originals.has(g)) missing.push(g);
-    }
-    if (missing.length > 0) {
-      throw new D890WriteRefusedError(
-        `Refusing to write ${spec.label}: records ${missing.slice(0, 10).join(', ')}` +
-          `${missing.length > 10 ? ` and ${missing.length - 10} more` : ''} were never read, ` +
-          `but the write spans them. This table's records do not start on frame ` +
-          `boundaries, so a frame carries bytes from more than one record.`
-      );
-    }
-
-    // Build the span from the originals, then patch the edited records in.
-    const span = new Uint8Array(spanEnd - spanStart);
-    // A record at either end may hang outside the span — the first one starts
-    // before it (the span was aligned DOWN to a frame boundary) and the last
-    // may run past it. Copy only the overlapping part of each.
-    const copyInto = (src: Uint8Array, at: number) => {
-      const from = Math.max(0, -at);
-      const to = Math.min(src.length, span.length - at);
-      if (to > from) span.set(src.subarray(from, to), at + from);
-    };
-    for (let i = firstNeeded; i <= lastNeeded && i < bankSize; i += 1) {
-      const g = globalOf(i);
-      if (g >= spec.slots) break;
-      copyInto(originals.get(g)!, i * spec.stride - spanStart);
-    }
-    for (const entry of entries) {
-      const record = encode(originals.get(entry.index)!, entry);
-      if (record.length !== spec.stride) {
-        throw new D890WriteRefusedError(
-          `Refusing to write ${spec.label} slot ${entry.index}: encoder returned ` +
-            `${record.length} bytes, expected ${spec.stride}.`
-        );
+    // ── The run: every frame carrying a byte of a record in the table ──────
+    let runStart = 0;
+    let runEnd = 0;
+    if (inBank.length > 0) {
+      const locals = inBank.map((e) => e.index % bankSize);
+      const first = Math.min(...locals);
+      const last = Math.max(...locals);
+      runStart = Math.floor((first * spec.stride) / 0x10) * 0x10;
+      runEnd = Math.ceil(((last + 1) * spec.stride) / 0x10) * 0x10;
+      // Zero-filled: what the vendor writes wherever no record in the table is.
+      const run = new Uint8Array(runEnd - runStart);
+      for (const entry of inBank) {
+        const base = originals.get(entry.index) ?? spec.blank?.();
+        if (!base) {
+          throw new D890WriteRefusedError(
+            `Refusing to write ${spec.label} ${entry.index + 1}: it was never read, and ` +
+              `there is no known baseline for a new ${spec.label}.`
+          );
+        }
+        const record = encode(base, entry);
+        if (record.length !== spec.stride) {
+          throw new D890WriteRefusedError(
+            `Refusing to write ${spec.label} slot ${entry.index}: encoder returned ` +
+              `${record.length} bytes, expected ${spec.stride}.`
+          );
+        }
+        run.set(record, (entry.index % bankSize) * spec.stride - runStart);
       }
-      copyInto(record, (entry.index % bankSize) * spec.stride - spanStart);
+      for (let off = 0; off < run.length; off += 0x10) {
+        frames.push({
+          address: bankBase + runStart + off,
+          data: run.slice(off, off + 0x10),
+          what: `${spec.label}s ${slotOf(first) + 1}-${slotOf(last) + 1}`,
+        });
+      }
     }
 
-    for (let off = 0; off < span.length; off += 0x10) {
+    // ── Freed records past the run: ERASED ─────────────────────────────────
+    const erase = new Set<number>();
+    for (const slot of freed) {
+      if (bankOf(slot) !== bank) continue;
+      const from = (slot % bankSize) * spec.stride;
+      for (let off = Math.floor(from / 0x10) * 0x10; off < from + spec.stride; off += 0x10) {
+        if (off < runStart || off >= runEnd) erase.add(off);
+      }
+    }
+    for (const off of [...erase].sort((a, b) => a - b)) {
       frames.push({
-        address: bankBase + spanStart + off,
-        data: span.slice(off, off + 0x10),
-        what: `${spec.label}s ${globalOf(first) + 1}-${globalOf(last) + 1}`,
+        address: bankBase + off,
+        data: new Uint8Array(0x10).fill(0xff),
+        what: `${spec.label} ${slotOf(Math.floor(off / spec.stride)) + 1} erased`,
       });
     }
   }
 
-  // Same mask rules as the per-record planner.
+  // The mask: every slot in `entries` present, every other slot absent.
   const mask = Uint8Array.from(originalMask);
-  const wanted = new Set(written);
-  const cleared: number[] = [];
   for (let slot = 0; slot < spec.slots; slot += 1) {
     const byte = slot >> 3;
     const bit = 1 << (slot & 7);
-    const wasPresent = spec.maskInverted
-      ? ((mask[byte] ?? 0) & bit) === 0
-      : ((mask[byte] ?? 0) & bit) !== 0;
-    const present = wanted.has(slot);
-    if (wasPresent && !present) cleared.push(slot);
-    const setBit = spec.maskInverted ? !present : present;
+    // An inverted mask stores "empty", so presence flips which way the bit goes.
+    const setBit = spec.maskInverted ? !present.has(slot) : present.has(slot);
     if (setBit) mask[byte] = (mask[byte] ?? 0) | bit;
     else mask[byte] = (mask[byte] ?? 0) & ~bit & 0xff;
   }
@@ -790,7 +798,7 @@ export function planSpanTableWrite<T extends { index: number }>(
     });
   }
 
-  return { frames, mask, written, cleared, skipped };
+  return { frames, mask, written, cleared: freed, skipped };
 }
 
 /**

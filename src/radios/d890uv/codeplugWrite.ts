@@ -514,7 +514,12 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
     spec: D890MaskedTableSpec,
     entries: readonly T[] | undefined,
     encode: (original: Uint8Array, entry: T) => Uint8Array,
-    span: typeof planMaskedTableWrite | typeof planSpanTableWrite = planMaskedTableWrite
+    span: typeof planMaskedTableWrite | typeof planSpanTableWrite = planMaskedTableWrite,
+    // The slot whose ORIGINAL an entry is encoded over: its own for a table whose
+    // records stay put, and the slot it was READ from for one that compacts — so
+    // a record that moves keeps its own unmodelled bytes rather than inheriting
+    // those of its new slot's previous occupant.
+    originalOf: (entry: T) => number | undefined = (entry) => entry.index
   ) => {
     if (!entries) return;
     const maskBytes = Math.ceil(Math.ceil(spec.slots / 8) / 0x10) * 0x10;
@@ -526,49 +531,31 @@ export function planCodeplugWrite(input: D890CodeplugWriteInput): D890CodeplugWr
       });
       return;
     }
-    // Originals for every slot the plan could TOUCH, not just the edited ones.
-    //
-    // `planSpanTableWrite` writes one aligned span per bank, and this table's
-    // records do not start on frame boundaries — the talkgroup stride is 0xC8,
-    // so a frame routinely carries bytes from two records. It therefore demands
-    // an original for every record the span covers, including neighbours nobody
-    // edited, and refuses rather than filling a gap with zeros.
-    //
-    // Supplying only the edited entries made that refusal unreachable in
-    // practice and guaranteed on first use: the very first talkgroup write
-    // planned would fail claiming its own neighbour was never read. This path
-    // had never run, because the table was never passed to the plan at all.
-    //
-    // ±1 around the range covers the frame-alignment overhang at each end.
-    const bankSize = spec.bank?.size ?? spec.slots;
-    const wanted = new Set<number>();
-    for (const e of entries) {
-      const bank = Math.floor(e.index / bankSize);
-      wanted.add(e.index);
-      for (const neighbour of [e.index - 1, e.index + 1]) {
-        // Never cross a bank boundary: the record on the other side is half a
-        // megabyte away and shares no frame with this one.
-        if (neighbour < 0 || neighbour >= spec.slots) continue;
-        if (Math.floor(neighbour / bankSize) !== bank) continue;
-        wanted.add(neighbour);
-      }
-    }
+    // An original per ENTRY, keyed by the slot it is written to. Neighbours are
+    // no longer fetched: `planSpanTableWrite` used to demand an original for
+    // every record a straddling frame touched, and now zero-fills any byte no
+    // record in the table claims — which is what the vendor writes there.
     const originals = new Map<number, Uint8Array>();
-    for (const slot of wanted) {
+    for (const entry of entries) {
+      const from = originalOf(entry);
+      if (from === undefined) continue;
       // `tableRecordAddress`, NOT flat arithmetic: for a banked table the two
       // diverge above the first bank, and the flat answer is an address the
       // radio never uses — so every original above slot 999 came back
       // undefined and the write refused for the wrong reason.
-      const o = sliceFromReadLog(input.readLog, tableRecordAddress(spec, slot), spec.stride);
-      if (o) originals.set(slot, o);
+      const o = sliceFromReadLog(input.readLog, tableRecordAddress(spec, from), spec.stride);
+      if (o) originals.set(entry.index, o);
     }
     const plan = span(spec, { entries, originals, originalMask, encode });
     take(region, spec.dataAddress, plan.frames);
   };
 
   const T = input.tables ?? {};
+  // Talk groups COMPACT, so entry i is written to slot i but encoded over the
+  // record it was READ from. A new one has no `readSlot` and is built on the
+  // table's blank. See `planSpanTableWrite` for how a delete leaves the tail.
   maskedTable('talkgroups', D890_MASKED_TABLES.talkgroups, T.talkgroups,
-    applyTalkgroupToRecord, planSpanTableWrite);
+    applyTalkgroupToRecord, planSpanTableWrite, (tg) => tg.readSlot);
 
   // ── The talk group LOCATOR, at 0x3900000 ────────────────────────────────
   //

@@ -15,7 +15,9 @@
  * entries it appears to work while writing every record one slot high. These
  * tests exist so that cannot happen quietly again.
  *
- * ⚠️ No talk group write has ever reached a radio.
+ * EDITS round-tripped on hardware 2026-09-09. Add and delete are laid out like
+ * the vendor's since 2026-09-11 — see d890TalkgroupCompaction.test.ts — and are
+ * not yet round-tripped.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -127,11 +129,15 @@ describe('planning a banked talkgroup write', () => {
     expect(tgFrames.some((f) => f.address === 0x3a80320)).toBe(true);
   });
 
-  it('refuses when a record the span covers was never read', () => {
-    // Slot 1005 shares a frame with 1004: the stride is 0xC8, so records do not
-    // start on frame boundaries and one frame carries bytes from two records.
-    expect(() => planCodeplugWrite(setup([tg(1004, 'x')], [1004])))
-      .toThrow(/never read/);
+  it('zero-fills what a frame shares with a slot NOT in the table, without needing it read', () => {
+    // Slot 1005 shares a frame with 1004 — the stride is 0xC8, so one frame
+    // carries bytes from two records. 1005 is not in the table, so its bytes are
+    // ZERO, which is what the vendor CPS writes over a freed slot's head
+    // (`7x2_onecleared.txt`). This used to refuse for want of a read of 1005,
+    // and so made adding a talk group at the end of the list impossible.
+    const plan = planCodeplugWrite(setup([tg(1004, 'x')], [1004]));
+    const frame = plan.frames.find((f) => f.address === talkgroupAddress(1005) - 8)!;
+    expect(Array.from(frame.data.subarray(8))).toEqual(Array(8).fill(0));
   });
 
   it('recomputes the inverted presence mask for the slots it writes', () => {

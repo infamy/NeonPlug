@@ -84,15 +84,18 @@ describe('adding a record to a slot the radio never held', () => {
   });
 
   it('still REFUSES a table with no known blank', () => {
-    // Talkgroups have no `blank`, so an add there is refused rather than guessed
-    // — the same protection the main channel record relies on.
-    expect(D890_MASKED_TABLES.talkgroups).not.toHaveProperty('blank');
+    // The 5-Tone list has no `blank`, so an add there is refused rather than
+    // guessed — the same protection the main channel record relies on. (This
+    // used talk groups until 2026-09-11, when the vendor CPS was caught building
+    // a fresh one — zeros apart from its fields — and they gained a blank.)
+    const spec = D890_MASKED_TABLES.fiveTone;
+    expect(spec).not.toHaveProperty('blank');
     expect(() =>
-      planMaskedTableWrite(D890_MASKED_TABLES.talkgroups, {
-        entries: [{ index: 5, name: 'X', contactNumber: 1, callType: 0 } as never],
+      planMaskedTableWrite(spec, {
+        entries: [{ index: 5 } as never],
         originals: new Map(),
-        originalMask: mask(),
-        encode: (() => new Uint8Array(D890_MASKED_TABLES.talkgroups.stride)) as never,
+        originalMask: new Uint8Array(Math.ceil(Math.ceil(spec.slots / 8) / 16) * 16),
+        encode: (() => new Uint8Array(spec.stride)) as never,
       })
     ).toThrow(D890WriteRefusedError);
   });

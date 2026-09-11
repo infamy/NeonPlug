@@ -266,6 +266,11 @@ export const D890_MASKED_TABLES = {
     // has always known this; the write planner did not, so above slot 999 the
     // reader and the writer disagreed about where a record lives.
     bank: { size: D890_TALKGROUPS_PER_BANK, stride: D890_ADDR.TALKGROUP_BANK_STRIDE },
+    // A fresh talk group is ZEROS apart from the fields `applyTalkgroupToRecord`
+    // writes — measured from the vendor CPS building one (`7x2_restoredalltg.txt`,
+    // TG1010 at slot 1009: `01 00 00 20 10 10`, the UTF-16 name, then zeros to
+    // 0xC8). tests/unit/d890TalkgroupCompaction.test.ts holds ours to it.
+    blank: () => new Uint8Array(D890_ADDR.TALKGROUP_STRIDE),
   },
   amChannels: {
     label: 'AM airband channel',

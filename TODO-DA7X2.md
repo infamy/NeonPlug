@@ -163,7 +163,7 @@ became a sixth extra the same day. Finding a region you were ignoring makes the
 score worse and the driver better. Do not "fix" that by editing the table —
 there is nothing to edit any more.
 
-### Talk groups — EDITS work; add/delete still refuses (2026-09-09)
+### Talk groups — edits round-tripped; add and delete fixed, not yet round-tripped
 
 Three faults were found and fixed together, deliberately: fixing only the first
 is the dangerous outcome, because on a codeplug under 1000 entries it appears to
@@ -270,9 +270,30 @@ group above the one being cleared and capture again.
 RX group reference on 68 channels** (`+0x1c`, `0x00`/`0x01` -> `0xff`). Consistent
 with the vendor-CPS-destroys-settings warning above.
 
-☐ **ADD is still unproven on hardware.** Unit-tested only, and it exercises a
-path delete does not: the new slot was never read, so its record is BUILT rather
-than patched, and the locator gains an entry rather than losing one.
+✅ **The TAIL of a compacting write fixed 2026-09-11, before any add or delete
+reached the radio.** The vendor CPS writes each bank's records as one run and
+stops. `7x2_onecleared.txt` wrote 1,808 bytes of bank 1: nine records shifted
+down, then `00` x 8 over the freed slot's head, and nothing after. Our planner
+got all three parts wrong:
+
+- **Delete** filled that last frame with the freed record's ORIGINAL head, and
+  the verbatim preserve pass wrote the rest of it back. That left a fully
+  populated record the mask and locator call absent, the exact shape that had
+  the radio reporting 1010 talk groups and crashing. The tail is now zero, as
+  the vendor writes it. Every other frame of a freed record goes out ERASED
+  (0xFF), which is what the radio's erase-on-write leaves after the vendor's
+  write.
+- **Add** was impossible. The new slot and the one after it were never read,
+  because the mask said they were empty, and the planner refused for want of
+  their originals. A fresh record is now built on zeros, byte-identical to the
+  one the CPS built for TG1010, and any byte no record claims is zero.
+- **A moved record inherited its new slot's old bytes.** Each is now encoded
+  over the record it was READ from (`readSlot`).
+
+`tests/unit/d890TalkgroupCompaction.test.ts` holds all three to the vendor's
+bytes. ☐ **Neither add nor delete is round-tripped on hardware yet.** The only
+vendor delete on record freed a slot that shares a frame; a freed slot that
+starts on a frame boundary rests on the erase rule alone.
 
 ### What is actually ready
 
