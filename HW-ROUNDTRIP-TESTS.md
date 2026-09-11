@@ -191,8 +191,18 @@ agreed with each other perfectly, and the bytes matched the vendor's own for
 every record the vendor had written — because the vendor never wrote an overlong
 one. Only a radio could say otherwise.
 
-Still unproven: the 200,000-byte bank chopping. 200 contacts are 19,180 bytes
-and fit bank 0, so nothing has crossed a boundary yet.
+Bank chopping is now settled — offline, against the vendor. A capture of the
+CPS uploading 500,000 contacts (1.13 GB, run to `END`) matches NeonPlug's
+planner in every one of its 3,719,974 frames: the header, all 250,000 index
+frames, and 3,469,973 record frames across 277 bank boundaries. It showed the
+index is banked like the records (256,000 bytes per `0x80000`), that records go
+in INPUT order with only the index sorted, and that the region runs to at least
+bank 277.
+
+That proves our bytes are the vendor's. It is NOT a hardware round trip of our
+own multi-bank write, which needs a NeonPlug restore read back by the CPS. Our
+32,637-contact write (17 banks) was read back as "32k+ entries" and then
+overwritten by the 500,000 upload before its records could be checked.
 
 **Extra, 3 of 6: all three pictures** — boot, background 1, background 2, all
 2026-09-03. Still the strongest evidence on this radio, because the proof is the
