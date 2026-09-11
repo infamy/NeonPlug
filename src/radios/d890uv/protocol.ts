@@ -235,7 +235,11 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
       // Not reported by this radio's identify response; the reference documents
       // only model and version.
       buildDate: '',
-      maxContacts: D890_LIMITS.TALK_GROUPS_MAX,
+      // The DMR CONTACT DATABASE, not the talkgroup table. This read
+      // TALK_GROUPS_MAX (10,000) until 2026-09-10, so the Contacts tab would
+      // have sliced a 163,467-contact RadioID download down to 10,000 and
+      // reported it as the radio's capacity.
+      maxContacts: D890_DIGITAL_CONTACTS.MAX_CONTACTS,
       // The wire identity, kept so diagnostics can show what actually came back.
       radioVersion: this.identity?.model ?? 'unknown',
       // The negotiated read size is the single most useful diagnostic for this

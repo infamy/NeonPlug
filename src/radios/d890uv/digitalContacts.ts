@@ -54,7 +54,33 @@ export const D890_DIGITAL_CONTACTS = {
   BANK_STRIDE: 0x80000,
   /** Bytes of each bank that actually hold records. */
   BANK_BYTES: 200000,
+  /**
+   * How many banks a 163,467-contact database OCCUPIED — not the capacity.
+   *
+   * The vendor CPS walked 83 because that is where that database ended, and
+   * `readDigitalContacts` probes this many. The radio is rated for 500,000
+   * contacts, so the region plainly continues past here; where it ENDS is
+   * unknown, and nothing has ever read or written a bank above 82.
+   *
+   * ⚠️ A radio holding more than about 165,000 contacts would therefore be read
+   * SHORT by this driver. Raising it needs evidence of where the region stops —
+   * the banks are uniform at 0x80000 so extrapolating is tempting, but a read
+   * that runs off the end of the region is how you learn what is after it.
+   */
   BANKS: 83,
+  /**
+   * The radio's rated capacity, 500,000 contacts.
+   *
+   * A UI bound only. The database is limited by BYTES — records are variable
+   * length — so there is no fixed record count, and
+   * `planDigitalContactWrite` is the authority.
+   *
+   * This exists because `getRadioInfo` reported `TALK_GROUPS_MAX` (10,000)
+   * here, the limit of an entirely different table, and the Contacts tab
+   * slices a download to it: a full RadioID download would have been cut to a
+   * sixteenth of itself, silently, before a byte was planned.
+   */
+  MAX_CONTACTS: 500000,
 } as const;
 
 /**

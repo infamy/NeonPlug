@@ -119,8 +119,15 @@ export function planDigitalContactWrite(
   const streamBytes = encoded.reduce((n, r) => n + r.length, 0);
   if (streamBytes > BANKS * BANK_BYTES) {
     throw new Error(
-      `Refusing to write contacts: ${sorted.length} contacts need ${streamBytes} bytes ` +
-        `and the radio holds ${BANKS * BANK_BYTES}.`
+      `Refusing to write contacts: ${sorted.length} contacts need ` +
+        `${streamBytes.toLocaleString()} bytes, past bank ${BANKS - 1}.\n\n` +
+        `That is NOT the radio's limit — it is rated for ` +
+        `${D890_DIGITAL_CONTACTS.MAX_CONTACTS.toLocaleString()} contacts and the ` +
+        `region plainly continues. It is the furthest anything has ever read or ` +
+        `written: the vendor CPS walked ${BANKS} banks because that is where the ` +
+        `reference database ended, so where the region STOPS is unknown.\n\n` +
+        `Writing past it would be guessing at an address, which is how a ` +
+        `neighbouring table gets destroyed. Confirm the region's end first.`
     );
   }
   const stream = new Uint8Array(streamBytes);

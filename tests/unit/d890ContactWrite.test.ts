@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { planDigitalContactWrite, contactEndAddress } from '../../src/radios/d890uv/digitalContactWrite';
 import { D890_DIGITAL_CONTACTS } from '../../src/radios/d890uv/digitalContacts';
+import { D890_LIMITS } from '../../src/radios/d890uv/constants';
 import { parseDigitalContactBank, type D890DigitalContact } from '../../src/radios/d890uv/digitalContacts';
 
 const DIR = join(__dirname, '../fixtures/d890uv/contactwrite');
@@ -134,5 +135,35 @@ describe('planDigitalContactWrite vs the vendor CPS', () => {
     expect(banks).toContain('contact records bank 1');
     const bank1 = big.frames.find((f) => f.what === 'contact records bank 1')!;
     expect(bank1.address).toBe(D890_DIGITAL_CONTACTS.BASE + D890_DIGITAL_CONTACTS.BANK_STRIDE);
+  });
+});
+
+/**
+ * The capacity the UI is told about.
+ *
+ * `getRadioInfo` reported `TALK_GROUPS_MAX` here — 10,000, the limit of an
+ * entirely different table — and `ContactsTab` slices a download to it. A full
+ * RadioID download of 163,467 contacts would have been cut to 10,000 silently,
+ * before a byte was planned, and the tab would have shown "10,000 / 10,000" as
+ * though the radio were full.
+ */
+describe('contact capacity', () => {
+  it('is the contact database rating, not the talkgroup limit', () => {
+    expect(D890_DIGITAL_CONTACTS.MAX_CONTACTS).toBe(500000);
+    expect(D890_DIGITAL_CONTACTS.MAX_CONTACTS)
+      .toBeGreaterThan(D890_LIMITS.TALK_GROUPS_MAX);
+    // The database the reference radio actually held must fit under it.
+    expect(D890_DIGITAL_CONTACTS.MAX_CONTACTS).toBeGreaterThan(163467);
+  });
+
+  it('refuses past the last bank anything has touched, and says why', () => {
+    // 83 banks is the observed extent, NOT the rating — the message has to be
+    // clear about that or someone will read it as the radio being full.
+    const huge = Array.from({ length: 200000 }, (_, i) => ({
+      dmrId: 1000000 + i, name: 'NameIsSixteenX', city: 'CityIsFifteen1',
+      callSign: 'CALLSIGN', province: 'ProvinceIs16Chr', country: 'CountryIs14Ch',
+      isFriend: false, flags: 0,
+    }));
+    expect(() => planDigitalContactWrite(huge)).toThrow(/NOT the radio's limit/);
   });
 });
