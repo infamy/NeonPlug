@@ -25,18 +25,15 @@ const VENDOR = { header: bin('header'), index: bin('index'), records: bin('recor
 /**
  * The contact list the CPS actually wrote, taken from ITS OWN RECORD BYTES.
  *
- * NOT from the CSV, deliberately. The CPS mangles a CSV on import — it cuts
- * `name` to 16 characters, `city` and `province` to 15, and reads the file as
- * Latin-1 so "México" becomes "MÃ©xico". Those are import quirks, NOT limits of
- * the record: this radio's own database holds a 16-character province and a
- * 14-character country, so the format has no fixed field width at all and our
- * writer must not invent one.
+ * NOT from the CSV, deliberately — sourcing them from the vendor's records
+ * tests what is in question (index keys, offsets, ordering, header, bank
+ * arithmetic) against bytes we did not produce.
  *
- * Feeding the CSV through the same truncation to make the bytes line up would
- * be fitting the input to the answer. Sourcing the contacts from the vendor's
- * records instead tests what is actually in question — the index keys, the
- * offsets, the ordering, the header and the bank arithmetic — against bytes we
- * did not produce.
+ * ⚠️ An earlier version of this comment claimed the CPS's truncation on import
+ * was a "quirk" and that the format had no field widths. That was WRONG and it
+ * shipped: `D890_CONTACT_FIELD_MAX` records what a 16-character city did to a
+ * real radio. The Latin-1 mangling ("México" -> "MÃ©xico") IS an import quirk;
+ * the lengths are not.
  */
 function vendorContacts(): D890DigitalContact[] {
   return parseDigitalContactBank(VENDOR.records);

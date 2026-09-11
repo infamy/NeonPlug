@@ -151,6 +151,41 @@ export function encodeDigitalContactHeader(
   return out;
 }
 
+/**
+ * Maximum characters per field. **EXCEEDING ONE CORRUPTS THE RECORD.**
+ *
+ * MEASURED THE HARD WAY 2026-09-10. These were first dismissed as a CPS
+ * CSV-import quirk, because the vendor cut `city` to 15 on import while this
+ * radio's own database holds a 16-character province — so the writer was built
+ * NOT to truncate. Writing 200 contacts with a 16-character city then produced
+ * a database the CPS read as 137 entries with fields sliding into the wrong
+ * columns: `"Playa Del Carmen"` came back as `"Playa Del Carme"` and the
+ * leftover `n` started the next field, shifting the rest of the record.
+ *
+ * So the reader takes AT MOST this many characters and then continues from
+ * there rather than from the NUL — a field that overruns does not merely get
+ * clipped, it desynchronises everything after it.
+ *
+ * The values are what a real radio database actually contains, across 3,827
+ * records sampled from two banks 16 MB apart. `name`, `city` and `province`
+ * show the pile-up at a ceiling that truncation produces — 29 records at
+ * exactly 16, 199 at exactly 15, 32 at exactly 16 — so those three are the
+ * format's limits and not an accident of the data.
+ *
+ * ⚠️ `callSign` and `country` show NO such pile-up: their longest observed
+ * values are 13 and 14, which are floors rather than proven ceilings. They are
+ * capped there because every limit here should be a length the radio is known
+ * to store. Raise them if a longer one is ever read off a radio — a clipped
+ * country name is recoverable, a desynchronised database is not.
+ */
+export const D890_CONTACT_FIELD_MAX = {
+  name: 16,
+  city: 15,
+  callSign: 13,
+  province: 16,
+  country: 14,
+} as const;
+
 export interface D890DigitalContact {
   /** DMR ID. Not fixed-width: 30233 and 3027042 are both real, both valid. */
   dmrId: number;
@@ -262,12 +297,16 @@ export function parseDigitalContact(
  * `30233` lost. DMR IDs genuinely vary in length after their country prefix.
  */
 export function encodeDigitalContact(contact: D890DigitalContact): Uint8Array {
+  // Truncated, NOT because it is tidy but because the reader stops at the limit
+  // and carries on from there — an overrun field shifts every field after it.
+  // See `D890_CONTACT_FIELD_MAX`.
+  const cut = (value: string, max: number) => (value ?? '').slice(0, max);
   const strings = [
-    contact.name,
-    contact.city,
-    contact.callSign,
-    contact.province,
-    contact.country,
+    cut(contact.name, D890_CONTACT_FIELD_MAX.name),
+    cut(contact.city, D890_CONTACT_FIELD_MAX.city),
+    cut(contact.callSign, D890_CONTACT_FIELD_MAX.callSign),
+    cut(contact.province, D890_CONTACT_FIELD_MAX.province),
+    cut(contact.country, D890_CONTACT_FIELD_MAX.country),
     // The always-blank sixth field. See above — omitting it corrupts the bank.
     '',
   ];

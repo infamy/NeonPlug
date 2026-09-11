@@ -37,6 +37,14 @@
  * ordered by a key that is monotonic in the ID — which is what a binary search
  * needs. Writing them unsorted would produce a database the radio cannot search.
  *
+ * ⚠️ FIELDS HAVE HARD LENGTH LIMITS — see `D890_CONTACT_FIELD_MAX`. This module
+ * originally did NOT truncate, on the reasoning that the vendor's truncation
+ * was a CSV-import quirk. It is not. Writing a 16-character city to a radio
+ * produced a database the CPS read as 137 contacts of 200, fields sliding one
+ * column right from the first overlong record on. The reader stops at the limit
+ * and continues from there rather than from the NUL, so an overrun field
+ * desynchronises every field after it.
+ *
  * ⚠️ The BANK CHOPPING is the one part not proven by a write capture: 1,005
  * contacts are 94,686 bytes and fit in the first bank, so that upload never
  * crossed a boundary. It is proven by the READ side instead — bank 1 of the

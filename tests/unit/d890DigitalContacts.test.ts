@@ -21,6 +21,7 @@ import {
   encodeDigitalContact,
   encodeDigitalContactBank,
   D890_CONTACT_FRIEND_FLAG,
+  D890_CONTACT_FIELD_MAX,
 } from '../../src/radios/d890uv/digitalContacts';
 
 const BANK = new Uint8Array(
@@ -85,5 +86,67 @@ describe('digital contact records', () => {
   it('refuses a DMR ID too long for the four BCD bytes', () => {
     const [first] = parseDigitalContactBank(BANK);
     expect(() => encodeDigitalContact({ ...first, dmrId: 123456789 })).toThrow(/8/);
+  });
+});
+
+/**
+ * The field-length bug, reproduced.
+ *
+ * A 16-character city was written to a radio on 2026-09-10 because this driver
+ * had decided the vendor's truncation was a CSV-import quirk rather than a
+ * format limit. The CPS read the resulting database as 137 contacts of 200,
+ * with fields sliding one column right from the first overlong record onward.
+ */
+describe('field length limits', () => {
+  const base = {
+    dmrId: 3340002, name: 'Zalo', city: 'Playa Del Carmen', callSign: 'XE3N',
+    province: 'Quintana Roo', country: 'Mexico', isFriend: false, flags: 0,
+  };
+
+  it('truncates the 16-character city that desynchronised a real radio', () => {
+    const round = parseDigitalContact(encodeDigitalContact(base), 0)!;
+    expect(round.contact.city).toBe('Playa Del Carme');
+    expect(round.contact.city).toHaveLength(D890_CONTACT_FIELD_MAX.city);
+    // …and everything AFTER it still lands in its own field, which is the part
+    // that actually broke: the leftover character started the next string.
+    expect(round.contact.callSign).toBe('XE3N');
+    expect(round.contact.province).toBe('Quintana Roo');
+    expect(round.contact.country).toBe('Mexico');
+  });
+
+  it('keeps a record self-consistent when EVERY field overruns', () => {
+    const long = {
+      ...base,
+      name: 'Rabindranath Jesus Maria',
+      city: 'Municipio De Los Reyes',
+      callSign: 'VERYLONGCALLSIGN',
+      province: 'Baja California Norte',
+      country: 'Dominican Republic',
+    };
+    const bytes = encodeDigitalContact(long);
+    const round = parseDigitalContact(bytes, 0)!;
+    // The record ends exactly where its bytes end — no drift into the next one.
+    expect(round.next + 2).toBe(bytes.length);
+    for (const [field, max] of Object.entries(D890_CONTACT_FIELD_MAX)) {
+      expect((round.contact[field as keyof typeof D890_CONTACT_FIELD_MAX] as string).length)
+        .toBeLessThanOrEqual(max);
+    }
+  });
+
+  it('leaves a field at exactly the limit alone', () => {
+    const exact = { ...base, city: 'x'.repeat(D890_CONTACT_FIELD_MAX.city) };
+    expect(parseDigitalContact(encodeDigitalContact(exact), 0)!.contact.city)
+      .toHaveLength(D890_CONTACT_FIELD_MAX.city);
+  });
+
+  it('does not disturb the vendor records, which are already within limits', () => {
+    // The byte-exact fixture tests above would fail if truncation changed any
+    // real record; this states it directly.
+    for (const c of parseDigitalContactBank(BANK)) {
+      for (const [field, max] of Object.entries(D890_CONTACT_FIELD_MAX)) {
+        expect((c[field as keyof typeof D890_CONTACT_FIELD_MAX] as string).length)
+          .toBeLessThanOrEqual(max);
+      }
+    }
   });
 });
