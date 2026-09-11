@@ -439,11 +439,17 @@ a one-field change moves only that field's bytes.
 - ☐ **`applyRoamingZoneToRecord` is a genuine orphan** — encoder and tests
   exist, nothing calls it. Would also need its own planner: the read has no
   presence mask and guesses the table end.
-- ☐ **Blocked vs flat addressing.** `planMaskedTableWrite` / `planSpanTableWrite`
-  do flat `base + index * stride`, but scan lists and talkgroups are banked. Scan
-  lists >= 32 and talkgroups >= 1250 cannot be written at all, and the refusal
-  names the wrong cause. `D890_MASKED_TABLES` has no way to express a blocked
-  stride.
+- ☑ **Blocked vs flat addressing — FIXED.** `D890_MASKED_TABLES` grew a `bank:`
+  field and `tableRecordAddress` honours it. Talk groups got theirs on 2026-09-10;
+  SCAN LISTS were still flat until 2026-09-11, so a radio holding more than 32 of
+  them would have had list 33 planned at `0x2104000` while the radio keeps it at
+  `0x2180000` — bytes sent to an address the session never read. Nobody hit it
+  because every radio in front of us held two. Channels and predefined SMS were
+  already safe: both writers call the READER's own banked helper
+  (`channelAddresses`, `predefinedSmsAddress`).
+  `tests/unit/d890BankedAddressing.test.ts` now pins every table with a reader
+  address helper against the planner's addressing across each bank boundary, so
+  a banked table added without a `bank:` fails immediately.
 - ☐ **Member capacity off-by-one.** Scan lists decode 50 members but
   `writeU16Members` throws at >= 50; AM zones are 47 vs 46. A maximally-full list
   read off a radio makes an untouched codeplug **unwritable**. Loud, not

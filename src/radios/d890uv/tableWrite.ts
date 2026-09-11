@@ -330,6 +330,13 @@ export const D890_MASKED_TABLES = {
     maskAddress: D890_ADDR.SCAN_LIST_SET,
     stride: D890_ADDR.SCAN_LIST_STRIDE,
     slots: D890_LIMITS.SCAN_LISTS_MAX,
+    // BANKED — 32 lists per block, blocks 0x80000 apart, exactly as
+    // `scanListAddress()` has always read them. Missing here until 2026-09-11,
+    // which made the writer disagree with the reader above slot 31: list 33
+    // would have been planned at 0x2104000 while the radio keeps it at
+    // 0x2180000. That is the same reader/writer disagreement that destroyed 994
+    // talk groups, and it writes into an address the session never read.
+    bank: { size: D890_ADDR.SCAN_LISTS_PER_BLOCK, stride: D890_ADDR.SCAN_LIST_BLOCK_STRIDE },
     // The vendor's own defaults for a fresh list, captured 2026-09-10. Every
     // byte of the record is accounted for, so one can be built from scratch.
     blank: () => blankScanList(),
