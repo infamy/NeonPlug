@@ -951,7 +951,13 @@ export function useRadioConnection() {
 
   const writeContacts = useCallback(async (
     contacts: Contact[],
-    onProgress?: (progress: number, message: string) => void
+    onProgress?: (progress: number, message: string) => void,
+    /**
+     * Polled between frames. The DMR contact database is minutes of writing, so
+     * it needs a way out — but stopping leaves it INCOMPLETE, and the protocol
+     * throws saying so rather than pretending a partial write succeeded.
+     */
+    shouldCancel?: () => boolean
   ) => {
     setIsConnecting(true);
     setRadioBusy(true);
@@ -980,9 +986,11 @@ export function useRadioConnection() {
         setConnected(true);
       }
       
-      // Write contacts (this is slow - writes many 4KB blocks)
-      onProgress?.(10, `Writing ${contacts.length} contacts to radio (this may take a while)...`);
-      await protocol.writeContacts(contacts);
+      // Report 0, not a made-up milestone — the same lesson the contact READ
+      // learned: claiming 10% before a byte moves makes the bar jump forward
+      // and then fall back as real progress arrives.
+      onProgress?.(0, `Writing ${contacts.length} contacts to radio (this may take a while)...`);
+      await protocol.writeContacts(contacts, onProgress, shouldCancel);
       
       // Update store with written contacts
       setContacts(contacts);

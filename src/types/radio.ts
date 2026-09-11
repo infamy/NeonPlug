@@ -36,7 +36,16 @@ export interface DigitalRadioProtocol extends AnalogRadioProtocol {
   readDMRRadioIDs(): Promise<DMRRadioID[]>;
   writeDMRRadioIDs(radioIds: DMRRadioID[]): Promise<void>;
   readContacts(): Promise<Contact[]>;
-  writeContacts(contacts: Contact[]): Promise<void>;
+  /**
+   * `onProgress` and `shouldCancel` are optional because most radios write
+   * contacts as part of the codeplug. The DA-7X2's DMR contact database is its
+   * own multi-minute upload and needs both.
+   */
+  writeContacts(
+    contacts: Contact[],
+    onProgress?: (percent: number, message: string) => void,
+    shouldCancel?: () => boolean
+  ): Promise<void>;
 }
 
 /**
@@ -139,7 +148,16 @@ export interface RadioProtocol {
   readDMRRadioIDs(): Promise<DMRRadioID[]>;
   writeDMRRadioIDs(radioIds: DMRRadioID[]): Promise<void>;
   readContacts(): Promise<Contact[]>;
-  writeContacts(contacts: Contact[]): Promise<void>;
+  /**
+   * `onProgress` and `shouldCancel` are optional because most radios write
+   * contacts as part of the codeplug. The DA-7X2's DMR contact database is its
+   * own multi-minute upload and needs both.
+   */
+  writeContacts(
+    contacts: Contact[],
+    onProgress?: (percent: number, message: string) => void,
+    shouldCancel?: () => boolean
+  ): Promise<void>;
   readRadioSettings(): Promise<RadioSettings | null>;
   writeRadioSettings(settings: RadioSettings, options?: { changedFields?: string[] }): Promise<void>;
   onProgress?: (progress: number, message: string) => void;

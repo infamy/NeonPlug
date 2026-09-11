@@ -222,6 +222,9 @@ export const ContactsTab: React.FC = () => {
   const [truncationWarning, setTruncationWarning] = useState<string | null>(null);
   const [isReading, setIsReading] = useState(false);
   const [isWriting, setIsWriting] = useState(false);
+  // A ref, not state: the protocol polls this between frames and must see the
+  // latest value without waiting for a re-render.
+  const cancelWrite = useRef(false);
   
   const contactCapacity = radioInfo?.maxContacts ?? 50000;
 
@@ -305,6 +308,7 @@ export const ContactsTab: React.FC = () => {
     }
 
     setIsWriting(true);
+    cancelWrite.current = false;
     setProgress(0);
     setProgressMessage('');
     setDownloadError(null);
@@ -339,7 +343,7 @@ export const ContactsTab: React.FC = () => {
         }
         
         setProgressMessage(etaMessage);
-      });
+      }, () => cancelWrite.current);
     } catch (err) {
       console.error('Error writing contacts:', err);
       setDownloadError(err instanceof Error ? err.message : 'Failed to write contacts to radio');
@@ -586,11 +590,38 @@ export const ContactsTab: React.FC = () => {
           const live = radioProgress && radioProgress.label === 'Reading contacts';
           const showProgress = live ? radioProgress.percent : progress;
           const showMessage = live ? radioProgress.message : progressMessage;
-          return (isReading || isWriting || live) && showMessage ? (
+          if (!((isReading || isWriting || live) && showMessage)) return null;
+          // The slim inline bar the images area uses: a line of status, a
+          // percentage, and a 6px rule. A contact write is minutes long, so it
+          // has to sit in the page rather than take it over.
+          return (
             <div className="mt-3">
-              <ProgressBar progress={showProgress} message={showMessage} />
+              <div className="flex items-baseline justify-between mb-1 gap-3">
+                <span className="text-xs text-neon-cyan truncate">{showMessage}</span>
+                <div className="flex items-baseline gap-3 shrink-0">
+                  <span className="text-xs text-muted font-mono">
+                    {Math.round(showProgress)}%
+                  </span>
+                  {isWriting && (
+                    <button
+                      type="button"
+                      onClick={() => { cancelWrite.current = true; }}
+                      className="text-xs text-amber-400 hover:text-amber-300 underline underline-offset-2"
+                      title="Stop after the current frame. The contact database will be INCOMPLETE and must be written again."
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="h-1.5 w-full bg-dark-charcoal rounded overflow-hidden">
+                <div
+                  className="h-full bg-neon-cyan transition-[width] duration-150"
+                  style={{ width: `${Math.max(0, Math.min(100, showProgress))}%` }}
+                />
+              </div>
             </div>
-          ) : null;
+          );
         })()}
 
         {downloadError && (

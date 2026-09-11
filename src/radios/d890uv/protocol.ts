@@ -21,6 +21,7 @@ import type {
   D890ReferencingTables,
 } from './writePlan';
 import { planChannelWrite, D890WriteRefusedError } from './writePlan';
+import { planDigitalContactWrite } from './digitalContactWrite';
 import type { D890TableCounts, D890OccupiedSlots } from './references';
 import {
   D890_MASK_CHECKS,
@@ -1384,6 +1385,91 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
       'D890UV'
     );
     return out;
+  }
+
+  /**
+   * Write the DMR contact database.
+   *
+   * ⚠️ UNTIL 2026-09-10 THIS WAS THE BASE CLASS'S NO-OP. The Contacts tab had a
+   * Write button, it sent nothing, and it then reported success — the same
+   * silent-discard shape as the tables audited earlier that week.
+   *
+   * Three regions in the vendor's own order: header, index, records. The index
+   * is the one that matters and the one nothing knew about — records without it
+   * are on the radio and unreachable. See `digitalContactWrite.ts` for the
+   * capture this is built from.
+   *
+   * NO ERASE, and that is measured rather than hoped: the vendor's upload is
+   * PROGRAM, identify, one probe read, ordinary 16-byte frames, END.
+   *
+   * ⚠️ CANCELLING LEAVES THE DATABASE INCOMPLETE. There is no safe stopping
+   * point — whichever order the three regions go in, a half-written database
+   * has a header describing records that are not all there. Cancel is offered
+   * because a stall or a pulled cable needs an exit, not because it is tidy,
+   * and the caller is told to write again.
+   */
+  override async writeContacts(
+    contacts: Contact[],
+    onProgress?: (percent: number, message: string) => void,
+    shouldCancel?: () => boolean
+  ): Promise<void> {
+    const conn = this.requireConnection();
+    const report = onProgress ?? this.onProgress?.bind(this);
+
+    const plan = planDigitalContactWrite(
+      contacts.map((c) => ({
+        dmrId: c.dmrId,
+        name: c.name ?? '',
+        city: c.city ?? '',
+        callSign: c.callSign ?? '',
+        province: c.province ?? '',
+        country: c.country ?? '',
+        isFriend: c.isFriend ?? false,
+        // A contact from a CSV has no radio flags to preserve; one read from
+        // this radio keeps them, which is why the field exists at all.
+        flags: 0,
+      }))
+    );
+
+    // Validate every frame before sending the first, exactly as a codeplug
+    // write does. An address fault then costs nothing.
+    dryRunWrite(plan.frames);
+
+    const startedAt = Date.now();
+    let written = 0;
+    const total = plan.frames.length * 0x10;
+
+    for (const [i, frame] of plan.frames.entries()) {
+      if (shouldCancel?.()) {
+        throw new Error(
+          `Contact write CANCELLED after ${i} of ${plan.frames.length} frames. ` +
+            `The contact database on the radio is now INCOMPLETE — its header and ` +
+            `records do not agree. Write the list again to repair it.`
+        );
+      }
+      await conn.writeMemory(frame.address, frame.data);
+      written += frame.data.length;
+
+      // Every 64 frames: often enough to feel live, rare enough not to spend
+      // the write budget on React renders.
+      if (i % 64 === 0 || i === plan.frames.length - 1) {
+        const seconds = (Date.now() - startedAt) / 1000;
+        const rate = seconds > 0 ? written / 1024 / seconds : 0;
+        const remaining = rate > 0 ? (total - written) / 1024 / rate : 0;
+        report?.(
+          (written / total) * 100,
+          `${plan.count.toLocaleString()} contacts · ` +
+            `${Math.round(written / 1024).toLocaleString()} of ${Math.round(total / 1024).toLocaleString()} KB · ` +
+            `${Math.round(rate)} KB/s` +
+            (remaining > 1 ? ` · ${Math.ceil(remaining)}s left` : '')
+        );
+      }
+    }
+    log.info(
+      `Digital contacts: wrote ${plan.count} contacts, ${plan.streamBytes} bytes of records ` +
+        `in ${plan.frames.length} frames, ${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
+      'D890UV'
+    );
   }
 
   /** Power-on screen text and password — outside the settings block. */
