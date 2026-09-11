@@ -306,9 +306,13 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
    * already in the read log are skipped, which is why this stays cheap as more
    * tables become properly modelled — it shrinks on its own.
    *
-   * ⚠️ Costs real time: roughly 83 KB at ~10 KB/s, so about 8 seconds on top of
-   * a codeplug read. That is the price of being able to write at all, and it is
-   * charged once per read rather than per write.
+   * ⚠️ Costs real time: roughly 83 KB, about 2 s on top of a codeplug read.
+   * MEASURED 2026-09-11, after `readExact` stopped sleeping 10 ms between
+   * partial chunks: a whole read moved 148,832 bytes in 115 spans in 3.5 s,
+   * about 42 KB/s, and the same read behind another window took 3.58 s. The
+   * ~10 KB/s this note used to quote WAS that sleep. Either way the cost is the
+   * price of being able to write at all, and it is charged once per read rather
+   * than per write.
    */
   async readPreserveRegions(
     onProgress?: (done: number, total: number) => void
