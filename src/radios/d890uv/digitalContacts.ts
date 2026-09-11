@@ -232,6 +232,81 @@ export function parseDigitalContact(
  * UTF-16 and every record seen starts on an even offset, so odd positions are
  * never record starts and stepping by one only invites CJK-looking garbage.
  */
+/**
+ * The bytes of one contact record, exactly as the radio stores them.
+ *
+ * MEASURED 2026-09-10 against the vendor's own contact download: a record is
+ * the leading u16, four BCD bytes, and **SIX** NUL-terminated UTF-16LE strings
+ * — not five. The sixth is empty in all 1,906 records sampled across the first
+ * 256 KB, which is why the parser reads five and the walker then steps over
+ * "padding" it never explained. It was never padding: it is a field, always
+ * blank, and a record that omits it is two bytes short and puts every record
+ * after it out of alignment.
+ *
+ * `flags` carries the bits this driver does not model, so it is preserved
+ * rather than rebuilt; only the MyFriend bit is taken from the model, so
+ * toggling that in a UI actually reaches the wire.
+ *
+ * The ID re-encodes exactly despite being parsed to a number: four BCD bytes
+ * hold eight digits, and zero-padding to eight restores the leading zeros that
+ * `30233` lost. DMR IDs genuinely vary in length after their country prefix.
+ */
+export function encodeDigitalContact(contact: D890DigitalContact): Uint8Array {
+  const strings = [
+    contact.name,
+    contact.city,
+    contact.callSign,
+    contact.province,
+    contact.country,
+    // The always-blank sixth field. See above — omitting it corrupts the bank.
+    '',
+  ];
+  let size = 6;
+  for (const str of strings) size += str.length * 2 + 2;
+
+  const out = new Uint8Array(size);
+  const flags = contact.isFriend
+    ? contact.flags | D890_CONTACT_FRIEND_FLAG
+    : contact.flags & ~D890_CONTACT_FRIEND_FLAG & 0xffff;
+  out[0] = flags & 0xff;
+  out[1] = (flags >> 8) & 0xff;
+
+  const digits = String(Math.trunc(contact.dmrId)).padStart(8, '0');
+  if (digits.length > 8) {
+    throw new Error(
+      `DMR ID ${contact.dmrId} needs ${digits.length} digits; the record holds 8`
+    );
+  }
+  for (let i = 0; i < 4; i += 1) {
+    out[2 + i] = (Number(digits[i * 2]) << 4) | Number(digits[i * 2 + 1]);
+  }
+
+  let at = 6;
+  for (const str of strings) {
+    for (let i = 0; i < str.length; i += 1) {
+      const unit = str.charCodeAt(i);
+      out[at] = unit & 0xff;
+      out[at + 1] = (unit >> 8) & 0xff;
+      at += 2;
+    }
+    at += 2; // NUL terminator, already zero
+  }
+  return out;
+}
+
+/** Every record back to back, the way a bank stores them. */
+export function encodeDigitalContactBank(contacts: readonly D890DigitalContact[]): Uint8Array {
+  const parts = contacts.map(encodeDigitalContact);
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
+}
+
 export function parseDigitalContactBank(bytes: Uint8Array): D890DigitalContact[] {
   const out: D890DigitalContact[] = [];
   let offset = 0;
