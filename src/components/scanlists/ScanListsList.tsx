@@ -205,14 +205,16 @@ export const ScanListsList: React.FC = () => {
     );
 
   const detailContent = (
-    <Card padding="none">
-      <div className="p-4 border-b border-neon-cyan border-opacity-30">
+    <Card padding="none" className="flex flex-col h-full">
+      <div className="p-4 border-b border-neon-cyan border-opacity-30 flex-shrink-0">
         <SectionTitle as="h3" size="md" bold>
           {selectedScanListData ? `Scan List: ${selectedScanListData.name}` : 'Select a Scan List'}
         </SectionTitle>
       </div>
       {selectedScanListData ? (
-        <ScanListEditor scanList={selectedScanListData} onAlert={showAlert} />
+        <div className="flex-1 min-h-0">
+          <ScanListEditor scanList={selectedScanListData} onAlert={showAlert} />
+        </div>
       ) : (
         <EmptyState
           message="Select a scan list to edit"
@@ -235,6 +237,7 @@ export const ScanListsList: React.FC = () => {
         addInputMaxLength={16}
         listContent={listContent}
         detailContent={detailContent}
+        fullHeight
       />
       <ConfirmModal
         isOpen={!!scanListToDelete}
@@ -452,7 +455,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
   const sortedChannels = [...channels].sort((a, b) => a.number - b.number);
 
   return (
-    <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-250px)]">
+    <div className="h-full overflow-y-auto p-4 space-y-4">
       {/* Scan List Settings - Collapsible */}
       <div className="bg-neon-cyan bg-opacity-5 border border-neon-cyan border-opacity-30 rounded-lg overflow-hidden">
         <div 

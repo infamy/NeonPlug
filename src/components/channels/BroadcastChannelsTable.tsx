@@ -196,11 +196,15 @@ export const BroadcastChannelsTable: React.FC<{
   }
 
   return (
-    <>
+    // A column that fills the Channels tab: the zone list, VFO strip and Add row
+    // take what they need and the table scrolls in the rest. The table used to be
+    // h-full BELOW them, so it overflowed the tab by their height and the page
+    // scrolled as well as the table. The floor keeps it usable beside a long zone list.
+    <div className="h-full flex flex-col">
     {zoneList}
     {vfoStrip}
     {addButton}
-    <Card className="h-full overflow-auto" padding="none">
+    <Card className="flex-1 min-h-[16rem] overflow-auto" padding="none">
       <table className="w-full border-collapse text-sm">
         <thead className="sticky top-0 z-10">
           <tr className="bg-dark-charcoal border-b border-neon-cyan">
@@ -301,6 +305,6 @@ export const BroadcastChannelsTable: React.FC<{
         </tbody>
       </table>
     </Card>
-    </>
+    </div>
   );
 };

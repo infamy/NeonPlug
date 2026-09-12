@@ -89,7 +89,7 @@ export const AnalogEmergencyList: React.FC = () => {
           {systems.length === 0 ? (
             <EmptyState message="No analog emergency systems configured." />
           ) : (
-            <div className="max-h-[calc(100vh-400px)] overflow-auto">
+            <div className="max-h-[70vh] overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
                   <thead className="sticky top-0 z-20">

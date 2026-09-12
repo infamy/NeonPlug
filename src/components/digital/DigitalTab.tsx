@@ -31,6 +31,17 @@ import { PageHeader } from '../ui/PageHeader';
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
 
+/**
+ * The five list cards scroll inside a box 70% of the window tall.
+ *
+ * They were capped at the window less 400px, which left about five rows on a
+ * 650px window. Letting them run into the page scroll instead is not an option
+ * here: a DA-7X2 holds 10,000 talk groups, every row is already rendered, and
+ * the sticky headers need the card to be the scroll box. 70vh matches the
+ * Contacts list's floor, so a list always gets most of the window.
+ */
+const LIST_CARD_CLASS = 'max-h-[70vh] flex flex-col';
+
 export const DigitalTab: React.FC = () => {
   const { blockMetadata, blockData } = useRadioStore();
   const { caps } = useRadioCapabilities();
@@ -295,7 +306,7 @@ export const DigitalTab: React.FC = () => {
             <EmptyState message="No DMR Radio IDs found on the radio." />
           </Card>
         ) : (
-          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
+          <Card className={LIST_CARD_CLASS} padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -411,7 +422,7 @@ export const DigitalTab: React.FC = () => {
             <EmptyState message="No talk groups found on the radio." />
           </Card>
         ) : (
-          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
+          <Card className={LIST_CARD_CLASS} padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -552,7 +563,7 @@ export const DigitalTab: React.FC = () => {
             <EmptyState message="No digital emergency systems configured." />
           </Card>
         ) : (
-          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
+          <Card className={LIST_CARD_CLASS} padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -723,7 +734,7 @@ export const DigitalTab: React.FC = () => {
             <EmptyState message="Block 0x10 not found. Read from radio or load a codeplug to view encryption keys." />
           </Card>
         ) : (
-          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
+          <Card className={LIST_CARD_CLASS} padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -851,7 +862,7 @@ export const DigitalTab: React.FC = () => {
             <EmptyState message="Quick messages will be loaded when you read from the radio." />
           </Card>
         ) : (
-          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
+          <Card className={LIST_CARD_CLASS} padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">

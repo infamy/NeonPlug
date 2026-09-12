@@ -142,9 +142,24 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={`Edit ${isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : `Channel ${channel.number}`}`}
+      footer={
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm text-cool-gray hover:text-white border border-neon-cyan border-opacity-30 rounded transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-3 py-1.5 text-sm bg-neon-cyan text-dark-charcoal font-medium rounded hover:bg-opacity-90 transition-colors"
+          >
+            Save Changes
+          </button>
+        </div>
+      }
     >
-      <div className="flex flex-col h-full">
-        <div className="flex-1 overflow-y-auto pr-2">
+      <div className="pr-2">
           {validationErrors.length > 0 && (
             <div className="mb-4 p-3 bg-red-900/30 border border-red-500/50 rounded text-red-300 text-sm">
               <p className="font-semibold mb-1">Please fix the following:</p>
@@ -1114,22 +1129,6 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
             </section>
           )}
           </div>
-        </div>
-
-        <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-neon-cyan border-opacity-30 flex-shrink-0">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm text-cool-gray hover:text-white border border-neon-cyan border-opacity-30 rounded transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-3 py-1.5 text-sm bg-neon-cyan text-dark-charcoal font-medium rounded hover:bg-opacity-90 transition-colors"
-          >
-            Save Changes
-          </button>
-        </div>
       </div>
     </Modal>
   );

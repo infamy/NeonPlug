@@ -8,12 +8,17 @@ export const ScanListsTab: React.FC = () => {
   const { scanLists } = useScanListsStore();
 
   return (
-    <div className="h-full">
+    <div className="h-full flex flex-col">
       <PageHeader
         title="Scan Lists"
         actions={<span>{scanLists.length} {formatPlural(scanLists.length, 'scan list')}</span>}
       />
-      <ScanListsList />
+      {/* Fills the tab like Zones: the list and the editor each scroll inside a
+          pane sized to the window. Both were capped at a guessed 100vh-250px,
+          which let the page scroll as well. */}
+      <div className="flex-1 min-h-0">
+        <ScanListsList />
+      </div>
     </div>
   );
 };
