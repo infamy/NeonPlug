@@ -97,7 +97,7 @@ import {
 } from './digitalContacts';
 import type { QuickTextMessage } from '../../models/QuickTextMessage';
 import { D890_SATELLITE, decodeSatelliteTable, type D890SatelliteRecord } from './satellite';
-import { D890Connection, openD890Port, type D890Identity } from './connection';
+import { D890Connection, openD890Port } from './connection';
 import {
   D890_ADDR,
   D890_LIMITS,
@@ -172,7 +172,6 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
   private stagedSettings: Partial<D890Settings> | null = null;
 
   private connection: D890Connection | null = null;
-  private identity: D890Identity | null = null;
 
   // -------------------------------------------------------------------------
   // Lifecycle
@@ -188,13 +187,17 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
       await conn.enterProgramMode();
       const identity = await conn.identify();
       conn.assertKnownModel(identity);
+      // What the radio called itself, kept in the log rather than in RadioInfo:
+      // the model string (IDMR-7X2 on the BTECH branch, ID890UV on Anytone's)
+      // is not a version, and V100 is the protocol version, not firmware. Both
+      // used to fill rows on the Settings device card that meant something else.
+      log.info(`Identified as ${identity.model}, protocol ${identity.version}`, 'D890UV');
       // Logged because it is the single biggest lever on read speed: the
       // vendor CPS uses 16-byte reads, so a fallback to 0x10 here means ~15x
       // more round trips for the same bytes. When a read feels slow, this line
       // says whether it is the protocol or the radio.
       const readLength = await conn.negotiateReadLength();
       log.info(`Negotiated read length 0x${readLength.toString(16)} (${readLength} bytes/frame)`, 'D890UV');
-      this.identity = identity;
       this.connection = conn;
     } catch (err) {
       // Leave the radio in a clean state, but do NOT send END — the session
@@ -214,7 +217,6 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
     }
     await this.connection.close();
     this.connection = null;
-    this.identity = null;
   }
 
   isConnected(): boolean {
@@ -222,7 +224,9 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
   }
 
   async getRadioInfo(): Promise<RadioInfo> {
-    const conn = this.requireConnection();
+    // Nothing returned here comes from the session any more, but the contract
+    // stays: it answers for a connected radio only.
+    this.requireConnection();
     return {
       // The NeonPlug model ID, NOT the wire string. `useRadioConnection` feeds
       // this straight into getCapabilitiesForModel(), which is keyed on
@@ -232,7 +236,11 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
       // ignored. Found on hardware, not in review. FT-65 does the same thing via
       // `this.modelId`; follow that convention.
       model: D890_MODEL_IDS[0],
-      firmware: this.identity?.version ?? 'unknown',
+      // Blank, so shown as "-". This radio does not expose its firmware version
+      // over the programming protocol, and the vendor CPS does not show one
+      // (see capabilities.ts). The identify reply's V100 is the PROTOCOL version
+      // — it stayed V100 across a firmware update — and was shown as Firmware.
+      firmware: '',
       // Not reported by this radio's identify response; the reference documents
       // only model and version.
       buildDate: '',
@@ -241,11 +249,10 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
       // have sliced a 163,467-contact RadioID download down to 10,000 and
       // reported it as the radio's capacity.
       maxContacts: D890_DIGITAL_CONTACTS.MAX_CONTACTS,
-      // The wire identity, kept so diagnostics can show what actually came back.
-      radioVersion: this.identity?.model ?? 'unknown',
-      // The negotiated read size is the single most useful diagnostic for this
-      // radio, and codeplugVersion is the only free-form field available.
-      codeplugVersion: `read=${conn.getReadLength()}B`,
+      // No radioVersion, dspVersion or codeplugVersion: the radio reports none.
+      // Settings used to show "Radio Version IDMR-7X2" (the model string) and
+      // "Codeplug Version read=240B" (the negotiated frame size), diagnostics
+      // parked in fields that meant something else. The connect log has both.
     };
   }
 
