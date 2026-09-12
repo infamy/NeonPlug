@@ -21,7 +21,7 @@ export const AboutTab: React.FC = () => {
 
   return (
     <>
-    <div className="h-full overflow-y-auto">
+    <div>
       <PageHeader
         title="About NeonPlug"
         description="Online Digital CPS — program your radio directly from your browser."

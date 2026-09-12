@@ -166,7 +166,7 @@ export const SmartImportTab: React.FC = () => {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div>
       {/* One title for the tab, named what the tab is called. This page used to
           carry TWO page-level headings — "Smart Import/Export" at the top and
           "Channel Wizard" halfway down — inside a p-6 that doubled <main>'s own

@@ -365,7 +365,7 @@ export const SettingsTab: React.FC = () => {
   );
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div>
       {/* Boot image crop modal */}
       <Modal
         isOpen={showBootImageCropModal}

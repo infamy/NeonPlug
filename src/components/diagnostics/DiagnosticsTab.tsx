@@ -86,7 +86,7 @@ export const DiagnosticsTab: React.FC = () => {
 
     return (
       <>
-      <div className="h-full overflow-y-auto">
+      <div>
         {/* No p-6 here: <main> already has one, and doubling it put this title
             48px in while the other Diagnostics path sat at 24. */}
         <div>
@@ -135,7 +135,7 @@ export const DiagnosticsTab: React.FC = () => {
 
   return (
     <>
-    <div className="h-full overflow-y-auto">
+    <div>
       <PageHeader
         title="Diagnostics & Debug"
         tone="caution"
