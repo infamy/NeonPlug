@@ -100,6 +100,20 @@ describe('a codeplug file carries the radio-specific tables', () => {
   });
 });
 
+describe('the format version is the writer\'s to stamp', () => {
+  it('ignores a version the caller carried', () => {
+    // Every builder hardcoded '1.0.0', so the first file containing the 1.1.0
+    // `tables` field still called itself 1.0.0 — a file describing itself
+    // wrongly is worse than one with no version at all.
+    const json = codeplugToJsonSafe({ ...base({ ...RADIO_TABLES }), version: '1.0.0' });
+    expect(json.version).toBe('1.1.0');
+  });
+
+  it('says 1.1.0 even when there are no tables to carry', () => {
+    expect(codeplugToJsonSafe(base(undefined)).version).toBe('1.1.0');
+  });
+});
+
 describe('older files and empty radios', () => {
   it('loads a file written before tables existed', () => {
     // Every .neonplug exported before 2026-09-12. No `tables` key at all.

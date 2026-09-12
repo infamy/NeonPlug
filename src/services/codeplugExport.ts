@@ -134,7 +134,11 @@ export function codeplugToJsonSafe(data: CodeplugData): Record<string, unknown> 
     // function is what lands in the file.
     tables: exportableTables(data.tables),
     exportDate: data.exportDate,
-    version: data.version,
+    // The WRITER stamps the format version, ignoring whatever the caller
+    // carried. Every call site hardcoded '1.0.0', so the first file to contain
+    // the 1.1.0 `tables` field still announced itself as 1.0.0 — caught by
+    // exporting a real codeplug on 2026-09-12 and reading the file back.
+    version: CODEPLUG_VERSION,
   };
 }
 
