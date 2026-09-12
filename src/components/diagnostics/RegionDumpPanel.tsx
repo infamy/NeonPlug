@@ -10,16 +10,17 @@ import { createProtocolForModel } from '../../radios';
 import { D890_ADDR, D890_LIMITS } from '../../radios/d890uv/constants';
 import { channelAddresses } from '../../radios/d890uv/structures';
 import { D890_BROADCAST } from '../../radios/d890uv/broadcastChannels';
-import { D890UVProtocol } from '../../radios/d890uv/protocol';
+import { isRawRegionReader } from '../../radios/shared/rawRegionReader';
 
 /**
  * Raw memory region dump, for radios that address memory sparsely rather than
  * exposing whole clone blocks (currently the D890UV family).
  *
- * This exists to capture test fixtures. Every layout in the D890 driver is
- * transcribed from documentation and unverified, and the only way to close that
- * gap is to dump real bytes and snapshot-test the parsers against them — the
- * same Layer-2 approach planned for the DM-32.
+ * Built to capture test fixtures, and still how a layout gets checked against
+ * the radio: dump the region, compare it with what the vendor CPS wrote, and
+ * commit the bytes as a fixture. How far each layout has been confirmed is
+ * tracked in recordLayout.ts and DA7X2-COVERAGE.md rather than here, where it
+ * went stale.
  *
  * It owns its own connect/read/disconnect cycle because no other diagnostics
  * panel does live I/O; they all read from the store, which this radio never
@@ -287,8 +288,12 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
     if (!target) return;
 
     const protocol = createProtocolForModel(model ?? '');
-    if (!(protocol instanceof D890UVProtocol)) {
-      showAlert('Raw region dump is only available for the DA-7X2 / D890UV family.', 'Region dump');
+    // What the protocol can do, not which class it is: see rawRegionReader.ts.
+    if (!isRawRegionReader(protocol)) {
+      showAlert(
+        "This radio's capabilities include a raw region dump, but its driver cannot read memory by address.",
+        'Region dump'
+      );
       return;
     }
 
@@ -331,10 +336,9 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
         Reads memory by address and shows the bytes exactly as the radio sent them.
       </p>
       <p className="text-xs text-muted mb-4">
-        Every layout in this driver is transcribed from documentation and{' '}
-        <span className="text-yellow-400">not verified on hardware</span>. Dump these
-        regions, save them as fixtures, and snapshot-test the parsers against them. This
-        panel only reads — it never writes.
+        Dump a region to check a layout against the radio, or to save its bytes as a test
+        fixture. Which layouts have passed a hardware round trip is tracked in
+        DA7X2-COVERAGE.md. This panel only reads — it never writes.
       </p>
 
       <div className="flex flex-col gap-3">
