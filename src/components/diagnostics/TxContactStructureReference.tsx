@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { downloadBinary } from '../../utils/hexdump';
 import { downloadFile } from '../../utils/download';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 
 interface TxContactStructureReferenceProps {
   /** 0x42 = Channels 1-2048 block; 0x43 = Channels 2049+ and VFOs block. */

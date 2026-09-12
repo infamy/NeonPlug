@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useChannelsStore } from '../../store/channelsStore';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 
 interface ChannelParserPanelProps {
   /** Shared with the CPS CSV Comparison panel — owned by DiagnosticsTab. */

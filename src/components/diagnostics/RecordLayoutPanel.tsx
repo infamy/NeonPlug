@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useChannelsStore } from '../../store/channelsStore';
 import {

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { HexDump } from './HexDump';
 import { formatHexDumpText } from '../../utils/hexdump';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { createZip, type ZipEntry } from '../../utils/zip';
 import { downloadBlob } from '../../utils/download';
 

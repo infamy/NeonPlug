@@ -15,7 +15,7 @@ import {
 } from '../../services/d890WriteInput';
 import { downloadFile } from '../../utils/download';
 import { formatPlural } from '../../utils/formatPlural';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 
 /**
  * Plan a write and diff it against the read it came from — without a radio.

@@ -4,6 +4,7 @@ import { useContactsStore } from '../../store/contactsStore';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ContactsTable } from './ContactsTable';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { ProgressBar } from '../ui/ProgressBar';
 import { COUNTRIES_BY_REGION, type CountryRegion } from '../../constants/countries';
 import { US_STATES } from '../../constants/usStates';
@@ -522,9 +523,15 @@ export const ContactsTab: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col pb-12">
-      {/* Radio Read/Write Section */}
-      <div className="mb-6 bg-deep-gray rounded-lg border border-yellow-600 border-opacity-30 p-4">
-        <h3 className="text-lg font-semibold text-yellow-400 mb-3">⚠️ Radio Read/Write (Very Slow)</h3>
+      {/* Radio Read/Write Section.
+          Collapsed by default: it is a warning about a path most people should
+          not take, and the warning travels WITH the buttons it is warning about,
+          so hiding both together loses nothing. */}
+      <CollapsibleSection
+        title="⚠️ Radio Read/Write (Very Slow)"
+        variant="yellow"
+        className="mb-6"
+      >
         <p className="text-cool-gray text-sm mb-4">
           Reading and writing contacts directly from/to the radio is VERY SLOW (can take 10+ minutes for large databases).
           Use the RadioID.net download or CSV import for faster loading.
@@ -592,11 +599,16 @@ export const ContactsTab: React.FC = () => {
             {downloadError}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* RadioID.net Download Section */}
-      <div className="mb-6 bg-deep-gray rounded-lg border border-neon-cyan border-opacity-30 p-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-3">Download from RadioID.net</h3>
+      {/* RadioID.net Download Section.
+          The big one — a country picker some 600px tall, which is what pushed
+          the contact list off the screen. */}
+      <CollapsibleSection
+        title="Download from RadioID.net"
+        variant="cyan"
+        className="mb-6"
+      >
         <p className="text-cool-gray text-sm mb-4">
           Select countries to download DMR contacts. This will replace all current contacts.
         </p>
@@ -705,10 +717,22 @@ export const ContactsTab: React.FC = () => {
             <ProgressBar progress={progress} message={progressMessage} />
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* Contacts Table Section */}
-      <div className="flex-1 flex flex-col min-h-0">
+      {/* Contacts Table Section
+          `min-h-0` alone let this be crushed: it is the only flexible child of a
+          tab pinned to the viewport height, so the two cards above took what
+          they wanted and the table was left 55px tall with its contents clipped
+          and no way to scroll to them — reported 2026-09-12 with 7,183 contacts
+          loaded and invisible.
+
+          The floor is most of a screen on purpose. A short one technically
+          "worked" — the page scrolled and the list was reachable — but left a
+          five-row peephole scrolling inside a page that also scrolled, which is
+          the worst of both. At 70vh the list shows some thirty of its hundred
+          rows per page, and when the content above is tall the whole thing
+          OVERFLOWS rather than shrinking, handing the scroll to <main>. */}
+      <div className="flex-1 flex flex-col min-h-[70vh]">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-2xl font-bold text-neon-cyan">CSV Contacts</h2>
           <div className="text-cool-gray">

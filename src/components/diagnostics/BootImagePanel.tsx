@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { downloadHexDump, downloadBinary } from '../../utils/hexdump';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { OffsetInspector } from './OffsetInspector';
 import { BOOT_IMAGE } from '../../utils/bootImage';
 

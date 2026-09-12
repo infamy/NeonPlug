@@ -4,7 +4,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { MetadataBlockDisplay } from './MetadataBlockDisplay';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { OffsetInspector } from './OffsetInspector';
 import { FieldVerificationTable } from './FieldVerificationTable';
 import { DebugExportsCard } from './DebugExportsCard';
