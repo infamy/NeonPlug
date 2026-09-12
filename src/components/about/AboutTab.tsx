@@ -74,10 +74,10 @@ export const AboutTab: React.FC = () => {
                 To build your own offline version from source:
               </p>
               <pre className="bg-black rounded p-3 text-xs text-neon-cyan overflow-x-auto">
-                <code>git clone https://github.com/infamy/NeonPlug.git
-cd NeonPlug
-npm install
-npm run build:single</code>
+                {/* A string, not JSX text: JSX folds line breaks in text into
+                    single spaces, so these four commands rendered as one line
+                    that fails when pasted. */}
+                <code>{'git clone https://github.com/infamy/NeonPlug.git\ncd NeonPlug\nnpm install\nnpm run build:single'}</code>
               </pre>
               <p className="text-cool-gray text-xs mt-2">
                 The single-file HTML will be in the <code className="text-neon-cyan">dist/index.html</code> file.
