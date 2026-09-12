@@ -219,6 +219,9 @@ export const ContactsTab: React.FC = () => {
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [customCountry, setCustomCountry] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  // Open until a download lands, then folded away so the loaded list gets the
+  // room — see handleDownloadFromRadioID.
+  const [radioIdOpen, setRadioIdOpen] = useState(true);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [truncationWarning, setTruncationWarning] = useState<string | null>(null);
   const [isReading, setIsReading] = useState(false);
@@ -448,6 +451,14 @@ export const ContactsTab: React.FC = () => {
           `Warning: ${removed.toLocaleString()} ${formatPlural(removed, 'contact')} were removed due to limited space. ` +
           `Your radio supports ${contactCapacity.toLocaleString()} contacts, but ${totalContacts.toLocaleString()} were downloaded.`
         );
+        // OPEN, not merely left alone: the warning renders inside this section,
+        // and a download takes long enough to collapse the section while it
+        // runs. Declining to close it would still leave the one message saying
+        // contacts were dropped folded out of sight.
+        setRadioIdOpen(true);
+      } else {
+        // Fold the picker away so the list that just loaded gets the room.
+        setRadioIdOpen(false);
       }
 
       setProgressMessage(`Successfully downloaded ${contactsToSave.length.toLocaleString()} ${formatPlural(contactsToSave.length, 'contact')} from ${countriesToFetch.length} ${formatPlural(countriesToFetch.length, 'country', 'countries')}${selectedStates.length > 0 ? ` (${selectedStates.length} US ${formatPlural(selectedStates.length, 'state')})` : ''}`);
@@ -463,6 +474,8 @@ export const ContactsTab: React.FC = () => {
     } catch (error) {
       console.error('Error downloading from RadioID.net:', error);
       setDownloadError(error instanceof Error ? error.message : 'Failed to download contacts from RadioID.net');
+      // The error renders inside this section too — same reason as truncation.
+      setRadioIdOpen(true);
       setProgress(0);
       setProgressMessage('');
     } finally {
@@ -523,14 +536,12 @@ export const ContactsTab: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col pb-12">
-      {/* Radio Read/Write Section.
-          Collapsed by default: it is a warning about a path most people should
-          not take, and the warning travels WITH the buttons it is warning about,
-          so hiding both together loses nothing. */}
+      {/* Radio Read/Write Section. Open by default; folds away on request. */}
       <CollapsibleSection
         title="⚠️ Radio Read/Write (Very Slow)"
         variant="yellow"
         className="mb-6"
+        defaultOpen
       >
         <p className="text-cool-gray text-sm mb-4">
           Reading and writing contacts directly from/to the radio is VERY SLOW (can take 10+ minutes for large databases).
@@ -601,13 +612,16 @@ export const ContactsTab: React.FC = () => {
         )}
       </CollapsibleSection>
 
-      {/* RadioID.net Download Section.
-          The big one — a country picker some 600px tall, which is what pushed
-          the contact list off the screen. */}
+      {/* RadioID.net Download Section — a country picker some 600px tall.
+          Open by default because it is how most people fill this tab, and
+          CLOSED automatically after a clean download, because the next thing
+          anyone wants is to look at what just loaded. */}
       <CollapsibleSection
         title="Download from RadioID.net"
         variant="cyan"
         className="mb-6"
+        open={radioIdOpen}
+        onOpenChange={setRadioIdOpen}
       >
         <p className="text-cool-gray text-sm mb-4">
           Select countries to download DMR contacts. This will replace all current contacts.
