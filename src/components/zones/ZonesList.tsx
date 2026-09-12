@@ -145,6 +145,10 @@ const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
 };
 
 export const ZonesList: React.FC = () => {
+  const { caps } = useRadioCapabilities();
+  // From the radio's limits, like every other list editor; this printed and
+  // enforced a literal 250.
+  const maxZones = caps?.maxZones ?? 250;
   const { zones, selectedZoneId, setSelectedZoneId, addZone, deleteZone, renameZone } = useZonesStore();
   const [newZoneName, setNewZoneName] = useState('');
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
@@ -328,12 +332,12 @@ export const ZonesList: React.FC = () => {
     <>
       <ListDetailLayout
         listTitle="Zones"
-        listSubtitle={`${zones.length}/250 zones`}
+        listSubtitle={`${zones.length}/${maxZones} zones`}
         addInputPlaceholder="Zone name..."
         addInputValue={newZoneName}
         onAddInputChange={setNewZoneName}
         onAdd={handleAddZone}
-        addDisabled={zones.length >= 250}
+        addDisabled={zones.length >= maxZones}
         addInputMaxLength={10}
         listContent={listContent}
         detailContent={detailContent}

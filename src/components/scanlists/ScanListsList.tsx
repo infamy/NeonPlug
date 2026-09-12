@@ -19,6 +19,9 @@ import { ConfirmModal } from '../ui/ConfirmModal';
 
 export const ScanListsList: React.FC = () => {
   const { caps } = useRadioCapabilities();
+  // One maximum for the subtitle, the add handler and the Add button. The button
+  // checked a literal 32, so a DA-7X2 (100 lists) could never add a 33rd.
+  const maxScanLists = caps?.maxScanLists ?? 32;
   const { scanLists, selectedScanList, setSelectedScanList, addScanList, deleteScanList, renameScanList } = useScanListsStore();
   const [newScanListName, setNewScanListName] = useState('');
   const [editingScanList, setEditingScanList] = useState<string | null>(null);
@@ -29,9 +32,8 @@ export const ScanListsList: React.FC = () => {
   const selectedScanListData = scanLists.find(sl => sl.name === selectedScanList);
 
   const handleAddScanList = () => {
-    const maxLists = caps?.maxScanLists ?? 32;
-    if (scanLists.length >= maxLists) {
-      showAlert(`Maximum of ${maxLists} scan lists allowed.`);
+    if (scanLists.length >= maxScanLists) {
+      showAlert(`Maximum of ${maxScanLists} scan lists allowed.`);
       return;
     }
     if (!newScanListName.trim()) {
@@ -56,9 +58,9 @@ export const ScanListsList: React.FC = () => {
     // placed at all. A radio that does not use slots — the DM-32 — simply never
     // reads the field.
     const used = new Set(scanLists.map((sl) => sl.slot).filter((n): n is number => n !== undefined));
-    const slot = lowestFreeSlot(used, maxLists);
+    const slot = lowestFreeSlot(used, maxScanLists);
     if (slot === undefined) {
-      showAlert(`No free scan list slot: all ${maxLists} are in use.`);
+      showAlert(`No free scan list slot: all ${maxScanLists} are in use.`);
       return;
     }
     addScanList({
@@ -224,12 +226,12 @@ export const ScanListsList: React.FC = () => {
     <>
       <ListDetailLayout
         listTitle="Scan Lists"
-        listSubtitle={`${scanLists.length}/${caps?.maxScanLists ?? 32} scan lists`}
+        listSubtitle={`${scanLists.length}/${maxScanLists} scan lists`}
         addInputPlaceholder="Scan list name..."
         addInputValue={newScanListName}
         onAddInputChange={setNewScanListName}
         onAdd={handleAddScanList}
-        addDisabled={scanLists.length >= 32}
+        addDisabled={scanLists.length >= maxScanLists}
         addInputMaxLength={16}
         listContent={listContent}
         detailContent={detailContent}

@@ -14,6 +14,9 @@ import { ConfirmModal } from '../ui/ConfirmModal';
 
 export const RXGroupsList: React.FC = () => {
   const { caps } = useRadioCapabilities();
+  // One maximum for the subtitle, the add handler and the Add button. The button
+  // checked a literal 32, so a DA-7X2 (250 groups) could never add a 33rd.
+  const maxGroups = caps?.digital?.limits?.RX_GROUPS_MAX ?? 32;
   const { groups, selectedGroup, setSelectedGroup, addGroup, deleteGroup, updateGroup } = useRXGroupsStore();
   const [newGroupName, setNewGroupName] = useState('');
   const [editingName, setEditingName] = useState<number | null>(null);
@@ -22,7 +25,6 @@ export const RXGroupsList: React.FC = () => {
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
 
   const handleAddGroup = () => {
-    const maxGroups = caps?.digital?.limits?.RX_GROUPS_MAX ?? 32;
     if (groups.length >= maxGroups) {
       showAlert(`Maximum of ${maxGroups} RX groups allowed.`);
       return;
@@ -198,12 +200,12 @@ export const RXGroupsList: React.FC = () => {
     <>
       <ListDetailLayout
         listTitle="RX Groups"
-        listSubtitle={`${groups.length}/${caps?.digital?.limits?.RX_GROUPS_MAX ?? 32} groups`}
+        listSubtitle={`${groups.length}/${maxGroups} groups`}
         addInputPlaceholder="Group name..."
         addInputValue={newGroupName}
         onAddInputChange={setNewGroupName}
         onAdd={handleAddGroup}
-        addDisabled={groups.length >= 32}
+        addDisabled={groups.length >= maxGroups}
         addInputMaxLength={11}
         listContent={listContent}
         detailContent={detailContent}
