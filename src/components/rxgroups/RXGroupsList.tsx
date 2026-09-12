@@ -11,7 +11,7 @@ import type { PickerItem } from '../ui/pickerItems';
 import { Card } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 export const RXGroupsList: React.FC = () => {
   const { caps } = useRadioCapabilities();
@@ -123,7 +123,7 @@ export const RXGroupsList: React.FC = () => {
                   e.stopPropagation();
                   setGroupToDelete({ index: group.index, name: group.name });
                 }}
-                className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                className={`${BUTTON.danger} px-2 py-0.5 rounded text-xs border`}
               >
                 Delete
               </button>

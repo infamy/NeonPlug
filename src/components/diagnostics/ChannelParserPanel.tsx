@@ -3,7 +3,7 @@ import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useChannelsStore } from '../../store/channelsStore';
 import { CollapsibleSection } from '../ui/CollapsibleSection';
-import { FIELD_CAUTION } from '../ui/controlStyles';
+import { BUTTON, FIELD_CAUTION } from '../ui/controlStyles';
 
 interface ChannelParserPanelProps {
   /** Shared with the CPS CSV Comparison panel — owned by DiagnosticsTab. */
@@ -46,7 +46,7 @@ export const ChannelParserPanel: React.FC<ChannelParserPanelProps> = ({
               e.stopPropagation();
               setShowChannelParser(!showChannelParser);
             }}
-            className="text-sm text-yellow-400 hover:text-yellow-300"
+            className={`${BUTTON.cautionLink} text-sm`}
           >
             {showChannelParser ? '▼ Hide' : '▶ Show'}
           </button>

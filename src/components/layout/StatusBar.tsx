@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { Modal } from '../ui/Modal';
+import { BUTTON } from '../ui/controlStyles';
 
 const USER_GESTURE_MESSAGE = 'Unable to read from radio, please read from a radio or load a codeplug to continue';
 
@@ -36,7 +37,7 @@ export const StatusBar: React.FC = () => {
                 {(needsFirmwareUpdate || isNewerFirmware) && (
                   <button
                     onClick={() => setShowFirmwareWarning(true)}
-                    className="text-yellow-400 hover:text-yellow-300 transition-colors cursor-pointer"
+                    className={`${BUTTON.cautionLink} cursor-pointer`}
                     title={isNewerFirmware ? "Firmware version not recommended" : "Firmware update recommended"}
                   >
                     ⚠️
@@ -68,7 +69,7 @@ export const StatusBar: React.FC = () => {
             <button
               type="button"
               onClick={() => setConnectionError(null)}
-              className="text-cool-gray hover:text-white flex-shrink-0"
+              className={`${BUTTON.ghost} flex-shrink-0`}
               title="Dismiss"
               aria-label="Dismiss"
             >

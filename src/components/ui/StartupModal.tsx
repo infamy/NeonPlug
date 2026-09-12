@@ -7,6 +7,7 @@ import { isWebSerialSupported, isWebBluetoothSupported, getSupportedBrowsers } f
 import { downloadOfflineAsZip } from '../../utils/offlineDownload';
 import { getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
 import type { CodeplugData } from '../../services/codeplugExport';
+import { BUTTON } from './controlStyles';
 
 const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
 
@@ -237,7 +238,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
               <button
                 type="button"
                 onClick={() => setRecentExpanded(!recentExpanded)}
-                className="w-full px-4 py-2 flex items-center justify-between text-left text-cool-gray hover:text-white hover:bg-cool-gray hover:bg-opacity-20 transition-colors"
+                className={`${BUTTON.menuItem} w-full px-4 py-2 flex items-center justify-between text-left`}
               >
                 <span className="text-sm font-medium">Recent codeplugs ({snapshots.length})</span>
                 <span className="text-xs">{recentExpanded ? '▼' : '▶'}</span>
@@ -276,7 +277,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                             setRecentExpanded(false);
                           }
                         }}
-                        className="flex-shrink-0 px-3 py-1 text-xs font-semibold text-neon-cyan border border-neon-cyan rounded hover:bg-neon-cyan hover:bg-opacity-20 transition-colors"
+                        className={`${BUTTON.outline} flex-shrink-0 px-3 py-1 text-xs font-semibold border rounded`}
                       >
                         Restore
                       </button>
@@ -286,7 +287,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setClearConfirmOpen(true)}
-                      className="text-xs text-cool-gray hover:text-red-400 transition-colors"
+                      className={`${BUTTON.dangerQuiet} text-xs`}
                     >
                       Clear all
                     </button>
@@ -306,7 +307,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                   setOfflineFallbackOpen(true);
                 }
               }}
-              className="text-neon-cyan hover:underline bg-transparent border-none cursor-pointer p-0 font-inherit text-inherit"
+              className={`${BUTTON.link} hover:underline cursor-pointer p-0`}
             >
               Download offline version (ZIP)
             </button>
@@ -315,7 +316,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           {onDismiss && (
             <button
               onClick={onDismiss}
-              className="w-full text-cool-gray hover:text-white text-sm py-2"
+              className={`${BUTTON.ghost} w-full text-sm py-2`}
             >
               Continue with sample data
             </button>
@@ -323,7 +324,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           {onCancel && (
             <button
               onClick={onCancel}
-              className="w-full text-cool-gray hover:text-white text-sm py-2"
+              className={`${BUTTON.ghost} w-full text-sm py-2`}
             >
               Cancel
             </button>
@@ -354,7 +355,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
             <button
               type="button"
               onClick={() => setTransportChoiceOpen(false)}
-              className="w-full text-cool-gray hover:text-white text-sm mt-4"
+              className={`${BUTTON.ghost} w-full text-sm mt-4`}
             >
               Cancel
             </button>

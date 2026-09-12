@@ -16,7 +16,7 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 export const ScanListsList: React.FC = () => {
   const { caps } = useRadioCapabilities();
@@ -153,13 +153,13 @@ export const ScanListsList: React.FC = () => {
                   />
                   <button
                     onClick={(e) => handleSaveEdit(scanList.name, e)}
-                    className="px-2 py-1 bg-neon-cyan text-dark-charcoal rounded text-xs hover:bg-opacity-90"
+                    className={`${BUTTON.primary} px-2 py-1 rounded text-xs`}
                   >
                     Save
                   </button>
                   <button
                     onClick={handleCancelEdit}
-                    className="px-2 py-1 bg-cool-gray bg-opacity-30 text-cool-gray rounded text-xs hover:bg-opacity-50"
+                    className={`${BUTTON.neutral} px-2 py-1 rounded text-xs`}
                   >
                     Cancel
                   </button>
@@ -184,7 +184,7 @@ export const ScanListsList: React.FC = () => {
                 <div className="flex gap-2 justify-end mt-2">
                   <button
                     onClick={(e) => handleStartEdit(scanList.name, e)}
-                    className="px-2 py-0.5 bg-neon-cyan bg-opacity-50 text-neon-cyan rounded text-xs hover:bg-opacity-70 border border-neon-cyan border-opacity-50"
+                    className={`${BUTTON.outline} px-2 py-0.5 rounded text-xs border`}
                   >
                     Rename
                   </button>
@@ -193,7 +193,7 @@ export const ScanListsList: React.FC = () => {
                       e.stopPropagation();
                       handleDeleteScanListClick(scanList.name);
                     }}
-                    className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                    className={`${BUTTON.danger} px-2 py-0.5 rounded text-xs border`}
                   >
                     Delete
                   </button>
@@ -416,7 +416,7 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan disabled:opacity-50 text-left flex items-center justify-between"
+        className={`${BUTTON.field} w-full border rounded px-2 py-1.5 text-xs text-left flex items-center justify-between`}
       >
         <span className={value ? 'text-white' : 'text-cool-gray'}>{displayValue}</span>
         <span className="text-cool-gray ml-2">▼</span>

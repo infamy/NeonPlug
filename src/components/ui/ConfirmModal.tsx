@@ -1,4 +1,5 @@
 import React, { type ReactNode } from 'react';
+import { BUTTON } from './controlStyles';
 
 export type ConfirmModalVariant = 'danger' | 'default' | 'alert';
 
@@ -72,7 +73,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded border border-neon-cyan border-opacity-30 text-cool-gray hover:text-white hover:bg-neon-cyan hover:bg-opacity-10 transition-colors"
+              className={`${BUTTON.neutral} px-4 py-2 rounded border`}
             >
               {cancelLabel}
             </button>

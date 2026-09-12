@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { formatPlural } from '../../utils/formatPlural';
 import type { PickerItem } from './pickerItems';
-import { FIELD } from './controlStyles';
+import { BUTTON, FIELD } from './controlStyles';
 
 /**
  * OrderedItemPicker — the shared "ordered selected list + searchable available
@@ -117,7 +117,7 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
                   {index > 0 && (
                     <button
                       onClick={() => handleReorder(index, index - 1)}
-                      className="px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-neon-cyan text-xs hover:bg-opacity-50"
+                      className={`${BUTTON.outline} px-2 py-1 border rounded text-xs`}
                       title="Move up"
                     >
                       ↑
@@ -126,7 +126,7 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
                   {index < resolved.length - 1 && (
                     <button
                       onClick={() => handleReorder(index, index + 1)}
-                      className="px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-neon-cyan text-xs hover:bg-opacity-50"
+                      className={`${BUTTON.outline} px-2 py-1 border rounded text-xs`}
                       title="Move down"
                     >
                       ↓
@@ -134,7 +134,7 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
                   )}
                   <button
                     onClick={() => handleRemove(item.id)}
-                    className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                    className={`${BUTTON.danger} px-2 py-1 rounded text-xs`}
                   >
                     Remove
                   </button>
@@ -174,7 +174,7 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-cool-gray hover:text-white text-sm"
+                    className={`${BUTTON.ghost} absolute right-2 top-1/2 transform -translate-y-1/2 text-sm`}
                     title="Clear search"
                   >
                     ×
@@ -194,7 +194,7 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
                   <button
                     key={item.id}
                     onClick={() => handleAdd(item.id)}
-                    className="px-3 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-xs hover:bg-opacity-50 hover:border-neon-cyan transition-colors"
+                    className={`${BUTTON.field} px-3 py-1 border rounded text-xs`}
                   >
                     {item.label}
                   </button>

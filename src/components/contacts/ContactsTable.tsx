@@ -3,7 +3,7 @@ import { formatPlural } from '../../utils/formatPlural';
 import { useContactsStore } from '../../store/contactsStore';
 import { EmptyState } from '../ui/EmptyState';
 import { Card } from '../ui/Card';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 const CONTACTS_PER_PAGE = 100;
 
@@ -81,7 +81,7 @@ export const ContactsTable: React.FC = () => {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="px-3 py-2 text-cool-gray hover:text-white border border-neon-cyan border-opacity-30 rounded text-sm transition-colors"
+              className={`${BUTTON.neutral} px-3 py-2 border rounded text-sm`}
             >
               Clear
             </button>
@@ -163,7 +163,7 @@ export const ContactsTable: React.FC = () => {
                   <td className="px-2 py-2 text-center">
                     <button
                       onClick={() => deleteContact(contact.id)}
-                      className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                      className={`${BUTTON.danger} px-2 py-1 rounded text-xs`}
                     >
                       Delete
                     </button>
@@ -184,7 +184,7 @@ export const ContactsTable: React.FC = () => {
             <button
               onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
               disabled={currentPage === 0}
-              className="px-3 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded hover:bg-opacity-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className={`${BUTTON.neutral} px-3 py-1 border rounded`}
             >
               Previous
             </button>
@@ -194,7 +194,7 @@ export const ContactsTable: React.FC = () => {
             <button
               onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))}
               disabled={currentPage >= totalPages - 1}
-              className="px-3 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded hover:bg-opacity-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className={`${BUTTON.neutral} px-3 py-1 border rounded`}
             >
               Next
             </button>

@@ -12,7 +12,7 @@ import {
   type D890ImageKind,
   type D890ImageFit,
 } from '../../radios/d890uv/bootImage';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 const ORDER: D890ImageKind[] = ['boot', 'bk1', 'bk2'];
 
@@ -95,7 +95,7 @@ const DisplayBadge: React.FC<{ kind: D890ImageKind }> = ({ kind }) => {
       <button
         type="button"
         onClick={() => jumpToSettingsSection('display')}
-        className="text-[11px] text-neon-cyan hover:underline"
+        className={`${BUTTON.link} text-[11px] hover:underline`}
       >
         {state.setting} →
       </button>
@@ -203,7 +203,7 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          className="px-3 py-1.5 text-xs bg-dark-charcoal border border-neon-cyan border-opacity-50 text-neon-cyan rounded hover:bg-neon-cyan hover:text-black transition-colors"
+          className={`${BUTTON.outline} px-3 py-1.5 text-xs border rounded`}
         >
           Choose image…
         </button>
@@ -234,9 +234,7 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
               onClick={() => void onSend()}
               disabled={sending || isConnecting}
               title={`Write this picture to the radio (${D890_IMAGE.BYTES.toLocaleString()} bytes)`}
-              className="px-3 py-1.5 text-xs border border-neon-cyan text-neon-cyan rounded
-                         hover:bg-neon-cyan hover:text-black disabled:opacity-40
-                         disabled:cursor-not-allowed transition-colors"
+              className={`${BUTTON.outline} px-3 py-1.5 text-xs border rounded`}
             >
               {sending ? 'Sending…' : 'Send to radio'}
             </button>
@@ -244,7 +242,7 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
               type="button"
               disabled={sending}
               onClick={() => { setStaged(null); setSource(null); setSendStatus(null); }}
-              className="px-3 py-1.5 text-xs text-muted hover:text-neon-cyan transition-colors"
+              className={`${BUTTON.subtle} px-3 py-1.5 text-xs`}
             >
               Clear
             </button>
@@ -332,7 +330,7 @@ export const D890ImagesArea: React.FC = () => {
           type="button"
           onClick={() => void onRead()}
           disabled={isConnecting}
-          className="px-4 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-50 text-neon-cyan text-sm font-medium rounded hover:bg-neon-cyan hover:text-black disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className={`${BUTTON.outline} px-4 py-2 border text-sm font-medium rounded`}
           title="Read the three pictures from the radio"
         >
           {isConnecting ? 'Reading…' : 'Read from radio'}

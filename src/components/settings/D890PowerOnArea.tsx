@@ -4,7 +4,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { D890_POWER_ON, type D890PowerOnDisplay } from '../../radios/d890uv/powerOnDisplay';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { POWER_ON_INTERFACE } from '../../radios/d890uv/displaySelectors';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 /**
  * The custom power-on screen: two text lines and the power-on password.
@@ -83,7 +83,7 @@ export const D890PowerOnArea: React.FC = () => {
                 .getElementById('settings-section-display')
                 ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
             }
-            className="text-neon-cyan hover:underline"
+            className={`${BUTTON.link} hover:underline`}
           >
             Power-on Interface →
           </button>
@@ -118,7 +118,7 @@ export const D890PowerOnArea: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
-              className="px-2 text-xs border border-panel text-muted rounded hover:text-white"
+              className={`${BUTTON.neutral} px-2 text-xs border rounded`}
             >
               {showPassword ? 'Hide' : 'Show'}
             </button>

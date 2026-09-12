@@ -4,7 +4,7 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { useRadioStore } from '../../store/radioStore';
 import { D890_STATUS_MESSAGES } from '../../radios/d890uv/statusMessages';
 import { formatPlural } from '../../utils/formatPlural';
-import { FIELD_INLINE } from '../ui/controlStyles';
+import { BUTTON, FIELD_INLINE } from '../ui/controlStyles';
 
 /**
  * The canned texts a hot key can send.
@@ -53,8 +53,7 @@ export const D890StatusMessagesArea: React.FC = () => {
         <button
           onClick={add}
           disabled={messages.length >= D890_STATUS_MESSAGES.MAX_SLOTS}
-          className="px-3 py-1.5 rounded border border-neon-cyan text-neon-cyan
-                     hover:bg-neon-cyan hover:bg-opacity-10 disabled:opacity-40 text-sm"
+          className={`${BUTTON.outline} px-3 py-1.5 rounded border text-sm`}
         >
           + Add message
         </button>
@@ -96,7 +95,7 @@ export const D890StatusMessagesArea: React.FC = () => {
                     <button
                       onClick={() => remove(slot)}
                       title="Clears this slot's presence bit. The text stays in flash — the mask is what the radio reads."
-                      className="text-muted hover:text-red-400 px-2"
+                      className={`${BUTTON.dangerQuiet} px-2`}
                     >
                       ✕
                     </button>

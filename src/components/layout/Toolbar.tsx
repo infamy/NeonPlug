@@ -33,7 +33,7 @@ import { CodeplugSummaryBody } from './CodeplugSummaryBody';
 import { ConvertLossList } from './ConvertLossList';
 import type { WriteConfirmInput } from './writeConfirmation';
 import { isWebSerialSupported } from '../../utils/browserSupport';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 export const Toolbar: React.FC = () => {
   const { channels, setChannels } = useChannelsStore();
@@ -398,7 +398,7 @@ export const Toolbar: React.FC = () => {
         <div className="px-6 py-3 flex items-center space-x-3">
           <button
             onClick={handleOpenSnapshots}
-            className="px-4 py-2 bg-deep-gray text-neon-cyan font-semibold rounded border border-neon-cyan border-opacity-50 hover:bg-neon-cyan hover:bg-opacity-10 transition-all active:scale-95"
+            className={`${BUTTON.outline} px-4 py-2 font-semibold rounded border`}
             title="View and restore recent codeplug snapshots"
           >
             Snapshots{(() => { const n = getSnapshots().length; return n > 0 ? ` (${n})` : ''; })()}
@@ -410,21 +410,21 @@ export const Toolbar: React.FC = () => {
             </span>
             <button
               onClick={handleImport}
-              className="px-4 py-2 bg-neon-purple text-white font-semibold rounded hover:bg-neon-purple hover:bg-opacity-80 transition-all hover:shadow-lg border border-neon-purple border-opacity-50 active:scale-95"
+              className={`${BUTTON.secondary} px-4 py-2 font-semibold rounded border`}
               title="Import codeplug from file (.neonplug)"
             >
               Import
             </button>
             <button
               onClick={handleExport}
-              className="px-4 py-2 bg-neon-cyan text-deep-gray font-semibold rounded hover:bg-neon-cyan hover:bg-opacity-80 transition-all hover:shadow-glow-cyan border border-neon-cyan border-opacity-50 active:scale-95"
+              className={`${BUTTON.primary} px-4 py-2 font-semibold rounded border`}
               title="Export codeplug to file (.neonplug)"
             >
               Export
             </button>
             <button
               onClick={() => setConvertModalOpen(true)}
-              className="px-4 py-2 bg-deep-gray text-neon-cyan font-semibold rounded border border-neon-cyan border-opacity-50 hover:bg-neon-cyan hover:bg-opacity-10 transition-all active:scale-95"
+              className={`${BUTTON.outline} px-4 py-2 font-semibold rounded border`}
               title="Convert codeplug for another radio"
             >
               Convert
@@ -462,7 +462,7 @@ export const Toolbar: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => { setShowPickRadioModal(true); setReadDropdownOpen(false); }}
-                  className="w-full text-left px-4 py-2 text-sm text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 transition-colors"
+                  className={`${BUTTON.menuItem} w-full text-left px-4 py-2 text-sm`}
                 >
                   Change radio type…
                 </button>
@@ -547,20 +547,20 @@ export const Toolbar: React.FC = () => {
             <div className="flex gap-2">
               <button
                 onClick={handleConvertReplace}
-                className="flex-1 px-4 py-2 bg-neon-cyan text-deep-gray font-semibold rounded hover:bg-opacity-80"
+                className={`${BUTTON.primary} flex-1 px-4 py-2 font-semibold rounded`}
               >
                 Replace current
               </button>
               <button
                 onClick={handleConvertDownload}
-                className="flex-1 px-4 py-2 border border-neon-cyan text-neon-cyan rounded hover:bg-neon-cyan hover:bg-opacity-10"
+                className={`${BUTTON.outline} flex-1 px-4 py-2 border rounded`}
               >
                 Download only
               </button>
             </div>
             <button
               onClick={() => setConvertModalOpen(false)}
-              className="w-full mt-3 text-cool-gray hover:text-white text-sm"
+              className={`${BUTTON.ghost} w-full mt-3 text-sm`}
             >
               Cancel
             </button>
@@ -605,7 +605,7 @@ export const Toolbar: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleRestoreSnapshot(s.id)}
-                        className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold text-neon-cyan border border-neon-cyan rounded hover:bg-neon-cyan hover:bg-opacity-20 transition-colors"
+                        className={`${BUTTON.outline} flex-shrink-0 px-3 py-1.5 text-xs font-semibold border rounded`}
                       >
                         Restore
                       </button>
@@ -618,14 +618,14 @@ export const Toolbar: React.FC = () => {
               {snapshotsList.length > 0 && (
                 <button
                   onClick={() => setSnapshotsClearConfirmOpen(true)}
-                  className="text-xs text-cool-gray hover:text-red-400 transition-colors"
+                  className={`${BUTTON.dangerQuiet} text-xs`}
                 >
                   Clear all
                 </button>
               )}
               <button
                 onClick={() => setSnapshotsModalOpen(false)}
-                className="ml-auto px-4 py-2 border border-neon-cyan text-neon-cyan rounded hover:bg-neon-cyan hover:bg-opacity-10 transition-colors"
+                className={`${BUTTON.neutral} ml-auto px-4 py-2 border rounded`}
               >
                 Close
               </button>

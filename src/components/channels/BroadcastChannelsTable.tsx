@@ -5,7 +5,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { deleteBroadcastChannels } from '../../radios/d890uv/broadcastEdits';
 import type { D890BroadcastChannel } from '../../radios/d890uv/broadcastChannels';
 import { AmZonesEditor } from './AmZonesEditor';
-import { FIELD_INLINE } from '../ui/controlStyles';
+import { BUTTON, FIELD_INLINE } from '../ui/controlStyles';
 
 /**
  * AM airband / FM broadcast memories.
@@ -163,9 +163,7 @@ export const BroadcastChannelsTable: React.FC<{
       <button
         onClick={addChannel}
         disabled={!broadcast || full}
-        className="px-3 py-1.5 rounded border border-neon-cyan text-neon-cyan
-                   hover:bg-neon-cyan hover:bg-opacity-10 disabled:opacity-40
-                   disabled:cursor-not-allowed text-sm"
+        className={`${BUTTON.outline} px-3 py-1.5 rounded border text-sm`}
       >
         + Add {band.toUpperCase()} memory
       </button>
@@ -176,8 +174,7 @@ export const BroadcastChannelsTable: React.FC<{
       {selected.size > 0 && (
         <button
           onClick={() => deleteChannels(selected)}
-          className="px-3 py-1.5 rounded border border-red-600 text-red-400
-                     hover:bg-red-600 hover:bg-opacity-10 text-sm"
+          className={`${BUTTON.danger} px-3 py-1.5 rounded border text-sm`}
         >
           Delete {selected.size} selected
         </button>
@@ -294,7 +291,7 @@ export const BroadcastChannelsTable: React.FC<{
                   <button
                     onClick={() => deleteChannels(new Set([ch.index]))}
                     title={`Delete ${band.toUpperCase()} memory ${ch.index + 1}`}
-                    className="text-muted hover:text-red-400 px-2"
+                    className={`${BUTTON.dangerQuiet} px-2`}
                   >
                     ✕
                   </button>

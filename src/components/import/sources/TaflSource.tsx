@@ -8,7 +8,7 @@ import { SelectAllButtons } from '../SelectAllButtons';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { SectionTitle } from '../../ui/SectionTitle';
-import { FIELD } from '../../ui/controlStyles';
+import { BUTTON, FIELD } from '../../ui/controlStyles';
 
 interface TaflSourceProps {
   entries: TaflData[];
@@ -220,7 +220,7 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
                         />
                         <button
                           onClick={handleToggleExpand}
-                          className="mr-1 text-neon-cyan hover:text-neon-cyan-bright"
+                          className={`${BUTTON.link} mr-1`}
                           title={isExpanded ? 'Collapse' : 'Expand'}
                         >
                           {isExpanded ? '▼' : '▶'}

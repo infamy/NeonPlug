@@ -8,6 +8,7 @@ import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
 import { downloadFile } from '../../utils/download';
+import { BUTTON } from '../ui/controlStyles';
 
 interface ExpectedWriteDataPanelProps {
   showAlert: (message: string, title?: string) => void;
@@ -90,7 +91,7 @@ export const ExpectedWriteDataPanel: React.FC<ExpectedWriteDataPanelProps> = ({ 
           <button
             type="button"
             onClick={() => setShowExpectedWriteData(!showExpectedWriteData)}
-            className="px-3 py-1 text-xs text-purple-400 hover:text-purple-300 border border-purple-600/30 hover:border-purple-400 rounded transition-colors"
+            className={`${BUTTON.caution} px-3 py-1 text-xs border rounded`}
           >
             {showExpectedWriteData ? '▼ Hide' : '▶ Show'}
           </button>
@@ -99,14 +100,14 @@ export const ExpectedWriteDataPanel: React.FC<ExpectedWriteDataPanelProps> = ({ 
               <button
                 type="button"
                 onClick={handleExportExpectedWriteHex}
-                className="px-3 py-1 text-xs text-purple-400 hover:text-purple-300 border border-purple-600/30 hover:border-purple-400 rounded transition-colors"
+                className={`${BUTTON.caution} px-3 py-1 text-xs border rounded`}
               >
                 Download HEX
               </button>
               <button
                 type="button"
                 onClick={handleExportExpectedWriteSummary}
-                className="px-3 py-1 text-xs text-purple-400 hover:text-purple-300 border border-purple-600/30 hover:border-purple-400 rounded transition-colors"
+                className={`${BUTTON.caution} px-3 py-1 text-xs border rounded`}
               >
                 Download JSON Summary
               </button>

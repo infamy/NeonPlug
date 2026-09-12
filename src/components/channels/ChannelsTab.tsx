@@ -13,7 +13,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { BroadcastChannelsTable } from './BroadcastChannelsTable';
 import { D890_BROADCAST } from '../../radios/d890uv/broadcastChannels';
 import { PageHeader } from '../ui/PageHeader';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 /** Which channel table the tab is showing. */
 type ChannelView = 'main' | 'am' | 'fm';
@@ -193,7 +193,7 @@ export const ChannelsTab: React.FC = () => {
           {!isBroadcast && (
             <button
               onClick={handleAddChannel}
-              className="px-2 py-1 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-20 hover:border-opacity-50 rounded transition-colors focus:outline-none"
+              className={`${BUTTON.subtle} px-2 py-1 text-xs border rounded`}
               title="Add new channel"
             >
               + Add
@@ -216,7 +216,7 @@ export const ChannelsTab: React.FC = () => {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-cool-gray hover:text-white text-sm"
+              className={`${BUTTON.ghost} absolute right-3 top-1/2 transform -translate-y-1/2 text-sm`}
               title="Clear search"
             >
               ×
@@ -228,14 +228,14 @@ export const ChannelsTab: React.FC = () => {
             <span className="text-cool-gray text-sm whitespace-nowrap">{selectedCount} selected</span>
             <button
               onClick={handleDeleteSelectedClick}
-              className="px-2 py-1.5 text-xs text-red-400 hover:text-red-300 border border-red-600 border-opacity-30 hover:border-opacity-60 rounded transition-colors whitespace-nowrap"
+              className={`${BUTTON.danger} px-2 py-1.5 text-xs border rounded whitespace-nowrap`}
               title="Delete selected channels"
             >
               Delete ({selectedCount})
             </button>
             <button
               onClick={handleClearSelection}
-              className="px-2 py-1.5 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-20 hover:border-opacity-50 rounded transition-colors whitespace-nowrap"
+              className={`${BUTTON.subtle} px-2 py-1.5 text-xs border rounded whitespace-nowrap`}
               title="Clear selection"
             >
               Clear

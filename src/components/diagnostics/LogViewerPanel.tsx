@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useLogStore } from '../../store/logStore';
-import { FIELD_CAUTION } from '../ui/controlStyles';
+import { BUTTON, FIELD_CAUTION } from '../ui/controlStyles';
 
 export const LogViewerPanel: React.FC = () => {
   const [showLogViewer, setShowLogViewer] = useState(false);
@@ -43,7 +43,7 @@ export const LogViewerPanel: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowLogViewer(!showLogViewer)}
-            className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+            className={`${BUTTON.caution} px-3 py-1 text-xs border rounded`}
           >
             {showLogViewer ? '▼ Hide' : '▶ Show'}
           </button>
@@ -51,7 +51,7 @@ export const LogViewerPanel: React.FC = () => {
             <button
               type="button"
               onClick={() => clearLogs()}
-              className="px-3 py-1 text-xs text-red-400 hover:text-red-300 border border-red-600/30 hover:border-red-400 rounded transition-colors"
+              className={`${BUTTON.danger} px-3 py-1 text-xs border rounded`}
             >
               Clear
             </button>

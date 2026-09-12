@@ -13,7 +13,7 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 /** One of the two per-zone VFO channel pickers. Hoisted, not nested in its
  *  parent's render: a component defined inside a render is a new type on every
@@ -243,13 +243,13 @@ export const ZonesList: React.FC = () => {
                     />
                     <button
                       onClick={(e) => handleSaveEdit(zone.id, e)}
-                      className="px-2 py-1 bg-neon-cyan text-dark-charcoal rounded text-xs hover:bg-opacity-90"
+                      className={`${BUTTON.primary} px-2 py-1 rounded text-xs`}
                     >
                       Save
                     </button>
                     <button
                       onClick={handleCancelEdit}
-                      className="px-2 py-1 bg-cool-gray bg-opacity-30 text-cool-gray rounded text-xs hover:bg-opacity-50"
+                      className={`${BUTTON.neutral} px-2 py-1 rounded text-xs`}
                     >
                       Cancel
                     </button>
@@ -288,7 +288,7 @@ export const ZonesList: React.FC = () => {
                   <div className="flex gap-2 justify-end">
                     <button
                       onClick={(e) => handleStartEdit(zone.id, zone.name, e)}
-                      className="px-2 py-0.5 bg-neon-cyan bg-opacity-50 text-neon-cyan rounded text-xs hover:bg-opacity-70 border border-neon-cyan border-opacity-50"
+                      className={`${BUTTON.outline} px-2 py-0.5 rounded text-xs border`}
                     >
                       Rename
                     </button>
@@ -297,7 +297,7 @@ export const ZonesList: React.FC = () => {
                         e.stopPropagation();
                         setZoneToDelete({ id: zone.id, name: zone.name });
                       }}
-                      className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                      className={`${BUTTON.danger} px-2 py-0.5 rounded text-xs border`}
                     >
                       Delete
                     </button>

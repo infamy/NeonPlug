@@ -16,6 +16,7 @@ import {
 import { downloadFile } from '../../utils/download';
 import { formatPlural } from '../../utils/formatPlural';
 import { CollapsibleSection } from '../ui/CollapsibleSection';
+import { BUTTON } from '../ui/controlStyles';
 
 /**
  * Plan a write and diff it against the read it came from — without a radio.
@@ -141,8 +142,7 @@ export function WriteDryRunPanel() {
           <button
             onClick={run}
             disabled={!ready}
-            className="px-3 py-1.5 rounded border border-neon-cyan text-neon-cyan
-                       hover:bg-neon-cyan/10 disabled:opacity-40 disabled:cursor-not-allowed"
+            className={`${BUTTON.caution} px-3 py-1.5 rounded border`}
           >
             Run dry run
           </button>
@@ -151,7 +151,7 @@ export function WriteDryRunPanel() {
               onClick={() =>
                 downloadFile(report, `neonplug-write-dryrun-${Date.now()}.txt`, 'text/plain')
               }
-              className="px-3 py-1.5 rounded border-panel text-muted hover:bg-panel"
+              className={`${BUTTON.caution} px-3 py-1.5 rounded border`}
             >
               Download report
             </button>

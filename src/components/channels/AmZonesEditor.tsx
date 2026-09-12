@@ -3,7 +3,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { D890_AM_ZONES } from '../../radios/d890uv/amZones';
 import type { D890AmZone } from '../../radios/d890uv/amZones';
 import type { D890BroadcastChannel } from '../../radios/d890uv/broadcastChannels';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 /**
  * AM zones — a separate zone system over the airband table.
@@ -114,7 +114,7 @@ export const AmZonesEditor: React.FC<{ channels: D890BroadcastChannel[] }> = ({ 
           <button
             onClick={addZone}
             disabled={zones.length >= D890_AM_ZONES.SLOTS}
-            className="px-2 py-1 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-20 hover:border-opacity-50 rounded disabled:opacity-30"
+            className={`${BUTTON.subtle} px-2 py-1 text-xs border rounded`}
           >
             + Add
           </button>
@@ -139,7 +139,7 @@ export const AmZonesEditor: React.FC<{ channels: D890BroadcastChannel[] }> = ({ 
                 </span>
                 <button
                   onClick={() => setTable('amZones', zones.filter((z) => z.index !== zone.index))}
-                  className="ml-auto px-1.5 py-0.5 text-red-400 hover:text-red-300 border border-red-600 border-opacity-30 hover:border-opacity-60 rounded text-xs"
+                  className={`${BUTTON.danger} ml-auto px-1.5 py-0.5 border rounded text-xs`}
                   title="Delete this AM zone"
                 >
                   ×
@@ -212,7 +212,7 @@ export const AmZonesEditor: React.FC<{ channels: D890BroadcastChannel[] }> = ({ 
                     {label(member)}
                     <button
                       onClick={() => removeMember(zone, position)}
-                      className="text-cool-gray hover:text-red-300"
+                      className={BUTTON.dangerQuiet}
                       title="Remove from this zone"
                     >
                       ×

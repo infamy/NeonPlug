@@ -6,6 +6,7 @@ import { EmptyState } from '../ui/EmptyState';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import type { MemoryRegionSpec } from '../../types/radioCapabilities';
+import { BUTTON } from '../ui/controlStyles';
 
 /**
  * Whole memory-image viewer for clone radios (FT-65 family, UV5R-Mini).
@@ -80,7 +81,7 @@ export const MemoryImagePanel: React.FC<MemoryImagePanelProps> = () => {
                   <button
                     type="button"
                     onClick={() => setExpanded(isOpen ? null : key)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-deep-gray/40 transition-colors"
+                    className={`${BUTTON.menuItem} w-full flex items-center justify-between px-3 py-2 text-left`}
                   >
                     <span className="text-sm text-neon-cyan">{region.label}</span>
                     <span className="text-xs text-muted font-mono">

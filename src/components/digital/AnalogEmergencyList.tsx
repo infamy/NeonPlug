@@ -7,7 +7,7 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { LIMITS } from '../../radios/dm32uv/constants';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 const ALARM_TYPES = ['None', 'Only Whistle', 'Normal', 'Secret', 'Secret With Voice'];
 const ALARM_MODES = ['Emergency Alarm', 'Alarm Call'];
@@ -61,7 +61,7 @@ export const AnalogEmergencyList: React.FC = () => {
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          className="px-3 py-1 bg-yellow-900/30 text-yellow-400 text-sm rounded border border-yellow-600/30 hover:bg-yellow-900/50 transition-colors"
+          className={`${BUTTON.caution} px-3 py-1 text-sm rounded border`}
         >
           {expanded ? 'Hide' : 'Show'}
         </button>
@@ -81,7 +81,7 @@ export const AnalogEmergencyList: React.FC = () => {
             <button
               onClick={handleAdd}
               disabled={systems.length >= LIMITS.ANALOG_EMERGENCY_MAX}
-              className="px-3 py-1.5 text-xs bg-neon-cyan bg-opacity-10 border border-neon-cyan text-neon-cyan rounded hover:bg-opacity-20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className={`${BUTTON.outline} px-3 py-1.5 text-xs border rounded`}
             >
               + Add
             </button>
@@ -203,7 +203,7 @@ export const AnalogEmergencyList: React.FC = () => {
                         <td className="px-2 py-1.5 text-center">
                           <button
                             onClick={() => setDeleteTarget(i)}
-                            className="text-red-400 hover:text-red-300 transition-colors px-1"
+                            className={`${BUTTON.dangerQuiet} px-1`}
                             title="Delete"
                           >
                             ✕

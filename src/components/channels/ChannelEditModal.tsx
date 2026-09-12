@@ -18,7 +18,7 @@ import {
   extraColumnTitle,
   extraColumnMarker,
 } from './extraChannelColumns';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 // Frequency input component that only updates parent on blur
 interface FrequencyInputProps {
@@ -147,13 +147,13 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 text-sm text-cool-gray hover:text-white border border-neon-cyan border-opacity-30 rounded transition-colors"
+            className={`${BUTTON.neutral} px-3 py-1.5 text-sm border rounded`}
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="px-3 py-1.5 text-sm bg-neon-cyan text-dark-charcoal font-medium rounded hover:bg-opacity-90 transition-colors"
+            className={`${BUTTON.primary} px-3 py-1.5 text-sm font-medium rounded`}
           >
             Save Changes
           </button>
@@ -223,7 +223,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       }
                     }}
                     disabled={isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency)}
-                    className="p-1.5 rounded border border-neon-cyan border-opacity-30 text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan disabled:opacity-40 disabled:text-cool-gray disabled:border-opacity-20 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                    className={`${BUTTON.outline} p-1.5 rounded border`}
                     title={isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency) ? 'Receive-only (no TX)' : 'Copy RX to TX'}
                     aria-label="Copy RX to TX"
                   >

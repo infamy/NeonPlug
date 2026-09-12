@@ -12,7 +12,7 @@ import type { Contact } from '../../models/Contact';
 import { PageHeader } from '../ui/PageHeader';
 import { resolveContactCapacity } from '../../utils/contactCapacity';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 // RadioID User interface
 interface RadioIDUser {
@@ -557,7 +557,7 @@ export const ContactsTab: React.FC = () => {
           <button
             onClick={handleReadContacts}
             disabled={isReading || isWriting || isConnecting || radioBusy}
-            className="px-4 py-2 bg-yellow-600 text-dark-charcoal font-semibold rounded hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`${BUTTON.cautionSolid} px-4 py-2 font-semibold rounded`}
           >
             {isReading ? 'Reading from Radio...' : 'Read Contacts from Radio'}
           </button>
@@ -565,7 +565,7 @@ export const ContactsTab: React.FC = () => {
           <button
             onClick={handleWriteContacts}
             disabled={isReading || isWriting || isConnecting || radioBusy || contacts.length === 0}
-            className="px-4 py-2 bg-yellow-600 text-dark-charcoal font-semibold rounded hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`${BUTTON.cautionSolid} px-4 py-2 font-semibold rounded`}
             title={contacts.length === 0 ? 'No contacts to write' : ''}
           >
             {isWriting ? 'Writing to Radio...' : 'Write Contacts to Radio'}
@@ -592,7 +592,7 @@ export const ContactsTab: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => { cancelWrite.current = true; }}
-                      className="text-xs text-amber-400 hover:text-amber-300 underline underline-offset-2"
+                      className={`${BUTTON.cautionLink} text-xs underline underline-offset-2`}
                       title="Stop after the current frame. The contact database will be INCOMPLETE and must be written again."
                     >
                       Cancel
@@ -663,7 +663,7 @@ export const ContactsTab: React.FC = () => {
               <button
                 type="button"
                 onClick={toggleAllStates}
-                className="text-xs text-cool-gray hover:text-neon-cyan transition-colors"
+                className={`${BUTTON.ghost} text-xs`}
               >
                 {selectedStates.length === US_STATES.length ? 'Deselect All' : 'Select All'}
               </button>
@@ -707,7 +707,7 @@ export const ContactsTab: React.FC = () => {
           <button
             onClick={handleDownloadFromRadioID}
             disabled={isDownloading || (selectedCountries.length === 0 && !customCountry.trim())}
-            className="px-4 py-2 bg-neon-cyan text-dark-charcoal font-semibold rounded hover:bg-neon-cyan-bright transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`${BUTTON.primary} px-4 py-2 font-semibold rounded`}
           >
             {isDownloading ? 'Downloading...' : 'Download Contacts'}
           </button>

@@ -5,7 +5,7 @@ import { formatHexDumpText } from '../../utils/hexdump';
 import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { createZip, type ZipEntry } from '../../utils/zip';
 import { downloadBlob } from '../../utils/download';
-import { FIELD_CAUTION } from '../ui/controlStyles';
+import { BUTTON, FIELD_CAUTION } from '../ui/controlStyles';
 
 interface ContactBlocksPanelProps {
   showAlert: (message: string, title?: string) => void;
@@ -71,7 +71,7 @@ export const ContactBlocksPanel: React.FC<ContactBlocksPanelProps> = ({ showAler
                       showAlert('Failed to generate zip file');
                     }
                   }}
-                  className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+                  className={`${BUTTON.caution} px-3 py-1 text-xs border rounded`}
                   title="Download all contact blocks as zip"
                 >
                   📦 Download All Blocks
@@ -84,7 +84,7 @@ export const ContactBlocksPanel: React.FC<ContactBlocksPanelProps> = ({ showAler
                   e.stopPropagation();
                   setShowContactBlock(!showContactBlock);
                 }}
-                className="text-sm text-yellow-400 hover:text-yellow-300"
+                className={`${BUTTON.cautionLink} text-sm`}
               >
                 {showContactBlock ? '▼ Hide' : '▶ Show'}
               </button>

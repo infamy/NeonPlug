@@ -16,7 +16,7 @@ import {
   extraColumnTitle,
   type ExtraChannelColumn,
 } from './extraChannelColumns';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 // Re-exported so existing importers keep working; the numbers now derive from
 // the radio's channel count rather than being hardcoded in three places.
@@ -283,7 +283,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
             }
           }}
           disabled={isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency)}
-          className="p-1 rounded border border-neon-cyan border-opacity-30 text-xs font-bold disabled:opacity-40 disabled:text-cool-gray disabled:border-opacity-20 disabled:cursor-not-allowed text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 disabled:hover:bg-transparent"
+          className={`${BUTTON.outline} p-1 rounded border text-xs font-bold`}
           title={isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency) ? 'Receive-only (no TX)' : 'Copy RX to TX'}
           aria-label="Copy RX to TX"
         >
@@ -324,7 +324,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
               }
               handleCellChange(channel.number, 'mode', newMode);
             }}
-            className="w-10 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+            className={`${BUTTON.field} w-10 h-7 border rounded text-xs font-medium`}
             title={channel.mode}
           >
             {channel.mode === 'Analog' || channel.mode === 'Fixed Analog' ? 'Ana' : 'Dig'}
@@ -339,7 +339,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
             // wraps to Low - silently downgrading a Turbo channel on one click.
             handleCellChange(channel.number, 'power', nextPowerLevel(channel.power, powerOrder));
           }}
-          className="w-8 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+          className={`${BUTTON.field} w-8 h-7 border rounded text-xs font-medium`}
           title={channel.power}
         >
           {powerAbbrev(channel.power)}
@@ -852,7 +852,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   const newSlot = currentSlot === 0 ? 1 : 0; // Toggle: 0→1, 1→0
                   handleCellChange(channel.number, 'slotOperation', newSlot);
                 }}
-                className="w-8 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+                className={`${BUTTON.field} w-8 h-7 border rounded text-xs font-medium`}
                 title={`Slot ${(channel.slotOperation ?? 0) === 0 ? 1 : 2}`}
               >
                 {(channel.slotOperation ?? 0) === 0 ? 1 : 2}
@@ -1014,7 +1014,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         <div className="flex items-center justify-center gap-1">
           <button
             onClick={() => onEdit(channel)}
-            className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+            className={`${BUTTON.rowAction} px-1.5 py-0.5 text-xs border rounded opacity-60 hover:opacity-100`}
             title={`Edit ${isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : `channel ${channel.number}`}`}
           >
             ✎
@@ -1022,7 +1022,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           {!isVFOChannel(channel.number) && (
             <button
               onClick={() => onClone(channel)}
-              className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-neon-magenta border border-neon-magenta border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+              className={`${BUTTON.rowAction} px-1.5 py-0.5 text-xs border rounded opacity-60 hover:opacity-100`}
               title={`Clone channel ${channel.number}`}
             >
               ⧉
@@ -1031,7 +1031,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           {!isVFOChannel(channel.number) && (
             <button
               onClick={() => onDelete(channel)}
-              className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-red-400 border border-red-600 border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+              className={`${BUTTON.dangerQuiet} px-1.5 py-0.5 text-xs border rounded opacity-60 hover:opacity-100`}
               title={`Delete channel ${channel.number}`}
             >
               ×

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { ProgressBar } from './ProgressBar';
 import { useLogStore, type LogEntry } from '../../store/logStore';
+import { BUTTON } from './controlStyles';
 
 function formatLogError(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -153,7 +154,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setDebugExpanded((e) => !e)}
-                  className="w-full px-4 py-2 text-left text-sm text-cool-gray hover:text-white bg-deep-gray hover:bg-deep-gray flex items-center justify-between"
+                  className={`${BUTTON.ghost} w-full px-4 py-2 text-left text-sm flex items-center justify-between`}
                 >
                   <span>Debug Info</span>
                   <span className="text-cool-gray">{debugExpanded ? '▼' : '▶'}</span>
@@ -166,7 +167,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
                     <button
                       type="button"
                       onClick={handleCopyDebug}
-                      className="px-3 py-1.5 text-xs bg-deep-gray border border-neon-cyan border-opacity-30 text-cool-gray rounded hover:bg-neon-cyan hover:text-dark-charcoal"
+                      className={`${BUTTON.neutral} px-3 py-1.5 text-xs border rounded`}
                     >
                       {copied ? 'Copied!' : 'Copy to clipboard'}
                     </button>
@@ -251,7 +252,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
             {onClose && (
               <button
                 onClick={onClose}
-                className="px-4 py-2 bg-deep-gray text-cool-gray font-semibold rounded hover:bg-neon-cyan hover:text-dark-charcoal transition-all border border-neon-cyan border-opacity-30"
+                className={`${BUTTON.neutral} px-4 py-2 font-semibold rounded border`}
               >
                 Close
               </button>
@@ -259,7 +260,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
             {onChangePort && (
               <button
                 onClick={onChangePort}
-                className="px-4 py-2 bg-deep-gray text-cool-gray font-semibold rounded hover:bg-neon-cyan hover:text-dark-charcoal transition-all border border-neon-cyan border-opacity-30"
+                className={`${BUTTON.neutral} px-4 py-2 font-semibold rounded border`}
               >
                 Change Port
               </button>
@@ -267,7 +268,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
             {onRetry && (
               <button
                 onClick={onRetry}
-                className="px-4 py-2 bg-neon-cyan text-deep-gray font-semibold rounded hover:bg-neon-cyan hover:bg-opacity-80 transition-all shadow-lg hover:shadow-glow-cyan border border-neon-cyan border-opacity-50"
+                className={`${BUTTON.primary} px-4 py-2 font-semibold rounded border`}
               >
                 Retry
               </button>

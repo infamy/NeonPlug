@@ -1,4 +1,5 @@
 import React from 'react';
+import { BUTTON } from './controlStyles';
 
 interface ModalProps {
   isOpen: boolean;
@@ -34,7 +35,7 @@ export const Modal: React.FC<ModalProps> = ({
           <h2 className="text-xl font-bold text-electric-purple">{title}</h2>
           <button
             onClick={onClose}
-            className="text-cool-gray hover:text-white text-2xl"
+            className={`${BUTTON.ghost} text-2xl`}
           >
             ×
           </button>

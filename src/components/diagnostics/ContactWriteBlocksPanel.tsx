@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { HexDump } from './HexDump';
+import { BUTTON } from '../ui/controlStyles';
 
 export const ContactWriteBlocksPanel: React.FC = () => {
   const { rawContactBlockAddress, writeBlockData } = useRadioStore();
@@ -25,7 +26,7 @@ export const ContactWriteBlocksPanel: React.FC = () => {
                 e.stopPropagation();
                 setShowContactWriteBlocks(!showContactWriteBlocks);
               }}
-              className="text-sm text-yellow-400 hover:text-yellow-300"
+              className={`${BUTTON.cautionLink} text-sm`}
             >
               {showContactWriteBlocks ? '▼ Hide' : '▶ Show'}
             </button>
@@ -82,7 +83,7 @@ export const ContactWriteBlocksPanel: React.FC = () => {
                           }
                           setExpandedContactBlocks(newExpanded);
                         }}
-                        className="text-sm text-yellow-400 hover:text-yellow-300"
+                        className={`${BUTTON.cautionLink} text-sm`}
                       >
                         {isExpanded ? '▼ Hide' : '▶ Show'} Hex
                       </button>

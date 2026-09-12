@@ -3,6 +3,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { SectionTitle } from '../ui/SectionTitle';
 import { D890_SATELLITE, satelliteFreqToMHz } from '../../radios/d890uv/satellite';
+import { BUTTON } from '../ui/controlStyles';
 
 /**
  * The satellite repeater table.
@@ -42,7 +43,7 @@ export const D890SatellitesArea: React.FC = () => {
           type="button"
           onClick={() => void onRead()}
           disabled={isConnecting}
-          className="px-4 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-50 text-neon-cyan text-sm font-medium rounded hover:bg-neon-cyan hover:text-black disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className={`${BUTTON.outline} px-4 py-2 border text-sm font-medium rounded`}
           title="Read the satellite table from the radio"
         >
           {isConnecting ? 'Reading…' : 'Read from radio'}

@@ -4,7 +4,7 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { useRadioStore } from '../../store/radioStore';
 import { D890_AUTO_REPEATER } from '../../radios/d890uv/autoRepeater';
 import { formatPlural } from '../../utils/formatPlural';
-import { FIELD_INLINE } from '../ui/controlStyles';
+import { BUTTON, FIELD_INLINE } from '../ui/controlStyles';
 
 /**
  * Auto-repeater offsets — 250 slots, only the used ones shown.
@@ -52,8 +52,7 @@ export const AutoRepeaterOffsets: React.FC = () => {
         <button
           onClick={add}
           disabled={used.length >= D890_AUTO_REPEATER.SLOTS}
-          className="px-3 py-1.5 rounded border border-neon-cyan text-neon-cyan
-                     hover:bg-neon-cyan hover:bg-opacity-10 disabled:opacity-40 text-sm"
+          className={`${BUTTON.outline} px-3 py-1.5 rounded border text-sm`}
         >
           + Add offset
         </button>
@@ -102,7 +101,7 @@ export const AutoRepeaterOffsets: React.FC = () => {
                     <button
                       onClick={() => set(index, null)}
                       title={`Clear slot ${index} — the slot number stays free rather than renumbering the rest`}
-                      className="text-muted hover:text-red-400 px-2"
+                      className={`${BUTTON.dangerQuiet} px-2`}
                     >
                       ✕
                     </button>

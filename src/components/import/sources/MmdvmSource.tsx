@@ -13,7 +13,7 @@ import {
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { SectionTitle } from '../../ui/SectionTitle';
-import { FIELD } from '../../ui/controlStyles';
+import { BUTTON, FIELD } from '../../ui/controlStyles';
 
 interface MmdvmSourceProps {
   onError: (msg: string) => void;
@@ -219,7 +219,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                     <button
                       type="button"
                       onClick={() => setMmdvmEntries(mmdvmEntries.filter((_, i) => i !== index))}
-                      className="text-sm text-red-400 hover:text-red-300"
+                      className={`${BUTTON.dangerQuiet} text-sm`}
                     >
                       Remove
                     </button>
@@ -233,7 +233,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                           { channelName: '', talkGroupName: '', talkGroupId: 9 },
                         ])
                       }
-                      className="text-sm text-neon-cyan hover:text-neon-cyan-bright"
+                      className={`${BUTTON.link} text-sm`}
                     >
                       + Add channel
                     </button>

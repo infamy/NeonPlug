@@ -30,7 +30,7 @@ import type { SettingsFieldDescriptor, SettingsFeature } from '../../types/setti
 import { FEATURE_AREAS } from './featureAreas';
 import { PageHeader } from '../ui/PageHeader';
 import { resolveContactCapacity } from '../../utils/contactCapacity';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 /** Get value from settings by key; supports nested path (e.g. menuEnableFlags.zoneList) and lockKey mapping */
 function getFieldValue(settings: RadioSettings | null, key: string): unknown {
@@ -411,14 +411,14 @@ export const SettingsTab: React.FC = () => {
               <button
                 type="button"
                 onClick={closeBootImageCropModal}
-                className="px-4 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-50 text-neon-cyan text-sm font-medium rounded hover:bg-neon-cyan hover:text-black transition-colors"
+                className={`${BUTTON.neutral} px-4 py-2 border text-sm font-medium rounded`}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={applyBootImageCrop}
-                className="px-4 py-2 bg-neon-cyan text-black text-sm font-medium rounded hover:bg-cyan-300 transition-colors"
+                className={`${BUTTON.primary} px-4 py-2 text-sm font-medium rounded`}
               >
                 Apply
               </button>
@@ -450,7 +450,7 @@ export const SettingsTab: React.FC = () => {
                   {(needsFirmwareUpdate || isNewerFirmware) && (
                     <button
                       onClick={() => setShowFirmwareWarning(true)}
-                      className="text-yellow-400 hover:text-yellow-300 transition-colors cursor-pointer"
+                      className={`${BUTTON.cautionLink} cursor-pointer`}
                       title={isNewerFirmware ? "Firmware version not recommended" : "Firmware update recommended"}
                     >
                       ⚠️
@@ -571,7 +571,7 @@ export const SettingsTab: React.FC = () => {
                   type="button"
                   onClick={handleReadBootImage}
                   disabled={isConnecting}
-                  className="px-4 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-50 text-neon-cyan text-sm font-medium rounded hover:bg-neon-cyan hover:text-black disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className={`${BUTTON.outline} px-4 py-2 border text-sm font-medium rounded`}
                   title="Read current boot image from radio (optional)"
                 >
                   Read from radio
@@ -587,7 +587,7 @@ export const SettingsTab: React.FC = () => {
                   type="button"
                   onClick={() => bootImageFileInputRef.current?.click()}
                   disabled={isConnecting}
-                  className="px-4 py-2 bg-neon-cyan text-black text-sm font-medium rounded hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className={`${BUTTON.primary} px-4 py-2 text-sm font-medium rounded`}
                   title="Choose an image; it will be resized to 240×320"
                 >
                   Import
@@ -597,7 +597,7 @@ export const SettingsTab: React.FC = () => {
                   type="button"
                   onClick={handleWriteBootImageToRadio}
                   disabled={isConnecting || !pendingBootImagePayload || pendingBootImagePayload.length !== BOOT_IMAGE.SIZE}
-                  className="px-4 py-2 bg-neon-cyan text-black text-sm font-medium rounded hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className={`${BUTTON.primary} px-4 py-2 text-sm font-medium rounded`}
                   title="Send your image to the radio"
                 >
                   Write to radio
@@ -745,7 +745,7 @@ export const SettingsTab: React.FC = () => {
                               .getElementById(`settings-section-${tab.id}`)
                               ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                           }
-                          className="px-2 py-0.5 text-xs border rounded transition-colors border-neon-cyan border-opacity-25 text-cool-gray hover:text-neon-cyan hover:border-opacity-60"
+                          className={`${BUTTON.subtle} px-2 py-0.5 text-xs border rounded`}
                         >
                           {tab.title}
                           {tab.count !== null && <span className="ml-1 opacity-50">{tab.count}</span>}
@@ -1207,7 +1207,7 @@ export const SettingsTab: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowCalibration(!showCalibration)}
-              className="px-3 py-1 bg-yellow-900/30 text-yellow-400 text-sm rounded border border-yellow-600/30 hover:bg-yellow-900/50 transition-colors"
+              className={`${BUTTON.caution} px-3 py-1 text-sm rounded border`}
             >
               {showCalibration ? 'Hide' : 'Show'}
             </button>

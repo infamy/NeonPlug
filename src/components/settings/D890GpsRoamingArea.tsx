@@ -11,7 +11,7 @@ import {
 import type { D890GpsRoamingEntry } from '../../radios/d890uv/gpsRoaming';
 import { geocodePlaces, type GeocodeResult } from '../../services/locationService';
 import { getCurrentLocation } from '../../services/repeaterFinder';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 /**
  * GPS Roaming — geofences that switch the radio's zone by location.
@@ -131,21 +131,21 @@ const LocationPicker: React.FC<{
         <button
           onClick={search}
           disabled={busy || !query.trim()}
-          className="shrink-0 px-2 py-1 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-30 hover:border-opacity-60 rounded disabled:opacity-30"
+          className={`${BUTTON.subtle} shrink-0 px-2 py-1 text-xs border rounded`}
         >
           {busy ? '…' : 'Search'}
         </button>
         <button
           onClick={useCurrent}
           disabled={busy}
-          className="shrink-0 px-2 py-1 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-30 hover:border-opacity-60 rounded disabled:opacity-30 whitespace-nowrap"
+          className={`${BUTTON.subtle} shrink-0 px-2 py-1 text-xs border rounded whitespace-nowrap`}
           title="Use this device's location"
         >
           Use my location
         </button>
         <button
           onClick={onClose}
-          className="shrink-0 px-2 py-1 text-xs text-cool-gray hover:text-white"
+          className={`${BUTTON.ghost} shrink-0 px-2 py-1 text-xs`}
           title="Close"
         >
           ×
@@ -163,7 +163,7 @@ const LocationPicker: React.FC<{
                   onPick(r.latitude, r.longitude);
                   onClose();
                 }}
-                className="w-full text-left px-2 py-1.5 text-xs text-cool-gray hover:text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-5"
+                className={`${BUTTON.menuItem} w-full text-left px-2 py-1.5 text-xs`}
               >
                 <span className="text-white">{r.formattedAddress ?? 'Result'}</span>
                 <span className="block font-mono text-muted">
@@ -389,7 +389,7 @@ export const D890GpsRoamingArea: React.FC = () => {
         <button
           onClick={addEntry}
           disabled={entries.length >= D890_GPS_ROAMING.ENTRIES}
-          className="shrink-0 px-2 py-1 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-20 hover:border-opacity-50 rounded transition-colors disabled:opacity-30 disabled:hover:text-cool-gray disabled:hover:border-opacity-20"
+          className={`${BUTTON.subtle} shrink-0 px-2 py-1 text-xs border rounded`}
           title={
             entries.length >= D890_GPS_ROAMING.ENTRIES
               ? `All ${D890_GPS_ROAMING.ENTRIES} slots are in use`
@@ -503,14 +503,14 @@ export const D890GpsRoamingArea: React.FC = () => {
                         onClick={() =>
                           setPickerFor(pickerFor === entry.index ? null : entry.index)
                         }
-                        className="mr-1 px-1.5 py-0.5 text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-30 hover:border-opacity-60 rounded"
+                        className={`${BUTTON.subtle} mr-1 px-1.5 py-0.5 border rounded`}
                         title="Find these coordinates from a place name or your location"
                       >
                         ⌖
                       </button>
                       <button
                         onClick={() => removeEntry(entry.index)}
-                        className="px-1.5 py-0.5 text-red-400 hover:text-red-300 border border-red-600 border-opacity-30 hover:border-opacity-60 rounded"
+                        className={`${BUTTON.dangerQuiet} px-1.5 py-0.5 border rounded`}
                         title="Delete this geofence"
                       >
                         ×

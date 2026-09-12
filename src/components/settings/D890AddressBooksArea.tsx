@@ -5,7 +5,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { D890_ANALOG_ADDRESS_BOOK } from '../../radios/d890uv/analogAddressBook';
 import { D890_MDC1200, MDC_CALL_TYPE } from '../../radios/d890uv/mdc1200';
 import { formatPlural } from '../../utils/formatPlural';
-import { FIELD, FIELD_INLINE } from '../ui/controlStyles';
+import { BUTTON, FIELD, FIELD_INLINE } from '../ui/controlStyles';
 
 /**
  * The two signalling address books — analog (DTMF) and MDC1200 (vendor: QDC).
@@ -72,8 +72,7 @@ const AnalogBook: React.FC<{
               { slot: contacts.length, digits: '', name: '' },
             ])
           }
-          className="px-3 py-1 rounded border border-neon-cyan text-neon-cyan
-                     hover:bg-neon-cyan hover:bg-opacity-10 text-sm"
+          className={`${BUTTON.outline} px-3 py-1 rounded border text-sm`}
         >
           + Add
         </button>
@@ -127,7 +126,7 @@ const AnalogBook: React.FC<{
                       setTable('analogAddressBook', contacts.filter((_, j) => j !== i))
                     }
                     title="Deletes and renumbers — every entry below this one moves up a slot"
-                    className="text-muted hover:text-red-400 px-2"
+                    className={`${BUTTON.dangerQuiet} px-2`}
                   >
                     ✕
                   </button>
@@ -169,8 +168,7 @@ const MdcBook: React.FC<{
             ])
           }
           disabled={contacts.length >= D890_MDC1200.SLOTS}
-          className="px-3 py-1 rounded border border-neon-cyan text-neon-cyan
-                     hover:bg-neon-cyan hover:bg-opacity-10 disabled:opacity-40 text-sm"
+          className={`${BUTTON.outline} px-3 py-1 rounded border text-sm`}
         >
           + Add
         </button>
@@ -264,7 +262,7 @@ const MdcBook: React.FC<{
                         setTable('mdc1200Contacts', contacts.filter((_, j) => j !== i))
                       }
                       title="Deletes and renumbers — every entry below this one moves up a slot"
-                      className="text-muted hover:text-red-400 px-2"
+                      className={`${BUTTON.dangerQuiet} px-2`}
                     >
                       ✕
                     </button>

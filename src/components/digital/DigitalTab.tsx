@@ -27,7 +27,7 @@ import {
   isEncryptionTypeLocked,
 } from '../../utils/encryptionKeys';
 import { PageHeader } from '../ui/PageHeader';
-import { FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
@@ -291,7 +291,7 @@ export const DigitalTab: React.FC = () => {
           {radioIdsLoaded && radioIds.length < dmrRadioIdsMax && (
             <button
               onClick={handleAddRadioId}
-              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
+              className={`${BUTTON.primary} px-3 py-1 rounded text-sm font-semibold`}
             >
               + Add ID
             </button>
@@ -367,7 +367,7 @@ export const DigitalTab: React.FC = () => {
                         <td className="px-2 py-2">
                           <button
                             onClick={() => handleDeleteRadioIdClick(radioId.index)}
-                            className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                            className={`${BUTTON.danger} px-2 py-1 rounded text-xs border`}
                           >
                             Delete
                           </button>
@@ -406,7 +406,7 @@ export const DigitalTab: React.FC = () => {
               <button
                 onClick={handleAddContact}
                 disabled={quickContacts.length >= talkGroupsMax}
-                className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`${BUTTON.primary} px-3 py-1 rounded text-sm font-semibold`}
               >
                 + Add Group
               </button>
@@ -479,7 +479,7 @@ export const DigitalTab: React.FC = () => {
                           <td className="px-2 py-2">
                             <button
                               onClick={() => handleDeleteContactClick(contact.index)}
-                              className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                              className={`${BUTTON.danger} px-2 py-1 rounded text-xs border`}
                             >
                               Delete
                             </button>
@@ -549,7 +549,7 @@ export const DigitalTab: React.FC = () => {
               });
             }}
             disabled={digitalEmergencies.length >= LIMITS.DIGITAL_EMERGENCY_MAX}
-            className="px-3 py-1.5 text-xs bg-neon-cyan bg-opacity-10 border border-neon-cyan text-neon-cyan rounded hover:bg-opacity-20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap ml-4"
+            className={`${BUTTON.outline} px-3 py-1.5 text-xs border rounded whitespace-nowrap ml-4`}
           >
             + Add
           </button>
@@ -697,7 +697,7 @@ export const DigitalTab: React.FC = () => {
                         <td className="px-2 py-1.5 text-center">
                           <button
                             onClick={() => deleteDigitalEmergency(i)}
-                            className="text-red-400 hover:text-red-300 transition-colors px-1"
+                            className={`${BUTTON.dangerQuiet} px-1`}
                             title="Delete"
                           >
                             ✕
@@ -821,7 +821,7 @@ export const DigitalTab: React.FC = () => {
                           {isEncryptionTypeLocked(key) && (
                             <button
                               onClick={() => updateKey(key.entryNumber, clearEncryptionKey())}
-                              className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-red-400 border border-red-600 border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+                              className={`${BUTTON.dangerQuiet} px-1.5 py-0.5 text-xs border rounded opacity-60 hover:opacity-100`}
                               title="Empty this slot — clears the type, name and key material. The slot can then hold a new key of any type."
                             >
                               Clear
@@ -851,7 +851,7 @@ export const DigitalTab: React.FC = () => {
           {messagesLoaded && messages.length < messagesMax && (
             <button
               onClick={handleAddMessage}
-              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
+              className={`${BUTTON.primary} px-3 py-1 rounded text-sm font-semibold`}
             >
               + Add Message
             </button>
@@ -903,7 +903,7 @@ export const DigitalTab: React.FC = () => {
                           <td className="px-2 py-2">
                             <button
                               onClick={() => handleDeleteMessageClick(arrayIndex)}
-                              className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                              className={`${BUTTON.danger} px-2 py-1 rounded text-xs border`}
                             >
                               Delete
                             </button>

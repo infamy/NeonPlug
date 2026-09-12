@@ -2,6 +2,7 @@ import React, { useState, ReactNode } from 'react';
 import { HexDump } from './HexDump';
 import { downloadHexDump, downloadBinary } from '../../utils/hexdump';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { BUTTON } from '../ui/controlStyles';
 
 interface MetadataBlockDisplayProps {
   metadata: number;
@@ -60,7 +61,7 @@ export const MetadataBlockDisplay: React.FC<MetadataBlockDisplayProps> = ({
               e.stopPropagation();
               downloadHexDump(blockData, `metadata-0x${metadataHex}-hexdump.txt`);
             }}
-            className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+            className={`${BUTTON.caution} px-3 py-1 text-xs border rounded`}
             title="Download hex dump"
           >
             📥 Hex
@@ -72,7 +73,7 @@ export const MetadataBlockDisplay: React.FC<MetadataBlockDisplayProps> = ({
               e.stopPropagation();
               downloadBinary(blockData, `metadata-0x${metadataHex}.bin`);
             }}
-            className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+            className={`${BUTTON.caution} px-3 py-1 text-xs border rounded`}
             title="Download binary"
           >
             📥 Bin
@@ -84,7 +85,7 @@ export const MetadataBlockDisplay: React.FC<MetadataBlockDisplayProps> = ({
               e.stopPropagation();
               setShowBlock(!showBlock);
             }}
-            className="text-sm text-yellow-400 hover:text-yellow-300"
+            className={`${BUTTON.cautionLink} text-sm`}
           >
             {showBlock ? '▼ Hide' : '▶ Show'}
           </button>
@@ -110,7 +111,7 @@ export const MetadataBlockDisplay: React.FC<MetadataBlockDisplayProps> = ({
                 e.stopPropagation();
                 setShowHexDump(!showHexDump);
               }}
-              className="text-xs text-yellow-400 hover:text-yellow-300"
+              className={`${BUTTON.cautionLink} text-xs`}
             >
               {showHexDump ? '▼' : '▶'}
             </button>
