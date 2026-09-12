@@ -193,7 +193,10 @@ export function jsonSafeToCodeplug(raw: Record<string, unknown>): CodeplugData {
  * a file called "unknown" would be a claim, and an absent radioInfo is not one.
  */
 export function codeplugFileName(data: CodeplugData, now = new Date()): string {
-  const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
+  // 20260912T101422 — ISO 8601 basic form. The dashes and colons go because the
+  // name already uses dashes to separate its parts, and 15 characters beats 19
+  // in a file list without losing the seconds that keep two exports apart.
+  const timestamp = now.toISOString().replace(/[-:]/g, '').slice(0, 15);
   const model = (data.radioInfo?.model ?? '').trim();
   if (!model) return `codeplug-${timestamp}.neonplug`;
   // Squashed to lower-case letters and digits: "DA-7X2" becomes "da7x2",

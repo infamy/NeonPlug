@@ -2,7 +2,7 @@
  * An exported codeplug is named for the radio it belongs to.
  *
  * These files pile up in a Downloads folder, and
- * "codeplug-export-2026-09-12T10-14-22" says nothing about which radio it came
+ * "codeplug-export-20260912T101422" says nothing about which radio it came
  * off. That matters once somebody owns several: writing the wrong codeplug to a
  * radio is not a cheap mistake.
  *
@@ -27,24 +27,24 @@ const data = (model: string | null): CodeplugData => ({
 
 describe('the exported file is named for its radio', () => {
   it('puts the model where the word "export" used to be, as one lower-case word', () => {
-    expect(codeplugFileName(data('DA-7X2'), AT)).toBe('codeplug-da7x2-2026-09-12T10-14-22.neonplug');
-    expect(codeplugFileName(data('DM-32UV'), AT)).toBe('codeplug-dm32uv-2026-09-12T10-14-22.neonplug');
-    expect(codeplugFileName(data('AT-D890UV'), AT)).toBe('codeplug-atd890uv-2026-09-12T10-14-22.neonplug');
-    expect(codeplugFileName(data('UV5R-Mini'), AT)).toBe('codeplug-uv5rmini-2026-09-12T10-14-22.neonplug');
+    expect(codeplugFileName(data('DA-7X2'), AT)).toBe('codeplug-da7x2-20260912T101422.neonplug');
+    expect(codeplugFileName(data('DM-32UV'), AT)).toBe('codeplug-dm32uv-20260912T101422.neonplug');
+    expect(codeplugFileName(data('AT-D890UV'), AT)).toBe('codeplug-atd890uv-20260912T101422.neonplug');
+    expect(codeplugFileName(data('UV5R-Mini'), AT)).toBe('codeplug-uv5rmini-20260912T101422.neonplug');
   });
 
   it('drops the segment when no radio is known, rather than inventing one', () => {
     // A file called "unknown" would be a claim. An absent radioInfo is not one.
-    expect(codeplugFileName(data(null), AT)).toBe('codeplug-2026-09-12T10-14-22.neonplug');
-    expect(codeplugFileName(data('   '), AT)).toBe('codeplug-2026-09-12T10-14-22.neonplug');
+    expect(codeplugFileName(data(null), AT)).toBe('codeplug-20260912T101422.neonplug');
+    expect(codeplugFileName(data('   '), AT)).toBe('codeplug-20260912T101422.neonplug');
   });
 
   it('never lets a model break the file name', () => {
     // Every model shipped today is already safe; this is for the ones that
     // are not — a slash would make the browser treat it as a path.
     expect(codeplugFileName(data('Weird / Model v2'), AT))
-      .toBe('codeplug-weirdmodelv2-2026-09-12T10-14-22.neonplug');
-    expect(codeplugFileName(data('///'), AT)).toBe('codeplug-2026-09-12T10-14-22.neonplug');
+      .toBe('codeplug-weirdmodelv2-20260912T101422.neonplug');
+    expect(codeplugFileName(data('///'), AT)).toBe('codeplug-20260912T101422.neonplug');
   });
 
   it('keeps the timestamp, so two exports of one radio do not collide', () => {
