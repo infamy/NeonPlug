@@ -30,6 +30,7 @@ import { useRadioConnection } from './hooks/useRadioConnection';
 import { useAlert } from './hooks/useAlert';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import type { CodeplugData } from './services/codeplugExport';
+import { applyImportedTables } from './services/codeplugExport';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
 import { setLogStore, logger, LogLevel } from './utils/protocolLogger';
 import { installDevStoreHandle } from './utils/devStoreHandle';
@@ -162,6 +163,9 @@ function App() {
     setQuickContacts(codeplugData.quickContacts ?? []);
     setRXGroups(codeplugData.rxGroups ?? []);
     setEncryptionKeys(codeplugData.encryptionKeys ?? []);
+    // Radio-specific tables (AM/FM, roaming, DTMF, hot keys …). Absent from
+    // files written before 2026-09-12, which is why this is a no-op for them.
+    applyImportedTables(codeplugData.tables, useRadioStore.getState().setTable);
   };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {

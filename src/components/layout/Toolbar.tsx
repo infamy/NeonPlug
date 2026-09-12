@@ -18,6 +18,7 @@ import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { getRadioPickerOptions, getMigrationTargetModels } from '../../radios';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 import { migrateCodeplug, type MigrationLoss } from '../../services/codeplugMigration';
+import { exportableTables, applyImportedTables } from '../../services/codeplugExport';
 import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
 import { formatPlural } from '../../utils/formatPlural';
 // Codeplug export/import are lazy loaded when needed
@@ -109,6 +110,9 @@ export const Toolbar: React.FC = () => {
     quickContacts,
     rxGroups,
     encryptionKeys,
+    // The radio's own tables travel with the file — without these a DA-7X2
+    // backup silently omits AM/FM, roaming, DTMF, hot keys and the rest.
+    tables: exportableTables(useRadioStore.getState().tables),
     exportDate: new Date().toISOString(),
     version: '1.0.0',
   });
@@ -142,6 +146,7 @@ export const Toolbar: React.FC = () => {
       quickContacts: qcs.contacts,
       rxGroups: rgs.groups,
       encryptionKeys: eks.keys,
+      tables: exportableTables(rs.tables),
       exportDate: new Date().toISOString(),
       version: '1.0.0',
     };
@@ -235,6 +240,7 @@ export const Toolbar: React.FC = () => {
       setQuickContacts(codeplugData.quickContacts ?? []);
       setRXGroups(codeplugData.rxGroups ?? []);
       setEncryptionKeys(codeplugData.encryptionKeys ?? []);
+      applyImportedTables(codeplugData.tables, useRadioStore.getState().setTable);
       
       const digCount = codeplugData.digitalEmergencies?.length ?? 0;
       const analogCount = codeplugData.analogEmergencies?.length ?? 0;
@@ -546,6 +552,7 @@ export const Toolbar: React.FC = () => {
     setQuickContacts(data.quickContacts ?? []);
     setRXGroups(data.rxGroups ?? []);
     setEncryptionKeys(data.encryptionKeys ?? []);
+    applyImportedTables(data.tables, useRadioStore.getState().setTable);
     setSnapshotsModalOpen(false);
     showAlert(`Restored codeplug: ${data.channels.length} channels, ${data.zones.length} zones`, 'Restore');
   };
