@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { getRadioPickerOptions } from '../../radios';
-import { formatPlural } from '../../utils/formatPlural';
 import { useRadioStore } from '../../store/radioStore';
 import { isWebSerialSupported, isWebBluetoothSupported, getSupportedBrowsers } from '../../utils/browserSupport';
 import { downloadOfflineAsZip } from '../../utils/offlineDownload';
@@ -70,13 +69,11 @@ export const StartupModal: React.FC<StartupModalProps> = ({
   }, [isOpen]);
   const options = useMemo(() => getRadioPickerOptions(), []);
 
-  // Open on the brand of the radio already chosen, so reopening the picker does
-  // not make someone re-navigate to where they were. Nothing selected yet opens
-  // on the brand tier, which is the choice the first tier is asking for.
+  // Reopening follows the remembered radio again, rather than leaving the list
+  // wherever it was last browsed.
   useEffect(() => {
-    if (!isOpen) return;
-    setBrand(options.find((o) => o.modelId === selectedRadioModel)?.group ?? null);
-  }, [isOpen, selectedRadioModel, options]);
+    if (isOpen) setBrand(null);
+  }, [isOpen]);
 
   // Group options by manufacturer; ungrouped radios go under a blank key
   const groupedOptions = useMemo(() => {
@@ -89,9 +86,18 @@ export const StartupModal: React.FC<StartupModalProps> = ({
     return groups;
   }, [options]);
 
-  // Default to first radio if none selected
-  const effectiveSelected = selectedRadioModel ?? options[0]?.modelId ?? null;
-  const selectedOption = options.find(o => o.modelId === effectiveSelected);
+  // NO fallback to the first radio. It used to default to options[0], which put
+  // "Read from DM-32UV" under the biggest button on screen for somebody who had
+  // never chosen a DM-32UV; the Read button is disabled until a radio is picked.
+  // Persisted now, so a returning user arrives with theirs already selected.
+  const effectiveSelected = selectedRadioModel;
+  const selectedOption = options.find((o) => o.modelId === effectiveSelected);
+
+  // Which brand's radios are listed: whatever was clicked, else the brand of
+  // the remembered radio, else the first. Derived rather than stored, so it
+  // cannot drift out of step with the selection.
+  const activeBrand =
+    brand ?? selectedOption?.group ?? Array.from(groupedOptions.keys())[0] ?? '';
 
   if (!isOpen) return null;
 
@@ -129,76 +135,58 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           <p className="text-cool-gray text-sm">Channel programming software</p>
         </div>
 
-        {/* Two tiers: brand, then radio.
-            Every radio in one scrolling list stopped fitting once the DA-7X2
-            gained its second name — Anytone sat below the fold, so a radio the
-            app fully supports looked absent unless you thought to scroll. */}
-        <p className="text-white text-center mb-4">
-          {brand === null ? 'Pick a brand' : 'Pick a radio'}
-        </p>
-        <div className="mb-6 space-y-3 max-h-64 overflow-y-auto pr-1">
-          {brand === null ? (
-            <div className="grid grid-cols-2 gap-2">
-              {Array.from(groupedOptions.entries()).map(([group, opts]) => (
-                <button
-                  key={group || '__ungrouped'}
-                  type="button"
-                  onClick={() => setBrand(group)}
-                  className={`flex flex-col items-center justify-center px-3 py-3 rounded border-2 transition-all text-sm font-medium ${
-                    selectedOption?.group === group && selectedRadioModel
-                      ? 'border-neon-cyan bg-neon-cyan bg-opacity-10 text-white'
-                      : 'border-cool-gray hover:border-neon-cyan text-cool-gray hover:text-white'
-                  }`}
-                >
-                  <span className="uppercase tracking-wider">{group || 'Other'}</span>
-                  {/* Count only. The ALPHA badge belongs beside the RADIO it
-                      describes — on a brand card it reads as if the brand were
-                      alpha, and the badge is still one click away at the moment
-                      the radio is actually chosen. */}
-                  <span className="text-xs opacity-60 mt-0.5">
-                    {opts.length} {formatPlural(opts.length, 'radio')}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div>
+        {/* Brands beside radios, not one behind the other.
+            A single scrolling list stopped fitting once the DA-7X2 gained its
+            second name, and a drill-down fixed that by charging a click for
+            something the eye can do — so both columns are on screen, and the
+            one that grows scrolls. */}
+        <p className="text-white text-center mb-4">Pick a radio</p>
+        <div className="mb-6 grid grid-cols-[7rem_1fr] gap-2 max-h-64">
+          <div className="overflow-y-auto pr-1 space-y-1">
+            {Array.from(groupedOptions.entries()).map(([group, opts]) => (
               <button
+                key={group || '__ungrouped'}
                 type="button"
-                onClick={() => setBrand(null)}
-                className="text-cool-gray hover:text-neon-cyan text-xs mb-2 px-1"
+                onClick={() => setBrand(group)}
+                className={`w-full flex items-baseline justify-between px-2 py-1.5 rounded border transition-all text-xs font-semibold uppercase tracking-wider ${
+                  activeBrand === group
+                    ? 'border-neon-cyan bg-neon-cyan bg-opacity-10 text-white'
+                    : 'border-transparent hover:border-cool-gray text-cool-gray hover:text-white'
+                }`}
               >
-                ← All brands
+                <span>{group || 'Other'}</span>
+                <span className="text-[10px] opacity-50 font-normal">{opts.length}</span>
               </button>
-              <div className="grid grid-cols-2 gap-2">
-                {(groupedOptions.get(brand) ?? []).map((opt) => (
-                  <button
-                    key={opt.modelId}
-                    type="button"
-                    onClick={() => setSelectedRadioModel(opt.modelId)}
-                    className={`flex items-center justify-center px-3 py-2 rounded border-2 transition-all text-sm font-medium ${
-                      effectiveSelected === opt.modelId
-                        ? 'border-neon-cyan bg-neon-cyan bg-opacity-10 shadow-glow-cyan text-white'
-                        : 'border-cool-gray hover:border-neon-cyan text-cool-gray hover:text-white'
-                    }`}
+            ))}
+          </div>
+
+          <div className="overflow-y-auto pr-1 space-y-2 content-start">
+            {(groupedOptions.get(activeBrand) ?? []).map((opt) => (
+              <button
+                key={opt.modelId}
+                type="button"
+                onClick={() => setSelectedRadioModel(opt.modelId)}
+                className={`w-full flex items-center justify-center px-3 py-2 rounded border-2 transition-all text-sm font-medium ${
+                  effectiveSelected === opt.modelId
+                    ? 'border-neon-cyan bg-neon-cyan bg-opacity-10 shadow-glow-cyan text-white'
+                    : 'border-cool-gray hover:border-neon-cyan text-cool-gray hover:text-white'
+                }`}
+              >
+                {opt.label}
+                {opt.status === 'alpha' && (
+                  // Said plainly at the moment of choosing, not buried in a
+                  // doc: this driver writes to the radio and not every region
+                  // has been proven on hardware.
+                  <span
+                    title="Alpha: writes are supported but not every region is hardware-verified"
+                    className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-500 bg-opacity-20 text-yellow-400 border border-yellow-600 border-opacity-50"
                   >
-                    {opt.label}
-                    {opt.status === 'alpha' && (
-                      // Said plainly at the moment of choosing, not buried in a
-                      // doc: this driver writes to the radio and not every
-                      // region has been proven on hardware.
-                      <span
-                        title="Alpha: writes are supported but not every region is hardware-verified"
-                        className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-500 bg-opacity-20 text-yellow-400 border border-yellow-600 border-opacity-50"
-                      >
-                        Alpha
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+                    Alpha
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="space-y-4 mb-6">
@@ -230,7 +218,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
             disabled={!canConnect || !effectiveSelected}
             title={!canConnect ? 'Web Serial and Web Bluetooth are not supported in this browser' : `Read codeplug from ${selectedOption?.label ?? 'radio'}`}
           >
-            Read from {selectedOption?.label ?? 'Radio'}
+            {selectedOption ? `Read from ${selectedOption.label}` : 'Pick a radio first'}
           </Button>
 
           <Button

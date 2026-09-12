@@ -110,8 +110,39 @@ interface RadioState {
   setShowPickRadioModal: (show: boolean) => void;
 }
 
+/**
+ * The radio you last chose, remembered across reloads.
+ *
+ * It was not remembered at all until 2026-09-12, so every load started with
+ * nothing selected — and the startup modal fell back to the FIRST registered
+ * radio, putting "Read from DM-32UV" under its biggest button for somebody who
+ * had never chosen a DM-32UV. Remembering it is also what lets the picker lead
+ * with your own radio instead of asking you to find it again every time.
+ *
+ * Same shape as the debug-mode flag: localStorage, and a failure to read or
+ * write it is never worth breaking the app over.
+ */
+const SELECTED_RADIO_KEY = 'neonplug-selected-radio';
+
+const loadSelectedRadio = (): string | null => {
+  try {
+    return localStorage.getItem(SELECTED_RADIO_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const saveSelectedRadio = (model: string | null): void => {
+  try {
+    if (model === null) localStorage.removeItem(SELECTED_RADIO_KEY);
+    else localStorage.setItem(SELECTED_RADIO_KEY, model);
+  } catch {
+    /* ignore */
+  }
+};
+
 export const useRadioStore = create<RadioState>((set) => ({
-  selectedRadioModel: null,
+  selectedRadioModel: loadSelectedRadio(),
   preferredTransport: null,
   showPickRadioModal: false,
   isConnected: false,
@@ -156,7 +187,10 @@ export const useRadioStore = create<RadioState>((set) => ({
   setRadioProgress: (p) => set({ radioProgress: p }),
   setBootImageDescription: (description) => set({ bootImageDescription: description }),
   setConnectionError: (error) => set({ connectionError: error }),
-  setSelectedRadioModel: (model) => set({ selectedRadioModel: model }),
+  setSelectedRadioModel: (model) => {
+    saveSelectedRadio(model);
+    set({ selectedRadioModel: model });
+  },
   setPreferredTransport: (transport) => set({ preferredTransport: transport }),
   setShowPickRadioModal: (show) => set({ showPickRadioModal: show }),
 }));
