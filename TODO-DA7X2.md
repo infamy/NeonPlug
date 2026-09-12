@@ -423,6 +423,15 @@ a one-field change moves only that field's bytes.
 
 ### 2a. Other gaps the 2026-09-02 audit found
 
+- ☐ **The FM scan mask write does not stick.** MEASURED 2026-09-11: a write of
+  `00` to `0x3402050` left the radio holding `01`, its original value, while six
+  other regions in the SAME 12-frame write landed and were confirmed. Not a
+  polarity, address or encoder fault — the vendor's own capture holds `01` there
+  too. Leading explanation is that the radio owns this byte at runtime (FM scan
+  is live state and the operator was in FM mode in between), which would make
+  firmware flush its copy over ours. Worth one controlled retry: write it, then
+  read it back WITHOUT entering FM mode. See `HW-ROUNDTRIP-TESTS.md`.
+
 - ☐ **APRS settings cannot be written.** `aprsToRadioSpecific` folds them into
   the settings list on read and has no inverse, so there is nothing to encode
   from. `writeRadioSettings` now REFUSES them by name rather than dropping them
@@ -603,12 +612,27 @@ Two facts the capture establishes:
 | AM zone | `0x80` | zeros + `0xFFFF` at `MEMBERS_AT` | layout covers all `0x80`: name `0x00-0x1f`, current `0x20-0x21`, members `0x22+` |
 | **main channel** | `0x80` | **NONE — still refuses** | ~40% of the record is undecoded, and no capture anywhere contains an unused channel slot |
 
-- ☐ **Main channel blank is still unknown.** Needs a diagnostic dump of a
-  never-used slot — channel 201 at `0x1082400`, len `0x80` (and 501 at
-  `0x1183a00` as a second sample, to tell a pattern from one slot's accident).
-  Also worth dumping a DELETED slot — zone slot 3 at `0x2000400` — since adding
-  into a previously-used slot is a real case and stale bytes may linger.
-  Until then `planChannelWrite` refuses rather than guessing ~50 bytes.
+- ☐ **Main channel blank — DUMPED 2026-09-11, and the answer is that there is no
+  vendor blank to find.** Both never-used slots (channel 201 `0x1082400`, channel
+  501 `0x1183a00`) read as **128 bytes of 0xFF** — erased flash, not a written
+  record. The vendor never writes an unused slot, so no dump of one can supply
+  the ~50 undecoded bytes a new record needs.
+
+  The DELETED slot says something sharper. Channel 102, deleted by NeonPlug and
+  confirmed gone in the vendor CPS, **still holds its complete record**:
+  `14 53 00 00` (145.300) and `Punct -/. _ 12` in UTF-16LE at 0x44. A delete
+  clears the presence mask bit and nothing else, so "add into a previously-used
+  slot" means patching over a real record — that case already works.
+
+  A real record is also mostly EMPTY: of its 128 bytes only 38 are non-zero, and
+  15 of those are the name. Fixtures: `tests/fixtures/d890uv/channel-never-used-{201,501}.bin`,
+  `channel-deleted-102.bin`.
+
+  What is still needed is one vendor-written FRESH record: add a channel in the
+  vendor CPS, write to the radio, then dump that slot. That gives the CPS's own
+  defaults for every byte this driver does not decode, with provenance, instead
+  of inferring a blank from one deleted record. Until then `planChannelWrite`
+  refuses rather than guessing.
 
 ### Tier 1 — destructive paths, still entirely unproven
 

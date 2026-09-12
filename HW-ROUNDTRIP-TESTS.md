@@ -215,18 +215,27 @@ CPS read of the radio settled them, and it did NOT settle them all the same way:
 |---|---|---|
 | Channel presence mask | 102 gone, 101 `Sixteen Chars XY` still there | ✅ confirmed |
 | Power-on display | line 1 `ZULU ONE`, line 2 still `ANYTONE` | ✅ confirmed |
-| FM scan mask | first FM channel still shows **Add** | ❌ CONTRADICTED |
+| FM scan mask | first FM channel still shows **Add** | ❌ the write did not stick |
 
-⚠️ **The FM scan mask did not do what the write said.** The staged edit was
-`scanAdd: false` on FM index 0 (read back as `true` beforehand), the dry run
-showed one byte at `0x3402050`, and the write sent 12 frames with no refusal —
-yet the CPS still reads that channel as `Add`. Two explanations survive, and the
-cheap test separates them: read `0x3402050` again with NeonPlug. `00` means the
-radio holds our value and the CPS's Add/Del column is not that bit; `01` means
-the write to that address did not stick. Until then the region is NOT claimed,
-and the polarity itself is not in doubt — the vendor's own read capture
-(`7x2_read_new.txt`) holds `01 00 00 …` there, and set = scanned is what our
-read and write both assume.
+⚠️ **RESOLVED 2026-09-11, and the answer is that the write did not stick.** The
+staged edit was `scanAdd: false` on FM index 0 (read back as `true` beforehand),
+the dry run showed one byte at `0x3402050`, and the write sent 12 frames with no
+refusal — yet the CPS still read that channel as `Add`. Reading `0x3402050` back
+through NeonPlug settled it: `01 00 00 …`, the ORIGINAL value. The radio never
+took our `00`.
+
+So this is not a decode, polarity or address error. The vendor's own read capture
+(`7x2_read_new.txt`) holds `01` at the same address, and our read and write both
+take set = scanned; six regions in the very same 12-frame write landed and were
+confirmed on the radio, and two more in the CPS. One address in that batch simply
+did not change.
+
+The leading explanation is that the radio OWNS this byte at runtime: FM scan
+state is live state, the operator was in FM mode between the write and the read,
+and firmware flushing its own copy over ours would look exactly like this. That
+is a hypothesis, not a finding. What IS established: a planned, ACKed frame is
+not by itself proof the radio kept the bytes — only a read-back is. Nothing else
+in the batch behaved this way, so this is about this region, not the write path.
 
 ⚠️ **Two regions never reached the plan at all**: zone current channel A and B.
 `buildD890CodeplugTables` prefers the READ-TIME `zoneCurrentById` over the table
