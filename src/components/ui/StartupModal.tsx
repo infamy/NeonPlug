@@ -42,7 +42,7 @@ interface StartupModalProps {
 
 const OFFLINE_FALLBACK_MESSAGE =
   'The offline version is available on GitHub Pages.\n\n' +
-  'Click OK to open it, then use your browser\'s "Save Page As" to save as neonplug.html.\n\n' +
+  'Open the page, then use your browser\'s "Save Page As" to save it as neonplug.html.\n\n' +
   'Or build it locally using the instructions in the About tab.';
 
 export const StartupModal: React.FC<StartupModalProps> = ({
@@ -368,8 +368,9 @@ export const StartupModal: React.FC<StartupModalProps> = ({
         onConfirm={() => window.open(OFFLINE_VERSION_URL, '_blank')}
         title="Download offline version"
         message={OFFLINE_FALLBACK_MESSAGE}
-        confirmLabel="OK"
-        variant="alert"
+        confirmLabel="Open download page"
+        cancelLabel="Close"
+        variant="default"
       />
       <ConfirmModal
         isOpen={clearConfirmOpen}
@@ -382,7 +383,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
         title="Clear all snapshots"
         message="Remove all recent codeplug snapshots from local storage? This cannot be undone."
         confirmLabel="Clear all"
-        variant="alert"
+        variant="danger"
       />
     </div>
   );

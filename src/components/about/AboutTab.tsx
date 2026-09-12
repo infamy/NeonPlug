@@ -10,7 +10,7 @@ import { PageHeader } from '../ui/PageHeader';
 
 const OFFLINE_FALLBACK_MESSAGE =
   'The offline version is available on GitHub Pages.\n\n' +
-  'Click OK to open it, then use your browser\'s "Save Page As" to save as neonplug.html.\n\n' +
+  'Open the page, then use your browser\'s "Save Page As" to save it as neonplug.html.\n\n' +
   'Or build it locally using the instructions below.';
 
 const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
@@ -337,8 +337,9 @@ export const AboutTab: React.FC = () => {
       onConfirm={() => window.open(OFFLINE_VERSION_URL, '_blank')}
       title="Download offline version"
       message={OFFLINE_FALLBACK_MESSAGE}
-      confirmLabel="OK"
-      variant="alert"
+      confirmLabel="Open download page"
+      cancelLabel="Close"
+      variant="default"
     />
     </>
   );

@@ -391,7 +391,7 @@ export const SmartImportTab: React.FC = () => {
 
       {/* 4. Error display */}
       {error && (
-        <div className="bg-red-900 border border-red-500 rounded p-3 mb-4 text-red-200">
+        <div className="bg-red-900 border border-red-500 rounded p-3 mb-4 text-red-200 whitespace-pre-line">
           {error}
         </div>
       )}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { MainLayout } from './components/layout/MainLayout';
 import { StartupModal } from './components/ui/StartupModal';
 import { ConfirmModal } from './components/ui/ConfirmModal';
+import { CodeplugSummaryBody } from './components/layout/CodeplugSummaryBody';
 
 // Lazy load tabs for better code splitting - only load when tab is active
 const ChannelsTab = lazy(() => import('./components/channels/ChannelsTab').then(m => ({ default: m.ChannelsTab })));
@@ -30,7 +31,7 @@ import { useLogStore } from './store/logStore';
 function App() {
   const [activeTab, setActiveTab] = useState('channels');
   const [showStartupModal, setShowStartupModal] = useState(true);
-  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Import');
+  const { alertOpen, alertMessage, alertBody, alertSize, alertTitle, showAlert, showAlertBody, closeAlert } = useAlert('Import');
   const { setChannels, channels } = useChannelsStore();
   const { setContacts } = useContactsStore();
   const { setZones } = useZonesStore();
@@ -144,21 +145,7 @@ function App() {
         setShowStartupModal(false);
         const { saveSnapshot } = await import('./services/codeplugSnapshots');
         await saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
-        const lines = [
-          `• ${codeplugData.channels.length} channels`,
-          `• ${codeplugData.zones.length} zones`,
-          `• ${codeplugData.scanLists.length} scan lists`,
-          `• ${codeplugData.contacts.length} contacts`,
-          `• ${codeplugData.digitalEmergencies?.length ?? 0} digital emergency system(s)`,
-          `• ${codeplugData.analogEmergencies?.length ?? 0} analog emergency system(s)`,
-          codeplugData.radioSettings ? '• Radio settings' : null,
-          `• ${codeplugData.messages?.length ?? 0} quick message(s)`,
-          `• ${codeplugData.radioIds?.length ?? 0} DMR radio ID(s)`,
-          `• ${codeplugData.quickContacts?.length ?? 0} talk group(s)`,
-          `• ${codeplugData.rxGroups?.length ?? 0} RX group(s)`,
-          `• ${codeplugData.encryptionKeys?.length ?? 0} encryption key(s)`,
-        ].filter(Boolean);
-        showAlert(`Successfully imported codeplug!\n\n${lines.join('\n')}`);
+        showAlertBody(<CodeplugSummaryBody data={codeplugData} lead="Codeplug imported" fileName={file.name} />);
       } catch (error) {
         showAlert(`Failed to import codeplug: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
@@ -269,6 +256,8 @@ function App() {
         onClose={closeAlert}
         title={alertTitle}
         message={alertMessage}
+        body={alertBody}
+        size={alertSize}
         confirmLabel="OK"
         variant="alert"
       />

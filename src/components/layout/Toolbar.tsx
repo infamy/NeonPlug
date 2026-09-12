@@ -8,7 +8,7 @@ import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useAnalogEmergencyStore } from '../../store/analogEmergencyStore';
 import { useRadioStore } from '../../store/radioStore';
-import { blocksWriting, describeFindings } from '../../radios/d890uv/integrity';
+import { blocksWriting } from '../../radios/d890uv/integrity';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
@@ -17,17 +17,20 @@ import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { getRadioPickerOptions, getMigrationTargetModels } from '../../radios';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
-import { migrateCodeplug, type MigrationLoss } from '../../services/codeplugMigration';
+import { migrateCodeplug } from '../../services/codeplugMigration';
 import { exportableTables } from '../../services/codeplugExport';
 import { applyCodeplugToStores } from '../../services/applyCodeplug';
 import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
-import { formatPlural } from '../../utils/formatPlural';
 // Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { useAlert } from '../../hooks/useAlert';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { WriteConfirmBody } from './WriteConfirmBody';
+import { WriteBlockedBody } from './WriteBlockedBody';
+import { WriteRefusalBody } from './WriteRefusalBody';
+import { CodeplugSummaryBody } from './CodeplugSummaryBody';
+import { ConvertLossList } from './ConvertLossList';
 import type { WriteConfirmInput } from './writeConfirmation';
 import { isWebSerialSupported } from '../../utils/browserSupport';
 
@@ -59,7 +62,7 @@ export const Toolbar: React.FC = () => {
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
   const [writeConfirm, setWriteConfirm] = useState<WriteConfirmInput | null>(null);
-  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
+  const { alertOpen, alertMessage, alertBody, alertSize, alertTitle, showAlert, showAlertBody, closeAlert } = useAlert();
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [convertTargetModel, setConvertTargetModel] = useState<string>(() => getMigrationTargetModels()[0] ?? 'DM-32UV');
   const [readDropdownOpen, setReadDropdownOpen] = useState(false);
@@ -155,37 +158,6 @@ export const Toolbar: React.FC = () => {
     };
   };
 
-  const formatMigrationLoss = (loss: MigrationLoss): string => {
-    const parts: string[] = [];
-    if (loss.channelsDropped > 0) parts.push(`${loss.channelsDropped} channel(s) removed`);
-    if (loss.zonesLost > 0) parts.push(`${loss.zonesLost} zone(s) removed`);
-    if (loss.scanListsLost > 0) parts.push(`${loss.scanListsLost} scan list(s) removed`);
-    if (loss.contactsLost > 0) parts.push(`${loss.contactsLost} contact(s) removed`);
-    if (loss.radioIdsLost > 0) parts.push(`${loss.radioIdsLost} DMR ID(s) removed`);
-    if (loss.digitalEmergenciesLost > 0) parts.push(`${loss.digitalEmergenciesLost} digital emergency(s) removed`);
-    if (loss.messagesLost > 0) parts.push(`${loss.messagesLost} quick message(s) removed`);
-    if (loss.quickContactsLost > 0) parts.push(`${loss.quickContactsLost} quick contact(s) removed`);
-    if (loss.rxGroupsLost > 0) parts.push(`${loss.rxGroupsLost} RX group(s) removed`);
-    if (loss.encryptionKeysLost > 0) parts.push(`${loss.encryptionKeysLost} encryption key(s) removed`);
-    if (loss.zoneChannelsTrimmed > 0)
-      parts.push(`${loss.zoneChannelsTrimmed} zone member(s) trimmed to this radio's per-zone limit`);
-    if (loss.scanListChannelsTrimmed > 0)
-      parts.push(`${loss.scanListChannelsTrimmed} scan list member(s) trimmed to this radio's limit`);
-    if (loss.rxGroupMembersTrimmed > 0)
-      parts.push(`${loss.rxGroupMembersTrimmed} RX group member(s) trimmed to this radio's limit`);
-    if (loss.scanListRefsCleared > 0)
-      parts.push(
-        `${formatPlural(loss.scanListRefsCleared, 'channel')} had a scan list reference cleared ` +
-          `(the list it pointed at does not exist on this radio)`,
-      );
-    if (loss.powerLevelsDowngraded > 0)
-      parts.push(
-        `${formatPlural(loss.powerLevelsDowngraded, 'channel')} stepped down to the strongest power this radio supports`,
-      );
-    if (loss.settingsCleared) parts.push('Radio settings cleared (do not map between radios)');
-    return parts.length > 0 ? parts.join('. ') : 'No data removed.';
-  };
-
   const handleConvertReplace = async () => {
     const data = buildCodeplugData();
     const { migrated, loss } = migrateCodeplug(data, convertTargetModel);
@@ -206,8 +178,13 @@ export const Toolbar: React.FC = () => {
     setSelectedRadioModel(convertTargetModel);
     setConvertModalOpen(false);
     const targetLabel = getRadioPickerOptions().find((o) => o.modelId === convertTargetModel)?.label ?? convertTargetModel;
-    const lossText = formatMigrationLoss(loss);
-    showAlert(`Codeplug converted for ${targetLabel}. ${lossText}`, 'Convert');
+    showAlertBody(
+      <div className="space-y-3 text-sm pb-1">
+        <p className="text-white">Converted for {targetLabel}.</p>
+        <ConvertLossList loss={loss} />
+      </div>,
+      'Convert'
+    );
   };
 
   const handleConvertDownload = async () => {
@@ -235,28 +212,10 @@ export const Toolbar: React.FC = () => {
       // (issue #2); applyCodeplugToStores is the one place that decides it.
       applyCodeplugToStores(codeplugData, 'import');
       
-      const digCount = codeplugData.digitalEmergencies?.length ?? 0;
-      const analogCount = codeplugData.analogEmergencies?.length ?? 0;
-      const msgCount = codeplugData.messages?.length ?? 0;
-      const idCount = codeplugData.radioIds?.length ?? 0;
-      const tgCount = codeplugData.quickContacts?.length ?? 0;
-      const rxCount = codeplugData.rxGroups?.length ?? 0;
-      const encCount = codeplugData.encryptionKeys?.length ?? 0;
-      const lines = [
-        `• ${codeplugData.channels.length} channels`,
-        `• ${codeplugData.zones.length} zones`,
-        `• ${codeplugData.scanLists.length} scan lists`,
-        `• ${codeplugData.contacts.length} contacts`,
-        `• ${digCount} digital emergency system(s)`,
-        `• ${analogCount} analog emergency system(s)`,
-        codeplugData.radioSettings ? '• Radio settings' : null,
-        `• ${msgCount} quick message(s)`,
-        `• ${idCount} DMR radio ID(s)`,
-        `• ${tgCount} talk group(s)`,
-        `• ${rxCount} RX group(s)`,
-        `• ${encCount} encryption key(s)`,
-      ].filter(Boolean);
-      showAlert(`Successfully imported codeplug!\n\n${lines.join('\n')}`, 'Import');
+      showAlertBody(
+        <CodeplugSummaryBody data={codeplugData} lead="Codeplug imported" fileName={file.name} />,
+        'Import'
+      );
       await saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
     } catch (error) {
       showAlert(error instanceof Error ? error.message : 'Failed to import codeplug', 'Import');
@@ -384,12 +343,7 @@ export const Toolbar: React.FC = () => {
     // a read we do not trust.
     const integrity = useRadioStore.getState().tables.writeOriginals?.integrity ?? [];
     if (blocksWriting(integrity)) {
-      showAlert(
-        'This codeplug did not read cleanly, so writing is blocked.\n\n' +
-          describeFindings(integrity) +
-          '\n\nRead the radio again. If it reads the same way, the codeplug on the ' +
-          'radio is damaged — restore it from a backup before writing.'
-      );
+      showAlertBody(<WriteBlockedBody findings={integrity} />, 'Write blocked');
       return;
     }
 
@@ -397,7 +351,7 @@ export const Toolbar: React.FC = () => {
     // A refusal is the answer, not an error: nothing can be sent, and the
     // reason is the useful part.
     if (preview?.refusal) {
-      showAlert(`This write cannot be planned:\n\n${preview.refusal}`);
+      showAlertBody(<WriteRefusalBody refusal={preview.refusal} />, 'Write refused', 'lg');
       return;
     }
     // Handed over as data, not assembled into a string. What it says and in
@@ -421,7 +375,7 @@ export const Toolbar: React.FC = () => {
     if (!data) return;
     applyCodeplugToStores(data, 'restore');
     setSnapshotsModalOpen(false);
-    showAlert(`Restored codeplug: ${data.channels.length} channels, ${data.zones.length} zones`, 'Restore');
+    showAlertBody(<CodeplugSummaryBody data={data} lead="Codeplug restored" />, 'Restore');
   };
 
   const handleClearSnapshots = () => {
@@ -558,13 +512,14 @@ export const Toolbar: React.FC = () => {
         onClose={closeAlert}
         title={alertTitle}
         message={alertMessage}
+        body={alertBody}
+        size={alertSize}
         confirmLabel="OK"
         variant="alert"
       />
       {convertModalOpen && (() => {
         const data = buildCodeplugData();
         const { loss } = migrateCodeplug(data, convertTargetModel);
-        const lossPreview = formatMigrationLoss(loss);
         return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80">
           <div className="bg-deep-gray rounded-lg p-6 border border-neon-cyan shadow-glow-cyan max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -584,8 +539,10 @@ export const Toolbar: React.FC = () => {
                 </option>
               ))}
             </select>
-            <p className="text-sm text-amber-400 mb-3">What will be removed or cleared:</p>
-            <p className="text-xs text-cool-gray mb-4 whitespace-pre-wrap">{lossPreview}</p>
+            <p className="text-sm text-amber-400 mb-2">What will be removed or cleared:</p>
+            <div className="mb-4">
+              <ConvertLossList loss={loss} />
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={handleConvertReplace}
@@ -682,7 +639,7 @@ export const Toolbar: React.FC = () => {
         title="Clear all snapshots"
         message="Remove all recent codeplug snapshots from local storage? This cannot be undone."
         confirmLabel="Clear all"
-        variant="alert"
+        variant="danger"
       />
     </>
   );

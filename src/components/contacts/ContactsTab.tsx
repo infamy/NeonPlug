@@ -610,7 +610,7 @@ export const ContactsTab: React.FC = () => {
         })()}
 
         {downloadError && (
-          <div className="mt-3 p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-red-400 text-sm">
+          <div className="mt-3 p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-red-400 text-sm whitespace-pre-line">
             {downloadError}
           </div>
         )}
@@ -719,7 +719,7 @@ export const ContactsTab: React.FC = () => {
         </div>
 
         {downloadError && (
-          <div className="mt-3 p-2 bg-red-900 bg-opacity-30 border border-red-600 border-opacity-50 rounded text-red-300 text-sm">
+          <div className="mt-3 p-2 bg-red-900 bg-opacity-30 border border-red-600 border-opacity-50 rounded text-red-300 text-sm whitespace-pre-line">
             {downloadError}
           </div>
         )}

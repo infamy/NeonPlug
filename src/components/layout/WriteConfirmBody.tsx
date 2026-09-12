@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { formatPlural } from '../../utils/formatPlural';
+import { Callout, DialogHeading } from '../ui/DialogParts';
 import {
   buildWriteConfirmation,
   type Capped,
@@ -18,27 +19,6 @@ const bytes = (value: number) => `${n(value)} ${formatPlural(value, 'byte')}`;
 
 const More: React.FC<{ more: number; noun?: string }> = ({ more, noun = 'more' }) =>
   more > 0 ? <span className="text-muted"> …and {n(more)} {noun}</span> : null;
-
-const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <h3 className="text-xs font-semibold uppercase tracking-wider text-neon-cyan mb-2">{children}</h3>
-);
-
-const Callout: React.FC<{ tone: 'danger' | 'caution'; title: string; children?: React.ReactNode }> = ({
-  tone,
-  title,
-  children,
-}) => (
-  <div
-    className={`rounded border px-3 py-2.5 ${
-      tone === 'danger'
-        ? 'border-red-500 border-opacity-50 bg-red-900 bg-opacity-20'
-        : 'border-yellow-600 border-opacity-50 bg-yellow-900 bg-opacity-20'
-    }`}
-  >
-    <p className={`font-semibold ${tone === 'danger' ? 'text-red-300' : 'text-yellow-300'}`}>{title}</p>
-    {children && <div className="mt-1 text-cool-gray">{children}</div>}
-  </div>
-);
 
 const Stat: React.FC<{ label: string; value: string; sub?: string }> = ({ label, value, sub }) => (
   <div className="rounded bg-dark-charcoal px-3 py-2 min-w-0">
@@ -127,7 +107,7 @@ export const WriteConfirmBody: React.FC<WriteConfirmInput> = (input) => {
 
       {plan && (
         <section>
-          <SectionTitle>What this write sends</SectionTitle>
+          <DialogHeading>What this write sends</DialogHeading>
           <div className="grid grid-cols-3 gap-2">
             <Stat
               label="Scope"
@@ -200,7 +180,7 @@ export const WriteConfirmBody: React.FC<WriteConfirmInput> = (input) => {
       )}
 
       <section className="border-t border-neon-cyan border-opacity-20 pt-4">
-        <SectionTitle>Before you write</SectionTitle>
+        <DialogHeading>Before you write</DialogHeading>
         <p className="text-cool-gray">
           Writing to the radio is <span className="text-yellow-300">experimental</span> and used at your own
           risk. Make sure:
