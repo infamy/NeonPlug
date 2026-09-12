@@ -10,6 +10,8 @@ import { COUNTRIES_BY_REGION, type CountryRegion } from '../../constants/countri
 import { US_STATES } from '../../constants/usStates';
 import type { Contact } from '../../models/Contact';
 import { PageHeader } from '../ui/PageHeader';
+import { resolveContactCapacity } from '../../utils/contactCapacity';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 
 // RadioID User interface
 interface RadioIDUser {
@@ -231,7 +233,8 @@ export const ContactsTab: React.FC = () => {
   // latest value without waiting for a re-render.
   const cancelWrite = useRef(false);
   
-  const contactCapacity = radioInfo?.maxContacts ?? 50000;
+  const { caps } = useRadioCapabilities();
+  const contactCapacity = resolveContactCapacity(caps, radioInfo);
 
 
   const handleReadContacts = async () => {

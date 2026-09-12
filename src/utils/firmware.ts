@@ -47,6 +47,11 @@ export function getContactCapacityFromVFrame(contactsVFrame: Uint8Array | undefi
   return capacity;
 }
 
+/** Contacts a DM-32 holds on standard firmware — and so what every DM-32 holds. */
+export const DM32_CONTACTS_STANDARD = 50000;
+/** Contacts a DM-32 holds on L01 firmware. */
+export const DM32_CONTACTS_L01 = 150000;
+
 /**
  * Get contact capacity based on firmware version (fallback method)
  * 
@@ -60,9 +65,9 @@ export function getContactCapacityFromVFrame(contactsVFrame: Uint8Array | undefi
  */
 export function getContactCapacity(firmware: string): number {
   if (firmware.includes('L01')) {
-    return 150000;
+    return DM32_CONTACTS_L01;
   }
-  return 50000;
+  return DM32_CONTACTS_STANDARD;
 }
 
 /**

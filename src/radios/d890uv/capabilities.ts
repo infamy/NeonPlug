@@ -11,6 +11,7 @@
 import type { RadioCapabilities } from '../../types/radioCapabilities';
 import { D890_ADDR, D890_LIMITS } from './constants';
 import { D890_AM_ZONES } from './amZones';
+import { D890_DIGITAL_CONTACTS } from './digitalContacts';
 
 /**
  * `RadioCapabilitiesDigital` requires these two parsers, but both are DM-32
@@ -110,6 +111,7 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   maxScanListChannels: D890_LIMITS.SCAN_LIST_MEMBERS_MAX,
   maxRadioIds: D890_LIMITS.DMR_RADIO_IDS_MAX,
   maxTalkGroups: D890_LIMITS.TALK_GROUPS_MAX,
+  maxContacts: D890_DIGITAL_CONTACTS.MAX_CONTACTS,
   // What this radio's scan-list record actually holds. Hang time IS its dwell
   // time and the two priority channels are real u16 fields; CTC scan mode, scan
   // TX mode and designated TX channel are DM-32 concepts with no home here, so

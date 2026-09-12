@@ -29,6 +29,7 @@ import type { RadioSettings } from '../../models/RadioSettings';
 import type { SettingsFieldDescriptor, SettingsFeature } from '../../types/settingsProfile';
 import { FEATURE_AREAS } from './featureAreas';
 import { PageHeader } from '../ui/PageHeader';
+import { resolveContactCapacity } from '../../utils/contactCapacity';
 
 /** Get value from settings by key; supports nested path (e.g. menuEnableFlags.zoneList) and lockKey mapping */
 function getFieldValue(settings: RadioSettings | null, key: string): unknown {
@@ -120,7 +121,7 @@ export const SettingsTab: React.FC = () => {
   // Usage statistics: totals from current radio capabilities (converted codeplug shows target radio limits)
   const maxChannels = caps?.maxChannels ?? 4000;
   const maxZones = caps?.maxZones ?? (caps?.supportsZones ? 250 : 0);
-  const maxContacts = caps?.supportsContacts ? (radioInfo?.maxContacts ?? 50000) : 0;
+  const maxContacts = resolveContactCapacity(caps, radioInfo);
   const vfoCount = (radioSettings?.vfoA ? 1 : 0) + (radioSettings?.vfoB ? 1 : 0);
   const channelUsage = {
     used: channels.length - vfoCount,

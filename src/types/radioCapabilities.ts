@@ -295,6 +295,14 @@ export interface RadioCapabilities {
   /** Max talkgroups. 800 on the DM-32, 10,000 on the D890UV family. */
   maxTalkGroups?: number;
   /**
+   * Max CSV contacts — the DMR user database. 500,000 on the D890UV family.
+   * 50,000 on the DM-32, which is what every DM-32 holds: L01 firmware holds
+   * 150,000 and only a read can tell, so a capacity the read reports in
+   * `RadioInfo.maxContacts` wins (utils/contactCapacity.ts). Absent when
+   * supportsContacts is false.
+   */
+  maxContacts?: number;
+  /**
    * Which scan-list detail fields this radio actually STORES AND WRITES BACK.
    *
    * The scan-list settings panel was shaped around the DM-32's record, so it

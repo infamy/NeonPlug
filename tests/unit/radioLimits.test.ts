@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getCapabilitiesForModel } from '../../src/radios/capabilities';
+import { RADIO_DESCRIPTORS } from '../../src/radios';
 
 /**
  * Per-radio limits must come from capabilities, never hardcoded in a store or
@@ -9,8 +10,8 @@ import { getCapabilitiesForModel } from '../../src/radios/capabilities';
  * for a radio that supports 50.
  */
 const CASES = [
-  { model: 'DM-32UV', maxZoneChannels: 64,  maxScanListChannels: 15, maxScanLists: 32,  maxRxGroupMembers: 32 },
-  { model: 'DA-7X2',  maxZoneChannels: 160, maxScanListChannels: 50, maxScanLists: 100, maxRxGroupMembers: 64 },
+  { model: 'DM-32UV', maxZoneChannels: 64,  maxScanListChannels: 15, maxScanLists: 32,  maxRxGroupMembers: 32, maxContacts: 50000 },
+  { model: 'DA-7X2',  maxZoneChannels: 160, maxScanListChannels: 50, maxScanLists: 100, maxRxGroupMembers: 64, maxContacts: 500000 },
 ];
 
 describe('per-radio limits are exposed as capabilities', () => {
@@ -26,6 +27,8 @@ describe('per-radio limits are exposed as capabilities', () => {
         expect(caps?.maxScanLists).toBe(c.maxScanLists));
       it(`caps RX-group members at ${c.maxRxGroupMembers}`, () =>
         expect(caps?.maxRxGroupMembers).toBe(c.maxRxGroupMembers));
+      it(`caps contacts at ${c.maxContacts}`, () =>
+        expect(caps?.maxContacts).toBe(c.maxContacts));
     });
   }
 
@@ -54,4 +57,17 @@ describe('firmware warning is per-radio, not hardcoded', () => {
       expect(getCapabilitiesForModel(m)?.expectedFirmware, m).toBeUndefined();
     }
   });
+});
+
+describe('every radio with contacts says how many it holds', () => {
+  // Settings showed "CSV Contacts 7183 / 0" for the DA-7X2. Capacity lived only
+  // on a read's RadioInfo; the limits table had no entry for it at all.
+  for (const d of RADIO_DESCRIPTORS) {
+    const caps = d.capabilities;
+    const hasContacts = caps.supportsContacts !== false;
+    it(`${d.modelIds.join(' / ')}: ${hasContacts ? 'declares a contact capacity' : 'no contacts, so no capacity'}`, () => {
+      if (hasContacts) expect(caps.maxContacts).toBeGreaterThan(0);
+      else expect(caps.maxContacts).toBeUndefined();
+    });
+  }
 });

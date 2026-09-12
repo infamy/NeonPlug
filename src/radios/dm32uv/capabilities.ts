@@ -9,7 +9,7 @@ import { decodeBCDFrequency, decodeCTCSSDCS } from './structures';
 import { parseEncryptionKeys, parseDigitalEmergencies } from './structures';
 import { DM32_BLOCK_LAYOUTS } from './blockLayouts';
 import { LIMITS } from './constants';
-import { isFirmware049OrNewer } from '../../utils/firmware';
+import { isFirmware049OrNewer, DM32_CONTACTS_STANDARD } from '../../utils/firmware';
 
 export const DM32UV_CAPABILITIES: RadioCapabilities = {
   diagnostics: {
@@ -57,6 +57,9 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   maxScanListChannels: LIMITS.SCAN_LIST_CHANNELS_MAX,
   maxRadioIds: LIMITS.DMR_RADIO_IDS_MAX,
   maxTalkGroups: LIMITS.TALK_GROUPS_MAX,
+  // What every DM-32 holds. L01 firmware holds 150,000; a read reports that,
+  // and the reported number wins.
+  maxContacts: DM32_CONTACTS_STANDARD,
   supportsBootImage: true,
   supportsQuickMessages: true,
   supportsAnalogEmergency: true,
