@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { type ReactNode } from 'react';
 
 export type ConfirmModalVariant = 'danger' | 'default' | 'alert';
 
@@ -7,7 +7,19 @@ interface ConfirmModalProps {
   onClose: () => void;
   onConfirm?: () => void;
   title: string;
-  message: string;
+  /** Plain text, shown with its own line breaks. */
+  message?: string;
+  /**
+   * Structured content, rendered INSTEAD of `message`.
+   *
+   * For dialogs whose content has real hierarchy. The write confirmation was a
+   * pre-wrapped string, which flattened destructive warnings, byte counts and a
+   * checklist into one grey paragraph — with a text divider wider than the
+   * dialog and hard line breaks landing mid-sentence.
+   */
+  body?: ReactNode;
+  /** 'lg' widens the dialog for content that needs the room. */
+  size?: 'md' | 'lg';
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: ConfirmModalVariant;
@@ -19,6 +31,8 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   onConfirm,
   title,
   message,
+  body,
+  size = 'md',
   confirmLabel = 'Delete',
   cancelLabel = 'Cancel',
   variant = 'danger',
@@ -35,20 +49,25 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-75"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-75 p-4"
       onClick={onClose}
     >
       <div
-        className={`bg-deep-gray rounded-lg p-6 max-w-md w-full mx-4 border shadow-xl flex flex-col gap-4 ${
-          isDanger ? 'border-red-500 border-opacity-50' : 'border-neon-cyan border-opacity-30'
-        }`}
+        className={`bg-deep-gray rounded-lg w-full max-h-[90vh] border shadow-xl flex flex-col ${
+          size === 'lg' ? 'max-w-2xl' : 'max-w-md'
+        } ${isDanger ? 'border-red-500 border-opacity-50' : 'border-neon-cyan border-opacity-30'}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className={`text-xl font-bold ${isDanger ? 'text-red-400' : 'text-neon-cyan'}`}>
+        <h2 className={`px-6 pt-6 pb-4 text-xl font-bold ${isDanger ? 'text-red-400' : 'text-neon-cyan'}`}>
           {title}
         </h2>
-        <p className="text-cool-gray text-sm whitespace-pre-wrap">{message}</p>
-        <div className="flex justify-end gap-3 mt-2">
+        {/* Only the content scrolls. However much a dialog has to say, its
+            buttons stay on screen — a long write confirmation on a short window
+            used to push Continue out of reach. */}
+        <div className="px-6 min-h-0 overflow-y-auto">
+          {body ?? <p className="text-cool-gray text-sm whitespace-pre-wrap">{message}</p>}
+        </div>
+        <div className="flex justify-end gap-3 px-6 pt-6 pb-6">
           {!isAlert && (
             <button
               type="button"

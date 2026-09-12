@@ -26,6 +26,8 @@ import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { useAlert } from '../../hooks/useAlert';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { WriteConfirmBody } from './WriteConfirmBody';
+import type { WriteConfirmInput } from './writeConfirmation';
 import { isWebSerialSupported } from '../../utils/browserSupport';
 
 export const Toolbar: React.FC = () => {
@@ -55,7 +57,7 @@ export const Toolbar: React.FC = () => {
   const [isWriting, setIsWriting] = useState(false);
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
-  const [writeWarningMessage, setWriteWarningMessage] = useState('');
+  const [writeConfirm, setWriteConfirm] = useState<WriteConfirmInput | null>(null);
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [convertTargetModel, setConvertTargetModel] = useState<string>(() => getMigrationTargetModels()[0] ?? 'DM-32UV');
@@ -345,19 +347,6 @@ export const Toolbar: React.FC = () => {
     setCurrentStep('');
   };
 
-  const EXPERIMENTAL_WRITE_WARNING =
-    '⚠️ EXPERIMENTAL FEATURE WARNING ⚠️\n\n' +
-    'Writing to the radio is an EXPERIMENTAL feature and is used at your own risk.\n\n' +
-    'IMPORTANT: Before proceeding, ensure that:\n' +
-    // "Baofeng CPS" was named outright here, on a dialog every radio shows —
-    // including the BTECH/Anytone DA-7X2, whose owners have no Baofeng software
-    // and no way to follow the instruction. Say "your radio's own CPS" instead.
-    '• Allow Reset is ENABLED, if your radio\'s own CPS offers that setting\n' +
-    '• You have read the radio with its own CPS and saved that as a backup\n' +
-    '• You have a backup of your current codeplug\n' +
-    '• You understand that this operation may modify your radio\'s memory\n\n' +
-    'Do you want to continue?';
-
   const startWriteOperation = async () => {
     window.focus();
     setIsWriting(true);
@@ -425,110 +414,15 @@ export const Toolbar: React.FC = () => {
     }
 
     const preview = previewChannelWrite(channels);
-    let message = EXPERIMENTAL_WRITE_WARNING;
-    if (integrity.length > 0) {
-      // Warnings do not block, but they must not be invisible either.
-      message = `THIS READ HAD WARNINGS\n\n${describeFindings(integrity)}\n\n${'─'.repeat(40)}\n\n${message}`;
+    // A refusal is the answer, not an error: nothing can be sent, and the
+    // reason is the useful part.
+    if (preview?.refusal) {
+      showAlert(`This write cannot be planned:\n\n${preview.refusal}`);
+      return;
     }
-    if (preview) {
-      if (preview.refusal) {
-        // A refusal is the answer, not an error: nothing can be sent, and the
-        // reason is the useful part.
-        showAlert(`This write cannot be planned:\n\n${preview.refusal}`);
-        return;
-      }
-      const lines = [
-        preview.wholeCodeplug
-          ? 'Writing the WHOLE codeplug — every region that was read, not only what changed.'
-          : 'Writing channels only — no read log staged, so other regions are left alone.',
-        `Frames: ${preview.totalFrames.toLocaleString()} (${preview.recordFrames.toLocaleString()} channel, ${preview.maskFrames.toLocaleString()} other)`,
-        `On the wire: ${preview.bytesOnWire.toLocaleString()} bytes, about ${preview.estimatedSeconds < 1 ? 'under a second' : `${preview.estimatedSeconds.toFixed(1)} s`}`,
-      ];
-      // Lead with what actually CHANGES, measured against the bytes we read.
-      //
-      // The old dialog derived this from every channel in the plan, so a write
-      // that altered nothing announced "Channels changing (120)". Since this
-      // radio writes back what it read, that number was structurally guaranteed
-      // to be alarming and wrong.
-      if (preview.bytesChanged === 0) {
-        lines.push(
-          '\nNothing changes: every byte matches what was read. This is a write-back,',
-          'so a failure mid-write would put the radio\'s own bytes back over themselves.'
-        );
-      } else if (preview.bytesChanged !== undefined) {
-        lines.push(`\nChanges: ${preview.bytesChanged.toLocaleString()} byte(s)`);
-        for (const r of (preview.changedRegions ?? []).slice(0, 8)) {
-          lines.push(`  • ${r.what}: ${r.bytes} byte(s) in ${r.frames} frame(s)`);
-        }
-        if ((preview.changedRegions?.length ?? 0) > 8) {
-          lines.push(`  • …and ${preview.changedRegions!.length - 8} more region(s)`);
-        }
-        // An ADD cannot show up above: a diff needs an original, and a new
-        // record has none. Reported as its own line so the dialog never
-        // describes a smaller write than it sends.
-        if (preview.bytesNew) {
-          lines.push(`\nNew — the radio has nothing here: ${preview.bytesNew.toLocaleString()} byte(s)`);
-          for (const r of (preview.newRegions ?? []).slice(0, 8)) {
-            lines.push(`  • ${r.what}: ${r.bytes} byte(s) in ${r.frames} frame(s)`);
-          }
-          if ((preview.newRegions?.length ?? 0) > 8) {
-            lines.push(`  • …and ${preview.newRegions!.length - 8} more region(s)`);
-          }
-        }
-      } else if (preview.changedChannels.length > 0) {
-        lines.push(
-          `Channels written (${preview.changedChannels.length}): ${preview.changedChannels.slice(0, 12).join(', ')}${preview.changedChannels.length > 12 ? ` and ${preview.changedChannels.length - 12} more` : ''}`
-        );
-      }
-      if (preview.clearedZoneSlots && preview.clearedZoneSlots.length > 0) {
-        lines.push(
-          `\n⚠️ REMOVES ${preview.clearedZoneSlots.length} zone(s) from the radio ` +
-            `(slots ${preview.clearedZoneSlots.slice(0, 12).join(', ')})`
-        );
-      }
-      if (preview.clearedChannels.length > 0) {
-        lines.push(
-          `\n⚠️ REMOVES ${preview.clearedChannels.length} channel(s) from the radio: ` +
-            `${preview.clearedChannels.slice(0, 12).join(', ')}${preview.clearedChannels.length > 12 ? ' and more' : ''}`
-        );
-      }
-      if (preview.skipped.length > 0) {
-        lines.push(`\nNot written (${preview.skipped.length}): ` +
-          preview.skipped.slice(0, 5).join('; '));
-      }
-      message = `WHAT THIS WRITE WILL SEND\n\n${lines.join('\n')}\n\n${'─'.repeat(40)}\n\n${message}`;
-    }
-    if (warnings.length > 0) {
-      const validationLines = warnings.map((w) => {
-        if (w.id === 'channels_not_in_zones' && w.channels && w.channels.length > 0) {
-          const list = w.channels
-            .slice(0, 10)
-            .map((c) => `Ch ${c.number} – ${c.name || '(no name)'}`)
-            .join('\n');
-          const more = w.channels.length > 10 ? `\n... and ${w.channels.length - 10} more` : '';
-          return `${w.message}\n\n${list}${more}`;
-        }
-        if (w.id === 'zones_reference_nonexistent_channels' && w.zoneRefs && w.zoneRefs.length > 0) {
-          const lines = w.zoneRefs
-            .slice(0, 10)
-            .map((z) => `Zone "${z.zoneName}": non-existent Ch ${z.invalidChannelNumbers.join(', ')}`)
-            .join('\n');
-          const more = w.zoneRefs.length > 10 ? `\n... and ${w.zoneRefs.length - 10} more zone(s)` : '';
-          return `${w.message}\n\n${lines}${more}`;
-        }
-        if (w.id === 'channels_reference_deleted_dmr_radio_id' && w.channels && w.channels.length > 0) {
-          const list = w.channels
-            .slice(0, 10)
-            .map((c) => `Ch ${c.number} – ${c.name || '(no name)'} (Radio ID index ${c.dmrRadioIdIndex ?? '?'})`)
-            .join('\n');
-          const more = w.channels.length > 10 ? `\n... and ${w.channels.length - 10} more` : '';
-          return `${w.message}\n\n${list}${more}`;
-        }
-        return w.message;
-      });
-      message = '⚠️ Codeplug check\n\n' + validationLines.join('\n\n') + '\n\n' + message;
-    }
-    setWriteWarningMessage(message);
+    // Handed over as data, not assembled into a string. What it says and in
+    // what order lives in writeConfirmation.ts; how it looks in WriteConfirmBody.
+    setWriteConfirm({ preview, integrity, warnings });
     setWriteWarningOpen(true);
   };
 
@@ -691,7 +585,8 @@ export const Toolbar: React.FC = () => {
         onClose={() => setWriteWarningOpen(false)}
         onConfirm={handleWriteWarningConfirm}
         title="Write to radio"
-        message={writeWarningMessage}
+        body={writeConfirm ? <WriteConfirmBody {...writeConfirm} /> : undefined}
+        size="lg"
         confirmLabel="Continue"
         cancelLabel="Cancel"
         variant="default"
