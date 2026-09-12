@@ -179,6 +179,34 @@ export function jsonSafeToCodeplug(raw: Record<string, unknown>): CodeplugData {
  * @param data Codeplug data to export
  * @param returnBlob If true, returns a Blob instead of downloading. For use in zip archives.
  */
+/**
+ * The name an exported codeplug is saved under.
+ *
+ * The model goes in it because these files pile up in a Downloads folder and
+ * "codeplug-export-2026-09-12T10-14-22" says nothing about which radio it came
+ * off — a real problem once somebody owns several, and writing the wrong
+ * codeplug to a radio is not a cheap mistake. The model comes from the file's
+ * OWN `radioInfo`, so the name and the contents cannot disagree; a converted
+ * codeplug is therefore named for its TARGET, which is the radio it is now for.
+ *
+ * Drops the model segment when the model is unknown rather than inventing one —
+ * a file called "unknown" would be a claim, and an absent radioInfo is not one.
+ */
+export function codeplugFileName(data: CodeplugData, now = new Date()): string {
+  const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
+  const model = (data.radioInfo?.model ?? '').trim();
+  if (!model) return `codeplug-${timestamp}.neonplug`;
+  // Squashed to lower-case letters and digits: "DA-7X2" becomes "da7x2",
+  // "AT-D890UV" becomes "atd890uv". The model's own punctuation would collide
+  // with the dashes separating the name's parts, and dropping it keeps the
+  // segment one readable word — which is also what makes a model unsafe for a
+  // file name impossible rather than merely unlikely.
+  const safe = model.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return safe
+    ? `codeplug-${safe}-${timestamp}.neonplug`
+    : `codeplug-${timestamp}.neonplug`;
+}
+
 export async function exportCodeplug(data: CodeplugData, returnBlob?: boolean): Promise<Blob | void> {
   const jsonSafe = codeplugToJsonSafe(data);
   const jsonString = JSON.stringify(jsonSafe, null, 0);
@@ -189,8 +217,7 @@ export async function exportCodeplug(data: CodeplugData, returnBlob?: boolean): 
     return blob;
   }
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-  downloadBlob(blob, `codeplug-export-${timestamp}.neonplug`);
+  downloadBlob(blob, codeplugFileName(data));
 }
 
 /**
