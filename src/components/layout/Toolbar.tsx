@@ -699,7 +699,10 @@ export const Toolbar: React.FC = () => {
             >
               {getRadioPickerOptions().map((opt) => (
                 <option key={opt.modelId} value={opt.modelId}>
-                  {opt.label}
+                  {/* A plain <option> cannot carry the badge the picker shows,
+                      so the word rides in the text — converting a codeplug TO
+                      an alpha driver is exactly when it should be said. */}
+                  {opt.status === 'alpha' ? `${opt.label} (Alpha)` : opt.label}
                 </option>
               ))}
             </select>

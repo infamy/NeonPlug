@@ -140,6 +140,17 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                     }`}
                   >
                     {opt.label}
+                    {opt.status === 'alpha' && (
+                      // Said plainly at the moment of choosing, not buried in a
+                      // doc: this driver writes to the radio and not every
+                      // region has been proven on hardware.
+                      <span
+                        title="Alpha: writes are supported but not every region is hardware-verified"
+                        className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-500 bg-opacity-20 text-yellow-400 border border-yellow-600 border-opacity-50"
+                      >
+                        Alpha
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
