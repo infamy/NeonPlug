@@ -332,7 +332,8 @@ export const AirportSource: React.FC<AirportSourceProps> = ({
               <Button
                 onClick={handleAddAirportChannels}
                 disabled={isAddingAirports}
-                className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
+                variant="accent"
+                className="w-full"
               >
                 {isAddingAirports
                   ? 'Adding Airport Channels...'

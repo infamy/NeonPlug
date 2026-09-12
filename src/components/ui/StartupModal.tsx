@@ -214,7 +214,8 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           <Button
             variant="primary"
             onClick={handleReadClick}
-            className="w-full py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-deep-gray disabled:text-cool-gray disabled:shadow-none"
+            size="none"
+            className="w-full px-4 py-4 text-lg disabled:bg-deep-gray disabled:text-cool-gray disabled:shadow-none"
             glow={canConnect}
             disabled={!canConnect || !effectiveSelected}
             title={!canConnect ? 'Web Serial and Web Bluetooth are not supported in this browser' : `Read codeplug from ${selectedOption?.label ?? 'radio'}`}
@@ -225,7 +226,8 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           <Button
             variant="secondary"
             onClick={onLoadFile}
-            className="w-full py-4 text-lg"
+            size="none"
+            className="w-full px-4 py-4 text-lg"
           >
             Import Codeplug
           </Button>

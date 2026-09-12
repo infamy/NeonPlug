@@ -339,7 +339,7 @@ export const SmartImportTab: React.FC = () => {
         <Button
           onClick={handleSearchAll}
           disabled={isSearchingAll || (supportsDigital ? (!searchAirports && !searchTafl && !searchDmrRepeaters) : (!searchAirports && !searchTafl))}
-          className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright w-full"
+          className="w-full"
         >
           {isSearchingAll
             ? (locationType === 'current'

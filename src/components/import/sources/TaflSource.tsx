@@ -316,7 +316,8 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
             <Button
               onClick={handleAddTaflChannels}
               disabled={isAddingTafl}
-              className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
+              variant="accent"
+              className="w-full"
             >
               {isAddingTafl
                 ? 'Adding TAFL Channels...'

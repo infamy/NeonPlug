@@ -438,7 +438,7 @@ export const Toolbar: React.FC = () => {
                 data-action="read-from-radio"
                 onClick={() => handleRead()}
                 disabled={isConnecting || radioBusy || !webSerialSupported}
-                className={`rounded-r-none border-r border-white border-opacity-20 ${!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}`}
+                className={`rounded-r-none border-r border-r-white/20 ${!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Read codeplug from current radio type'}
               >
                 {isConnecting ? 'Reading...' : 'Read from Radio'}
@@ -448,7 +448,7 @@ export const Toolbar: React.FC = () => {
                 onClick={(e) => { e.stopPropagation(); setReadDropdownOpen((v) => !v); }}
                 disabled={isConnecting || isWriting || radioBusy}
                 title="Switch to a different radio type"
-                className="px-2 py-2 bg-neon-cyan text-dark-charcoal hover:bg-opacity-90 border-l border-white border-opacity-20 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none transition-all"
+                className={`${BUTTON.primary} px-2 py-2 border-l border-l-white/20 disabled:pointer-events-none`}
                 aria-expanded={readDropdownOpen}
                 aria-haspopup="true"
               >

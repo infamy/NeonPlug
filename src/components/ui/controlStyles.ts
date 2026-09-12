@@ -78,6 +78,10 @@ export const BUTTON = {
   secondary:
     'bg-electric-purple border-electric-purple text-white hover:bg-opacity-90 ' +
     'disabled:opacity-50 disabled:cursor-not-allowed transition-colors',
+  /** The Channel Wizard's add-to-codeplug actions: magenta, the accent that tab uses. */
+  accent:
+    'bg-neon-magenta border-neon-magenta text-white hover:bg-neon-magenta-bright ' +
+    'disabled:opacity-50 disabled:cursor-not-allowed transition-colors',
   /** A button that sits among fields and looks like one (the channel grid's Mode, Power, Bandwidth). */
   field: `${FIELD} hover:border-neon-cyan`,
 } as const;

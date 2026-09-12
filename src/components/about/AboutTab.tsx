@@ -52,6 +52,7 @@ export const AboutTab: React.FC = () => {
                   }
                 }}
                 variant="primary"
+                size="none"
                 className="inline-flex items-center justify-center px-6 py-3"
               >
                 📥 Download Offline Version (ZIP)

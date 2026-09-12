@@ -127,7 +127,7 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
             <Button
               onClick={() => fileInputRef.current?.click()}
               disabled={isImportingChirp}
-              className="w-full bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright"
+              className="w-full"
             >
               {isImportingChirp ? 'Importing...' : 'Import CHIRP CSV'}
             </Button>
@@ -140,7 +140,8 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
             <Button
               onClick={handleChirpCSVExport}
               disabled={channels.filter(ch => ch.mode === 'Analog' || ch.mode === 'Fixed Analog').length === 0}
-              className="w-full bg-neon-magenta text-white hover:bg-neon-magenta-bright"
+              variant="accent"
+              className="w-full"
             >
               Export to CHIRP CSV ({channels.filter(ch => ch.mode === 'Analog' || ch.mode === 'Fixed Analog').length} analog)
             </Button>

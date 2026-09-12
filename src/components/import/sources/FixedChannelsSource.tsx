@@ -207,7 +207,8 @@ export const FixedChannelsSource: React.FC<FixedChannelsSourceProps> = ({
         <Button
           onClick={handleAddFixedChannels}
           disabled={isAddingFixed}
-          className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
+          variant="accent"
+          className="w-full"
         >
           {isAddingFixed
             ? 'Adding...'

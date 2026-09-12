@@ -247,7 +247,8 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
               <Button
                 onClick={handleAddRptrsChannels}
                 disabled={isAddingRptrs}
-                className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
+                variant="accent"
+                className="w-full"
               >
                 {isAddingRptrs
                   ? 'Adding DMR Repeater Channels...'

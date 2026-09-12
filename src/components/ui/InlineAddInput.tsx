@@ -42,12 +42,14 @@ export const InlineAddInput: React.FC<InlineAddInputProps> = ({
         maxLength={maxLength}
         disabled={disabled}
       />
+      {/* Renders at the standard px-4 py-2, as it always has: the px-3 py-1 it used
+          to pass lost to Button's base padding and never applied. */}
       <Button
         type="button"
         variant="primary"
         onClick={onSubmit}
         disabled={disabled || !value.trim()}
-        className="px-3 py-1 text-xs"
+        className="text-xs"
       >
         {buttonLabel}
       </Button>

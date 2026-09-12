@@ -258,7 +258,8 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
       <Button
         onClick={handleAddMmdvmChannels}
         disabled={isAddingMmdvm}
-        className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
+        variant="accent"
+        className="w-full"
       >
         {isAddingMmdvm ? 'Adding MMDVM channels...' : 'Add MMDVM channels'}
       </Button>
