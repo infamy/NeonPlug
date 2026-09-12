@@ -22,6 +22,7 @@ import type {
 } from './writePlan';
 import { planChannelWrite, D890WriteRefusedError } from './writePlan';
 import { planDigitalContactWrite, contactStreamLength } from './digitalContactWrite';
+import { contactTransferMessage } from './contactProgress';
 import type { D890TableCounts, D890OccupiedSlots } from './references';
 import {
   D890_MASK_CHECKS,
@@ -1412,12 +1413,15 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
       stream.set(bytes.subarray(0, length), start);
       bytesRead += length;
 
-      const seconds = (Date.now() - startedAt) / 1000;
-      const rate = seconds > 0 ? Math.round(bytesRead / 1024 / seconds) : 0;
       onProgress?.(
         Math.round((bytesRead / streamBytes) * 100),
-        `Read ${Math.round(bytesRead / 1024).toLocaleString()} of `
-          + `${Math.round(streamBytes / 1024).toLocaleString()} KB · ${rate} KB/s`
+        contactTransferMessage({
+          verb: 'Reading',
+          count: header?.count ?? null,
+          done: bytesRead,
+          total: streamBytes,
+          seconds: (Date.now() - startedAt) / 1000,
+        })
       );
     }
     const out = parseDigitalContactBank(stream);
@@ -1502,15 +1506,16 @@ export class D890UVProtocol extends BaseDigitalProtocol implements OptionalDigit
       // Every 64 frames: often enough to feel live, rare enough not to spend
       // the write budget on React renders.
       if (i % 64 === 0 || i === plan.frames.length - 1) {
-        const seconds = (Date.now() - startedAt) / 1000;
-        const rate = seconds > 0 ? written / 1024 / seconds : 0;
-        const remaining = rate > 0 ? (total - written) / 1024 / rate : 0;
         report?.(
           (written / total) * 100,
-          `${plan.count.toLocaleString()} contacts · ` +
-            `${Math.round(written / 1024).toLocaleString()} of ${Math.round(total / 1024).toLocaleString()} KB · ` +
-            `${Math.round(rate)} KB/s` +
-            (remaining > 1 ? ` · ${Math.ceil(remaining)}s left` : '')
+          contactTransferMessage({
+            verb: 'Writing',
+            count: plan.count,
+            done: written,
+            total,
+            seconds: (Date.now() - startedAt) / 1000,
+            withRemaining: true,
+          })
         );
       }
     }

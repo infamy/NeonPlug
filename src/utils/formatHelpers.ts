@@ -22,6 +22,22 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
+ * Progress through a transfer, "3.6 of 12.9 MB": both numbers in the TOTAL's
+ * unit, so the pair reads as one quantity (formatBytes picks a unit per number
+ * and would print "512.0 KB of 12.9 MB"). 1,024-based, like the KB/s usually
+ * printed beside it. Megabytes to one decimal from 1 MB up; whole kilobytes
+ * below, where tenths of a megabyte are too coarse ("0.0 of 0.1 MB").
+ */
+export function formatByteProgress(done: number, total: number): string {
+  const MB = 1024 * 1024;
+  if (total >= MB) return `${(done / MB).toFixed(1)} of ${(total / MB).toFixed(1)} MB`;
+  if (total >= 1024) {
+    return `${Math.round(done / 1024).toLocaleString()} of ${Math.round(total / 1024).toLocaleString()} KB`;
+  }
+  return `${done} of ${total} B`;
+}
+
+/**
  * Clamp a value between min and max
  */
 export function clamp(value: number, min: number, max: number): number {

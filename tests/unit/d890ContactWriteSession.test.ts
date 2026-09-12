@@ -77,12 +77,17 @@ describe('D890UVProtocol.writeContacts', () => {
     expect(conn.writes.length).toBeLessThan(10);
   });
 
-  it('reports progress as it goes', async () => {
+  it('reports progress as it goes, saying how many contacts', async () => {
     const conn = fakeConn();
     const seen: number[] = [];
-    await withConn(new D890UVProtocol(), conn).writeContacts(contacts, (p) => seen.push(p));
+    const messages: string[] = [];
+    await withConn(new D890UVProtocol(), conn).writeContacts(contacts, (p, m) => {
+      seen.push(p);
+      messages.push(m);
+    });
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[seen.length - 1]).toBe(100);
+    expect(messages[messages.length - 1]).toMatch(/^Writing 2 contacts · .+ KB\/s/);
   });
 });
 
@@ -113,8 +118,11 @@ describe('D890UVProtocol.readDigitalContacts', () => {
     };
     const proto = new D890UVProtocol();
     (proto as unknown as { connection: unknown }).connection = radio;
-    const got = await proto.readDigitalContacts();
+    const messages: string[] = [];
+    const got = await proto.readDigitalContacts((_, message) => messages.push(message));
     expect(got).toHaveLength(list.length);
     expect(got.map((c) => c.dmrId)).toEqual(list.map((c) => c.dmrId));
+    // The count comes from the header, before any record has been parsed.
+    expect(messages[0]).toMatch(new RegExp(`^Reading ${(5000).toLocaleString()} contacts · `));
   });
 });
