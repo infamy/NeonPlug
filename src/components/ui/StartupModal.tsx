@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Button } from './Button';
 import { ConfirmModal } from './ConfirmModal';
 import { getRadioPickerOptions } from '../../radios';
+import { formatPlural } from '../../utils/formatPlural';
 import { useRadioStore } from '../../store/radioStore';
 import { isWebSerialSupported, isWebBluetoothSupported, getSupportedBrowsers } from '../../utils/browserSupport';
 import { downloadOfflineAsZip } from '../../utils/offlineDownload';
@@ -58,6 +59,8 @@ export const StartupModal: React.FC<StartupModalProps> = ({
   const [recentExpanded, setRecentExpanded] = useState(false);
   const [snapshots, setSnapshots] = useState<ReturnType<typeof getSnapshots>>([]);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  /** Which brand's radios are showing; null shows the brand tier. */
+  const [brand, setBrand] = useState<string | null>(null);
   const { selectedRadioModel, setSelectedRadioModel } = useRadioStore();
 
   useEffect(() => {
@@ -66,6 +69,14 @@ export const StartupModal: React.FC<StartupModalProps> = ({
     }
   }, [isOpen]);
   const options = useMemo(() => getRadioPickerOptions(), []);
+
+  // Open on the brand of the radio already chosen, so reopening the picker does
+  // not make someone re-navigate to where they were. Nothing selected yet opens
+  // on the brand tier, which is the choice the first tier is asking for.
+  useEffect(() => {
+    if (!isOpen) return;
+    setBrand(options.find((o) => o.modelId === selectedRadioModel)?.group ?? null);
+  }, [isOpen, selectedRadioModel, options]);
 
   // Group options by manufacturer; ungrouped radios go under a blank key
   const groupedOptions = useMemo(() => {
@@ -118,17 +129,48 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           <p className="text-cool-gray text-sm">Channel programming software</p>
         </div>
 
-        <p className="text-white text-center mb-4">Pick a radio</p>
+        {/* Two tiers: brand, then radio.
+            Every radio in one scrolling list stopped fitting once the DA-7X2
+            gained its second name — Anytone sat below the fold, so a radio the
+            app fully supports looked absent unless you thought to scroll. */}
+        <p className="text-white text-center mb-4">
+          {brand === null ? 'Pick a brand' : 'Pick a radio'}
+        </p>
         <div className="mb-6 space-y-3 max-h-64 overflow-y-auto pr-1">
-          {Array.from(groupedOptions.entries()).map(([group, opts]) => (
-            <div key={group || '__ungrouped'}>
-              {group && (
-                <p className="text-cool-gray text-xs font-semibold uppercase tracking-wider mb-1 px-1">
-                  {group}
-                </p>
-              )}
+          {brand === null ? (
+            <div className="grid grid-cols-2 gap-2">
+              {Array.from(groupedOptions.entries()).map(([group, opts]) => (
+                <button
+                  key={group || '__ungrouped'}
+                  type="button"
+                  onClick={() => setBrand(group)}
+                  className={`flex flex-col items-center justify-center px-3 py-3 rounded border-2 transition-all text-sm font-medium ${
+                    selectedOption?.group === group && selectedRadioModel
+                      ? 'border-neon-cyan bg-neon-cyan bg-opacity-10 text-white'
+                      : 'border-cool-gray hover:border-neon-cyan text-cool-gray hover:text-white'
+                  }`}
+                >
+                  <span className="uppercase tracking-wider">{group || 'Other'}</span>
+                  <span className="text-xs opacity-60 mt-0.5">
+                    {opts.length} {formatPlural(opts.length, 'radio')}
+                    {/* Carried up a tier when it applies to everything inside,
+                        so the warning is not hidden behind another click. */}
+                    {opts.every((o) => o.status === 'alpha') && ' · Alpha'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div>
+              <button
+                type="button"
+                onClick={() => setBrand(null)}
+                className="text-cool-gray hover:text-neon-cyan text-xs mb-2 px-1"
+              >
+                ← All brands
+              </button>
               <div className="grid grid-cols-2 gap-2">
-                {opts.map((opt) => (
+                {(groupedOptions.get(brand) ?? []).map((opt) => (
                   <button
                     key={opt.modelId}
                     type="button"
@@ -155,7 +197,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                 ))}
               </div>
             </div>
-          ))}
+          )}
         </div>
 
         <div className="space-y-4 mb-6">
