@@ -151,11 +151,12 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                   }`}
                 >
                   <span className="uppercase tracking-wider">{group || 'Other'}</span>
+                  {/* Count only. The ALPHA badge belongs beside the RADIO it
+                      describes — on a brand card it reads as if the brand were
+                      alpha, and the badge is still one click away at the moment
+                      the radio is actually chosen. */}
                   <span className="text-xs opacity-60 mt-0.5">
                     {opts.length} {formatPlural(opts.length, 'radio')}
-                    {/* Carried up a tier when it applies to everything inside,
-                        so the warning is not hidden behind another click. */}
-                    {opts.every((o) => o.status === 'alpha') && ' · Alpha'}
                   </span>
                 </button>
               ))}
