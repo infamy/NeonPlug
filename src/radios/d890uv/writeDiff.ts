@@ -41,6 +41,15 @@ export interface D890WriteDiffRegion {
   unread: number;
   /** Total bytes that differ across the region. */
   bytesChanged: number;
+  /**
+   * Bytes going to addresses the session never read — a region being CREATED.
+   *
+   * An added channel has no original anywhere in the read log, so every one of
+   * its frames is unread and none of them can be "changed". Counting only
+   * changed bytes made the confirmation dialog describe an add as 7 bytes when
+   * it was sending 263 (2026-09-11).
+   */
+  bytesUnread: number;
 }
 
 export interface D890WriteDiff {
@@ -49,6 +58,8 @@ export interface D890WriteDiff {
   differingFrames: number;
   unreadFrames: number;
   bytesChanged: number;
+  /** Bytes bound for addresses the session never read — see the region field. */
+  bytesUnread: number;
   regions: D890WriteDiffRegion[];
   diffs: D890FrameDiff[];
 }
@@ -72,18 +83,21 @@ export function diffPlanAgainstRead(
   let differingFrames = 0;
   let unreadFrames = 0;
   let bytesChanged = 0;
+  let bytesUnread = 0;
 
   for (const frame of frames) {
     const region =
       byRegion.get(frame.what) ??
-      { what: frame.what, frames: 0, identical: 0, differing: 0, unread: 0, bytesChanged: 0 };
+      { what: frame.what, frames: 0, identical: 0, differing: 0, unread: 0, bytesChanged: 0, bytesUnread: 0 };
     byRegion.set(frame.what, region);
     region.frames += 1;
 
     const read = sliceFromReadLog(readLog, frame.address, frame.data.length);
     if (!read) {
       region.unread += 1;
+      region.bytesUnread += frame.data.length;
       unreadFrames += 1;
+      bytesUnread += frame.data.length;
       continue;
     }
 
@@ -117,6 +131,7 @@ export function diffPlanAgainstRead(
     differingFrames,
     unreadFrames,
     bytesChanged,
+    bytesUnread,
     regions: [...byRegion.values()].sort((a, b) => b.differing - a.differing),
     diffs,
   };

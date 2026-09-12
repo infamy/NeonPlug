@@ -419,6 +419,18 @@ export function applyChannelToRecord(original: Uint8Array, channel: Channel): Ui
   // both fields while 0x09 reads 0x00 (see parseChannel), so zeroing them would
   // change bytes we were not asked to change — and the patch contract is that we
   // touch only what the edit requires.
+  //
+  // ⚠️ CONTRADICTED, and deliberately not changed. The vendor CPS created
+  // channel 200 (`ZULU ANA`) on 2026-09-11 with CTCSS both ways — 0x09 = 0x05,
+  // indices at 0x0a/0x0b — and left `11 00` in BOTH DCS words. So "the vendor
+  // never leaves a stale DCS word beside a CTCSS index" is false for at least
+  // one fresh record, and writing that channel back zeroes two bytes nobody
+  // asked us to touch (visible as `channel 200: 2 byte(s)` in a dry run).
+  //
+  // Left as it is because the rule above rests on 8,389 captured frames and
+  // this is one counter-example, and because the difference is inert: 0x09
+  // states the tone kind explicitly, so the radio never reads the DCS word on a
+  // CTCSS channel. Recorded rather than resolved — see TODO-DA7X2.md.
   if (txTone?.type === 'CTCSS') {
     flags09 |= 0x04;
     rec[OFF.TX_TONE] = requireToneIndex(txTone.value, 'transmit');

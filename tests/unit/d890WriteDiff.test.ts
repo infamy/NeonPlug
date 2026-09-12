@@ -99,6 +99,40 @@ describe('an unmodified codeplug plans the bytes it read', () => {
     expect(diff.unreadFrames).toBe(plan.frames.length);
   });
 
+  it('counts the BYTES of an unread frame, so an ADD is not invisible', () => {
+    // The confirmation dialog is built from this diff, and a diff needs an
+    // original: an added channel has none, so every one of its frames is
+    // "unread" and none can be "changed". On 2026-09-11 that let the dialog
+    // offer a 7-byte write while sending 263 — two whole new channel records.
+    const { plan } = setup();
+    const diff = diffPlanAgainstRead(plan.frames, new Map());
+    expect(diff.bytesChanged).toBe(0);
+    expect(diff.bytesUnread).toBe(
+      plan.frames.reduce((n, f) => n + f.data.length, 0)
+    );
+    // And per region, which is what the dialog lists.
+    for (const r of diff.regions) {
+      expect(r.bytesUnread, r.what).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps changed and new bytes apart when a plan has both', () => {
+    const { plan, readLog } = setup();
+    // Drop one frame's address from the read log: that region becomes NEW
+    // while the rest still compare as identical.
+    const orphan = plan.frames[0]!;
+    const partial = new Map(readLog);
+    for (const [at] of partial) {
+      if (at <= orphan.address && orphan.address < at + (partial.get(at)?.length ?? 0)) {
+        partial.delete(at);
+      }
+    }
+    const diff = diffPlanAgainstRead(plan.frames, partial);
+    expect(diff.unreadFrames).toBeGreaterThan(0);
+    expect(diff.bytesUnread).toBeGreaterThan(0);
+    expect(diff.bytesChanged).toBe(0);
+  });
+
   it('reports a real edit as a difference, with the byte offsets', () => {
     const { plan, readLog } = setup();
     const tampered = plan.frames.map((f, i) =>

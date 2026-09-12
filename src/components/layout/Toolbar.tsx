@@ -443,6 +443,18 @@ export const Toolbar: React.FC = () => {
         if ((preview.changedRegions?.length ?? 0) > 8) {
           lines.push(`  • …and ${preview.changedRegions!.length - 8} more region(s)`);
         }
+        // An ADD cannot show up above: a diff needs an original, and a new
+        // record has none. Reported as its own line so the dialog never
+        // describes a smaller write than it sends.
+        if (preview.bytesNew) {
+          lines.push(`\nNew — the radio has nothing here: ${preview.bytesNew.toLocaleString()} byte(s)`);
+          for (const r of (preview.newRegions ?? []).slice(0, 8)) {
+            lines.push(`  • ${r.what}: ${r.bytes} byte(s) in ${r.frames} frame(s)`);
+          }
+          if ((preview.newRegions?.length ?? 0) > 8) {
+            lines.push(`  • …and ${preview.newRegions!.length - 8} more region(s)`);
+          }
+        }
       } else if (preview.changedChannels.length > 0) {
         lines.push(
           `Channels written (${preview.changedChannels.length}): ${preview.changedChannels.slice(0, 12).join(', ')}${preview.changedChannels.length > 12 ? ` and ${preview.changedChannels.length - 12} more` : ''}`

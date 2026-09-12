@@ -113,6 +113,18 @@ export interface D890WritePreview {
   bytesChanged?: number;
   /** Regions whose bytes actually differ, most-changed first. */
   changedRegions?: { what: string; frames: number; bytes: number }[];
+  /**
+   * Bytes going where the radio has nothing — an ADD.
+   *
+   * Kept apart from `bytesChanged` because the two are different promises: one
+   * says "these bytes replace what is there", the other "these bytes are new".
+   * Reported separately because a diff cannot see an add at all — there is no
+   * original to compare with — and the dialog offered a 7-byte write while
+   * sending 263 on 2026-09-11.
+   */
+  bytesNew?: number;
+  /** Regions being created rather than changed. */
+  newRegions?: { what: string; frames: number; bytes: number }[];
   /** Channels the radio HAS that this write would remove. Destructive. */
   clearedChannels: number[];
   /**
@@ -1116,6 +1128,13 @@ export function useRadioConnection() {
           ? diff.regions
               .filter((r) => r.differing > 0)
               .map((r) => ({ what: r.what, frames: r.differing, bytes: r.bytesChanged }))
+          : undefined,
+        bytesNew: diff?.bytesUnread,
+        newRegions: diff
+          ? diff.regions
+              .filter((r) => r.unread > 0)
+              .sort((a, b) => b.bytesUnread - a.bytesUnread)
+              .map((r) => ({ what: r.what, frames: r.unread, bytes: r.bytesUnread }))
           : undefined,
       };
     } catch (err) {

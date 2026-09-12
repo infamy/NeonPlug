@@ -423,6 +423,16 @@ a one-field change moves only that field's bytes.
 
 ### 2a. Other gaps the 2026-09-02 audit found
 
+- ☐ **DCS words beside a CTCSS index: two vendor artifacts disagree.** The
+  encoder zeroes 0x0c/0x0e when a tone is CTCSS, on the strength of an 8,389
+  frame vendor capture in which no CTCSS channel carries a DCS word. The CPS's
+  own freshly created channel 200 (2026-09-11) carries `11 00` in both while
+  0x09 says CTCSS. Consequence today: writing such a channel back changes two
+  bytes nobody edited. Inert — 0x09 states the kind, so the radio never reads
+  those words on a CTCSS channel — but it makes a write-back non-identical and
+  puts noise in the dry-run diff. Settle by creating a CTCSS channel in the CPS
+  and diffing what it writes over an existing DCS one.
+
 - ☑ **TX frequency reads as 0.1 MHz on some channels — INVESTIGATED 2026-09-11,
   NO CHANGE.** `parseChannel`'s duplex-0 branch returns the bytes at 0x04 as an
   absolute TX when they are non-zero, and four older fixtures
