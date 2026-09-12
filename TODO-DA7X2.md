@@ -662,8 +662,11 @@ Two facts the capture establishes:
   `newChannelRecord()` chooses the duplex mode — the one thing a blank cannot
   carry. `planChannelWrite` now BUILDS an added channel instead of refusing.
   The digital record rebuilds from the blank byte-for-byte;
-  `tests/unit/d890ChannelAdd.test.ts`. ☐ Still needs a hardware round trip:
-  write an added channel and read it back in the CPS.
+  `tests/unit/d890ChannelAdd.test.ts`. ☑ **HARDWARE ROUND TRIP 2026-09-11:**
+  channels 202 (147.000 simplex) and 203 (146.940 / TX 146.340) were added in
+  NeonPlug, written, and confirmed by the vendor CPS — including the minus
+  offset, which is the case a blank's duplex 0 would have silently turned into
+  simplex. See `HW-ROUNDTRIP-TESTS.md`.
 
 ### Tier 1 — destructive paths, still entirely unproven
 

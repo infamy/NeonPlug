@@ -193,6 +193,31 @@ The same write moved channel 56's TX contact 15 → 13 to follow TG0015, and the
 radio showed that channel's group call as TG0015's ID. Reference renumbering is
 confirmed too: without it the channel would have shown TG0017.
 
+**Channel ADD, 2026-09-11 — records the radio had never held.**
+
+Two channels were added in NeonPlug and written: **202 `ZULU SIM`** (147.000
+simplex) and **203 `ZULU MNS`** (RX 146.940, TX 146.340 — a real −0.600 repeater
+offset), both also appended to zone `Z1 Single`. Neither slot had ever held a
+record, so neither had an original to patch: they were BUILT, from the blank
+derived from the vendor's own two fresh records earlier the same day.
+
+The vendor CPS read the radio afterwards and confirmed all three things asked of
+it: 202 simplex at 147.000, **203 with TX 146.340**, and channel 200 `ZULU ANA`
+unchanged at 146.000/146.600. The operator also saw both new channels in zone
+`Z1 Single` on the radio itself.
+
+The offset one is the test that mattered. `applyChannelToRecord` reads duplex OUT
+of the record and refuses to change it — right for an edit, and fatal for an add,
+because a blank reads as duplex 0 and the channel would have been stored simplex
+and TRANSMITTED ON ITS INPUT. The bytes the radio kept are the vendor's own
+encoding: `14 69 40 00 | 00 06 00 00 | 90` — RX, magnitude 0.600, direction bit 7.
+Channel 202 is the other half: `14 70 00 00 | 14 70 00 00 | 10`, RX repeated at
+0x04, which is what the CPS does for every one of its 110 simplex records.
+
+No coverage milestone moves — `Channels` and `Zone membership` were already
+round-tripped — but the capability did: NeonPlug can now program a channel that
+was not already on the radio, not merely edit one.
+
 **Write A, 2026-09-11 — six regions in one write, all checked on the radio.**
 One write of 41 bytes in 12 frames, exactly the dry run, against a radio read
 3.5 s earlier:
