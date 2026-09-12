@@ -557,7 +557,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         <select
           value={channel.scanListId}
           onChange={(e) => handleCellChange(channel.number, 'scanListId', parseInt(e.target.value) || 0)}
-          className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[120px]"
+          className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full min-w-[6rem] max-w-[120px]"
         >
           <option value={0}>None</option>
           {scanLists.map((scanList, index) => (
