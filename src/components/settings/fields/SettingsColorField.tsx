@@ -2,8 +2,9 @@ import React from 'react';
 import type { SettingsColorFieldDescriptor } from '../../../types/settingsProfile';
 import { getOptionsForId, getColorHex } from '../settingsConstants';
 import type { OptionItem } from '../settingsConstants';
+import { FIELD } from '../../ui/controlStyles';
 
-const selectClass = 'flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan';
+const selectClass = `${FIELD} flex-1 border rounded px-3 py-2`;
 const labelClass = 'block text-cool-gray text-sm mb-2';
 
 interface Props {

@@ -3,6 +3,7 @@ import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useChannelsStore } from '../../store/channelsStore';
 import { CollapsibleSection } from '../ui/CollapsibleSection';
+import { FIELD_CAUTION } from '../ui/controlStyles';
 
 interface ChannelParserPanelProps {
   /** Shared with the CPS CSV Comparison panel — owned by DiagnosticsTab. */
@@ -62,7 +63,7 @@ export const ChannelParserPanel: React.FC<ChannelParserPanelProps> = ({
                 <select
                   value={selectedChannelNumber}
                   onChange={(e) => setSelectedChannelNumber(parseInt(e.target.value))}
-                  className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm focus:outline-none focus:border-yellow-400"
+                  className={`${FIELD_CAUTION} w-full px-3 py-2 border rounded text-sm`}
                 >
                   {(() => {
                     const channelNumbers = Array.from(rawChannelData.keys());
@@ -95,7 +96,7 @@ export const ChannelParserPanel: React.FC<ChannelParserPanelProps> = ({
                 <select
                   value={selectedChannelNumber2 || ''}
                   onChange={(e) => setSelectedChannelNumber2(e.target.value ? parseInt(e.target.value) : null)}
-                  className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm focus:outline-none focus:border-yellow-400"
+                  className={`${FIELD_CAUTION} w-full px-3 py-2 border rounded text-sm`}
                 >
                   <option value="">None</option>
                   {(() => {

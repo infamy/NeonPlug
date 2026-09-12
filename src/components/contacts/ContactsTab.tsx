@@ -12,6 +12,7 @@ import type { Contact } from '../../models/Contact';
 import { PageHeader } from '../ui/PageHeader';
 import { resolveContactCapacity } from '../../utils/contactCapacity';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { FIELD } from '../ui/controlStyles';
 
 // RadioID User interface
 interface RadioIDUser {
@@ -698,7 +699,7 @@ export const ContactsTab: React.FC = () => {
             value={customCountry}
             onChange={(e) => setCustomCountry(e.target.value)}
             placeholder="e.g., United States, Canada"
-            className="w-full px-3 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+            className={`${FIELD} w-full px-3 py-2 border rounded text-sm`}
           />
         </div>
 

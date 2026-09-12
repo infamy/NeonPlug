@@ -33,6 +33,7 @@ import { CodeplugSummaryBody } from './CodeplugSummaryBody';
 import { ConvertLossList } from './ConvertLossList';
 import type { WriteConfirmInput } from './writeConfirmation';
 import { isWebSerialSupported } from '../../utils/browserSupport';
+import { FIELD } from '../ui/controlStyles';
 
 export const Toolbar: React.FC = () => {
   const { channels, setChannels } = useChannelsStore();
@@ -528,7 +529,7 @@ export const Toolbar: React.FC = () => {
             <select
               value={convertTargetModel}
               onChange={(e) => setConvertTargetModel(e.target.value)}
-              className="w-full px-3 py-2 bg-deep-gray border border-neon-cyan rounded text-white mb-3"
+              className={`${FIELD} w-full px-3 py-2 border rounded mb-3`}
             >
               {getRadioPickerOptions().map((opt) => (
                 <option key={opt.modelId} value={opt.modelId}>

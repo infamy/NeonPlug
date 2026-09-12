@@ -11,6 +11,7 @@ import {
   hotKeyLabel,
   type D890HotKey,
 } from '../../radios/d890uv/hotKeys';
+import { FIELD, FIELD_INLINE } from '../ui/controlStyles';
 
 /**
  * The 18 programmable key actions — 6 Hot Key rows and 12 Fun rows, exactly the
@@ -59,7 +60,7 @@ export const D890HotKeysArea: React.FC = () => {
     setTable('hotKeys', keys.map((k) => (k.slot === slot ? { ...k, ...patch } : k)));
 
   const selectClass =
-    'bg-dark-charcoal text-white border border-panel rounded px-2 py-1 text-sm w-full';
+    `${FIELD} border rounded px-2 py-1 text-sm w-full`;
 
   return (
     <div className="mb-8">
@@ -152,8 +153,7 @@ export const D890HotKeysArea: React.FC = () => {
                         if (Number.isFinite(v) && v >= 0) set(k.slot, { callObject: v });
                         else e.target.value = k.callObject === null ? '' : String(k.callObject);
                       }}
-                      className="bg-transparent text-white border-none outline-none
-                                 focus:bg-panel focus:px-1 rounded w-28"
+                      className={`${FIELD_INLINE} rounded w-28`}
                     />
                   </td>
                   <td className="px-3 py-2">

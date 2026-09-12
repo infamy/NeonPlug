@@ -16,6 +16,7 @@ import {
   extraColumnTitle,
   type ExtraChannelColumn,
 } from './extraChannelColumns';
+import { FIELD } from '../ui/controlStyles';
 
 // Re-exported so existing importers keep working; the numbers now derive from
 // the radio's channel count rather than being hardcoded in three places.
@@ -91,12 +92,10 @@ interface ChannelRowProps {
 }
 
 const NUMBER_INPUT_CLASS =
-  'bg-transparent border border-neon-cyan border-opacity-30 rounded px-1 py-1 text-white ' +
-  'focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center';
+  `${FIELD} border rounded px-1 py-1 w-full text-xs text-center`;
 
 const SELECT_CLASS =
-  'bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white ' +
-  'focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[130px]';
+  `${FIELD} border rounded px-2 py-1 text-xs w-full max-w-[130px]`;
 
 /**
  * One cell of a declarative extra column.
@@ -260,10 +259,8 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           value={isVFOChannel(channel.number) ? '' : channel.name}
           onChange={(e) => handleCellChange(channel.number, 'name', e.target.value)}
           disabled={isVFOChannel(channel.number)}
-          className={`bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs ${
-            isVFOChannel(channel.number)
-              ? 'text-cool-gray cursor-not-allowed'
-              : 'text-white'
+          className={`${FIELD} border rounded px-2 py-1 w-full text-xs ${
+            isVFOChannel(channel.number) ? 'text-cool-gray cursor-not-allowed' : ''
           }`}
           maxLength={16}
           placeholder={isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : ''}
@@ -273,7 +270,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         <FrequencyInput
           value={channel.rxFrequency}
           onChange={(val) => handleCellChange(channel.number, 'rxFrequency', val)}
-          className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+          className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
         />
       </td>
       <td className="px-1 py-2 align-middle">
@@ -303,13 +300,13 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
             placeholder=""
             title="Receive-only (no TX)"
             aria-label="No transmit"
-            className="w-full text-xs rounded px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-20 text-cool-gray opacity-60 cursor-not-allowed"
+            className={`${FIELD} w-full text-xs rounded px-2 py-1 border text-cool-gray opacity-60 cursor-not-allowed`}
           />
         ) : (
           <FrequencyInput
             value={channel.txFrequency}
             onChange={(val) => handleCellChange(channel.number, 'txFrequency', val)}
-            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
           />
         )}
       </td>
@@ -393,7 +390,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   value: type === 'None' ? undefined : channel.rxCtcssDcs.value,
                 });
               }}
-              className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+              className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
             >
               <option value="None">None</option>
               <option value="CTCSS">CTCSS</option>
@@ -406,7 +403,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   ...channel.rxCtcssDcs,
                   value: e.target.value ? parseFloat(e.target.value) : undefined,
                 })}
-                className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+                className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
               >
                 <option value="">Select...</option>
                 {channel.rxCtcssDcs.value && !CTCSS_FREQUENCIES.includes(channel.rxCtcssDcs.value) && (
@@ -429,7 +426,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                     ...channel.rxCtcssDcs,
                     value: e.target.value ? parseInt(e.target.value) : undefined,
                   })}
-                  className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                  className={`${FIELD} flex-1 border rounded px-2 py-1 text-xs`}
                 >
                   <option value="">Select...</option>
                   {channel.rxCtcssDcs.value && !DCS_CODES.includes(channel.rxCtcssDcs.value) && (
@@ -449,7 +446,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                     ...channel.rxCtcssDcs,
                     polarity: e.target.value as 'N' | 'P',
                   })}
-                  className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                  className={`${FIELD} border rounded px-2 py-1 text-xs`}
                   disabled={!channel.rxCtcssDcs.value}
                 >
                   <option value="N">N</option>
@@ -475,7 +472,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   value: type === 'None' ? undefined : channel.txCtcssDcs.value,
                 });
               }}
-              className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+              className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
             >
               <option value="None">None</option>
               <option value="CTCSS">CTCSS</option>
@@ -488,7 +485,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   ...channel.txCtcssDcs,
                   value: e.target.value ? parseFloat(e.target.value) : undefined,
                 })}
-                className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+                className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
               >
                 <option value="">Select...</option>
                 {channel.txCtcssDcs.value && !CTCSS_FREQUENCIES.includes(channel.txCtcssDcs.value) && (
@@ -511,7 +508,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                     ...channel.txCtcssDcs,
                     value: e.target.value ? parseInt(e.target.value) : undefined,
                   })}
-                  className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                  className={`${FIELD} flex-1 border rounded px-2 py-1 text-xs`}
                 >
                   <option value="">Select...</option>
                   {channel.txCtcssDcs.value && !DCS_CODES.includes(channel.txCtcssDcs.value) && (
@@ -531,7 +528,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                     ...channel.txCtcssDcs,
                     polarity: e.target.value as 'N' | 'P',
                   })}
-                  className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                  className={`${FIELD} border rounded px-2 py-1 text-xs`}
                   disabled={!channel.txCtcssDcs.value}
                 >
                   <option value="N">N</option>
@@ -557,7 +554,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         <select
           value={channel.scanListId}
           onChange={(e) => handleCellChange(channel.number, 'scanListId', parseInt(e.target.value) || 0)}
-          className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full min-w-[6rem] max-w-[120px]"
+          className={`${FIELD} border rounded px-2 py-1 text-xs w-full min-w-[6rem] max-w-[120px]`}
         >
           <option value={0}>None</option>
           {scanLists.map((scanList, index) => (
@@ -605,7 +602,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
             max="31"
             value={channel.emergencySystemId}
             onChange={(e) => handleCellChange(channel.number, 'emergencySystemId', parseInt(e.target.value) || 0)}
-            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-1 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
+            className={`${FIELD} border rounded px-1 py-1 w-full text-xs text-center`}
           />
         </td>
       )}
@@ -695,7 +692,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
             max="255"
             value={channel.squelchLevel}
             onChange={(e) => handleCellChange(channel.number, 'squelchLevel', parseInt(e.target.value) || 0)}
-            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-1 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
+            className={`${FIELD} border rounded px-1 py-1 w-full text-xs text-center`}
           />
         </td>
       )}
@@ -724,7 +721,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
               max="63"
               value={channel.pttId}
               onChange={(e) => handleCellChange(channel.number, 'pttId', parseInt(e.target.value) || 0)}
-              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-1 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
+              className={`${FIELD} border rounded px-1 py-1 w-full text-xs text-center`}
             />
           )}
         </td>
@@ -747,7 +744,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
             <select
               value={channel.rxSquelchMode}
               onChange={(e) => handleCellChange(channel.number, 'rxSquelchMode', e.target.value)}
-              className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+              className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
             >
               <option value="Carrier/CTC">Carrier/CTC</option>
               <option value="Optional">Optional</option>
@@ -762,7 +759,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           <select
             value={channel.stepFrequency}
             onChange={(e) => handleCellChange(channel.number, 'stepFrequency', parseInt(e.target.value) || 0)}
-            className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+            className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
           >
             <option value={0}>2.5K</option>
             <option value={1}>5K</option>
@@ -783,7 +780,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
             <select
               value={channel.signalingType}
               onChange={(e) => handleCellChange(channel.number, 'signalingType', e.target.value)}
-              className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+              className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
             >
               <option value="None">None</option>
               <option value="DTMF">DTMF</option>
@@ -799,7 +796,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           <select
             value={channel.pttIdType}
             onChange={(e) => handleCellChange(channel.number, 'pttIdType', e.target.value)}
-            className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+            className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
           >
             <option value="Off">Off</option>
             <option value="BOT">BOT</option>
@@ -819,7 +816,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                 max="15"
                 value={channel.colorCode}
                 onChange={(e) => handleCellChange(channel.number, 'colorCode', parseInt(e.target.value) || 0)}
-                className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-1 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
+                className={`${FIELD} border rounded px-1 py-1 w-full text-xs text-center`}
               />
             ) : (
               <span className="text-cool-gray text-xs text-center block">-</span>
@@ -830,7 +827,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
               <select
                 value={channel.rxGroupListId ?? 0}
                 onChange={(e) => handleCellChange(channel.number, 'rxGroupListId', parseInt(e.target.value) || 0)}
-                className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[140px]"
+                className={`${FIELD} border rounded px-2 py-1 text-xs w-full max-w-[140px]`}
               >
                 <option value={0}>None</option>
                 {rxGroups
@@ -885,7 +882,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                 <select
                   value={channel.encryptionId ?? 0}
                   onChange={(e) => handleCellChange(channel.number, 'encryptionId', parseInt(e.target.value) || 0)}
-                  className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[120px]"
+                  className={`${FIELD} border rounded px-2 py-1 text-xs w-full max-w-[120px]`}
                   title="Encryption Key"
                 >
                   <option value={0}>None</option>
@@ -956,7 +953,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   // 255 = None, store as 255 (will be converted to 0xFF when encoding)
                   handleCellChange(channel.number, 'dmrRadioIdIndex', value);
                 }}
-                className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[150px]"
+                className={`${FIELD} border rounded px-2 py-1 text-xs w-full max-w-[150px]`}
                 title="DMR Radio ID Index for TX"
               >
                 <option value="255">None</option>
@@ -997,7 +994,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           <select
             value={channel.contactId}
             onChange={(e) => handleCellChange(channel.number, 'contactId', parseInt(e.target.value) || 0)}
-            className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[150px]"
+            className={`${FIELD} border rounded px-2 py-1 text-xs w-full max-w-[150px]`}
           >
             <option value={0}>None</option>
             {talkGroups.map((tg) => {

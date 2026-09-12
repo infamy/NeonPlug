@@ -12,6 +12,7 @@ import {
   type D890ImageKind,
   type D890ImageFit,
 } from '../../radios/d890uv/bootImage';
+import { FIELD } from '../ui/controlStyles';
 
 const ORDER: D890ImageKind[] = ['boot', 'bk1', 'bk2'];
 
@@ -217,7 +218,7 @@ const ImageSlot: React.FC<ImageSlotProps> = ({ kind, fromRadio }) => {
                 setFit(mode);
                 restage(source, mode);
               }}
-              className="bg-black border border-panel rounded px-2 py-1 text-neon-cyan text-xs"
+              className={`${FIELD} border rounded px-2 py-1 text-neon-cyan text-xs`}
             >
               {(Object.keys(FIT_LABEL) as D890ImageFit[]).map((m) => (
                 <option key={m} value={m}>{FIT_LABEL[m]}</option>

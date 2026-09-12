@@ -16,6 +16,7 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { FIELD } from '../ui/controlStyles';
 
 export const ScanListsList: React.FC = () => {
   const { caps } = useRadioCapabilities();
@@ -146,7 +147,7 @@ export const ScanListsList: React.FC = () => {
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="flex-1 bg-transparent border border-neon-cyan rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    className={`${FIELD} flex-1 border rounded px-2 py-1 text-sm`}
                     maxLength={16}
                     autoFocus
                   />
@@ -362,7 +363,7 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search channels..."
           autoFocus
-          className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-neon-cyan"
+          className={`${FIELD} w-full border rounded px-2 py-1 text-xs`}
         />
       </div>
       <div className="overflow-y-auto max-h-48">
@@ -476,7 +477,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                 <select
                   value={scanList.ctcScanMode}
                   onChange={(e) => updateScanList(scanList.name, { ctcScanMode: parseInt(e.target.value) })}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+                  className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                 >
                   <option value={0}>Not Detection CTC</option>
                   <option value={1}>Detection CTC Non Priority</option>
@@ -491,7 +492,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                 <select
                   value={scanList.scanTxMode}
                   onChange={(e) => updateScanList(scanList.name, { scanTxMode: parseInt(e.target.value) })}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+                  className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                 >
                   <option value={0}>Current Channel</option>
                   <option value={1}>Last Active Channel</option>
@@ -508,7 +509,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   max={255}
                   value={scanList.hangTime || 30}
                   onChange={(e) => updateScanList(scanList.name, { hangTime: parseInt(e.target.value) || 30 })}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+                  className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                   placeholder="30 = 3.0s"
                 />
                 <p className="text-cool-gray text-xs mt-0.5">{((scanList.hangTime || 30) / 10).toFixed(1)}s</p>
@@ -538,7 +539,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   <select
                     value={scanList.priority1Type || 0}
                     onChange={(e) => updateScanList(scanList.name, { priority1Type: parseInt(e.target.value) })}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+                    className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                   >
                     <option value={0}>None</option>
                     <option value={1}>Current Channel</option>
@@ -566,7 +567,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   <select
                     value={scanList.priority2Type || 0}
                     onChange={(e) => updateScanList(scanList.name, { priority2Type: parseInt(e.target.value) })}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+                    className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                   >
                     <option value={0}>None</option>
                     <option value={1}>Current Channel</option>

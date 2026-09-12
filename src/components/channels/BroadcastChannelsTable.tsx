@@ -5,6 +5,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { deleteBroadcastChannels } from '../../radios/d890uv/broadcastEdits';
 import type { D890BroadcastChannel } from '../../radios/d890uv/broadcastChannels';
 import { AmZonesEditor } from './AmZonesEditor';
+import { FIELD_INLINE } from '../ui/controlStyles';
 
 /**
  * AM airband / FM broadcast memories.
@@ -135,7 +136,7 @@ export const BroadcastChannelsTable: React.FC<{
         value={vfo.name}
         onChange={(e) => setVfo({ name: e.target.value })}
         placeholder="(no name)"
-        className="bg-transparent text-white text-sm border-none outline-none focus:bg-panel focus:px-1 rounded w-40"
+        className={`${FIELD_INLINE} text-sm rounded w-40`}
       />
       <input
         key={`vfo-${vfo.frequency ?? 'null'}`}
@@ -147,7 +148,7 @@ export const BroadcastChannelsTable: React.FC<{
           if (Number.isFinite(v)) setVfo({ frequency: v });
           else e.target.value = vfo.frequency === null ? '' : vfo.frequency.toFixed(decimals);
         }}
-        className="bg-transparent text-white text-sm font-mono border-none outline-none focus:bg-panel focus:px-1 rounded w-28"
+        className={`${FIELD_INLINE} text-sm font-mono rounded w-28`}
       />
       <span className="text-muted text-xs">MHz</span>
       <span className="text-muted text-xs ml-auto">
@@ -250,8 +251,7 @@ export const BroadcastChannelsTable: React.FC<{
                   value={ch.name}
                   onChange={(e) => patch(ch.index, { name: e.target.value })}
                   placeholder="—"
-                  className="w-full bg-transparent text-white border-none outline-none
-                             focus:bg-panel focus:px-1 rounded"
+                  className={`${FIELD_INLINE} w-full rounded`}
                 />
               </td>
               <td className="px-3 py-2 font-mono">
@@ -272,8 +272,7 @@ export const BroadcastChannelsTable: React.FC<{
                       ch.frequency === null ? '' : ch.frequency.toFixed(decimals);
                   }}
                   placeholder="—"
-                  className="w-28 bg-transparent text-white border-none outline-none
-                             focus:bg-panel focus:px-1 rounded"
+                  className={`${FIELD_INLINE} w-28 rounded`}
                 />
                 <span className="text-muted ml-1">MHz</span>
               </td>

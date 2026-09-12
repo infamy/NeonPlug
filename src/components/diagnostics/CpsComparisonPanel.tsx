@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useChannelsStore } from '../../store/channelsStore';
+import { FIELD_CAUTION } from '../ui/controlStyles';
 
 interface CpsComparisonPanelProps {
   /** Shared with the Channel Parser panel — owned by DiagnosticsTab. */
@@ -104,7 +105,7 @@ export const CpsComparisonPanel: React.FC<CpsComparisonPanelProps> = ({
               <select
                 value={selectedChannelNumber}
                 onChange={(e) => setSelectedChannelNumber(parseInt(e.target.value))}
-                className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm focus:outline-none focus:border-yellow-400 mb-4"
+                className={`${FIELD_CAUTION} w-full px-3 py-2 border rounded text-sm mb-4`}
               >
                 {Array.from(cpsCsvData.keys())
                   .sort((a, b) => a - b)

@@ -3,6 +3,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { D890_AM_ZONES } from '../../radios/d890uv/amZones';
 import type { D890AmZone } from '../../radios/d890uv/amZones';
 import type { D890BroadcastChannel } from '../../radios/d890uv/broadcastChannels';
+import { FIELD } from '../ui/controlStyles';
 
 /**
  * AM zones — a separate zone system over the airband table.
@@ -108,7 +109,7 @@ export const AmZonesEditor: React.FC<{ channels: D890BroadcastChannel[] }> = ({ 
             onKeyDown={(e) => e.key === 'Enter' && addZone()}
             placeholder="Zone name…"
             maxLength={16}
-            className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs w-36 focus:outline-none focus:border-neon-cyan"
+            className={`${FIELD} border rounded px-2 py-1 text-xs w-36`}
           />
           <button
             onClick={addZone}
@@ -131,7 +132,7 @@ export const AmZonesEditor: React.FC<{ channels: D890BroadcastChannel[] }> = ({ 
                   value={zone.name}
                   onChange={(e) => update(zone.index, { name: e.target.value })}
                   maxLength={16}
-                  className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs w-40 focus:outline-none focus:border-neon-cyan"
+                  className={`${FIELD} border rounded px-2 py-1 text-xs w-40`}
                 />
                 <span className="text-muted text-xs">
                   {zone.members.length} {zone.members.length === 1 ? 'channel' : 'channels'}
@@ -160,7 +161,7 @@ export const AmZonesEditor: React.FC<{ channels: D890BroadcastChannel[] }> = ({ 
                     onChange={(e) =>
                       update(zone.index, { aChannel: parseInt(e.target.value, 10) })
                     }
-                    className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-1.5 py-0.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+                    className={`${FIELD} border rounded px-1.5 py-0.5 text-xs`}
                   >
                     {zone.members.map((m, position) => (
                       <option key={position} value={position}>{label(m)}</option>
@@ -228,7 +229,7 @@ export const AmZonesEditor: React.FC<{ channels: D890BroadcastChannel[] }> = ({ 
                     if (!e.target.value) return;
                     addMember(zone, parseInt(e.target.value, 10));
                   }}
-                  className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-1.5 py-0.5 text-cool-gray text-xs focus:outline-none focus:border-neon-cyan"
+                  className={`${FIELD} border rounded px-1.5 py-0.5 text-cool-gray text-xs`}
                 >
                   <option value="">+ add channel…</option>
                   {channels

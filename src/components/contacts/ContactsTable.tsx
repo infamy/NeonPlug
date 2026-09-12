@@ -3,6 +3,7 @@ import { formatPlural } from '../../utils/formatPlural';
 import { useContactsStore } from '../../store/contactsStore';
 import { EmptyState } from '../ui/EmptyState';
 import { Card } from '../ui/Card';
+import { FIELD } from '../ui/controlStyles';
 
 const CONTACTS_PER_PAGE = 100;
 
@@ -75,7 +76,7 @@ export const ContactsTable: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by name, DMR ID, call sign, city, province, country, or remark..."
-            className="flex-1 px-3 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+            className={`${FIELD} flex-1 px-3 py-2 border rounded text-sm`}
           />
           {searchQuery && (
             <button

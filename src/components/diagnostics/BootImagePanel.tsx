@@ -4,6 +4,7 @@ import { downloadHexDump, downloadBinary } from '../../utils/hexdump';
 import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { OffsetInspector } from './OffsetInspector';
 import { BOOT_IMAGE } from '../../utils/bootImage';
+import { FIELD } from '../ui/controlStyles';
 
 export const BootImagePanel: React.FC = () => {
   const { bootImageRaw } = useRadioStore();
@@ -73,7 +74,7 @@ export const BootImagePanel: React.FC = () => {
                         value={inspectBootImageOffset}
                         onChange={(e) => setInspectBootImageOffset(e.target.value)}
                         placeholder="0x000"
-                        className="flex-1 px-3 py-2 bg-deep-gray border border-neon-cyan/30 rounded text-white text-sm font-mono focus:outline-none focus:border-neon-cyan"
+                        className={`${FIELD} flex-1 px-3 py-2 border rounded text-sm font-mono`}
                       />
                       <button
                         type="button"

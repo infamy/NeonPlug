@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { BlockLayoutSpec } from '../../types/radioCapabilities';
 import { resolveFieldAt, describeField } from '../../utils/blockLayout';
+import { FIELD_CAUTION } from '../ui/controlStyles';
 
 interface KnownOffset {
   offset: number;
@@ -86,7 +87,7 @@ export const OffsetInspector: React.FC<OffsetInspectorProps> = ({
             value={inspectOffset}
             onChange={(e) => setInspectOffset(e.target.value)}
             placeholder={placeholder}
-            className="flex-1 px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm font-mono focus:outline-none focus:border-yellow-400"
+            className={`${FIELD_CAUTION} flex-1 px-3 py-2 border rounded text-sm font-mono`}
           />
           <button
             type="button"

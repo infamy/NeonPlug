@@ -8,6 +8,7 @@ import { SelectAllButtons } from '../SelectAllButtons';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { SectionTitle } from '../../ui/SectionTitle';
+import { FIELD } from '../../ui/controlStyles';
 
 interface TaflSourceProps {
   entries: TaflData[];
@@ -143,7 +144,7 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
           value={taflSearchFilter}
           onChange={(e) => setTaflSearchFilter(e.target.value)}
           placeholder="Search entries..."
-          className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+          className={`${FIELD} w-full border rounded px-3 py-2`}
         />
       </div>
         <>

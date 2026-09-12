@@ -11,6 +11,7 @@ import type { PickerItem } from '../ui/pickerItems';
 import { Card } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { FIELD } from '../ui/controlStyles';
 
 export const RXGroupsList: React.FC = () => {
   const { caps } = useRadioCapabilities();
@@ -91,7 +92,7 @@ export const RXGroupsList: React.FC = () => {
                   onClick={(e) => e.stopPropagation()}
                   autoFocus
                   maxLength={11}
-                  className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-sm font-medium focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full"
+                  className={`${FIELD} border rounded px-2 py-1 text-sm font-medium w-full`}
                 />
               ) : (
                 <span
@@ -160,7 +161,7 @@ export const RXGroupsList: React.FC = () => {
                 }}
                 autoFocus
                 maxLength={11}
-                className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-neon-cyan font-bold focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan flex-1"
+                className={`${FIELD} border rounded px-2 py-1 text-neon-cyan font-bold flex-1`}
               />
             ) : (
               <div className="flex items-center gap-2 flex-1">
@@ -274,7 +275,7 @@ const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group, onAlert }) => {
           value={group.name}
           onChange={(e) => updateGroup(group.index, { name: e.target.value.slice(0, 11) })}
           maxLength={11}
-          className="flex-1 bg-transparent border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+          className={`${FIELD} flex-1 border rounded px-3 py-2 text-sm`}
           placeholder="Enter group name"
         />
       </div>

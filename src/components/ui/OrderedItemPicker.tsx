@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { formatPlural } from '../../utils/formatPlural';
 import type { PickerItem } from './pickerItems';
+import { FIELD } from './controlStyles';
 
 /**
  * OrderedItemPicker — the shared "ordered selected list + searchable available
@@ -165,7 +166,7 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={`Search ${itemNounPlural}...`}
-                  className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-3 py-1.5 pl-9 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                  className={`${FIELD} w-full border rounded px-3 py-1.5 pl-9 text-xs`}
                 />
                 <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-cool-gray text-xs">
                   🔍

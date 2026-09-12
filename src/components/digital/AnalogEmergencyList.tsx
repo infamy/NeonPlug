@@ -7,6 +7,7 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { LIMITS } from '../../radios/dm32uv/constants';
+import { FIELD } from '../ui/controlStyles';
 
 const ALARM_TYPES = ['None', 'Only Whistle', 'Normal', 'Secret', 'Secret With Voice'];
 const ALARM_MODES = ['Emergency Alarm', 'Alarm Call'];
@@ -117,14 +118,14 @@ export const AnalogEmergencyList: React.FC = () => {
                             value={system.name}
                             onChange={(e) => updateSystem(i, { name: e.target.value.slice(0, 16) })}
                             maxLength={16}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                           />
                         </td>
                         <td className="px-2 py-1.5">
                           <select
                             value={system.alarmType}
                             onChange={(e) => updateSystem(i, { alarmType: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {ALARM_TYPES.map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -135,7 +136,7 @@ export const AnalogEmergencyList: React.FC = () => {
                           <select
                             value={system.alarmMode}
                             onChange={(e) => updateSystem(i, { alarmMode: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {ALARM_MODES.map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -146,7 +147,7 @@ export const AnalogEmergencyList: React.FC = () => {
                           <select
                             value={system.signalling}
                             onChange={(e) => updateSystem(i, { signalling: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {SIGNALLING.map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -157,7 +158,7 @@ export const AnalogEmergencyList: React.FC = () => {
                           <select
                             value={system.revertChannel}
                             onChange={(e) => updateSystem(i, { revertChannel: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {channels.length > 0
                               ? channels.slice(0, 16).map((ch) => (
@@ -173,7 +174,7 @@ export const AnalogEmergencyList: React.FC = () => {
                           <select
                             value={system.squelchMode}
                             onChange={(e) => updateSystem(i, { squelchMode: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {SQUELCH_MODES.map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -184,7 +185,7 @@ export const AnalogEmergencyList: React.FC = () => {
                           <select
                             value={system.idType}
                             onChange={(e) => updateSystem(i, { idType: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {ID_TYPES.map((label, v) => (
                               <option key={v} value={v}>{label}</option>

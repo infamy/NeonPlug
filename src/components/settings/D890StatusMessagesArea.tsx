@@ -4,6 +4,7 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { useRadioStore } from '../../store/radioStore';
 import { D890_STATUS_MESSAGES } from '../../radios/d890uv/statusMessages';
 import { formatPlural } from '../../utils/formatPlural';
+import { FIELD_INLINE } from '../ui/controlStyles';
 
 /**
  * The canned texts a hot key can send.
@@ -88,8 +89,7 @@ export const D890StatusMessagesArea: React.FC = () => {
                       defaultValue={text}
                       maxLength={D890_STATUS_MESSAGES.MAX_CHARS}
                       onBlur={(e) => set(slot, e.target.value)}
-                      className="bg-transparent text-white border-none outline-none
-                                 focus:bg-panel focus:px-1 rounded w-full"
+                      className={`${FIELD_INLINE} rounded w-full`}
                     />
                   </td>
                   <td className="px-3 py-2 text-right">

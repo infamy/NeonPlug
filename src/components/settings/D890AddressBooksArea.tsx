@@ -5,6 +5,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { D890_ANALOG_ADDRESS_BOOK } from '../../radios/d890uv/analogAddressBook';
 import { D890_MDC1200, MDC_CALL_TYPE } from '../../radios/d890uv/mdc1200';
 import { formatPlural } from '../../utils/formatPlural';
+import { FIELD, FIELD_INLINE } from '../ui/controlStyles';
 
 /**
  * The two signalling address books — analog (DTMF) and MDC1200 (vendor: QDC).
@@ -22,9 +23,9 @@ import { formatPlural } from '../../utils/formatPlural';
  * written to, recomputed on every render — not the slot it was read from.
  */
 const inputClass =
-  'bg-transparent text-white border-none outline-none focus:bg-panel focus:px-1 rounded';
+  `${FIELD_INLINE} rounded`;
 const selectClass =
-  'bg-dark-charcoal text-white border border-panel rounded px-2 py-1 text-sm w-full';
+  `${FIELD} border rounded px-2 py-1 text-sm w-full`;
 
 export const D890AddressBooksArea: React.FC = () => {
   const { tables, setTable } = useRadioStore();

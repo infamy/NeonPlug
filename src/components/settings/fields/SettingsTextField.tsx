@@ -1,7 +1,8 @@
 import React from 'react';
 import type { SettingsTextFieldDescriptor } from '../../../types/settingsProfile';
+import { FIELD } from '../../ui/controlStyles';
 
-const inputClass = 'w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan';
+const inputClass = `${FIELD} w-full border rounded px-3 py-2`;
 const labelClass = 'block text-cool-gray text-sm mb-2';
 
 interface Props {

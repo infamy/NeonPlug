@@ -4,6 +4,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { D890_POWER_ON, type D890PowerOnDisplay } from '../../radios/d890uv/powerOnDisplay';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { POWER_ON_INTERFACE } from '../../radios/d890uv/displaySelectors';
+import { FIELD } from '../ui/controlStyles';
 
 /**
  * The custom power-on screen: two text lines and the power-on password.
@@ -36,8 +37,7 @@ const FieldRow: React.FC<{
       value={value}
       maxLength={maxLength}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full px-2 py-1.5 bg-deep-gray border-panel rounded text-white
-                 font-mono text-sm focus:border-neon-cyan focus:outline-none"
+      className={`${FIELD} w-full px-2 py-1.5 border rounded font-mono text-sm`}
     />
     <p className="text-muted text-xs mt-1">
       {hint} · {value.length}/{maxLength}
@@ -113,8 +113,7 @@ export const D890PowerOnArea: React.FC = () => {
               value={display.password}
               maxLength={D890_POWER_ON.PASSWORD_CHARS}
               onChange={(e) => set({ password: e.target.value })}
-              className="flex-1 min-w-0 px-2 py-1.5 bg-deep-gray border-panel rounded
-                         text-white font-mono text-sm focus:border-neon-cyan focus:outline-none"
+              className={`${FIELD} flex-1 min-w-0 px-2 py-1.5 border rounded font-mono text-sm`}
             />
             <button
               type="button"

@@ -30,6 +30,7 @@ import type { SettingsFieldDescriptor, SettingsFeature } from '../../types/setti
 import { FEATURE_AREAS } from './featureAreas';
 import { PageHeader } from '../ui/PageHeader';
 import { resolveContactCapacity } from '../../utils/contactCapacity';
+import { FIELD } from '../ui/controlStyles';
 
 /** Get value from settings by key; supports nested path (e.g. menuEnableFlags.zoneList) and lockKey mapping */
 function getFieldValue(settings: RadioSettings | null, key: string): unknown {
@@ -719,7 +720,7 @@ export const SettingsTab: React.FC = () => {
                     value={settingsFilter}
                     onChange={(e) => setSettingsFilter(e.target.value)}
                     placeholder={`Search ${total} settings by name…`}
-                    className="w-full max-w-md bg-transparent border border-neon-cyan border-opacity-30 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    className={`${FIELD} w-full max-w-md border rounded px-3 py-1.5 text-sm`}
                   />
                   {query ? (
                     <p className="text-xs text-cool-gray">
@@ -833,7 +834,7 @@ export const SettingsTab: React.FC = () => {
                                   newAnalogCall[index] = { ...entry, callType: parseInt(e.target.value) || 0 };
                                   updateRadioSettings({ analogCall: newAnalogCall });
                                 }}
-                                className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                                className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               >
                                 {ANALOG_CALL_TYPE_OPTIONS.map(option => (
                                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -851,7 +852,7 @@ export const SettingsTab: React.FC = () => {
                                   newAnalogCall[index] = { ...entry, callId: parseInt(e.target.value) || 0 };
                                   updateRadioSettings({ analogCall: newAnalogCall });
                                 }}
-                                className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                                className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               />
                             </td>
                           </tr>
@@ -891,7 +892,7 @@ export const SettingsTab: React.FC = () => {
                                 newOneTouchCall[index] = { ...entry, callType: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ oneTouchCall: newOneTouchCall });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             >
                               {ONE_TOUCH_CALL_TYPE_OPTIONS.map(option => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -909,7 +910,7 @@ export const SettingsTab: React.FC = () => {
                                 newOneTouchCall[index] = { ...entry, callObject: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ oneTouchCall: newOneTouchCall });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             />
                           </td>
                           <td className="py-2 px-3">
@@ -920,7 +921,7 @@ export const SettingsTab: React.FC = () => {
                                 newOneTouchCall[index] = { ...entry, digitalCallType: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ oneTouchCall: newOneTouchCall });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             >
                               {DIGITAL_CALL_TYPE_OPTIONS.map(option => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -938,7 +939,7 @@ export const SettingsTab: React.FC = () => {
                                 newOneTouchCall[index] = { ...entry, sms: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ oneTouchCall: newOneTouchCall });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             />
                           </td>
                         </tr>
@@ -980,7 +981,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, operateMode: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             >
                               {FUN_PLUS_OPERATE_MODE_OPTIONS.map(option => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -995,7 +996,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, menuSelect: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               disabled={entry.operateMode !== 1}
                             >
                               {FUN_PLUS_MENU_SELECT_OPTIONS.map(option => (
@@ -1011,7 +1012,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, callWay: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               disabled={entry.operateMode !== 0}
                             >
                               {FUN_PLUS_CALL_WAY_OPTIONS.map(option => (
@@ -1030,7 +1031,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, callObject: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               disabled={entry.operateMode !== 0}
                             />
                           </td>
@@ -1042,7 +1043,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, digitalCallType: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               disabled={entry.operateMode !== 0 || entry.callWay !== 2}
                             >
                               {DIGITAL_CALL_TYPE_OPTIONS.map(option => (
@@ -1061,7 +1062,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, sms: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             />
                           </td>
                         </tr>
@@ -1148,7 +1149,7 @@ export const SettingsTab: React.FC = () => {
                         max={16776415}
                         value={radioSettings.aprsUploadId ?? 0}
                         onChange={(e) => updateRadioSettings({ aprsUploadId: Math.max(0, Math.min(16776415, parseInt(e.target.value) || 0)) })}
-                        className="w-full px-3 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        className={`${FIELD} w-full px-3 py-2 border rounded`}
                         placeholder="0 = unset"
                       />
                     </div>
@@ -1177,7 +1178,7 @@ export const SettingsTab: React.FC = () => {
                                   max={4000}
                                   value={(radioSettings[key] as number) ?? 0}
                                   onChange={(e) => updateRadioSettings({ [key]: parseInt(e.target.value) || 0 } as Partial<RadioSettings>)}
-                                  className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                                  className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                                 />
                               </td>
                             </tr>

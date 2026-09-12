@@ -2,6 +2,7 @@ import React from 'react';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { useRadioStore } from '../../store/radioStore';
+import { FIELD } from '../ui/controlStyles';
 
 /**
  * The radio's own DMR ID — the vendor CPS calls it "MastID".
@@ -54,7 +55,7 @@ export const MasterRadioIdCard: React.FC = () => {
                 value={master.id.name ?? ''}
                 onChange={(e) => set({ id: { ...master.id, name: e.target.value } })}
                 maxLength={16}
-                className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-sm w-48 focus:outline-none focus:border-neon-cyan"
+                className={`${FIELD} border rounded px-2 py-1 text-sm w-48`}
               />
             </label>
 
@@ -69,7 +70,7 @@ export const MasterRadioIdCard: React.FC = () => {
                   });
                 }}
                 inputMode="numeric"
-                className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-sm w-40 font-mono focus:outline-none focus:border-neon-cyan"
+                className={`${FIELD} border rounded px-2 py-1 text-sm w-40 font-mono`}
               />
             </label>
 

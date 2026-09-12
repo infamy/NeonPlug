@@ -5,6 +5,7 @@ import { formatHexDumpText } from '../../utils/hexdump';
 import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { createZip, type ZipEntry } from '../../utils/zip';
 import { downloadBlob } from '../../utils/download';
+import { FIELD_CAUTION } from '../ui/controlStyles';
 
 interface ContactBlocksPanelProps {
   showAlert: (message: string, title?: string) => void;
@@ -101,7 +102,7 @@ export const ContactBlocksPanel: React.FC<ContactBlocksPanelProps> = ({ showAler
               <select
                 value={selectedContactBlock !== null ? selectedContactBlock : (rawContactBlockAddress !== null ? rawContactBlockAddress : '')}
                 onChange={(e) => setSelectedContactBlock(parseInt(e.target.value))}
-                className="w-full px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm font-mono focus:outline-none focus:border-yellow-400"
+                className={`${FIELD_CAUTION} w-full px-3 py-2 border rounded text-sm font-mono`}
               >
                 {Array.from(rawContactBlocks.entries())
                   .sort(([addrA], [addrB]) => addrA - addrB)

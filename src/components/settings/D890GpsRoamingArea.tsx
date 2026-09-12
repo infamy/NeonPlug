@@ -11,6 +11,7 @@ import {
 import type { D890GpsRoamingEntry } from '../../radios/d890uv/gpsRoaming';
 import { geocodePlaces, type GeocodeResult } from '../../services/locationService';
 import { getCurrentLocation } from '../../services/repeaterFinder';
+import { FIELD } from '../ui/controlStyles';
 
 /**
  * GPS Roaming — geofences that switch the radio's zone by location.
@@ -30,7 +31,7 @@ import { getCurrentLocation } from '../../services/repeaterFinder';
  * a column. That is flagged in the UI rather than presented as settled.
  */
 const INPUT =
-  'w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-neon-cyan';
+  `${FIELD} w-full border rounded px-2 py-1 text-xs`;
 
 /** Hundredths of a minute, in degrees — the smallest step this format holds. */
 const PRECISION = 1 / 60 / 100;

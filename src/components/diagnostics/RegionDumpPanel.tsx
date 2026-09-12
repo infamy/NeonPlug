@@ -11,6 +11,7 @@ import { D890_ADDR, D890_LIMITS } from '../../radios/d890uv/constants';
 import { channelAddresses } from '../../radios/d890uv/structures';
 import { D890_BROADCAST } from '../../radios/d890uv/broadcastChannels';
 import { isRawRegionReader } from '../../radios/shared/rawRegionReader';
+import { FIELD_CAUTION } from '../ui/controlStyles';
 
 /**
  * Raw memory region dump, for radios that address memory sparsely rather than
@@ -348,7 +349,7 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
             disabled={busy}
-            className="mt-1 w-full bg-black border border-panel rounded px-2 py-1 text-neon-cyan text-sm"
+            className={`${FIELD_CAUTION} mt-1 w-full border rounded px-2 py-1 text-sm`}
           >
             {REGIONS.map((r) => (
               <option key={r.key} value={r.key}>
@@ -368,7 +369,7 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
                 onChange={(e) => setCustomAddress(e.target.value)}
                 placeholder="3482a00"
                 disabled={busy}
-                className="mt-1 w-full bg-black border border-panel rounded px-2 py-1 text-neon-cyan text-sm font-mono"
+                className={`${FIELD_CAUTION} mt-1 w-full border rounded px-2 py-1 text-sm font-mono`}
               />
             </label>
             <label className="text-sm text-cool-gray flex-1">
@@ -378,7 +379,7 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
                 onChange={(e) => setCustomLength(e.target.value)}
                 placeholder="200"
                 disabled={busy}
-                className="mt-1 w-full bg-black border border-panel rounded px-2 py-1 text-neon-cyan text-sm font-mono"
+                className={`${FIELD_CAUTION} mt-1 w-full border rounded px-2 py-1 text-sm font-mono`}
               />
             </label>
           </div>
@@ -396,7 +397,7 @@ export const RegionDumpPanel: React.FC<RegionDumpPanelProps> = ({ showAlert }) =
             value={forcedLength}
             onChange={(e) => setForcedLength(e.target.value)}
             disabled={busy}
-            className="mt-1 w-full bg-black border border-panel rounded px-2 py-1 text-neon-cyan text-sm"
+            className={`${FIELD_CAUTION} mt-1 w-full border rounded px-2 py-1 text-sm`}
           >
             <option value="">Negotiated (largest the radio accepts)</option>
             <option value="16">16 bytes — what the vendor CPS uses</option>

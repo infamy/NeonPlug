@@ -27,6 +27,7 @@ import {
   isEncryptionTypeLocked,
 } from '../../utils/encryptionKeys';
 import { PageHeader } from '../ui/PageHeader';
+import { FIELD } from '../ui/controlStyles';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
@@ -332,7 +333,7 @@ export const DigitalTab: React.FC = () => {
                               updateRadioId(radioId.index, { name: newName });
                             }}
                             maxLength={12}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                             placeholder="Enter name"
                           />
                         </td>
@@ -359,7 +360,7 @@ export const DigitalTab: React.FC = () => {
                             }}
                             min="0"
                             max="16777215"
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs font-mono`}
                             placeholder="DMR ID (1-9999999, 0=none)"
                           />
                         </td>
@@ -447,7 +448,7 @@ export const DigitalTab: React.FC = () => {
                               type="text"
                               value={contact.name}
                               onChange={(e) => handleContactChange(contact.index, 'name', e.target.value)}
-                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                              className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                             />
                           </td>
                           <td className="px-2 py-2">
@@ -458,7 +459,7 @@ export const DigitalTab: React.FC = () => {
                               min="0"
                               max="16777215"
                               disabled={isAllCall}
-                              className={`bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono ${
+                              className={`${FIELD} border rounded px-2 py-1 w-full text-xs font-mono ${
                                 isAllCall ? 'opacity-50 cursor-not-allowed' : ''
                               }`}
                               title={isAllCall ? 'ID is locked to 16777215 for All Call' : ''}
@@ -468,7 +469,7 @@ export const DigitalTab: React.FC = () => {
                             <select
                               value={contact.callType}
                               onChange={(e) => handleContactChange(contact.index, 'callType', parseInt(e.target.value, 10))}
-                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                              className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                             >
                               <option value={0x03}>Private Call</option>
                               <option value={0x04}>Group Call</option>
@@ -596,14 +597,14 @@ export const DigitalTab: React.FC = () => {
                             value={system.name}
                             onChange={(e) => updateSystem(i, { name: e.target.value.slice(0, 10) })}
                             maxLength={10}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                           />
                         </td>
                         <td className="px-2 py-1.5">
                           <select
                             value={system.alarmType}
                             onChange={(e) => updateSystem(i, { alarmType: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {['None', 'Only Whistle', 'Normal', 'Secret', 'Secret With Voice', 'Alarm Whistle'].map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -614,7 +615,7 @@ export const DigitalTab: React.FC = () => {
                           <select
                             value={system.alarmMode}
                             onChange={(e) => updateSystem(i, { alarmMode: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {['Emergency Alarm', 'Alarm Call', 'Emergency Call'].map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -625,7 +626,7 @@ export const DigitalTab: React.FC = () => {
                           <select
                             value={system.revertChannel}
                             onChange={(e) => updateSystem(i, { revertChannel: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             <option value={0}>None</option>
                             {channels.map((ch) => (
@@ -640,7 +641,7 @@ export const DigitalTab: React.FC = () => {
                             onChange={(e) => updateSystem(i, { retransmission: Math.max(1, Math.min(15, Number(e.target.value))) })}
                             min={1}
                             max={15}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                           />
                         </td>
                         <td className="px-2 py-1.5">
@@ -650,14 +651,14 @@ export const DigitalTab: React.FC = () => {
                             onChange={(e) => updateSystem(i, { hotMicDuration: Math.max(1, Math.min(15, Number(e.target.value))) })}
                             min={1}
                             max={15}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                           />
                         </td>
                         <td className="px-2 py-1.5">
                           <select
                             value={system.emergencyCallsNumber}
                             onChange={(e) => updateSystem(i, { emergencyCallsNumber: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {Array.from({ length: 12 }, (_, k) => (k + 1) * 10).map(v => (
                               <option key={v} value={v}>{v}</option>
@@ -679,14 +680,14 @@ export const DigitalTab: React.FC = () => {
                             onChange={(e) => updateSystem(i, { rxDurationTime: Math.max(1, Math.min(255, Number(e.target.value))) })}
                             min={1}
                             max={255}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                           />
                         </td>
                         <td className="px-2 py-1.5">
                           <select
                             value={system.autoEmergencyCallTimer}
                             onChange={(e) => updateSystem(i, { autoEmergencyCallTimer: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {Array.from({ length: 12 }, (_, k) => (k + 1) * 10).map(v => (
                               <option key={v} value={v}>{v}</option>
@@ -765,7 +766,7 @@ export const DigitalTab: React.FC = () => {
                             value={key.name}
                             onChange={(e) => handleKeyChange(key.entryNumber, 'name', e.target.value.slice(0, 10))}
                             maxLength={10}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                             placeholder="Enter name"
                           />
                         </td>
@@ -792,7 +793,7 @@ export const DigitalTab: React.FC = () => {
                             <select
                               value={key.encryptionType ?? 0}
                               onChange={(e) => handleKeyChange(key.entryNumber, 'encryptionType', parseInt(e.target.value) || 0)}
-                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                              className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                               title="Choosing a type creates the key in this slot. It cannot be changed afterwards."
                             >
                               {ENCRYPTION_TYPES.map((label, value) => (
@@ -812,7 +813,7 @@ export const DigitalTab: React.FC = () => {
                               handleKeyChange(key.entryNumber, 'key', hexValue);
                             }}
                             maxLength={64}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs font-mono`}
                             placeholder="Enter hex key"
                           />
                         </td>
@@ -895,7 +896,7 @@ export const DigitalTab: React.FC = () => {
                                 updateMessage(arrayIndex, { text: newText, flag: textLength });
                               }}
                               maxLength={messageCharsMax}
-                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                              className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                               placeholder="Enter message text"
                             />
                           </td>

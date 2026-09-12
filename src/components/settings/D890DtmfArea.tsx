@@ -3,6 +3,7 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { useRadioStore } from '../../store/radioStore';
 import { D890_DTMF, type D890DtmfSettings } from '../../radios/d890uv/dtmf';
+import { FIELD, FIELD_INLINE } from '../ui/controlStyles';
 
 /**
  * DTMF signalling — the settings block and the 16 encode entries.
@@ -44,7 +45,7 @@ const NUMBER_FIELDS: {
 ];
 
 const inputClass =
-  'bg-dark-charcoal text-white border border-panel rounded px-2 py-1 text-sm w-24 font-mono';
+  `${FIELD} border rounded px-2 py-1 text-sm w-24 font-mono`;
 
 export const D890DtmfArea: React.FC = () => {
   const { tables, setTable } = useRadioStore();
@@ -126,7 +127,7 @@ export const D890DtmfArea: React.FC = () => {
             <select
               value={dtmf.settings.decodingResponse}
               onChange={(e) => setSettings({ decodingResponse: Number(e.target.value) })}
-              className="bg-dark-charcoal text-white border border-panel rounded px-2 py-1 text-sm w-full"
+              className={`${FIELD} border rounded px-2 py-1 text-sm w-full`}
             >
               <option value={0}>None</option>
               <option value={1}>Beep</option>
@@ -173,8 +174,7 @@ export const D890DtmfArea: React.FC = () => {
                         e.target.value = cleaned;
                         setEntry(i, cleaned);
                       }}
-                      className="bg-transparent text-white border-none outline-none
-                                 focus:bg-panel focus:px-1 rounded w-full"
+                      className={`${FIELD_INLINE} rounded w-full`}
                     />
                   </td>
                 </tr>

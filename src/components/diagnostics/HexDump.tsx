@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { downloadHexDump, downloadBinary } from '../../utils/hexdump';
 import { resolveFieldAt, describeField } from '../../utils/blockLayout';
 import type { BlockLayoutSpec } from '../../types/radioCapabilities';
+import { FIELD_CAUTION } from '../ui/controlStyles';
 
 interface HexDumpProps {
   data: Uint8Array;
@@ -128,7 +129,7 @@ export const HexDump: React.FC<HexDumpProps> = ({
                   value={jumpOffset}
                   onChange={(e) => setJumpOffset(e.target.value)}
                   placeholder="0x000"
-                  className="flex-1 px-3 py-2 bg-deep-gray border border-yellow-600/30 rounded text-white text-sm font-mono focus:outline-none focus:border-yellow-400"
+                  className={`${FIELD_CAUTION} flex-1 px-3 py-2 border rounded text-sm font-mono`}
                 />
                 <button
                   type="button"

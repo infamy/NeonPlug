@@ -13,6 +13,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { BroadcastChannelsTable } from './BroadcastChannelsTable';
 import { D890_BROADCAST } from '../../radios/d890uv/broadcastChannels';
 import { PageHeader } from '../ui/PageHeader';
+import { FIELD } from '../ui/controlStyles';
 
 /** Which channel table the tab is showing. */
 type ChannelView = 'main' | 'am' | 'fm';
@@ -207,7 +208,7 @@ export const ChannelsTab: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={isBroadcast ? 'Search by name, frequency, number...' : 'Search channels by name, frequency, mode, number...'}
-            className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-4 py-2 pl-10 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+            className={`${FIELD} w-full border rounded px-4 py-2 pl-10 text-sm`}
           />
           <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-cool-gray text-sm">
             🔍

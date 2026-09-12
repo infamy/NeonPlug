@@ -13,6 +13,7 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { FIELD } from '../ui/controlStyles';
 
 /** One of the two per-zone VFO channel pickers. Hoisted, not nested in its
  *  parent's render: a component defined inside a render is a new type on every
@@ -30,7 +31,7 @@ const ZoneChannelSelect: React.FC<{
     <select
       value={position}
       onChange={(e) => onChange(parseInt(e.target.value, 10))}
-      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+      className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
     >
       {position >= zone.channels.length && <option value={position}>Not set</option>}
       {zone.channels.map((number, index) => (
@@ -236,7 +237,7 @@ export const ZonesList: React.FC = () => {
                             }
                           }}
                       onClick={(e) => e.stopPropagation()}
-                      className="flex-1 bg-transparent border border-neon-cyan rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      className={`${FIELD} flex-1 border rounded px-2 py-1 text-sm`}
                       maxLength={10}
                       autoFocus
                     />

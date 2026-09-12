@@ -4,6 +4,7 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { useRadioStore } from '../../store/radioStore';
 import { D890_AUTO_REPEATER } from '../../radios/d890uv/autoRepeater';
 import { formatPlural } from '../../utils/formatPlural';
+import { FIELD_INLINE } from '../ui/controlStyles';
 
 /**
  * Auto-repeater offsets — 250 slots, only the used ones shown.
@@ -91,8 +92,7 @@ export const AutoRepeaterOffsets: React.FC = () => {
                         if (Number.isFinite(v)) set(index, v);
                         else e.target.value = mhz.toFixed(5);
                       }}
-                      className="bg-transparent text-white border-none outline-none
-                                 focus:bg-panel focus:px-1 rounded w-32"
+                      className={`${FIELD_INLINE} rounded w-32`}
                     />
                     <span className="text-muted ml-1">MHz</span>
                   </td>

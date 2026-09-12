@@ -18,6 +18,7 @@ import {
   extraColumnTitle,
   extraColumnMarker,
 } from './extraChannelColumns';
+import { FIELD } from '../ui/controlStyles';
 
 // Frequency input component that only updates parent on blur
 interface FrequencyInputProps {
@@ -185,7 +186,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                     value={vfoName}
                     disabled
                     readOnly
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-cool-gray cursor-not-allowed opacity-60"
+                    className={`${FIELD} w-full border rounded px-2 py-1 text-sm text-cool-gray cursor-not-allowed opacity-60`}
                   />
                 ) : (
                   <>
@@ -193,7 +194,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       type="text"
                       value={editedChannel.name}
                       onChange={(e) => handleChange('name', e.target.value)}
-                      className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                       maxLength={16}
                     />
                     <p className="text-xs text-cool-gray mt-0.5">Maximum 16 characters</p>
@@ -209,7 +210,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <FrequencyInput
                     value={editedChannel.rxFrequency}
                     onChange={(val) => handleChange('rxFrequency', val)}
-                    className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                   />
                   <p className="text-xs text-cool-gray mt-0.5">Frequency the radio receives on</p>
                 </div>
@@ -242,7 +243,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                         value=""
                         title="Receive-only (no TX)"
                         aria-label="No transmit"
-                        className="w-full bg-deep-gray border border-neon-cyan border-opacity-20 rounded px-2 py-1 text-sm text-cool-gray opacity-60 cursor-not-allowed"
+                        className={`${FIELD} w-full border rounded px-2 py-1 text-sm text-cool-gray opacity-60 cursor-not-allowed`}
                       />
                       <p className="text-xs text-cool-gray mt-0.5">Receive-only (87–136 MHz); TX disabled</p>
                     </>
@@ -251,7 +252,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       <FrequencyInput
                         value={editedChannel.txFrequency}
                         onChange={(val) => handleChange('txFrequency', val)}
-                        className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                       />
                       <p className="text-xs text-cool-gray mt-0.5">Frequency the radio transmits on</p>
                     </>
@@ -267,7 +268,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <select
                     value={editedChannel.mode}
                     onChange={(e) => handleChange('mode', e.target.value)}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                   >
                     <option value="Analog">Analog</option>
                     {!analogOnly && <option value="Digital">Digital</option>}
@@ -283,7 +284,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <select
                     value={editedChannel.bandwidth}
                     onChange={(e) => handleChange('bandwidth', e.target.value)}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                   >
                     <option value="25kHz">25kHz (Wide)</option>
                     <option value="12.5kHz">12.5kHz (Narrow)</option>
@@ -299,7 +300,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 <select
                   value={editedChannel.power}
                   onChange={(e) => handleChange('power', e.target.value)}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                  className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                 >
                   {powerLevels.map((level) => (
                     <option key={level} value={level}>
@@ -330,7 +331,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       value: type === 'None' ? undefined : editedChannel.rxCtcssDcs.value,
                     });
                   }}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                  className={`${FIELD} w-full border rounded px-2 py-1 text-sm mb-1`}
                 >
                   <option value="None">None</option>
                   <option value="CTCSS">CTCSS</option>
@@ -343,7 +344,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       ...editedChannel.rxCtcssDcs,
                       value: e.target.value ? parseFloat(e.target.value) : undefined,
                     })}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                    className={`${FIELD} w-full border rounded px-2 py-1 text-sm mb-1`}
                   >
                     <option value="">Select CTCSS...</option>
                     {editedChannel.rxCtcssDcs.value && !CTCSS_FREQUENCIES.includes(editedChannel.rxCtcssDcs.value) && (
@@ -366,7 +367,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                         ...editedChannel.rxCtcssDcs,
                         value: e.target.value ? parseInt(e.target.value) : undefined,
                       })}
-                      className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                      className={`${FIELD} flex-1 border rounded px-2 py-1 text-sm mb-1`}
                     >
                       <option value="">Select DCS...</option>
                       {editedChannel.rxCtcssDcs.value && !DCS_CODES.includes(editedChannel.rxCtcssDcs.value) && (
@@ -386,7 +387,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                         ...editedChannel.rxCtcssDcs,
                         polarity: e.target.value as 'N' | 'P',
                       })}
-                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                      className={`${FIELD} border rounded px-2 py-1 text-sm mb-1`}
                       disabled={!editedChannel.rxCtcssDcs.value}
                     >
                       <option value="N">N</option>
@@ -410,7 +411,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       value: type === 'None' ? undefined : editedChannel.txCtcssDcs.value,
                     });
                   }}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                  className={`${FIELD} w-full border rounded px-2 py-1 text-sm mb-1`}
                 >
                   <option value="None">None</option>
                   <option value="CTCSS">CTCSS</option>
@@ -423,7 +424,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       ...editedChannel.txCtcssDcs,
                       value: e.target.value ? parseFloat(e.target.value) : undefined,
                     })}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                    className={`${FIELD} w-full border rounded px-2 py-1 text-sm mb-1`}
                   >
                     <option value="">Select CTCSS...</option>
                     {editedChannel.txCtcssDcs.value && !CTCSS_FREQUENCIES.includes(editedChannel.txCtcssDcs.value) && (
@@ -446,7 +447,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                         ...editedChannel.txCtcssDcs,
                         value: e.target.value ? parseInt(e.target.value) : undefined,
                       })}
-                      className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                      className={`${FIELD} flex-1 border rounded px-2 py-1 text-sm mb-1`}
                     >
                       <option value="">Select DCS...</option>
                       {editedChannel.txCtcssDcs.value && !DCS_CODES.includes(editedChannel.txCtcssDcs.value) && (
@@ -466,7 +467,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                         ...editedChannel.txCtcssDcs,
                         polarity: e.target.value as 'N' | 'P',
                       })}
-                      className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan mb-1"
+                      className={`${FIELD} border rounded px-2 py-1 text-sm mb-1`}
                       disabled={!editedChannel.txCtcssDcs.value}
                     >
                       <option value="N">N</option>
@@ -495,7 +496,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       max="15"
                       value={editedChannel.colorCode}
                       onChange={(e) => handleChange('colorCode', parseInt(e.target.value) || 0)}
-                      className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                     />
                     <p className="text-xs text-cool-gray mt-0.5">DMR color code (0-15)</p>
                   </div>
@@ -506,7 +507,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                     <select
                       value={editedChannel.contactId}
                       onChange={(e) => handleChange('contactId', parseInt(e.target.value) || 0)}
-                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                     >
                       <option value={0}>None</option>
                       {talkGroups.map((tg) => {
@@ -530,7 +531,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                     <select
                       value={editedChannel.rxGroupListId ?? 0}
                       onChange={(e) => handleChange('rxGroupListId', parseInt(e.target.value) || 0)}
-                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                     >
                       <option value={0}>None</option>
                       {rxGroups
@@ -556,7 +557,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                         const storageValue = uiValue === 1 ? 0 : 1; // TS1 (1) → 0, TS2 (2) → 1
                         handleChange('slotOperation', storageValue);
                       }}
-                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                     >
                       <option value={1}>Slot 1 (TS1)</option>
                       <option value={2}>Slot 2 (TS2)</option>
@@ -574,7 +575,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       <select
                         value={editedChannel.encryptionId ?? 0}
                         onChange={(e) => handleChange('encryptionId', parseInt(e.target.value) || 0)}
-                        className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                       >
                         <option value={0}>None</option>
                         {encryptionKeys
@@ -686,7 +687,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   max="15"
                   value={editedChannel.scanListId}
                   onChange={(e) => handleChange('scanListId', parseInt(e.target.value) || 0)}
-                  className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                  className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                 />
                 <p className="text-xs text-cool-gray mt-0.5">Scan list to add this channel to (0-15)</p>
               </div>
@@ -830,7 +831,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       max="255"
                       value={editedChannel.squelchLevel}
                       onChange={(e) => handleChange('squelchLevel', parseInt(e.target.value) || 0)}
-                      className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                     />
                     <p className="text-xs text-cool-gray mt-0.5">Squelch threshold (0-255)</p>
                   </div>
@@ -844,7 +845,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                     <select
                       value={editedChannel.rxSquelchMode}
                       onChange={(e) => handleChange('rxSquelchMode', e.target.value)}
-                      className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                     >
                       <option value="Carrier/CTC">Carrier/CTC</option>
                       {/* The DA-7X2's own second option. Without it a channel
@@ -877,7 +878,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <select
                     value={editedChannel.stepFrequency}
                     onChange={(e) => handleChange('stepFrequency', parseInt(e.target.value) || 0)}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                   >
                     <option value={0}>2.5K</option>
                     <option value={1}>5K</option>
@@ -900,7 +901,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <select
                     value={editedChannel.signalingType}
                     onChange={(e) => handleChange('signalingType', e.target.value)}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                   >
                     <option value="None">None</option>
                     <option value="DTMF">DTMF</option>
@@ -920,7 +921,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <select
                     value={editedChannel.pttIdType}
                     onChange={(e) => handleChange('pttIdType', e.target.value)}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                   >
                     <option value="Off">Off</option>
                     <option value="BOT">BOT</option>
@@ -942,7 +943,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                     max="63"
                     value={editedChannel.pttId}
                     onChange={(e) => handleChange('pttId', parseInt(e.target.value) || 0)}
-                    className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                    className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                   />
                   <p className="text-xs text-cool-gray mt-0.5">PTT ID number (0-63)</p>
                 </div>
@@ -1005,7 +1006,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 <select
                   value={editedChannel.emergencySystemId}
                   onChange={(e) => handleChange('emergencySystemId', parseInt(e.target.value))}
-                  className="w-full bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                  className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                 >
                   <option value={0}>None</option>
                   {analogEmergencySystems.map((sys, idx) => (
@@ -1042,7 +1043,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                 <select
                   value={editedChannel.aprsReportMode}
                   onChange={(e) => handleChange('aprsReportMode', e.target.value)}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                  className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                 >
                   <option value="Off">Off</option>
                   <option value="Digital">Digital</option>
@@ -1099,7 +1100,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                           value={String(typeof raw === 'number' ? raw : 0)}
                           disabled={disabled}
                           onChange={(e) => handleChange(c.field, parseInt(e.target.value) || 0)}
-                          className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan disabled:opacity-40"
+                          className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                         >
                           {c.editor.options.map((label, i) => (
                             <option key={label} value={String(i)}>
@@ -1118,7 +1119,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                             const parsed = parseInt(e.target.value);
                             handleChange(c.field, Number.isNaN(parsed) ? 0 : parsed);
                           }}
-                          className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan disabled:opacity-40"
+                          className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
                         />
                       )}
                       <p className="text-xs text-cool-gray mt-0.5">{c.offset}</p>

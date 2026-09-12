@@ -15,6 +15,7 @@ import { RptrsSource } from './sources/RptrsSource';
 import { MmdvmSource } from './sources/MmdvmSource';
 import { FixedChannelsSource } from './sources/FixedChannelsSource';
 import { PageHeader } from '../ui/PageHeader';
+import { FIELD } from '../ui/controlStyles';
 
 export const SmartImportTab: React.FC = () => {
   const { caps } = useRadioCapabilities();
@@ -234,7 +235,7 @@ export const SmartImportTab: React.FC = () => {
                 onChange={(e) => setLatitude(e.target.value)}
                 placeholder="42.3601"
                 step="any"
-                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+                className={`${FIELD} w-full border rounded px-3 py-2`}
               />
             </div>
             <div>
@@ -245,7 +246,7 @@ export const SmartImportTab: React.FC = () => {
                 onChange={(e) => setLongitude(e.target.value)}
                 placeholder="-71.0589"
                 step="any"
-                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+                className={`${FIELD} w-full border rounded px-3 py-2`}
               />
             </div>
           </div>
@@ -261,7 +262,7 @@ export const SmartImportTab: React.FC = () => {
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
                   placeholder="Boston"
-                  className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+                  className={`${FIELD} w-full border rounded px-3 py-2`}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && city.trim() && !isSearchingAll) {
                       handleSearchAll();
@@ -276,7 +277,7 @@ export const SmartImportTab: React.FC = () => {
                   value={state}
                   onChange={(e) => setState(e.target.value)}
                   placeholder="MA"
-                  className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+                  className={`${FIELD} w-full border rounded px-3 py-2`}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && city.trim() && !isSearchingAll) {
                       handleSearchAll();
@@ -296,7 +297,7 @@ export const SmartImportTab: React.FC = () => {
             onChange={(e) => setSearchRadius(e.target.value)}
             min="1"
             max="200"
-            className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+            className={`${FIELD} w-full border rounded px-3 py-2`}
           />
         </div>
 
