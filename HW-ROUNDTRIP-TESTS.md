@@ -193,6 +193,20 @@ The same write moved channel 56's TX contact 15 → 13 to follow TG0015, and the
 radio showed that channel's group call as TG0015's ID. Reference renumbering is
 confirmed too: without it the channel would have shown TG0017.
 
+**Settings, 2026-09-12 — the most-used tab, finally proven.**
+
+`keyTone` (0x000) off -> on and `sqlLevelA` (0x009) 2 -> 5, staged in NeonPlug
+and written. Confirmed ON THE RADIO, not by reading our own bytes back: a key
+press beeped where it had been silent, and the squelch menu read 5. `tot` at
+0x004 still read 4 afterwards, and the dry run had accounted for exactly two
+bytes in one frame, so nothing else in the region moved.
+
+This one also proved the confirmation dialog. Settings reach a D890 plan by
+being STAGED on the protocol before planning, and until 2026-09-11 only the
+write path staged them — the panel would have reported 0 bytes for this very
+edit and the guard would have aborted a write the operator had approved. It
+reported `settings: 2 byte(s) in 1 frame(s)`, matching the plan exactly.
+
 **Channel ADD, 2026-09-11 — records the radio had never held.**
 
 Two channels were added in NeonPlug and written: **202 `ZULU SIM`** (147.000

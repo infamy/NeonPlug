@@ -738,8 +738,11 @@ Each is a `hardwareRoundTrip` flag in `recordLayout.ts` waiting to be earned.
 - ☐ GPS roaming geofence
 - ☐ Roaming channel
 - ☐ Power-on display text
-- ☐ Settings — any non-APRS field. Goes through the buffered path
-  (`writeRadioSettings` stages, `writeCodeplug` sends); **never exercised.**
+- ☑ **Settings — DONE 2026-09-12.** `keyTone` off -> on and `sqlLevelA` 2 -> 5,
+  written together and confirmed ON THE RADIO (a key press beeped; the squelch
+  menu read 5). Goes through the buffered path, so this also proved the
+  confirmation dialog reports staged settings — it said `settings: 2 byte(s) in
+  1 frame(s)`, matching the plan.
 
 ### Tier 3 — expected to FAIL, and worth confirming cheaply
 
