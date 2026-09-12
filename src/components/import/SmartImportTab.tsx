@@ -14,6 +14,7 @@ import { TaflSource } from './sources/TaflSource';
 import { RptrsSource } from './sources/RptrsSource';
 import { MmdvmSource } from './sources/MmdvmSource';
 import { FixedChannelsSource } from './sources/FixedChannelsSource';
+import { PageHeader } from '../ui/PageHeader';
 
 export const SmartImportTab: React.FC = () => {
   const { caps } = useRadioCapabilities();
@@ -165,17 +166,18 @@ export const SmartImportTab: React.FC = () => {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div className="h-full overflow-y-auto">
+      {/* One title for the tab, named what the tab is called. This page used to
+          carry TWO page-level headings — "Smart Import/Export" at the top and
+          "Channel Wizard" halfway down — inside a p-6 that doubled <main>'s own
+          padding. Every card below already names its section. */}
+      <PageHeader
+        title="Channel Wizard"
+        description="Import channels from a CHIRP CSV, or find nearby repeaters and generate channels and zones for your location."
+      />
+
       {/* 1. ChirpSource */}
       <ChirpSource onError={handleSetError} />
-
-      {/* 2. Channel Wizard heading */}
-      <div className="mb-6">
-        <SectionTitle as="h2" size="xl" bold className="text-2xl">Channel Wizard</SectionTitle>
-        <p className="text-cool-gray">
-          Find nearby repeaters and automatically generate channels and zones based on your location
-        </p>
-      </div>
 
       {/* 3. Location controls card */}
       <Card padding="tight" className="mb-4">

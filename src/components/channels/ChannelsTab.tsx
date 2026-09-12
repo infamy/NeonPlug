@@ -12,6 +12,7 @@ import { isVFOChannel } from '../../utils/vfoChannels';
 import { useRadioStore } from '../../store/radioStore';
 import { BroadcastChannelsTable } from './BroadcastChannelsTable';
 import { D890_BROADCAST } from '../../radios/d890uv/broadcastChannels';
+import { PageHeader } from '../ui/PageHeader';
 
 /** Which channel table the tab is showing. */
 type ChannelView = 'main' | 'am' | 'fm';
@@ -157,9 +158,9 @@ export const ChannelsTab: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="mb-4 flex items-center justify-between shrink-0">
-        <h2 className="text-2xl font-bold text-neon-cyan">Channels</h2>
-        <div className="flex items-center gap-4">
+      <PageHeader
+        title="Channels"
+        actions={<>
           {tables.broadcast && (
             <div className="flex items-center gap-1">
               {([
@@ -181,7 +182,7 @@ export const ChannelsTab: React.FC = () => {
               ))}
             </div>
           )}
-          <div className="text-cool-gray">
+          <div>
             {isBroadcast
               ? `${filteredBroadcast.length} ${formatPlural(filteredBroadcast.length, 'channel')}`
               : `${filteredChannels.length - vfoChannels.length} ${formatPlural(filteredChannels.length - vfoChannels.length, 'channel')}${vfoChannels.length > 0 ? ` (${vfoChannels.length} ${formatPlural(vfoChannels.length, 'VFO')})` : ''}`}
@@ -197,8 +198,8 @@ export const ChannelsTab: React.FC = () => {
               + Add
             </button>
           )}
-        </div>
-      </div>
+        </>}
+      />
       <div className="mb-3 flex items-center gap-3 shrink-0">
         <div className="relative flex-1 min-w-0">
           <input

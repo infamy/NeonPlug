@@ -23,9 +23,9 @@ import { RecordLayoutPanel } from './RecordLayoutPanel';
 import { WriteDryRunPanel } from './WriteDryRunPanel';
 import { MemoryImagePanel } from './MemoryImagePanel';
 import { Card } from '../ui/Card';
-import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { PageHeader } from '../ui/PageHeader';
 
 export const DiagnosticsTab: React.FC = () => {
   const { rawRadioSettingsData, blockMetadata, blockData } = useRadioStore();
@@ -87,15 +87,14 @@ export const DiagnosticsTab: React.FC = () => {
     return (
       <>
       <div className="h-full overflow-y-auto">
-        <div className="p-6">
-          <div className="mb-6">
-            <SectionTitle as="h2" size="xl" bold className="text-2xl !text-yellow-400">Diagnostics & Debug</SectionTitle>
-            <p className="text-cool-gray text-sm mt-1">
-              {hasGenericTools
-                ? 'Raw memory inspection and debug exports'
-                : 'Radio settings diagnostic tools'}
-            </p>
-          </div>
+        {/* No p-6 here: <main> already has one, and doubling it put this title
+            48px in while the other Diagnostics path sat at 24. */}
+        <div>
+          <PageHeader
+            title="Diagnostics & Debug"
+            tone="caution"
+            description={hasGenericTools ? 'Raw memory inspection and debug exports' : 'Radio settings diagnostic tools'}
+          />
 
           {/* Debug Export Section - Always visible */}
           <DebugExportsCard showAlert={showAlert} />
@@ -137,14 +136,11 @@ export const DiagnosticsTab: React.FC = () => {
   return (
     <>
     <div className="h-full overflow-y-auto">
-      <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <SectionTitle as="h2" size="xl" bold className="text-2xl !text-yellow-400">Diagnostics & Debug</SectionTitle>
-            <p className="text-cool-gray text-sm mt-1">Inspect raw memory offsets and verify field parsing</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Diagnostics & Debug"
+        tone="caution"
+        description="Inspect raw memory offsets and verify field parsing"
+      />
 
       {/* Debug Export Section */}
       <DebugExportsCard showAlert={showAlert} />

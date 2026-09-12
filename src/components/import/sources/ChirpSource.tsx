@@ -102,14 +102,8 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
 
   return (
     <>
-      <div className="mb-6">
-        <SectionTitle as="h2" size="xl" bold className="text-2xl">Smart Import/Export</SectionTitle>
-        <p className="text-cool-gray">
-          Import channels from CHIRP CSV format or export your channels to CHIRP CSV format
-        </p>
-      </div>
-
-      {/* Chirp CSV Import/Export Section */}
+      {/* Chirp CSV Import/Export Section. No page-level heading of its own: the
+          tab has one PageHeader, and this card's title names the section. */}
       <Card padding="tight" className="mb-4">
         <SectionTitle as="h3" size="lg" className="mb-4">Analog CHIRP CSV Import/Export</SectionTitle>
         <p className="text-sm text-cool-gray mb-4">

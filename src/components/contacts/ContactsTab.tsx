@@ -9,6 +9,7 @@ import { ProgressBar } from '../ui/ProgressBar';
 import { COUNTRIES_BY_REGION, type CountryRegion } from '../../constants/countries';
 import { US_STATES } from '../../constants/usStates';
 import type { Contact } from '../../models/Contact';
+import { PageHeader } from '../ui/PageHeader';
 
 // RadioID User interface
 interface RadioIDUser {
@@ -747,15 +748,15 @@ export const ContactsTab: React.FC = () => {
           rows per page, and when the content above is tall the whole thing
           OVERFLOWS rather than shrinking, handing the scroll to <main>. */}
       <div className="flex-1 flex flex-col min-h-[70vh]">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-neon-cyan">CSV Contacts</h2>
-          <div className="text-cool-gray">
-            {contacts.length} / {contactCapacity.toLocaleString()} {formatPlural(contacts.length, 'contact')}
-          </div>
-        </div>
-        <div className="mb-4 text-cool-gray text-sm">
-          CSV contacts are primarily imported from CSV or read from the radio. Use Import to load contacts.
-        </div>
+        <PageHeader
+          title="CSV Contacts"
+          description="CSV contacts are primarily imported from CSV or read from the radio. Use Import to load contacts."
+          actions={
+            <span>
+              {contacts.length} / {contactCapacity.toLocaleString()} {formatPlural(contacts.length, 'contact')}
+            </span>
+          }
+        />
         <div className="flex-1 min-h-0">
           <ContactsTable />
         </div>

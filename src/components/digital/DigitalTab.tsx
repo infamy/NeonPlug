@@ -26,6 +26,7 @@ import {
   encryptionTypeLabel,
   isEncryptionTypeLocked,
 } from '../../utils/encryptionKeys';
+import { PageHeader } from '../ui/PageHeader';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
@@ -254,13 +255,13 @@ export const DigitalTab: React.FC = () => {
 
   return (
     <>
-    <div className="p-6">
-      <div className="mb-6">
-        <SectionTitle as="h2" size="xl" bold className="text-2xl">Digital Settings</SectionTitle>
-        <p className="text-cool-gray text-sm">
-          Manage encryption keys, digital emergency systems, DMR radio IDs, talk groups, RX groups, and quick messages.
-        </p>
-      </div>
+    {/* No padding of its own: <main> already has p-6, and a second p-6 here put
+        this title 48px in when every other tab's is at 24. */}
+    <div>
+      <PageHeader
+        title="Digital Settings"
+        description="Manage encryption keys, digital emergency systems, DMR radio IDs, talk groups, RX groups, and quick messages."
+      />
 
       {/* The radio's OWN id, above the list of IDs it can transmit with —
           same family, but a separate record with a field they do not have. */}

@@ -28,6 +28,7 @@ import { SettingsFieldRenderer } from './fields';
 import type { RadioSettings } from '../../models/RadioSettings';
 import type { SettingsFieldDescriptor, SettingsFeature } from '../../types/settingsProfile';
 import { FEATURE_AREAS } from './featureAreas';
+import { PageHeader } from '../ui/PageHeader';
 
 /** Get value from settings by key; supports nested path (e.g. menuEnableFlags.zoneList) and lockKey mapping */
 function getFieldValue(settings: RadioSettings | null, key: string): unknown {
@@ -424,10 +425,7 @@ export const SettingsTab: React.FC = () => {
         )}
       </Modal>
 
-      <div className="mb-6">
-        <SectionTitle as="h2" size="xl" bold className="text-2xl">Settings</SectionTitle>
-        <p className="text-cool-gray text-sm mt-1">Radio information, memory usage, and configuration</p>
-      </div>
+      <PageHeader title="Settings" description="Radio information, memory usage, and configuration" />
 
       {!radioInfo ? (
         <Card variant="subdued" className="border-opacity-30 text-center">

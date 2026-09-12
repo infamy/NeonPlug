@@ -6,6 +6,7 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { Button } from '../ui/Button';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { downloadOfflineAsZip } from '../../utils/offlineDownload';
+import { PageHeader } from '../ui/PageHeader';
 
 const OFFLINE_FALLBACK_MESSAGE =
   'The offline version is available on GitHub Pages.\n\n' +
@@ -21,12 +22,10 @@ export const AboutTab: React.FC = () => {
   return (
     <>
     <div className="h-full overflow-y-auto">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-neon-cyan mb-2">About NeonPlug</h2>
-        <p className="text-cool-gray">
-          Online Digital CPS — program your radio directly from your browser.
-        </p>
-      </div>
+      <PageHeader
+        title="About NeonPlug"
+        description="Online Digital CPS — program your radio directly from your browser."
+      />
 
       <div className="space-y-6">
         {/* Offline Version */}
