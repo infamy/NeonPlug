@@ -18,7 +18,8 @@ import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { getRadioPickerOptions, getMigrationTargetModels } from '../../radios';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 import { migrateCodeplug, type MigrationLoss } from '../../services/codeplugMigration';
-import { exportableTables, applyImportedTables } from '../../services/codeplugExport';
+import { exportableTables } from '../../services/codeplugExport';
+import { applyCodeplugToStores } from '../../services/applyCodeplug';
 import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
 import { formatPlural } from '../../utils/formatPlural';
 // Codeplug export/import are lazy loaded when needed
@@ -230,30 +231,9 @@ export const Toolbar: React.FC = () => {
       const { importCodeplug } = await import('../../services/codeplugExport');
       const codeplugData = await importCodeplug(file);
       
-      // Populate all stores with imported data
-      setChannels(codeplugData.channels);
-      setZones(codeplugData.zones);
-      setScanLists(codeplugData.scanLists);
-      setContacts(codeplugData.contacts);
-      setDigitalEmergencies(codeplugData.digitalEmergencies);
-      if (codeplugData.digitalEmergencyConfig) {
-        setDigitalEmergencyConfig(codeplugData.digitalEmergencyConfig);
-      }
-      setAnalogEmergencies(codeplugData.analogEmergencies);
-      if (codeplugData.radioSettings) {
-        // Mark all imported settings as changed so a subsequent Write pushes
-        // the full block to the radio. Without this, imported settings load
-        // into the UI but never get written (issue #2 — the write path only
-        // encodes changedFields, which is empty right after import).
-        setRadioSettings(codeplugData.radioSettings, { markAllChanged: true });
-      }
-      setRadioInfo(codeplugData.radioInfo ?? null);
-      setMessages(codeplugData.messages ?? []);
-      setRadioIds(codeplugData.radioIds ?? []);
-      setQuickContacts(codeplugData.quickContacts ?? []);
-      setRXGroups(codeplugData.rxGroups ?? []);
-      setEncryptionKeys(codeplugData.encryptionKeys ?? []);
-      applyImportedTables(codeplugData.tables, useRadioStore.getState().setTable);
+      // An import marks the radio settings changed so a write sends them
+      // (issue #2); applyCodeplugToStores is the one place that decides it.
+      applyCodeplugToStores(codeplugData, 'import');
       
       const digCount = codeplugData.digitalEmergencies?.length ?? 0;
       const analogCount = codeplugData.analogEmergencies?.length ?? 0;
@@ -439,25 +419,7 @@ export const Toolbar: React.FC = () => {
   const handleRestoreSnapshot = async (id: string) => {
     const data = await getSnapshotData(id);
     if (!data) return;
-    setChannels(data.channels);
-    setZones(data.zones);
-    setScanLists(data.scanLists);
-    setContacts(data.contacts);
-    setDigitalEmergencies(data.digitalEmergencies);
-    if (data.digitalEmergencyConfig) {
-      setDigitalEmergencyConfig(data.digitalEmergencyConfig);
-    }
-    setAnalogEmergencies(data.analogEmergencies);
-    if (data.radioSettings) {
-      setRadioSettings(data.radioSettings);
-    }
-    setRadioInfo(data.radioInfo ?? null);
-    setMessages(data.messages ?? []);
-    setRadioIds(data.radioIds ?? []);
-    setQuickContacts(data.quickContacts ?? []);
-    setRXGroups(data.rxGroups ?? []);
-    setEncryptionKeys(data.encryptionKeys ?? []);
-    applyImportedTables(data.tables, useRadioStore.getState().setTable);
+    applyCodeplugToStores(data, 'restore');
     setSnapshotsModalOpen(false);
     showAlert(`Restored codeplug: ${data.channels.length} channels, ${data.zones.length} zones`, 'Restore');
   };

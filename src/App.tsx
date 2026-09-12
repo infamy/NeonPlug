@@ -16,21 +16,12 @@ const DiagnosticsTab = lazy(() => import('./components/diagnostics/DiagnosticsTa
 import { useChannelsStore } from './store/channelsStore';
 import { useContactsStore } from './store/contactsStore';
 import { useZonesStore } from './store/zonesStore';
-import { useScanListsStore } from './store/scanListsStore';
-import { useRadioSettingsStore } from './store/radioSettingsStore';
-import { useDigitalEmergencyStore } from './store/digitalEmergencyStore';
-import { useAnalogEmergencyStore } from './store/analogEmergencyStore';
-import { useQuickMessagesStore } from './store/quickMessagesStore';
-import { useDMRRadioIDsStore } from './store/dmrRadioIdsStore';
-import { useQuickContactsStore } from './store/quickContactsStore';
-import { useRXGroupsStore } from './store/rxGroupsStore';
-import { useEncryptionKeysStore } from './store/encryptionKeysStore';
 import { useRadioStore } from './store/radioStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { useAlert } from './hooks/useAlert';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import type { CodeplugData } from './services/codeplugExport';
-import { applyImportedTables } from './services/codeplugExport';
+import { applyCodeplugToStores } from './services/applyCodeplug';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
 import { setLogStore, logger, LogLevel } from './utils/protocolLogger';
 import { installDevStoreHandle } from './utils/devStoreHandle';
@@ -43,16 +34,7 @@ function App() {
   const { setChannels, channels } = useChannelsStore();
   const { setContacts } = useContactsStore();
   const { setZones } = useZonesStore();
-  const { setScanLists } = useScanListsStore();
-  const { setSettings: setRadioSettings } = useRadioSettingsStore();
-  const { setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
-  const { setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
-  const { setMessages } = useQuickMessagesStore();
-  const { setRadioIds } = useDMRRadioIDsStore();
-  const { setContacts: setQuickContacts } = useQuickContactsStore();
-  const { setGroups: setRXGroups } = useRXGroupsStore();
-  const { setKeys: setEncryptionKeys } = useEncryptionKeysStore();
-  const { setRadioInfo, setPreferredTransport, showPickRadioModal, setShowPickRadioModal } = useRadioStore();
+  const { setPreferredTransport, showPickRadioModal, setShowPickRadioModal } = useRadioStore();
   const { isConnecting, error: radioError } = useRadioConnection();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -144,30 +126,6 @@ function App() {
     }, 100);
   };
 
-  const applyCodeplugToStores = (codeplugData: CodeplugData) => {
-    setChannels(codeplugData.channels);
-    setZones(codeplugData.zones);
-    setScanLists(codeplugData.scanLists);
-    setContacts(codeplugData.contacts);
-    setDigitalEmergencies(codeplugData.digitalEmergencies);
-    if (codeplugData.digitalEmergencyConfig) {
-      setDigitalEmergencyConfig(codeplugData.digitalEmergencyConfig);
-    }
-    setAnalogEmergencies(codeplugData.analogEmergencies);
-    if (codeplugData.radioSettings) {
-      setRadioSettings(codeplugData.radioSettings);
-    }
-    setRadioInfo(codeplugData.radioInfo ?? null);
-    setMessages(codeplugData.messages ?? []);
-    setRadioIds(codeplugData.radioIds ?? []);
-    setQuickContacts(codeplugData.quickContacts ?? []);
-    setRXGroups(codeplugData.rxGroups ?? []);
-    setEncryptionKeys(codeplugData.encryptionKeys ?? []);
-    // Radio-specific tables (AM/FM, roaming, DTMF, hot keys …). Absent from
-    // files written before 2026-09-12, which is why this is a no-op for them.
-    applyImportedTables(codeplugData.tables, useRadioStore.getState().setTable);
-  };
-
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -181,7 +139,7 @@ function App() {
         const { importCodeplug } = await import('./services/codeplugExport');
         const codeplugData = await importCodeplug(file);
         
-        applyCodeplugToStores(codeplugData);
+        applyCodeplugToStores(codeplugData, 'import');
         
         setShowStartupModal(false);
         const { saveSnapshot } = await import('./services/codeplugSnapshots');
@@ -247,7 +205,7 @@ function App() {
   };
 
   const handleRestoreSnapshot = (codeplugData: CodeplugData) => {
-    applyCodeplugToStores(codeplugData);
+    applyCodeplugToStores(codeplugData, 'restore');
     setShowStartupModal(false);
     setShowPickRadioModal(false);
   };
