@@ -423,19 +423,32 @@ a one-field change moves only that field's bytes.
 
 ### 2a. Other gaps the 2026-09-02 audit found
 
-- ☐ **TX frequency reads as 0.1 MHz on simplex channels.** `parseChannel`'s
-  duplex-0 branch returns the bytes at 0x04 as an ABSOLUTE TX whenever they are
-  non-zero. All four real radio fixtures store `00 01 00 00` there with the
-  duplex bits clear, so they decode as `tx=0.1` — measured 2026-09-11 on
-  `channel-{0,1,2,3}.bin` (rx 435.525/436.325/437.575/438.875, all tx=0.1).
-  The new evidence says duplex 0 means SIMPLEX and 0x04 is a don't-care: the
-  vendor's own channel 102 repeats RX there, these repeat 0.1, and the CPS
-  drives the split through the duplex bits (6-7 of 0x08) plus a magnitude at
-  0x04 — bit 6 with 0.600 gave TX = RX+0.6, bit 7 with 0.100 gave TX = RX-0.1.
-  Fixing it means returning `rxFrequency` for duplex 0 unconditionally. Held
-  back only because the write path's own comment flags VFO A as a duplex-0
-  record with a genuine odd split, which must be checked first — the VFO may
-  simply not use this field the way a channel does.
+- ☑ **TX frequency reads as 0.1 MHz on some channels — INVESTIGATED 2026-09-11,
+  NO CHANGE.** `parseChannel`'s duplex-0 branch returns the bytes at 0x04 as an
+  absolute TX when they are non-zero, and four older fixtures
+  (`channel-{0,1,2,3}.bin`) hold `00 01 00 00` there, so they decode as
+  `tx=0.1`. The fix looked like one line: return `rxFrequency` for duplex 0.
+
+  It would have been wrong. The rule is that we do what the vendor CPS does, and
+  the CPS's own data answers this twice over:
+
+  1. **Duplex 1 and 2 are confirmed** against the vendor's CSV export of the
+     diverse codeplug — all 8 offset channels match `rx ± magnitude`, e.g.
+     ch84 `146.0 - 7.6 = 138.4` and the CPS says 138.4. Bits 7-6 of 0x08 pick
+     the direction; 0x04 holds the magnitude.
+  2. **The CPS never leaves a stray value at 0x04.** All 110 duplex-0 records in
+     that codeplug repeat RX there, and channel 1 read back `14 50 12 50` twice
+     over after the 2026-09-11 CPS write. So for every CPS-managed channel the
+     two readings are IDENTICAL and there is nothing to fix.
+
+  And the VFO proves the field is meaningful at duplex 0: VFO A reads RX
+  438.7375 with `43 51 25 00` (435.1250) at 0x04 — a real split, not padding.
+  Returning RX unconditionally would have thrown that away.
+
+  What remains is cosmetic and self-healing: a record the CPS did not write can
+  carry a leftover, and NeonPlug shows it as the TX. The vendor's next write
+  normalises it. Revisit only if a radio shows up with such a channel in a
+  CPS-managed codeplug.
 
 - ☐ **The FM scan mask write does not stick.** MEASURED 2026-09-11: a write of
   `00` to `0x3402050` left the radio holding `01`, its original value, while six
