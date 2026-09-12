@@ -80,7 +80,7 @@ export const D890StatusMessagesArea: React.FC = () => {
             </thead>
             <tbody>
               {messages.map(({ slot, text }) => (
-                <tr key={slot} className="border-b border-panel">
+                <tr key={slot} className="border-b border-neon-cyan border-opacity-20">
                   <td className="px-3 py-2 text-muted font-mono">{slot}</td>
                   <td className="px-3 py-2">
                     <input

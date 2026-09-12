@@ -137,7 +137,7 @@ export const D890DtmfArea: React.FC = () => {
       </Card>
 
       <Card padding="none">
-        <div className="px-3 py-2 border-b border-panel">
+        <div className="px-3 py-2 border-b border-neon-cyan border-opacity-20">
           <span className="text-neon-cyan font-bold text-sm">Encode List</span>
           <span className="text-muted text-xs ml-2">
             A channel selects an entry by INDEX, so an empty row keeps its position
@@ -155,7 +155,7 @@ export const D890DtmfArea: React.FC = () => {
             {Array.from({ length: D890_DTMF.ENCODE_SLOTS }, (_, i) => {
               const value = dtmf.encodeList[i] ?? '';
               return (
-                <tr key={i} className="border-b border-panel">
+                <tr key={i} className="border-b border-neon-cyan border-opacity-20">
                   <td className="px-3 py-2 text-muted font-mono">{i}</td>
                   <td className="px-3 py-2 font-mono">
                     <input

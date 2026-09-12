@@ -21,7 +21,7 @@ const Row: React.FC<{ label: string; children: React.ReactNode; hint?: string }>
   children,
   hint,
 }) => (
-  <div className="flex justify-between gap-4 py-1 border-b border-panel">
+  <div className="flex justify-between gap-4 py-1 border-b border-neon-cyan border-opacity-20">
     <span className="text-cool-gray">
       {label}
       {hint && <span className="text-muted"> · {hint}</span>}

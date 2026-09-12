@@ -154,7 +154,7 @@ const LocationPicker: React.FC<{
       {error && <p className="text-xs text-amber-400">{error}</p>}
 
       {results && results.length > 0 && (
-        <ul className="max-h-40 overflow-y-auto divide-y divide-panel">
+        <ul className="max-h-40 overflow-y-auto divide-y divide-neon-cyan divide-opacity-20">
           {results.map((r, i) => (
             <li key={`${r.latitude}-${r.longitude}-${i}`}>
               <button
@@ -427,7 +427,7 @@ export const D890GpsRoamingArea: React.FC = () => {
                 const longitude = gpsRoamingPositionToDecimal(entry.longitude);
                 return (
                   <React.Fragment key={entry.index}>
-                  <tr className="border-b border-panel">
+                  <tr className="border-b border-neon-cyan border-opacity-20">
                     <td className="px-2 py-1 text-muted">{entry.index + 1}</td>
                     <td className="px-2 py-1">
                       <EnableToggle
@@ -517,7 +517,7 @@ export const D890GpsRoamingArea: React.FC = () => {
                     </td>
                   </tr>
                   {pickerFor === entry.index && (
-                    <tr className="border-b border-panel">
+                    <tr className="border-b border-neon-cyan border-opacity-20">
                       {/* Spans the row: the search results need real width, and
                           a popover over a scrolling table would clip. */}
                       <td colSpan={7} className="px-2 pb-2">

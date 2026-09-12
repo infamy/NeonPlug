@@ -98,7 +98,7 @@ export const D890HotKeysArea: React.FC = () => {
             </thead>
             <tbody>
               {keys.map((k) => (
-                <tr key={k.slot} className="border-b border-panel">
+                <tr key={k.slot} className="border-b border-neon-cyan border-opacity-20">
                   <td className="px-3 py-2 text-muted">{ROW_LABEL(k.slot)}</td>
                   <td className="px-3 py-2">
                     <select

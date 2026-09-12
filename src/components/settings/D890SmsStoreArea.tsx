@@ -81,7 +81,7 @@ export const D890SmsStoreArea: React.FC = () => {
             </thead>
             <tbody>
               {store.map((e) => (
-                <tr key={e.slot} className="border-b border-panel">
+                <tr key={e.slot} className="border-b border-neon-cyan border-opacity-20">
                   <td className="px-3 py-2 text-muted font-mono">{e.slot}</td>
                   <td className="px-3 py-2 text-muted font-mono">
                     {e.next === null ? '—' : e.next}

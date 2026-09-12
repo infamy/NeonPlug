@@ -57,7 +57,7 @@ export const D890TonesArea: React.FC = () => {
                 </thead>
                 <tbody>
                   {fiveTone.map((t) => (
-                    <tr key={t.index} className="border-b border-panel">
+                    <tr key={t.index} className="border-b border-neon-cyan border-opacity-20">
                       <td className="px-2 py-1 text-muted">{t.index + 1}</td>
                       <td className="px-2 py-1 text-muted">{t.digits.length}</td>
                       <td className="px-2 py-1 text-white font-mono">{t.digits}</td>
@@ -92,7 +92,7 @@ export const D890TonesArea: React.FC = () => {
                 </thead>
                 <tbody>
                   {twoTone.map((t) => (
-                    <tr key={t.index} className="border-b border-panel">
+                    <tr key={t.index} className="border-b border-neon-cyan border-opacity-20">
                       <td className="px-2 py-1 text-muted">{t.index + 1}</td>
                       <td className="px-2 py-1 text-white">
                         {t.name || <span className="text-muted">—</span>}

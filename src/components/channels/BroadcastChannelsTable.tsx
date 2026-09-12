@@ -232,7 +232,7 @@ export const BroadcastChannelsTable: React.FC<{
         </thead>
         <tbody>
           {entries.map((ch) => (
-            <tr key={ch.index} className="border-b border-panel hover:bg-neon-cyan hover:bg-opacity-5">
+            <tr key={ch.index} className="border-b border-neon-cyan border-opacity-20 hover:bg-neon-cyan hover:bg-opacity-5">
               <td className="px-3 py-2">
                 <input
                   type="checkbox"

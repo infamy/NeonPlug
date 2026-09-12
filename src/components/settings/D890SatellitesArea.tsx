@@ -74,7 +74,7 @@ export const D890SatellitesArea: React.FC = () => {
               </thead>
               <tbody>
                 {tables.satellites.map((sat) => (
-                  <tr key={sat.slot} className="border-b border-panel">
+                  <tr key={sat.slot} className="border-b border-neon-cyan border-opacity-20">
                     <td className="px-2 py-1.5 text-muted">{sat.slot}</td>
                     <td className="px-2 py-1.5 text-white">{sat.name || '—'}</td>
                     <td className="px-2 py-1.5 font-mono text-cool-gray">

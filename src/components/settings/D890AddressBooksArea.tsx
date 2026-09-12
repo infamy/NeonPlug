@@ -60,7 +60,7 @@ const AnalogBook: React.FC<{
 
   return (
     <Card padding="none" className="mb-4">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-panel">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-neon-cyan border-opacity-20">
         <span className="text-neon-cyan font-bold text-sm">
           Analog (DTMF) — {contacts.length} {formatPlural(contacts.length, 'entry', 'entries')}
         </span>
@@ -93,7 +93,7 @@ const AnalogBook: React.FC<{
           </thead>
           <tbody>
             {contacts.map((c, i) => (
-              <tr key={`${c.slot}-${i}`} className="border-b border-panel">
+              <tr key={`${c.slot}-${i}`} className="border-b border-neon-cyan border-opacity-20">
                 <td className="px-3 py-2 text-muted font-mono">{i}</td>
                 <td className="px-3 py-2 font-mono">
                   <input
@@ -149,7 +149,7 @@ const MdcBook: React.FC<{
 
   return (
     <Card padding="none">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-panel">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-neon-cyan border-opacity-20">
         <span className="text-neon-cyan font-bold text-sm">
           MDC1200 / QDC — {contacts.length} {formatPlural(contacts.length, 'entry', 'entries')}
         </span>
@@ -197,7 +197,7 @@ const MdcBook: React.FC<{
             </thead>
             <tbody>
               {contacts.map((c, i) => (
-                <tr key={`${c.slot}-${i}`} className="border-b border-panel">
+                <tr key={`${c.slot}-${i}`} className="border-b border-neon-cyan border-opacity-20">
                   <td className="px-3 py-2 text-muted font-mono">{i}</td>
                   <td className="px-3 py-2">
                     <select

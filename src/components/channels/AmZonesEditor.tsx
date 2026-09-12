@@ -125,7 +125,7 @@ export const AmZonesEditor: React.FC<{ channels: D890BroadcastChannel[] }> = ({ 
       ) : (
         <div className="flex flex-col gap-2">
           {zones.map((zone) => (
-            <div key={zone.index} className="border-t border-panel pt-2 first:border-t-0 first:pt-0">
+            <div key={zone.index} className="border-t border-neon-cyan border-opacity-20 pt-2 first:border-t-0 first:pt-0">
               <div className="flex items-center gap-2 mb-1">
                 <input
                   value={zone.name}

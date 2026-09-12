@@ -80,7 +80,7 @@ export const AutoRepeaterOffsets: React.FC = () => {
             </thead>
             <tbody>
               {used.map(({ mhz, index }) => (
-                <tr key={index} className="border-b border-panel">
+                <tr key={index} className="border-b border-neon-cyan border-opacity-20">
                   <td className="px-3 py-2 text-muted font-mono">{index}</td>
                   <td className="px-3 py-2 font-mono">
                     <input

@@ -63,7 +63,7 @@ export const D890RoamingArea: React.FC = () => {
                   </thead>
                   <tbody>
                     {channels.map((c) => (
-                      <tr key={c.index} className="border-b border-panel">
+                      <tr key={c.index} className="border-b border-neon-cyan border-opacity-20">
                         <td className="px-2 py-1.5 text-muted">{c.index + 1}</td>
                         <td className="px-2 py-1.5 text-white">{c.name || '—'}</td>
                         <td className="px-2 py-1.5 font-mono text-cool-gray">{fmtFreq(c.rxFrequency)}</td>
