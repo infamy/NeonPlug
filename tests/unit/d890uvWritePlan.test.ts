@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseChannel, decodeOccupancyMask, occupiedIndices } from '../../src/radios/d890uv/structures';
+import { parseChannel, decodeOccupancyMask, occupiedIndices, channelAddresses } from '../../src/radios/d890uv/structures';
 import { planChannelWrite, D890WriteRefusedError } from '../../src/radios/d890uv/writePlan';
 import { applyChannelToRecord } from '../../src/radios/d890uv/channelWrite';
 import type { Channel } from '../../src/models/Channel';
@@ -105,13 +105,28 @@ describe('DA-7X2 channel write plan', () => {
     }
   });
 
-  it('REFUSES a write when a channel has no original record', () => {
-    // Without the bytes from the radio there is nothing to patch, and building a
-    // record from scratch would zero every undecoded field.
+  it('BUILDS a record when a channel has no original, without zeroing what it cannot decode', () => {
+    // This used to refuse: without bytes from the radio there was nothing to
+    // patch, and a record built from zeros would blank every undecoded field.
+    // Since 2026-09-11 there is a vendor-derived blank to build on, so an ADD
+    // is planned instead of refused — but the hazard the refusal guarded is
+    // still real, so the skeleton the vendor puts in a fresh record must
+    // survive into the plan.
     const { channels, counts } = setup(2);
-    expect(() =>
-      planChannelWrite({ channels, originals: new Map(), originalMask: REAL_MASK, counts, referencingTables: [] }),
-    ).toThrow(/no original record/);
+    const plan = planChannelWrite({
+      channels, originals: new Map(), originalMask: REAL_MASK, counts, referencingTables: [],
+    });
+    expect(plan.frames.length).toBeGreaterThan(0);
+
+    // Reassemble channel 1's record out of the planned frames.
+    const first = channelAddresses(0).primary;
+    const rec = new Uint8Array(0x80);
+    for (const f of plan.frames) {
+      if (f.address >= first && f.address < first + 0x80) rec.set(f.data, f.address - first);
+    }
+    // The CPS's own defaults for a new channel — not zeros.
+    expect([rec[0x10], rec[0x11]]).toEqual([0xcf, 0x09]);
+    expect([...rec.subarray(0x23, 0x2b)]).toEqual(Array(8).fill(0xff));
   });
 
   it('names every failing reference, not just the first', () => {
@@ -203,8 +218,10 @@ describe('the reverse-reference gate', () => {
 
   it('refuses a VFO whose original was never read, like any other record', () => {
     // readChannels prepends VFO A/B as 4001/4002 and caches their originals
-    // under the same keys. Without one there is nothing to patch, and building
-    // a VFO from zeros would overwrite the fields this driver does not decode.
+    // under the same keys. A normal channel with no original is an ADD and is
+    // now built from the vendor blank — but a VFO always exists on the radio,
+    // so a missing original there means the read did not complete. Building one
+    // from defaults would replace the operator's live working frequency.
     const { channels, originals, counts } = setup(2);
     const vfo = { ...channels[0], number: 4001 } as Channel;
     expect(() =>
@@ -212,7 +229,7 @@ describe('the reverse-reference gate', () => {
         channels: [...channels, vfo], originals, originalMask: REAL_MASK, counts,
         referencingTables: [],
       }),
-    ).toThrow(/no original record for channel/);
+    ).toThrow(/no original record for VFO channel/);
   });
 });
 

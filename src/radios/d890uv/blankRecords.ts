@@ -24,6 +24,7 @@
  */
 
 import { D890_ADDR, D890_LIMITS } from './constants';
+import { D890_CHANNEL_RECORD_BYTES } from './channelWrite';
 import { D890_BROADCAST } from './broadcastChannels';
 import { D890_AM_ZONES } from './amZones';
 
@@ -94,14 +95,54 @@ export const blankAmZone = (): Uint8Array => {
  * Roughly 40% of its 0x80 bytes are not decoded by this driver, and unlike
  * every record above, the vendor capture cannot supply them: it writes only
  * occupied slots, so no capture anywhere contains an unused channel record.
- * Building one from zeros would set ~50 bytes of unknown meaning to a value
- * nothing has ever observed on this radio.
  *
- * The evidence needed is a diagnostic dump of a never-used slot — e.g. channel
- * 201 at 0x1082400. Until then, adding a channel is refused rather than guessed.
- * See `DA7X2-NEEDS-CONFIRMING.md`.
+ * RESOLVED 2026-09-11, and not by the dump everyone expected. Two never-used
+ * slots (channels 201 and 501) were read off the radio and both came back as
+ * 128 bytes of 0xFF — ERASED FLASH. The vendor never writes an unused slot, so
+ * no dump of one can reveal what a new record should contain. That approach was
+ * a dead end.
+ *
+ * What settled it was asking the vendor CPS to make two: channels 200
+ * (`ZULU ANA`, analog 146.000 with a +0.600 offset, CTCSS 100.0 decode / 167.9
+ * encode) and 201 (`ZULU DIS`, digital 440.100, colour code RX 7 / TX 15,
+ * contact TG0015), added in the CPS and written to the radio. Fixtures:
+ * `tests/fixtures/d890uv/channel-fresh-{analog-200,digital-201}.bin`.
+ *
+ * Those two records make the blank provable rather than inferred:
+ *
+ *   1. **Every byte that differs between them is one the encoder already
+ *      writes** — 0x00/0x01 and 0x05 (frequencies), 0x08-0x0b (flags and
+ *      tones), 0x14 (contact), 0x20/0x21 (colour code, DMR flags) and 0x43 (TX
+ *      colour code). So ONE mode-neutral blank is enough: an analog add cannot
+ *      inherit digital defaults, because the encoder overwrites every
+ *      mode-specific byte from the user's own channel.
+ *   2. **What they agree on is the blank.** Zeros everywhere, except the bytes
+ *      below — and of those, only 0x10-0x11 and 0x23-0x2a are outside the
+ *      encoder's allow-list, i.e. the only ones this constant truly decides.
+ *
+ * The old refusal is gone, but the rule behind it is not: a from-scratch record
+ * is built on the vendor's own defaults, never on zeros.
  */
-export const CHANNEL_BLANK_IS_UNKNOWN = true;
+export function blankChannelRecord(): Uint8Array {
+  const rec = new Uint8Array(D890_CHANNEL_RECORD_BYTES);
+  // DCS fields — 0x11 in both fresh records. The encoder writes these, so the
+  // value here only shows through for a caller that sets no DCS at all.
+  rec[0x0c] = 0x11;
+  rec[0x0e] = 0x11;
+  // NOT written by the encoder, and the reason this function has to exist:
+  // the CPS's own default for a new channel, 0x09cf little-endian. An older
+  // record on the same radio holds 0x03e8 here, so it is a real field with a
+  // default rather than padding — zeros would be a value never observed.
+  rec[0x10] = 0xcf;
+  rec[0x11] = 0x09;
+  // Scan list and RX group: 0xFF = none. Also encoder-written.
+  rec[0x1b] = 0xff;
+  rec[0x1c] = 0xff;
+  // NOT written by the encoder. An 8-byte 0xFF run present in every record this
+  // radio has ever shown us — the fresh pair, and the deleted channel 102.
+  rec.fill(0xff, 0x23, 0x2b);
+  return rec;
+}
 
 /**
  * Scan list — a 0x200 record with the vendor's own defaults for the fields the

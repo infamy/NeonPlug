@@ -3,6 +3,7 @@ import type { Zone } from '../../models/Zone';
 import { D890_ADDR, D890_LIMITS } from './constants';
 import { assertWritableAddress } from './framing';
 import { channelAddresses, parseChannel } from './structures';
+import { blankChannelRecord } from './blankRecords';
 import { NO_TX_FREQUENCY } from '../../services/validation/frequencyValidator';
 import {
   applyZoneMembersToRecord,
@@ -11,6 +12,7 @@ import {
 } from './tableWrite';
 import {
   applyChannelToRecord,
+  newChannelRecord,
   channelRecordFrames,
   D890_CHANNEL_RECORD_BYTES,
 } from './channelWrite';
@@ -226,13 +228,24 @@ export function planChannelWrite(input: D890ChannelWriteInput): D890ChannelWrite
         i === D890_ADDR.VFO_B_INDEX)
     );
   });
-  const missing = writable.filter((c) => !originals.has(c.number)).map((c) => c.number);
-  if (missing.length > 0) {
+  // A channel with no original is an ADD, not an error. The read is mask-first,
+  // so an unoccupied slot is never fetched — there is nothing to patch, and
+  // until 2026-09-11 that refused every newly added channel. It is now built on
+  // `blankChannelRecord()`, the vendor CPS's own defaults for a fresh record.
+  //
+  // The VFOs are the exception and still refuse. They always exist on the
+  // radio, so a missing original there means the read did not complete rather
+  // than that the user added something — and writing a blank over live VFO
+  // state would replace the operator's working frequency with defaults.
+  const missingVfo = writable
+    .filter((c) => !originals.has(c.number))
+    .filter((c) => c.number - 1 === D890_ADDR.VFO_A_INDEX || c.number - 1 === D890_ADDR.VFO_B_INDEX)
+    .map((c) => c.number);
+  if (missingVfo.length > 0) {
     throw new D890WriteRefusedError(
-      `Refusing to write: no original record for channel(s) ${missing.slice(0, 10).join(', ')}` +
-        `${missing.length > 10 ? ` and ${missing.length - 10} more` : ''}. ` +
-        `Every channel must be read from the radio before it can be written, or the ` +
-        `fields this driver does not decode would be overwritten with zeros.`
+      `Refusing to write: no original record for VFO channel(s) ${missingVfo.join(', ')}. ` +
+        `The VFOs always exist on the radio, so this means the read did not complete — ` +
+        `read the radio again before writing.`
     );
   }
 
@@ -265,8 +278,13 @@ export function planChannelWrite(input: D890ChannelWriteInput): D890ChannelWrite
       continue;
     }
 
-    const original = originals.get(channel.number)!;
-    const record = applyChannelToRecord(original, channel);
+    // An ADD builds from the vendor's blank and picks its own duplex mode; an
+    // edit patches what the radio gave us and never changes duplex. See the
+    // note above the VFO refusal, and `newChannelRecord`.
+    const original = originals.get(channel.number);
+    const record = original
+      ? applyChannelToRecord(original, channel)
+      : newChannelRecord(channel, blankChannelRecord());
     const { primary } = channelAddresses(index);
 
     // A record goes as all eight frames or not at all — the captured vendor

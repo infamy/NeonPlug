@@ -288,6 +288,40 @@ export function encodeDcsField(code: number | undefined, polarity: 'N' | 'P' | u
  * not something this function does, because getting it wrong silently changes
  * the transmit frequency.
  */
+/**
+ * Build a record for a channel the radio has never held.
+ *
+ * `applyChannelToRecord` reads the duplex mode OUT of the record and refuses to
+ * change it — right for an edit, because getting duplex wrong silently moves
+ * the transmit frequency. A brand-new record has no mode to respect, and a
+ * blank reads as duplex 0, so an added repeater channel would have been stored
+ * as simplex and transmitted on its INPUT frequency. Creating the record is the
+ * one moment the user's intent is unambiguous, so it is the one moment this
+ * driver chooses a duplex mode.
+ *
+ * The encoding is the vendor's own, from the two records its CPS wrote on
+ * 2026-09-11: `ZULU ANA` at 146.000 with TX 146.600 stored `0x08` bit 6 set and
+ * `00 06 00 00` at 0x04 (magnitude 0.600), and `ZULU DIS` stored bit 7 with
+ * `00 01 00 00`. Simplex follows the vendor's channel 102, which is duplex 0
+ * with the RX frequency repeated at 0x04.
+ *
+ * The sign check in `applyChannelToRecord` still runs afterwards: this sets the
+ * mode to match the channel, so agreement is guaranteed rather than assumed.
+ */
+export function newChannelRecord(channel: Channel, blank: Uint8Array): Uint8Array {
+  const rec = Uint8Array.from(blank);
+  const rx = channel.rxFrequency;
+  const tx = channel.txFrequency;
+  const split = tx - rx;
+  const duplex = split > 0 ? 1 : split < 0 ? 2 : 0;
+  rec[OFF.FLAGS] = ((rec[OFF.FLAGS] ?? 0) & 0b0011_1111) | (duplex << 6);
+  // Duplex 0 repeats RX here, exactly as the vendor's own simplex records do.
+  // The magnitude for 1 and 2 is written by applyChannelToRecord, which now
+  // sees a mode that agrees with this channel.
+  if (duplex === 0) rec.set(encodeFrequencyMHz(rx), OFF.TX_OR_OFFSET);
+  return applyChannelToRecord(rec, channel);
+}
+
 export function applyChannelToRecord(original: Uint8Array, channel: Channel): Uint8Array {
   const rec = Uint8Array.from(assertOriginalRecord(original));
 

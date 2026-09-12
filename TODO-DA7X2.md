@@ -423,6 +423,20 @@ a one-field change moves only that field's bytes.
 
 ### 2a. Other gaps the 2026-09-02 audit found
 
+- ☐ **TX frequency reads as 0.1 MHz on simplex channels.** `parseChannel`'s
+  duplex-0 branch returns the bytes at 0x04 as an ABSOLUTE TX whenever they are
+  non-zero. All four real radio fixtures store `00 01 00 00` there with the
+  duplex bits clear, so they decode as `tx=0.1` — measured 2026-09-11 on
+  `channel-{0,1,2,3}.bin` (rx 435.525/436.325/437.575/438.875, all tx=0.1).
+  The new evidence says duplex 0 means SIMPLEX and 0x04 is a don't-care: the
+  vendor's own channel 102 repeats RX there, these repeat 0.1, and the CPS
+  drives the split through the duplex bits (6-7 of 0x08) plus a magnitude at
+  0x04 — bit 6 with 0.600 gave TX = RX+0.6, bit 7 with 0.100 gave TX = RX-0.1.
+  Fixing it means returning `rxFrequency` for duplex 0 unconditionally. Held
+  back only because the write path's own comment flags VFO A as a duplex-0
+  record with a genuine odd split, which must be checked first — the VFO may
+  simply not use this field the way a channel does.
+
 - ☐ **The FM scan mask write does not stick.** MEASURED 2026-09-11: a write of
   `00` to `0x3402050` left the radio holding `01`, its original value, while six
   other regions in the SAME 12-frame write landed and were confirmed. Not a
@@ -628,11 +642,15 @@ Two facts the capture establishes:
   15 of those are the name. Fixtures: `tests/fixtures/d890uv/channel-never-used-{201,501}.bin`,
   `channel-deleted-102.bin`.
 
-  What is still needed is one vendor-written FRESH record: add a channel in the
-  vendor CPS, write to the radio, then dump that slot. That gives the CPS's own
-  defaults for every byte this driver does not decode, with provenance, instead
-  of inferring a blank from one deleted record. Until then `planChannelWrite`
-  refuses rather than guessing.
+  ☑ **DONE 2026-09-11.** The operator added channels 200 (`ZULU ANA`, analog
+  146.000/146.600, CTCSS 100.0 decode / 167.9 encode) and 201 (`ZULU DIS`,
+  digital 440.100, colour code RX 7 / TX 15, TG0015) in the vendor CPS and wrote
+  the radio. `blankChannelRecord()` is built from what those two AGREE on, and
+  `newChannelRecord()` chooses the duplex mode — the one thing a blank cannot
+  carry. `planChannelWrite` now BUILDS an added channel instead of refusing.
+  The digital record rebuilds from the blank byte-for-byte;
+  `tests/unit/d890ChannelAdd.test.ts`. ☐ Still needs a hardware round trip:
+  write an added channel and read it back in the CPS.
 
 ### Tier 1 — destructive paths, still entirely unproven
 
