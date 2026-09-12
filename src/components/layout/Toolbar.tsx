@@ -332,8 +332,11 @@ export const Toolbar: React.FC = () => {
     '⚠️ EXPERIMENTAL FEATURE WARNING ⚠️\n\n' +
     'Writing to the radio is an EXPERIMENTAL feature and is used at your own risk.\n\n' +
     'IMPORTANT: Before proceeding, ensure that:\n' +
-    '• Allow Reset is ENABLED via the Baofeng CPS\n' +
-    '• You have done a radio read with the Baofeng CPS and saved that as a backup\n' +
+    // "Baofeng CPS" was named outright here, on a dialog every radio shows —
+    // including the BTECH/Anytone DA-7X2, whose owners have no Baofeng software
+    // and no way to follow the instruction. Say "your radio's own CPS" instead.
+    '• Allow Reset is ENABLED, if your radio\'s own CPS offers that setting\n' +
+    '• You have read the radio with its own CPS and saved that as a backup\n' +
     '• You have a backup of your current codeplug\n' +
     '• You understand that this operation may modify your radio\'s memory\n\n' +
     'Do you want to continue?';
