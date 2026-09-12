@@ -55,6 +55,8 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   maxRxGroupMembers: LIMITS.RX_GROUPS_MAX,
   maxScanLists: LIMITS.SCAN_LISTS_MAX,
   maxScanListChannels: LIMITS.SCAN_LIST_CHANNELS_MAX,
+  maxRadioIds: LIMITS.DMR_RADIO_IDS_MAX,
+  maxTalkGroups: LIMITS.TALK_GROUPS_MAX,
   supportsBootImage: true,
   supportsQuickMessages: true,
   supportsAnalogEmergency: true,

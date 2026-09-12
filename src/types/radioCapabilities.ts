@@ -290,6 +290,10 @@ export interface RadioCapabilities {
   maxScanListChannels?: number;
   /** Max scan list count when supportsScanLists is true (e.g. 32 for DM32). */
   maxScanLists?: number;
+  /** Max DMR radio IDs. 250 on the DM-32, 64 on the D890UV family. */
+  maxRadioIds?: number;
+  /** Max talkgroups. 800 on the DM-32, 10,000 on the D890UV family. */
+  maxTalkGroups?: number;
   /**
    * Which scan-list detail fields this radio actually STORES AND WRITES BACK.
    *

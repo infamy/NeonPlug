@@ -164,6 +164,17 @@ export const Toolbar: React.FC = () => {
     if (loss.quickContactsLost > 0) parts.push(`${loss.quickContactsLost} quick contact(s) removed`);
     if (loss.rxGroupsLost > 0) parts.push(`${loss.rxGroupsLost} RX group(s) removed`);
     if (loss.encryptionKeysLost > 0) parts.push(`${loss.encryptionKeysLost} encryption key(s) removed`);
+    if (loss.zoneChannelsTrimmed > 0)
+      parts.push(`${loss.zoneChannelsTrimmed} zone member(s) trimmed to this radio's per-zone limit`);
+    if (loss.scanListChannelsTrimmed > 0)
+      parts.push(`${loss.scanListChannelsTrimmed} scan list member(s) trimmed to this radio's limit`);
+    if (loss.rxGroupMembersTrimmed > 0)
+      parts.push(`${loss.rxGroupMembersTrimmed} RX group member(s) trimmed to this radio's limit`);
+    if (loss.scanListRefsCleared > 0)
+      parts.push(
+        `${formatPlural(loss.scanListRefsCleared, 'channel')} had a scan list reference cleared ` +
+          `(the list it pointed at does not exist on this radio)`,
+      );
     if (loss.powerLevelsDowngraded > 0)
       parts.push(
         `${formatPlural(loss.powerLevelsDowngraded, 'channel')} stepped down to the strongest power this radio supports`,

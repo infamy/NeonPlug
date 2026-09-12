@@ -108,6 +108,8 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   maxRxGroupMembers: D890_LIMITS.RX_GROUP_MEMBERS_MAX,
   maxScanLists: D890_LIMITS.SCAN_LISTS_MAX,
   maxScanListChannels: D890_LIMITS.SCAN_LIST_MEMBERS_MAX,
+  maxRadioIds: D890_LIMITS.DMR_RADIO_IDS_MAX,
+  maxTalkGroups: D890_LIMITS.TALK_GROUPS_MAX,
   // What this radio's scan-list record actually holds. Hang time IS its dwell
   // time and the two priority channels are real u16 fields; CTC scan mode, scan
   // TX mode and designated TX channel are DM-32 concepts with no home here, so
