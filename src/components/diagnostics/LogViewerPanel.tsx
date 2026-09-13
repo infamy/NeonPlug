@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useLogStore } from '../../store/logStore';
+import { BUTTON, FIELD_CAUTION } from '../ui/controlStyles';
 
 export const LogViewerPanel: React.FC = () => {
   const [showLogViewer, setShowLogViewer] = useState(false);
@@ -42,7 +43,7 @@ export const LogViewerPanel: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowLogViewer(!showLogViewer)}
-            className="px-3 py-1 text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-600/30 hover:border-yellow-400 rounded transition-colors"
+            className={`${BUTTON.caution} px-3 py-1 text-xs border rounded`}
           >
             {showLogViewer ? '▼ Hide' : '▶ Show'}
           </button>
@@ -50,7 +51,7 @@ export const LogViewerPanel: React.FC = () => {
             <button
               type="button"
               onClick={() => clearLogs()}
-              className="px-3 py-1 text-xs text-red-400 hover:text-red-300 border border-red-600/30 hover:border-red-400 rounded transition-colors"
+              className={`${BUTTON.danger} px-3 py-1 text-xs border rounded`}
             >
               Clear
             </button>
@@ -67,7 +68,7 @@ export const LogViewerPanel: React.FC = () => {
               <select
                 value={logFilter}
                 onChange={(e) => setLogFilter(e.target.value as typeof logFilter)}
-                className="px-2 py-1 text-sm bg-deep-gray border border-yellow-600/30 rounded text-yellow-400"
+                className={`${FIELD_CAUTION} px-2 py-1 text-sm border rounded`}
               >
                 <option value="ALL">All</option>
                 <option value="ERROR">Error</option>
@@ -84,7 +85,7 @@ export const LogViewerPanel: React.FC = () => {
                 value={logContextFilter}
                 onChange={(e) => setLogContextFilter(e.target.value)}
                 placeholder="Filter by context..."
-                className="px-2 py-1 text-sm bg-deep-gray border border-yellow-600/30 rounded text-yellow-400 w-40"
+                className={`${FIELD_CAUTION} px-2 py-1 text-sm border rounded w-40`}
               />
             </div>
             <div className="flex items-center gap-2">
@@ -96,7 +97,7 @@ export const LogViewerPanel: React.FC = () => {
                 min="100"
                 max="10000"
                 step="100"
-                className="px-2 py-1 text-sm bg-deep-gray border border-yellow-600/30 rounded text-yellow-400 w-24"
+                className={`${FIELD_CAUTION} px-2 py-1 text-sm border rounded w-24`}
               />
             </div>
             <div className="text-sm text-cool-gray">

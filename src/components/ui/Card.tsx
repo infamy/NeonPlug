@@ -5,6 +5,8 @@ interface CardProps {
   className?: string;
   padding?: 'normal' | 'tight' | 'none';
   variant?: 'default' | 'subdued';
+  /** DOM id, so a card can be a jump-navigation target. */
+  id?: string;
 }
 
 const PADDING_CLASSES = {
@@ -23,11 +25,12 @@ export const Card: React.FC<CardProps> = ({
   className = '',
   padding = 'normal',
   variant = 'default',
+  id,
 }) => {
   const base = VARIANT_CLASSES[variant];
   const paddingClass = PADDING_CLASSES[padding];
   return (
-    <div className={`${base} ${paddingClass} ${className}`.trim()}>
+    <div id={id} className={`${base} ${paddingClass} ${className}`.trim()}>
       {children}
     </div>
   );

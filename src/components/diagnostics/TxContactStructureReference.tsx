@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useChannelsStore } from '../../store/channelsStore';
 import { downloadBinary } from '../../utils/hexdump';
 import { downloadFile } from '../../utils/download';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
+import { FIELD_CAUTION } from '../ui/controlStyles';
 
 interface TxContactStructureReferenceProps {
   /** 0x42 = Channels 1-2048 block; 0x43 = Channels 2049+ and VFOs block. */
@@ -189,7 +190,7 @@ export const TxContactStructureReference: React.FC<TxContactStructureReferencePr
                     placeholder="Enter channel # (1-2047)"
                     value={txContactLookupChannel}
                     onChange={(e) => setTxContactLookupChannel(e.target.value)}
-                    className="w-48 bg-dark-charcoal border border-yellow-600/30 rounded px-3 py-1 text-sm text-white focus:outline-none focus:border-yellow-400"
+                    className={`${FIELD_CAUTION} w-48 border rounded px-3 py-1 text-sm`}
                   />
                   {txContactLookupChannel && (() => {
                     const chNum = parseInt(txContactLookupChannel);

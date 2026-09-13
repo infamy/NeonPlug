@@ -28,6 +28,9 @@ const WRITE_ACK_TIMEOUT_MS = 400;
 export class UV5RMiniSerialConnection extends BaseSerialConnection {
   async connect(port: UV5RMiniSerialPort): Promise<void> {
     await super.openPort(port);
+    // CHIRP raises DTR and RTS on every serial open (chirp_common WANTS_DTR / WANTS_RTS,
+    // not overridden by any Baofeng driver). Web Serial leaves them to the OS.
+    await port.setSignals?.({ dataTerminalReady: true, requestToSend: true });
     await this.delay(300);
     this.buf = new Uint8Array(0);
     await this.delay(200);

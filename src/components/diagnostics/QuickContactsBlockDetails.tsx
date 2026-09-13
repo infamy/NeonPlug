@@ -1,5 +1,5 @@
 import React from 'react';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 
 interface QuickContactsBlockDetailsProps {
   /** Metadata block 0x0B (Quick Access Contact List) data — passed by DiagnosticsTab. */

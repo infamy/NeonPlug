@@ -5,6 +5,7 @@ import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { useDigitalEmergencyStore } from '../../store/digitalEmergencyStore';
 import { useDMRRadioIDsStore } from '../../store/dmrRadioIdsStore';
+import { MasterRadioIdCard } from './MasterRadioIdCard';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickMessagesStore } from '../../store/quickMessagesStore';
@@ -15,10 +16,32 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import type { EncryptionKey } from '../../models/EncryptionKey';
 import { LIMITS } from '../../radios/dm32uv/constants';
+import { lowestFreeSlot } from '../../utils/lowestFreeSlot';
+import {
+  ENCRYPTION_TYPES,
+  clearEncryptionKey,
+  editEncryptionKey,
+  encryptionTypeLabel,
+  isEncryptionTypeLocked,
+} from '../../utils/encryptionKeys';
+import { PageHeader } from '../ui/PageHeader';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
+
+/**
+ * The five list cards scroll inside a box 70% of the window tall.
+ *
+ * They were capped at the window less 400px, which left about five rows on a
+ * 650px window. Letting them run into the page scroll instead is not an option
+ * here: a DA-7X2 holds 10,000 talk groups, every row is already rendered, and
+ * the sticky headers need the card to be the scroll box. 70vh matches the
+ * Contacts list's floor, so a list always gets most of the window.
+ */
+const LIST_CARD_CLASS = 'max-h-[70vh] flex flex-col';
 
 export const DigitalTab: React.FC = () => {
   const { blockMetadata, blockData } = useRadioStore();
@@ -27,6 +50,13 @@ export const DigitalTab: React.FC = () => {
   const talkGroupsMax = limits?.TALK_GROUPS_MAX ?? DEFAULT_TALK_GROUPS_MAX;
   const dmrRadioIdsMax = limits?.DMR_RADIO_IDS_MAX ?? DEFAULT_DMR_RADIO_IDS_MAX;
   const { keys, keysLoaded, setKeys, updateKey } = useEncryptionKeysStore();
+  // Driven by the data, not by the model: whichever radio supplies an ID gets
+  // the column. Gating on a model string would be golden-rule #3 all over again.
+  const showEncryptionId = keys.some((k) => k.encryptionId !== undefined);
+  // 128 was the DM-32's limit, hardcoded here before a second radio had quick
+  // messages. It is not universal: the DA-7X2 accepts 200.
+  const messageCharsMax = limits?.QUICK_MESSAGE_CHARS_MAX ?? 128;
+  const messagesMax = limits?.QUICK_MESSAGES_MAX ?? 20;
   const { systems: digitalEmergencies, setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig, updateSystem, addSystem: addDigitalEmergency, deleteSystem: deleteDigitalEmergency } = useDigitalEmergencyStore();
   const { radioIds, radioIdsLoaded, updateRadioId, addRadioId, deleteRadioId } = useDMRRadioIDsStore();
   const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact, setMaxTalkGroups } = useQuickContactsStore();
@@ -77,7 +107,24 @@ export const DigitalTab: React.FC = () => {
     }
   }, [block10Data, caps?.digital, setDigitalEmergencies, setDigitalEmergencyConfig]);
 
-  const handleKeyChange = (entryNumber: number, field: keyof typeof keys[0], value: any) => {
+  const handleKeyChange = (
+    entryNumber: number,
+    field: keyof EncryptionKey,
+    value: string | number,
+  ) => {
+    // Checked here and not only in the control: a disabled select is a
+    // suggestion, and this rule protects channel references from being silently
+    // redirected on radios that store a separate key table per type.
+    const existing = keys.find((k) => k.entryNumber === entryNumber);
+    if (existing) {
+      const result = editEncryptionKey(existing, field, value);
+      if (!result.ok) {
+        showAlert(result.reason, 'Encryption key');
+        return;
+      }
+      updateKey(entryNumber, result.updates);
+      return;
+    }
     updateKey(entryNumber, { [field]: value });
   };
 
@@ -133,13 +180,28 @@ export const DigitalTab: React.FC = () => {
   };
 
   const handleAddMessage = () => {
-    if (messages.length >= 20) {
-      showAlert('Maximum of 20 quick messages allowed.');
+    if (messages.length >= messagesMax) {
+      showAlert(`Maximum of ${messagesMax} quick messages allowed.`);
       return;
     }
-    const newIndex = messages.length;
+    // The lowest FREE slot, for radios that place messages by slot — the same
+    // hole rule as handleAddRadioId. A slot a hot key still names is not free:
+    // reusing it would silently hand that key the new message. (The DM-32
+    // places by list order and never reads `slot`.)
+    const used = new Set<number>(
+      messages.map((m) => m.slot).filter((s): s is number => s !== undefined)
+    );
+    for (const k of useRadioStore.getState().tables.hotKeys ?? []) {
+      if (k.contentSmsIndex !== null) used.add(k.contentSmsIndex);
+    }
+    const slot = lowestFreeSlot(used, messagesMax);
+    if (slot === undefined) {
+      showAlert(`No free quick message slot: all ${messagesMax} are in use.`);
+      return;
+    }
     addMessage({
-      index: newIndex,
+      index: messages.length,
+      slot,
       text: '',
       flag: 0, // Will be updated automatically when text is entered
       checkValue: 0,
@@ -155,7 +217,16 @@ export const DigitalTab: React.FC = () => {
       showAlert(`Maximum of ${dmrRadioIdsMax} DMR Radio IDs allowed.`);
       return;
     }
-    const newIndex = radioIds.length;
+    // The lowest FREE slot, not the list length. `index` is a hardware slot, and
+    // the table can have holes — a radio with slots 0, 1 and 3 has length 3, so
+    // `radioIds.length` would hand the new ID slot 3 and overwrite the one
+    // already there.
+    const used = new Set(radioIds.map((r) => r.index));
+    const newIndex = lowestFreeSlot(used, dmrRadioIdsMax);
+    if (newIndex === undefined) {
+      showAlert(`No free DMR Radio ID slot: all ${dmrRadioIdsMax} are in use.`);
+      return;
+    }
     addRadioId({
       index: newIndex,
       name: 'New Radio ID',
@@ -196,13 +267,17 @@ export const DigitalTab: React.FC = () => {
 
   return (
     <>
-    <div className="p-6">
-      <div className="mb-6">
-        <SectionTitle as="h2" size="xl" bold className="text-2xl">Digital Settings</SectionTitle>
-        <p className="text-cool-gray text-sm">
-          Manage encryption keys, digital emergency systems, DMR radio IDs, talk groups, RX groups, and quick messages.
-        </p>
-      </div>
+    {/* No padding of its own: <main> already has p-6, and a second p-6 here put
+        this title 48px in when every other tab's is at 24. */}
+    <div>
+      <PageHeader
+        title="Digital Settings"
+        description="Manage encryption keys, digital emergency systems, DMR radio IDs, talk groups, RX groups, and quick messages."
+      />
+
+      {/* The radio's OWN id, above the list of IDs it can transmit with —
+          same family, but a separate record with a field they do not have. */}
+      <MasterRadioIdCard />
 
       {/* DMR Radio IDs Section */}
       <div className="mb-8">
@@ -216,7 +291,7 @@ export const DigitalTab: React.FC = () => {
           {radioIdsLoaded && radioIds.length < dmrRadioIdsMax && (
             <button
               onClick={handleAddRadioId}
-              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
+              className={`${BUTTON.primary} px-3 py-1 rounded text-sm font-semibold`}
             >
               + Add ID
             </button>
@@ -232,7 +307,7 @@ export const DigitalTab: React.FC = () => {
             <EmptyState message="No DMR Radio IDs found on the radio." />
           </Card>
         ) : (
-          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
+          <Card className={LIST_CARD_CLASS} padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -258,7 +333,7 @@ export const DigitalTab: React.FC = () => {
                               updateRadioId(radioId.index, { name: newName });
                             }}
                             maxLength={12}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                             placeholder="Enter name"
                           />
                         </td>
@@ -285,14 +360,14 @@ export const DigitalTab: React.FC = () => {
                             }}
                             min="0"
                             max="16777215"
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs font-mono`}
                             placeholder="DMR ID (1-9999999, 0=none)"
                           />
                         </td>
                         <td className="px-2 py-2">
                           <button
                             onClick={() => handleDeleteRadioIdClick(radioId.index)}
-                            className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                            className={`${BUTTON.danger} px-2 py-1 rounded text-xs border`}
                           >
                             Delete
                           </button>
@@ -331,7 +406,7 @@ export const DigitalTab: React.FC = () => {
               <button
                 onClick={handleAddContact}
                 disabled={quickContacts.length >= talkGroupsMax}
-                className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`${BUTTON.primary} px-3 py-1 rounded text-sm font-semibold`}
               >
                 + Add Group
               </button>
@@ -348,7 +423,7 @@ export const DigitalTab: React.FC = () => {
             <EmptyState message="No talk groups found on the radio." />
           </Card>
         ) : (
-          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
+          <Card className={LIST_CARD_CLASS} padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -373,7 +448,7 @@ export const DigitalTab: React.FC = () => {
                               type="text"
                               value={contact.name}
                               onChange={(e) => handleContactChange(contact.index, 'name', e.target.value)}
-                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                              className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                             />
                           </td>
                           <td className="px-2 py-2">
@@ -384,7 +459,7 @@ export const DigitalTab: React.FC = () => {
                               min="0"
                               max="16777215"
                               disabled={isAllCall}
-                              className={`bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono ${
+                              className={`${FIELD} border rounded px-2 py-1 w-full text-xs font-mono ${
                                 isAllCall ? 'opacity-50 cursor-not-allowed' : ''
                               }`}
                               title={isAllCall ? 'ID is locked to 16777215 for All Call' : ''}
@@ -394,7 +469,7 @@ export const DigitalTab: React.FC = () => {
                             <select
                               value={contact.callType}
                               onChange={(e) => handleContactChange(contact.index, 'callType', parseInt(e.target.value, 10))}
-                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                              className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                             >
                               <option value={0x03}>Private Call</option>
                               <option value={0x04}>Group Call</option>
@@ -404,7 +479,7 @@ export const DigitalTab: React.FC = () => {
                           <td className="px-2 py-2">
                             <button
                               onClick={() => handleDeleteContactClick(contact.index)}
-                              className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                              className={`${BUTTON.danger} px-2 py-1 rounded text-xs border`}
                             >
                               Delete
                             </button>
@@ -438,7 +513,11 @@ export const DigitalTab: React.FC = () => {
         )}
       </div>
 
-      {/* Digital Emergency Systems Section */}
+      {/* Digital Emergency Systems — DM-32 shaped, gated on the capability.
+          The DA-7X2 has emergency features but stores them completely
+          differently and has no block 0x10, so the section is hidden rather
+          than shown empty. */}
+      {caps?.supportsDigitalEmergency && (
       <div className="mb-8">
         <div className="mb-4 flex items-start justify-between">
           <div>
@@ -470,7 +549,7 @@ export const DigitalTab: React.FC = () => {
               });
             }}
             disabled={digitalEmergencies.length >= LIMITS.DIGITAL_EMERGENCY_MAX}
-            className="px-3 py-1.5 text-xs bg-neon-cyan bg-opacity-10 border border-neon-cyan text-neon-cyan rounded hover:bg-opacity-20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap ml-4"
+            className={`${BUTTON.outline} px-3 py-1.5 text-xs border rounded whitespace-nowrap ml-4`}
           >
             + Add
           </button>
@@ -485,7 +564,7 @@ export const DigitalTab: React.FC = () => {
             <EmptyState message="No digital emergency systems configured." />
           </Card>
         ) : (
-          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
+          <Card className={LIST_CARD_CLASS} padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -518,14 +597,14 @@ export const DigitalTab: React.FC = () => {
                             value={system.name}
                             onChange={(e) => updateSystem(i, { name: e.target.value.slice(0, 10) })}
                             maxLength={10}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                           />
                         </td>
                         <td className="px-2 py-1.5">
                           <select
                             value={system.alarmType}
                             onChange={(e) => updateSystem(i, { alarmType: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {['None', 'Only Whistle', 'Normal', 'Secret', 'Secret With Voice', 'Alarm Whistle'].map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -536,7 +615,7 @@ export const DigitalTab: React.FC = () => {
                           <select
                             value={system.alarmMode}
                             onChange={(e) => updateSystem(i, { alarmMode: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {['Emergency Alarm', 'Alarm Call', 'Emergency Call'].map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -547,7 +626,7 @@ export const DigitalTab: React.FC = () => {
                           <select
                             value={system.revertChannel}
                             onChange={(e) => updateSystem(i, { revertChannel: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             <option value={0}>None</option>
                             {channels.map((ch) => (
@@ -562,7 +641,7 @@ export const DigitalTab: React.FC = () => {
                             onChange={(e) => updateSystem(i, { retransmission: Math.max(1, Math.min(15, Number(e.target.value))) })}
                             min={1}
                             max={15}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                           />
                         </td>
                         <td className="px-2 py-1.5">
@@ -572,14 +651,14 @@ export const DigitalTab: React.FC = () => {
                             onChange={(e) => updateSystem(i, { hotMicDuration: Math.max(1, Math.min(15, Number(e.target.value))) })}
                             min={1}
                             max={15}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                           />
                         </td>
                         <td className="px-2 py-1.5">
                           <select
                             value={system.emergencyCallsNumber}
                             onChange={(e) => updateSystem(i, { emergencyCallsNumber: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {Array.from({ length: 12 }, (_, k) => (k + 1) * 10).map(v => (
                               <option key={v} value={v}>{v}</option>
@@ -601,14 +680,14 @@ export const DigitalTab: React.FC = () => {
                             onChange={(e) => updateSystem(i, { rxDurationTime: Math.max(1, Math.min(255, Number(e.target.value))) })}
                             min={1}
                             max={255}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                           />
                         </td>
                         <td className="px-2 py-1.5">
                           <select
                             value={system.autoEmergencyCallTimer}
                             onChange={(e) => updateSystem(i, { autoEmergencyCallTimer: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {Array.from({ length: 12 }, (_, k) => (k + 1) * 10).map(v => (
                               <option key={v} value={v}>{v}</option>
@@ -618,7 +697,7 @@ export const DigitalTab: React.FC = () => {
                         <td className="px-2 py-1.5 text-center">
                           <button
                             onClick={() => deleteDigitalEmergency(i)}
-                            className="text-red-400 hover:text-red-300 transition-colors px-1"
+                            className={`${BUTTON.dangerQuiet} px-1`}
                             title="Delete"
                           >
                             ✕
@@ -633,13 +712,16 @@ export const DigitalTab: React.FC = () => {
           </Card>
         )}
       </div>
+      )}
 
       {/* Encryption Keys Section */}
       <div className="mb-8">
         <div className="mb-4">
           <SectionTitle as="h3" size="xl">Encryption Keys</SectionTitle>
           <p className="text-cool-gray text-sm">
-            Manage encryption keys from metadata block 0x10. Up to 8 keys can be configured.
+            {caps?.supportsBulkRead
+              ? 'Manage encryption keys from metadata block 0x10. Up to 8 keys can be configured.'
+              : 'Encryption keys read from the radio. Type cannot be changed once a key exists — create a new key of the right type instead.'}
           </p>
           {block10Address !== null && (
             <p className="text-cool-gray text-xs mt-1">
@@ -653,15 +735,23 @@ export const DigitalTab: React.FC = () => {
             <EmptyState message="Block 0x10 not found. Read from radio or load a codeplug to view encryption keys." />
           </Card>
         ) : (
-          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
+          <Card className={LIST_CARD_CLASS} padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-dark-charcoal border-b border-neon-cyan">
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
+                      {/* Only radios whose table carries an ID separate from the
+                          slot get this column — a channel points at the ID, so
+                          hiding it would leave the user unable to match a key to
+                          the channel using it. */}
+                      {showEncryptionId && (
+                        <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[90px]">Encryption ID</th>
+                      )}
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Encryption Type</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[300px]">Key (Hex)</th>
+                      <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[60px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -676,22 +766,41 @@ export const DigitalTab: React.FC = () => {
                             value={key.name}
                             onChange={(e) => handleKeyChange(key.entryNumber, 'name', e.target.value.slice(0, 10))}
                             maxLength={10}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                             placeholder="Enter name"
                           />
                         </td>
+                        {showEncryptionId && (
+                          <td className="px-2 py-2 font-mono text-cool-gray">
+                            {key.encryptionId ?? '—'}
+                          </td>
+                        )}
                         <td className="px-2 py-2">
-                          <select
-                            value={key.encryptionType ?? 0}
-                            onChange={(e) => handleKeyChange(key.entryNumber, 'encryptionType', parseInt(e.target.value) || 0)}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
-                          >
-                            <option value={0}>None</option>
-                            <option value={1}>Custom</option>
-                            <option value={2}>ARC4</option>
-                            <option value={3}>AES128</option>
-                            <option value={4}>AES256</option>
-                          </select>
+                          {isEncryptionTypeLocked(key) ? (
+                            // Fixed for the key's lifetime. On a radio that keeps a
+                            // separate table per type, retyping is a MOVE between
+                            // tables — it changes the key's slot and silently
+                            // redirects every channel that referenced the old one.
+                            // Clear the slot and create a new key instead.
+                            <span
+                              className="text-xs text-white"
+                              title="A key's type is fixed once set. Use Clear to empty the slot, then choose a type for the new key."
+                            >
+                              {encryptionTypeLabel(key.encryptionType)}
+                              <span className="text-cool-gray ml-1">(fixed)</span>
+                            </span>
+                          ) : (
+                            <select
+                              value={key.encryptionType ?? 0}
+                              onChange={(e) => handleKeyChange(key.entryNumber, 'encryptionType', parseInt(e.target.value) || 0)}
+                              className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
+                              title="Choosing a type creates the key in this slot. It cannot be changed afterwards."
+                            >
+                              {ENCRYPTION_TYPES.map((label, value) => (
+                                <option key={label} value={value}>{label}</option>
+                              ))}
+                            </select>
+                          )}
                         </td>
                         <td className="px-2 py-2">
                           <input
@@ -704,9 +813,20 @@ export const DigitalTab: React.FC = () => {
                               handleKeyChange(key.entryNumber, 'key', hexValue);
                             }}
                             maxLength={64}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white font-mono"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs font-mono`}
                             placeholder="Enter hex key"
                           />
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          {isEncryptionTypeLocked(key) && (
+                            <button
+                              onClick={() => updateKey(key.entryNumber, clearEncryptionKey())}
+                              className={`${BUTTON.dangerQuiet} px-1.5 py-0.5 text-xs border rounded opacity-60 hover:opacity-100`}
+                              title="Empty this slot — clears the type, name and key material. The slot can then hold a new key of any type."
+                            >
+                              Clear
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -724,13 +844,14 @@ export const DigitalTab: React.FC = () => {
           <div>
             <SectionTitle as="h3" size="xl">Quick Text Messages</SectionTitle>
             <p className="text-cool-gray text-sm">
-              Manage quick text messages. Maximum 128 bytes per message, up to 20 messages.
+              Manage quick text messages. Up to {messageCharsMax} characters each,
+              {' '}{messagesMax} messages.
             </p>
           </div>
-          {messagesLoaded && messages.length < 20 && (
+          {messagesLoaded && messages.length < messagesMax && (
             <button
               onClick={handleAddMessage}
-              className="px-3 py-1 bg-neon-cyan text-dark-charcoal rounded hover:bg-neon-cyan-bright transition-colors text-sm font-semibold"
+              className={`${BUTTON.primary} px-3 py-1 rounded text-sm font-semibold`}
             >
               + Add Message
             </button>
@@ -742,7 +863,7 @@ export const DigitalTab: React.FC = () => {
             <EmptyState message="Quick messages will be loaded when you read from the radio." />
           </Card>
         ) : (
-          <Card className="max-h-[calc(100vh-400px)] flex flex-col" padding="none">
+          <Card className={LIST_CARD_CLASS} padding="none">
             <div className="flex-1 overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
@@ -770,19 +891,19 @@ export const DigitalTab: React.FC = () => {
                               type="text"
                               value={message.text}
                               onChange={(e) => {
-                                const newText = e.target.value.slice(0, 128);
+                                const newText = e.target.value.slice(0, messageCharsMax);
                                 const textLength = new TextEncoder().encode(newText).length;
                                 updateMessage(arrayIndex, { text: newText, flag: textLength });
                               }}
-                              maxLength={128}
-                              className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-white"
+                              maxLength={messageCharsMax}
+                              className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                               placeholder="Enter message text"
                             />
                           </td>
                           <td className="px-2 py-2">
                             <button
                               onClick={() => handleDeleteMessageClick(arrayIndex)}
-                              className="px-2 py-1 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                              className={`${BUTTON.danger} px-2 py-1 rounded text-xs border`}
                             >
                               Delete
                             </button>

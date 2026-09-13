@@ -1,5 +1,5 @@
 import React from 'react';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 
 interface TalkGroupsBlockDetailsProps {
   /** Metadata block 0x44 (Talk Groups) data — passed by DiagnosticsTab. */

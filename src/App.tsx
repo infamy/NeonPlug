@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { MainLayout } from './components/layout/MainLayout';
 import { StartupModal } from './components/ui/StartupModal';
 import { ConfirmModal } from './components/ui/ConfirmModal';
+import { CodeplugSummaryBody } from './components/layout/CodeplugSummaryBody';
 
 // Lazy load tabs for better code splitting - only load when tab is active
 const ChannelsTab = lazy(() => import('./components/channels/ChannelsTab').then(m => ({ default: m.ChannelsTab })));
@@ -16,41 +17,25 @@ const DiagnosticsTab = lazy(() => import('./components/diagnostics/DiagnosticsTa
 import { useChannelsStore } from './store/channelsStore';
 import { useContactsStore } from './store/contactsStore';
 import { useZonesStore } from './store/zonesStore';
-import { useScanListsStore } from './store/scanListsStore';
-import { useRadioSettingsStore } from './store/radioSettingsStore';
-import { useDigitalEmergencyStore } from './store/digitalEmergencyStore';
-import { useAnalogEmergencyStore } from './store/analogEmergencyStore';
-import { useQuickMessagesStore } from './store/quickMessagesStore';
-import { useDMRRadioIDsStore } from './store/dmrRadioIdsStore';
-import { useQuickContactsStore } from './store/quickContactsStore';
-import { useRXGroupsStore } from './store/rxGroupsStore';
-import { useEncryptionKeysStore } from './store/encryptionKeysStore';
 import { useRadioStore } from './store/radioStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { useAlert } from './hooks/useAlert';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import type { CodeplugData } from './services/codeplugExport';
+import { applyCodeplugToStores } from './services/applyCodeplug';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
 import { setLogStore, logger, LogLevel } from './utils/protocolLogger';
+import { installDevStoreHandle } from './utils/devStoreHandle';
 import { useLogStore } from './store/logStore';
 
 function App() {
   const [activeTab, setActiveTab] = useState('channels');
   const [showStartupModal, setShowStartupModal] = useState(true);
-  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Import');
+  const { alertOpen, alertMessage, alertBody, alertSize, alertTitle, showAlert, showAlertBody, closeAlert } = useAlert('Import');
   const { setChannels, channels } = useChannelsStore();
   const { setContacts } = useContactsStore();
   const { setZones } = useZonesStore();
-  const { setScanLists } = useScanListsStore();
-  const { setSettings: setRadioSettings } = useRadioSettingsStore();
-  const { setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
-  const { setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
-  const { setMessages } = useQuickMessagesStore();
-  const { setRadioIds } = useDMRRadioIDsStore();
-  const { setContacts: setQuickContacts } = useQuickContactsStore();
-  const { setGroups: setRXGroups } = useRXGroupsStore();
-  const { setKeys: setEncryptionKeys } = useEncryptionKeysStore();
-  const { setRadioInfo, setPreferredTransport, showPickRadioModal, setShowPickRadioModal } = useRadioStore();
+  const { setPreferredTransport, showPickRadioModal, setShowPickRadioModal } = useRadioStore();
   const { isConnecting, error: radioError } = useRadioConnection();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -63,6 +48,9 @@ function App() {
     // Allow debug logging to be toggled without a code change:
     //   enable:  localStorage.setItem('neonplug_log_level', 'debug')  then reload
     //   disable: localStorage.removeItem('neonplug_log_level')         then reload
+    // Dev builds only — lets a UI gated behind "read a radio first" be looked
+    // at without one. Stripped from every production build.
+    installDevStoreHandle();
     const stored = localStorage.getItem('neonplug_log_level');
     if (stored === 'verbose') {
       logger.configure({ level: LogLevel.VERBOSE });
@@ -139,27 +127,6 @@ function App() {
     }, 100);
   };
 
-  const applyCodeplugToStores = (codeplugData: CodeplugData) => {
-    setChannels(codeplugData.channels);
-    setZones(codeplugData.zones);
-    setScanLists(codeplugData.scanLists);
-    setContacts(codeplugData.contacts);
-    setDigitalEmergencies(codeplugData.digitalEmergencies);
-    if (codeplugData.digitalEmergencyConfig) {
-      setDigitalEmergencyConfig(codeplugData.digitalEmergencyConfig);
-    }
-    setAnalogEmergencies(codeplugData.analogEmergencies);
-    if (codeplugData.radioSettings) {
-      setRadioSettings(codeplugData.radioSettings);
-    }
-    setRadioInfo(codeplugData.radioInfo ?? null);
-    setMessages(codeplugData.messages ?? []);
-    setRadioIds(codeplugData.radioIds ?? []);
-    setQuickContacts(codeplugData.quickContacts ?? []);
-    setRXGroups(codeplugData.rxGroups ?? []);
-    setEncryptionKeys(codeplugData.encryptionKeys ?? []);
-  };
-
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -173,26 +140,12 @@ function App() {
         const { importCodeplug } = await import('./services/codeplugExport');
         const codeplugData = await importCodeplug(file);
         
-        applyCodeplugToStores(codeplugData);
+        applyCodeplugToStores(codeplugData, 'import');
         
         setShowStartupModal(false);
         const { saveSnapshot } = await import('./services/codeplugSnapshots');
         await saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
-        const lines = [
-          `• ${codeplugData.channels.length} channels`,
-          `• ${codeplugData.zones.length} zones`,
-          `• ${codeplugData.scanLists.length} scan lists`,
-          `• ${codeplugData.contacts.length} contacts`,
-          `• ${codeplugData.digitalEmergencies?.length ?? 0} digital emergency system(s)`,
-          `• ${codeplugData.analogEmergencies?.length ?? 0} analog emergency system(s)`,
-          codeplugData.radioSettings ? '• Radio settings' : null,
-          `• ${codeplugData.messages?.length ?? 0} quick message(s)`,
-          `• ${codeplugData.radioIds?.length ?? 0} DMR radio ID(s)`,
-          `• ${codeplugData.quickContacts?.length ?? 0} talk group(s)`,
-          `• ${codeplugData.rxGroups?.length ?? 0} RX group(s)`,
-          `• ${codeplugData.encryptionKeys?.length ?? 0} encryption key(s)`,
-        ].filter(Boolean);
-        showAlert(`Successfully imported codeplug!\n\n${lines.join('\n')}`);
+        showAlertBody(<CodeplugSummaryBody data={codeplugData} lead="Codeplug imported" fileName={file.name} />);
       } catch (error) {
         showAlert(`Failed to import codeplug: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
@@ -239,7 +192,7 @@ function App() {
   };
 
   const handleRestoreSnapshot = (codeplugData: CodeplugData) => {
-    applyCodeplugToStores(codeplugData);
+    applyCodeplugToStores(codeplugData, 'restore');
     setShowStartupModal(false);
     setShowPickRadioModal(false);
   };
@@ -303,6 +256,8 @@ function App() {
         onClose={closeAlert}
         title={alertTitle}
         message={alertMessage}
+        body={alertBody}
+        size={alertSize}
         confirmLabel="OK"
         variant="alert"
       />

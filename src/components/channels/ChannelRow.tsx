@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { isVFOChannel, getVFOIdentifier } from '../../utils/vfoChannels';
 import type { Channel } from '../../models/Channel';
 import type { ScanList } from '../../models/ScanList';
 import type { RXGroup } from '../../models/RXGroup';
@@ -7,15 +8,19 @@ import type { QuickContact } from '../../models/QuickContact';
 import type { DMRRadioID } from '../../models/DMRRadioID';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
 import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
+import type { ChannelColumnGroup } from '../../types/radioCapabilities';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { powerLevelsFor, powerAbbrev, nextPowerLevel } from '../../utils/powerLevels';
+import {
+  extraColumnsFor,
+  extraColumnTitle,
+  type ExtraChannelColumn,
+} from './extraChannelColumns';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
-export const isVFOChannel = (channelNumber: number): boolean =>
-  channelNumber === 4001 || channelNumber === 4002;
-
-export const getVFOIdentifier = (channelNumber: number): string => {
-  if (channelNumber === 4001) return 'A';
-  if (channelNumber === 4002) return 'B';
-  return channelNumber.toString();
-};
+// Re-exported so existing importers keep working; the numbers now derive from
+// the radio's channel count rather than being hardcoded in three places.
+export { isVFOChannel, getVFOIdentifier };
 
 export const isDigitalMode = (mode: Channel['mode']): boolean =>
   mode === 'Digital' || mode === 'Fixed Digital';
@@ -86,6 +91,112 @@ interface ChannelRowProps {
   measureRef: (el: HTMLTableRowElement | null) => void;
 }
 
+const NUMBER_INPUT_CLASS =
+  `${FIELD} border rounded px-1 py-1 w-full text-xs text-center`;
+
+const SELECT_CLASS =
+  `${FIELD} border rounded px-2 py-1 text-xs w-full max-w-[130px]`;
+
+/**
+ * One cell of a declarative extra column.
+ *
+ * Split out so the editor kinds live in one place: the grid already had four
+ * near-identical hand-written variants of each, and every new field copied one
+ * of them again.
+ */
+export const ExtraColumnCell: React.FC<{
+  column: ExtraChannelColumn;
+  channel: Channel;
+  onCellChange: CellChangeHandler;
+}> = ({ column, channel, onCellChange }) => {
+  const title = extraColumnTitle(column);
+  // Same convention the DMR block uses: a field with no meaning on this channel
+  // shows a dash rather than a control that would write a value the radio
+  // ignores.
+  if (column.analogOnly && isDigitalMode(channel.mode)) {
+    // MUST be a <td>, like every other branch here. Returning a bare <span>
+    // left the row one cell short of the header, so every extra column to the
+    // right of this one rendered under its neighbour's heading on digital rows.
+    return (
+      <td className="px-2 py-2 text-center" title={title}>
+        <span className="text-cool-gray text-xs">-</span>
+      </td>
+    );
+  }
+  if (column.digitalOnly && !isDigitalMode(channel.mode)) {
+    return (
+      <td className="px-2 py-2 text-center" title={title}>
+        <span className="text-cool-gray text-xs">-</span>
+      </td>
+    );
+  }
+  const raw = channel[column.field];
+
+  if (column.editor.kind === 'boolean') {
+    return (
+      <td className="px-2 py-2 text-center" title={title}>
+        <input
+          type="checkbox"
+          checked={raw === true}
+          onChange={(e) => onCellChange(channel.number, column.field, e.target.checked)}
+          className="checkbox-theme"
+          title={title}
+        />
+      </td>
+    );
+  }
+
+  if (column.editor.kind === 'select') {
+    const options = column.editor.options;
+    const index = typeof raw === 'number' ? raw : 0;
+    return (
+      <td className="px-2 py-2" title={title}>
+        <select
+          value={String(index)}
+          onChange={(e) => onCellChange(channel.number, column.field, parseInt(e.target.value) || 0)}
+          className={SELECT_CLASS}
+          title={title}
+        >
+          {options.map((label, i) => (
+            <option key={label} value={String(i)}>
+              {label}
+            </option>
+          ))}
+          {/* A value outside the known list is shown rather than silently
+              snapped to option 0 — on this radio an unexpected index means the
+              vocabulary is incomplete, which is worth seeing. */}
+          {index >= options.length && (
+            <option value={String(index)} disabled>
+              {index} (unknown)
+            </option>
+          )}
+        </select>
+      </td>
+    );
+  }
+
+  const { min, max, suffix } = column.editor;
+  return (
+    <td className="px-2 py-2" title={title}>
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          min={min}
+          max={max}
+          value={typeof raw === 'number' ? raw : 0}
+          onChange={(e) => {
+            const parsed = parseInt(e.target.value);
+            onCellChange(channel.number, column.field, Number.isNaN(parsed) ? 0 : parsed);
+          }}
+          className={NUMBER_INPUT_CLASS}
+          title={title}
+        />
+        {suffix && <span className="text-cool-gray text-[10px]">{suffix}</span>}
+      </div>
+    </td>
+  );
+};
+
 /**
  * One channel row. Memoized so that a single-cell edit re-renders only the
  * edited row (the store preserves object identity for untouched channels),
@@ -111,6 +222,13 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
 }) => {
   const showColorCode = isDigitalMode(channel.mode);
   const handleCellChange = onCellChange;
+  const { caps } = useRadioCapabilities();
+  const powerOrder = powerLevelsFor(caps);
+  // Optional column groups, matched one-for-one with the headers in
+  // ChannelsTable. A cell gated differently from its header silently shifts
+  // every column after it, so the two lists are pinned by test.
+  const declaredColumns = new Set(caps?.channelColumns ?? []);
+  const hasColumn = (g: ChannelColumnGroup) => declaredColumns.has(g);
 
   return (
     <tr
@@ -141,10 +259,8 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           value={isVFOChannel(channel.number) ? '' : channel.name}
           onChange={(e) => handleCellChange(channel.number, 'name', e.target.value)}
           disabled={isVFOChannel(channel.number)}
-          className={`bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs ${
-            isVFOChannel(channel.number)
-              ? 'text-cool-gray cursor-not-allowed'
-              : 'text-white'
+          className={`${FIELD} border rounded px-2 py-1 w-full text-xs ${
+            isVFOChannel(channel.number) ? 'text-cool-gray cursor-not-allowed' : ''
           }`}
           maxLength={16}
           placeholder={isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : ''}
@@ -154,7 +270,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         <FrequencyInput
           value={channel.rxFrequency}
           onChange={(val) => handleCellChange(channel.number, 'rxFrequency', val)}
-          className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+          className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
         />
       </td>
       <td className="px-1 py-2 align-middle">
@@ -167,7 +283,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
             }
           }}
           disabled={isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency)}
-          className="p-1 rounded border border-neon-cyan border-opacity-30 text-xs font-bold disabled:opacity-40 disabled:text-cool-gray disabled:border-opacity-20 disabled:cursor-not-allowed text-neon-cyan hover:bg-neon-cyan hover:bg-opacity-10 disabled:hover:bg-transparent"
+          className={`${BUTTON.outline} p-1 rounded border text-xs font-bold`}
           title={isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency) ? 'Receive-only (no TX)' : 'Copy RX to TX'}
           aria-label="Copy RX to TX"
         >
@@ -184,13 +300,13 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
             placeholder=""
             title="Receive-only (no TX)"
             aria-label="No transmit"
-            className="w-full text-xs rounded px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-20 text-cool-gray opacity-60 cursor-not-allowed"
+            className={`${FIELD} w-full text-xs rounded px-2 py-1 border text-cool-gray opacity-60 cursor-not-allowed`}
           />
         ) : (
           <FrequencyInput
             value={channel.txFrequency}
             onChange={(val) => handleCellChange(channel.number, 'txFrequency', val)}
-            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
           />
         )}
       </td>
@@ -208,7 +324,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
               }
               handleCellChange(channel.number, 'mode', newMode);
             }}
-            className="w-10 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+            className={`${BUTTON.field} w-10 h-7 border rounded text-xs font-medium`}
             title={channel.mode}
           >
             {channel.mode === 'Analog' || channel.mode === 'Fixed Analog' ? 'Ana' : 'Dig'}
@@ -218,15 +334,15 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
       <td className="px-2 py-2 text-center">
         <button
           onClick={() => {
-            const powerOrder = ['Low', 'Medium', 'High'];
-            const currentIndex = powerOrder.indexOf(channel.power);
-            const nextIndex = (currentIndex + 1) % powerOrder.length;
-            handleCellChange(channel.number, 'power', powerOrder[nextIndex]);
+            // Driven by the radio's declared levels, not a fixed list. With a
+            // hardcoded three-entry list, indexOf('Turbo') is -1 and the cycle
+            // wraps to Low - silently downgrading a Turbo channel on one click.
+            handleCellChange(channel.number, 'power', nextPowerLevel(channel.power, powerOrder));
           }}
-          className="w-8 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+          className={`${BUTTON.field} w-8 h-7 border rounded text-xs font-medium`}
           title={channel.power}
         >
-          {channel.power === 'Low' ? 'L' : channel.power === 'Medium' ? 'M' : 'H'}
+          {powerAbbrev(channel.power)}
         </button>
       </td>
       <td className="px-2 py-2 text-center">
@@ -274,7 +390,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   value: type === 'None' ? undefined : channel.rxCtcssDcs.value,
                 });
               }}
-              className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+              className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
             >
               <option value="None">None</option>
               <option value="CTCSS">CTCSS</option>
@@ -287,7 +403,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   ...channel.rxCtcssDcs,
                   value: e.target.value ? parseFloat(e.target.value) : undefined,
                 })}
-                className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+                className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
               >
                 <option value="">Select...</option>
                 {channel.rxCtcssDcs.value && !CTCSS_FREQUENCIES.includes(channel.rxCtcssDcs.value) && (
@@ -310,7 +426,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                     ...channel.rxCtcssDcs,
                     value: e.target.value ? parseInt(e.target.value) : undefined,
                   })}
-                  className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                  className={`${FIELD} flex-1 border rounded px-2 py-1 text-xs`}
                 >
                   <option value="">Select...</option>
                   {channel.rxCtcssDcs.value && !DCS_CODES.includes(channel.rxCtcssDcs.value) && (
@@ -330,7 +446,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                     ...channel.rxCtcssDcs,
                     polarity: e.target.value as 'N' | 'P',
                   })}
-                  className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                  className={`${FIELD} border rounded px-2 py-1 text-xs`}
                   disabled={!channel.rxCtcssDcs.value}
                 >
                   <option value="N">N</option>
@@ -356,7 +472,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   value: type === 'None' ? undefined : channel.txCtcssDcs.value,
                 });
               }}
-              className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+              className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
             >
               <option value="None">None</option>
               <option value="CTCSS">CTCSS</option>
@@ -369,7 +485,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   ...channel.txCtcssDcs,
                   value: e.target.value ? parseFloat(e.target.value) : undefined,
                 })}
-                className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs"
+                className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
               >
                 <option value="">Select...</option>
                 {channel.txCtcssDcs.value && !CTCSS_FREQUENCIES.includes(channel.txCtcssDcs.value) && (
@@ -392,7 +508,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                     ...channel.txCtcssDcs,
                     value: e.target.value ? parseInt(e.target.value) : undefined,
                   })}
-                  className="flex-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                  className={`${FIELD} flex-1 border rounded px-2 py-1 text-xs`}
                 >
                   <option value="">Select...</option>
                   {channel.txCtcssDcs.value && !DCS_CODES.includes(channel.txCtcssDcs.value) && (
@@ -412,7 +528,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                     ...channel.txCtcssDcs,
                     polarity: e.target.value as 'N' | 'P',
                   })}
-                  className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs"
+                  className={`${FIELD} border rounded px-2 py-1 text-xs`}
                   disabled={!channel.txCtcssDcs.value}
                 >
                   <option value="N">N</option>
@@ -423,20 +539,22 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           </div>
         )}
       </td>
-      <td className="px-2 py-2 text-center" title="Lone Worker">
-        <input
-          type="checkbox"
-          checked={channel.loneWorker}
-          onChange={(e) => handleCellChange(channel.number, 'loneWorker', e.target.checked)}
-          className="checkbox-theme"
-          title="Lone Worker"
-        />
-      </td>
+      {hasColumn('loneWorker') && (
+        <td className="px-2 py-2 text-center" title="Lone Worker">
+          <input
+            type="checkbox"
+            checked={channel.loneWorker}
+            onChange={(e) => handleCellChange(channel.number, 'loneWorker', e.target.checked)}
+            className="checkbox-theme"
+            title="Lone Worker"
+          />
+        </td>
+      )}
       <td className="px-2 py-2">
         <select
           value={channel.scanListId}
           onChange={(e) => handleCellChange(channel.number, 'scanListId', parseInt(e.target.value) || 0)}
-          className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[120px]"
+          className={`${FIELD} border rounded px-2 py-1 text-xs w-full min-w-[6rem] max-w-[120px]`}
         >
           <option value={0}>None</option>
           {scanLists.map((scanList, index) => (
@@ -446,209 +564,247 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           ))}
         </select>
       </td>
-      <td className="px-2 py-2 text-center">
-        <input
-          type="checkbox"
-          checked={channel.forbidTalkaround}
-          onChange={(e) => handleCellChange(channel.number, 'forbidTalkaround', e.target.checked)}
-          className="checkbox-theme"
-        />
-      </td>
-      <td className="px-2 py-2 text-center">
-        <input
-          type="checkbox"
-          checked={channel.emergencyIndicator}
-          onChange={(e) => handleCellChange(channel.number, 'emergencyIndicator', e.target.checked)}
-          className="checkbox-theme"
-        />
-      </td>
-      <td className="px-2 py-2 text-center">
-        <input
-          type="checkbox"
-          checked={channel.emergencyAck}
-          onChange={(e) => handleCellChange(channel.number, 'emergencyAck', e.target.checked)}
-          className="checkbox-theme"
-        />
-      </td>
-      <td className="px-2 py-2">
-        <input
-          type="number"
-          min="0"
-          max="31"
-          value={channel.emergencySystemId}
-          onChange={(e) => handleCellChange(channel.number, 'emergencySystemId', parseInt(e.target.value) || 0)}
-          className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-1 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
-        />
-      </td>
-      <td className="px-2 py-2 text-center">
-        <input
-          type="checkbox"
-          checked={channel.aprsReceive}
-          onChange={(e) => handleCellChange(channel.number, 'aprsReceive', e.target.checked)}
-          className="checkbox-theme"
-        />
-      </td>
-      <td className="px-2 py-2 text-center">
-        <input
-          type="checkbox"
-          checked={channel.aprsReportMode === 'Digital'}
-          onChange={(e) => handleCellChange(channel.number, 'aprsReportMode', e.target.checked ? 'Digital' : 'Off')}
-          className="checkbox-theme"
-        />
-      </td>
-      <td className="px-2 py-2 text-center">
-        {isDigitalMode(channel.mode) ? (
-          <span className="text-cool-gray text-xs">-</span>
-        ) : (
+      {hasColumn('freeToAir') && (
+        <td className="px-2 py-2 text-center">
           <input
             type="checkbox"
-            checked={channel.voxFunction}
-            onChange={(e) => handleCellChange(channel.number, 'voxFunction', e.target.checked)}
+            checked={channel.forbidTalkaround}
+            onChange={(e) => handleCellChange(channel.number, 'forbidTalkaround', e.target.checked)}
             className="checkbox-theme"
           />
-        )}
-      </td>
-      <td className="px-2 py-2 text-center" title="Scramble">
-        <input
-          type="checkbox"
-          checked={channel.scramble}
-          onChange={(e) => handleCellChange(channel.number, 'scramble', e.target.checked)}
-          className="checkbox-theme"
-          title="Scramble"
-        />
-      </td>
-      <td className="px-2 py-2 text-center" title="Compander">
-        <input
-          type="checkbox"
-          checked={channel.compander}
-          onChange={(e) => handleCellChange(channel.number, 'compander', e.target.checked)}
-          className="checkbox-theme"
-          title="Compander"
-        />
-      </td>
-      <td className="px-2 py-2 text-center" title="Talkback">
-        <input
-          type="checkbox"
-          checked={channel.talkback}
-          onChange={(e) => handleCellChange(channel.number, 'talkback', e.target.checked)}
-          className="checkbox-theme"
-          title="Talkback"
-        />
-      </td>
-      <td className="px-2 py-2 text-center" title="Compander Dup">
-        <input
-          type="checkbox"
-          checked={channel.companderDup}
-          onChange={(e) => handleCellChange(channel.number, 'companderDup', e.target.checked)}
-          className="checkbox-theme"
-          title="Compander Dup"
-        />
-      </td>
-      <td className="px-2 py-2">
-        <input
-          type="number"
-          min="0"
-          max="255"
-          value={channel.squelchLevel}
-          onChange={(e) => handleCellChange(channel.number, 'squelchLevel', parseInt(e.target.value) || 0)}
-          className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-1 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
-        />
-      </td>
-      <td className="px-2 py-2 text-center">
-        {isDigitalMode(channel.mode) ? (
-          <span className="text-cool-gray text-xs">-</span>
-        ) : (
+        </td>
+      )}
+      {hasColumn('emergency') && (
+        <td className="px-2 py-2 text-center">
           <input
             type="checkbox"
-            checked={channel.pttIdDisplay}
-            onChange={(e) => handleCellChange(channel.number, 'pttIdDisplay', e.target.checked)}
+            checked={channel.emergencyIndicator}
+            onChange={(e) => handleCellChange(channel.number, 'emergencyIndicator', e.target.checked)}
             className="checkbox-theme"
           />
-        )}
-      </td>
-      <td className="px-2 py-2">
-        {isDigitalMode(channel.mode) ? (
-          <span className="text-cool-gray text-xs text-center block">-</span>
-        ) : (
+        </td>
+      )}
+      {hasColumn('emergency') && (
+        <td className="px-2 py-2 text-center">
+          <input
+            type="checkbox"
+            checked={channel.emergencyAck}
+            onChange={(e) => handleCellChange(channel.number, 'emergencyAck', e.target.checked)}
+            className="checkbox-theme"
+          />
+        </td>
+      )}
+      {hasColumn('emergency') && (
+        <td className="px-2 py-2">
           <input
             type="number"
             min="0"
-            max="63"
-            value={channel.pttId}
-            onChange={(e) => handleCellChange(channel.number, 'pttId', parseInt(e.target.value) || 0)}
-            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-1 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
+            max="31"
+            value={channel.emergencySystemId}
+            onChange={(e) => handleCellChange(channel.number, 'emergencySystemId', parseInt(e.target.value) || 0)}
+            className={`${FIELD} border rounded px-1 py-1 w-full text-xs text-center`}
           />
-        )}
-      </td>
-      <td className="px-2 py-2 text-center">
-        <input
-          type="checkbox"
-          checked={channel.voxRelated}
-          onChange={(e) => handleCellChange(channel.number, 'voxRelated', e.target.checked)}
-          className="checkbox-theme"
-        />
-      </td>
-      <td className="px-2 py-2">
-        {isDigitalMode(channel.mode) ? (
-          <span className="text-cool-gray text-xs text-center block">-</span>
-        ) : (
+        </td>
+      )}
+      {hasColumn('aprs') && (
+        <td className="px-2 py-2 text-center">
+          <input
+            type="checkbox"
+            checked={channel.aprsReceive}
+            onChange={(e) => handleCellChange(channel.number, 'aprsReceive', e.target.checked)}
+            className="checkbox-theme"
+          />
+        </td>
+      )}
+      {hasColumn('aprs') && (
+        <td className="px-2 py-2 text-center">
+          <input
+            type="checkbox"
+            checked={channel.aprsReportMode === 'Digital'}
+            onChange={(e) => handleCellChange(channel.number, 'aprsReportMode', e.target.checked ? 'Digital' : 'Off')}
+            className="checkbox-theme"
+          />
+        </td>
+      )}
+      {hasColumn('vox') && (
+        <td className="px-2 py-2 text-center">
+          {isDigitalMode(channel.mode) ? (
+            <span className="text-cool-gray text-xs">-</span>
+          ) : (
+            <input
+              type="checkbox"
+              checked={channel.voxFunction}
+              onChange={(e) => handleCellChange(channel.number, 'voxFunction', e.target.checked)}
+              className="checkbox-theme"
+            />
+          )}
+        </td>
+      )}
+      {hasColumn('audioProcessing') && (
+        <td className="px-2 py-2 text-center" title="Scramble">
+          <input
+            type="checkbox"
+            checked={channel.scramble}
+            onChange={(e) => handleCellChange(channel.number, 'scramble', e.target.checked)}
+            className="checkbox-theme"
+            title="Scramble"
+          />
+        </td>
+      )}
+      {hasColumn('audioProcessing') && (
+        <td className="px-2 py-2 text-center" title="Compander">
+          <input
+            type="checkbox"
+            checked={channel.compander}
+            onChange={(e) => handleCellChange(channel.number, 'compander', e.target.checked)}
+            className="checkbox-theme"
+            title="Compander"
+          />
+        </td>
+      )}
+      {hasColumn('audioProcessing') && (
+        <td className="px-2 py-2 text-center" title="Talkback">
+          <input
+            type="checkbox"
+            checked={channel.talkback}
+            onChange={(e) => handleCellChange(channel.number, 'talkback', e.target.checked)}
+            className="checkbox-theme"
+            title="Talkback"
+          />
+        </td>
+      )}
+      {hasColumn('audioProcessing') && (
+        <td className="px-2 py-2 text-center" title="Compander Dup">
+          <input
+            type="checkbox"
+            checked={channel.companderDup}
+            onChange={(e) => handleCellChange(channel.number, 'companderDup', e.target.checked)}
+            className="checkbox-theme"
+            title="Compander Dup"
+          />
+        </td>
+      )}
+      {hasColumn('squelch') && (
+        <td className="px-2 py-2">
+          <input
+            type="number"
+            min="0"
+            max="255"
+            value={channel.squelchLevel}
+            onChange={(e) => handleCellChange(channel.number, 'squelchLevel', parseInt(e.target.value) || 0)}
+            className={`${FIELD} border rounded px-1 py-1 w-full text-xs text-center`}
+          />
+        </td>
+      )}
+      {hasColumn('pttId') && (
+        <td className="px-2 py-2 text-center">
+          {isDigitalMode(channel.mode) ? (
+            <span className="text-cool-gray text-xs">-</span>
+          ) : (
+            <input
+              type="checkbox"
+              checked={channel.pttIdDisplay}
+              onChange={(e) => handleCellChange(channel.number, 'pttIdDisplay', e.target.checked)}
+              className="checkbox-theme"
+            />
+          )}
+        </td>
+      )}
+      {hasColumn('pttId') && (
+        <td className="px-2 py-2">
+          {isDigitalMode(channel.mode) ? (
+            <span className="text-cool-gray text-xs text-center block">-</span>
+          ) : (
+            <input
+              type="number"
+              min="0"
+              max="63"
+              value={channel.pttId}
+              onChange={(e) => handleCellChange(channel.number, 'pttId', parseInt(e.target.value) || 0)}
+              className={`${FIELD} border rounded px-1 py-1 w-full text-xs text-center`}
+            />
+          )}
+        </td>
+      )}
+      {hasColumn('vox') && (
+        <td className="px-2 py-2 text-center">
+          <input
+            type="checkbox"
+            checked={channel.voxRelated}
+            onChange={(e) => handleCellChange(channel.number, 'voxRelated', e.target.checked)}
+            className="checkbox-theme"
+          />
+        </td>
+      )}
+      {hasColumn('squelch') && (
+        <td className="px-2 py-2">
+          {isDigitalMode(channel.mode) ? (
+            <span className="text-cool-gray text-xs text-center block">-</span>
+          ) : (
+            <select
+              value={channel.rxSquelchMode}
+              onChange={(e) => handleCellChange(channel.number, 'rxSquelchMode', e.target.value)}
+              className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
+            >
+              <option value="Carrier/CTC">Carrier/CTC</option>
+              <option value="Optional">Optional</option>
+              <option value="CTC&Opt">CTC&Opt</option>
+              <option value="CTC|Opt">CTC|Opt</option>
+            </select>
+          )}
+        </td>
+      )}
+      {hasColumn('stepFrequency') && (
+        <td className="px-2 py-2">
           <select
-            value={channel.rxSquelchMode}
-            onChange={(e) => handleCellChange(channel.number, 'rxSquelchMode', e.target.value)}
-            className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+            value={channel.stepFrequency}
+            onChange={(e) => handleCellChange(channel.number, 'stepFrequency', parseInt(e.target.value) || 0)}
+            className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
           >
-            <option value="Carrier/CTC">Carrier/CTC</option>
-            <option value="Optional">Optional</option>
-            <option value="CTC&Opt">CTC&Opt</option>
-            <option value="CTC|Opt">CTC|Opt</option>
+            <option value={0}>2.5K</option>
+            <option value={1}>5K</option>
+            <option value={2}>6.25K</option>
+            <option value={3}>10K</option>
+            <option value={4}>12.5K</option>
+            <option value={5}>25K</option>
+            <option value={6}>50K</option>
+            <option value={7}>100K</option>
           </select>
-        )}
-      </td>
-      <td className="px-2 py-2">
-        <select
-          value={channel.stepFrequency}
-          onChange={(e) => handleCellChange(channel.number, 'stepFrequency', parseInt(e.target.value) || 0)}
-          className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
-        >
-          <option value={0}>2.5K</option>
-          <option value={1}>5K</option>
-          <option value={2}>6.25K</option>
-          <option value={3}>10K</option>
-          <option value={4}>12.5K</option>
-          <option value={5}>25K</option>
-          <option value={6}>50K</option>
-          <option value={7}>100K</option>
-        </select>
-      </td>
-      <td className="px-2 py-2">
-        {isDigitalMode(channel.mode) ? (
-          <span className="text-cool-gray text-xs text-center block">-</span>
-        ) : (
+        </td>
+      )}
+      {hasColumn('signalType') && (
+        <td className="px-2 py-2">
+          {isDigitalMode(channel.mode) ? (
+            <span className="text-cool-gray text-xs text-center block">-</span>
+          ) : (
+            <select
+              value={channel.signalingType}
+              onChange={(e) => handleCellChange(channel.number, 'signalingType', e.target.value)}
+              className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
+            >
+              <option value="None">None</option>
+              <option value="DTMF">DTMF</option>
+              <option value="Two Tone">2Tone</option>
+              <option value="Five Tone">5Tone</option>
+              <option value="MDC1200">MDC</option>
+            </select>
+          )}
+        </td>
+      )}
+      {hasColumn('pttId') && (
+        <td className="px-2 py-2">
           <select
-            value={channel.signalingType}
-            onChange={(e) => handleCellChange(channel.number, 'signalingType', e.target.value)}
-            className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
+            value={channel.pttIdType}
+            onChange={(e) => handleCellChange(channel.number, 'pttIdType', e.target.value)}
+            className={`${FIELD} border rounded px-2 py-1 text-xs w-full`}
           >
-            <option value="None">None</option>
-            <option value="DTMF">DTMF</option>
-            <option value="Two Tone">2Tone</option>
-            <option value="Five Tone">5Tone</option>
-            <option value="MDC1200">MDC</option>
+            <option value="Off">Off</option>
+            <option value="BOT">BOT</option>
+            <option value="EOT">EOT</option>
+            <option value="Both">Both</option>
           </select>
-        )}
-      </td>
-      <td className="px-2 py-2">
-        <select
-          value={channel.pttIdType}
-          onChange={(e) => handleCellChange(channel.number, 'pttIdType', e.target.value)}
-          className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full"
-        >
-          <option value="Off">Off</option>
-          <option value="BOT">BOT</option>
-          <option value="EOT">EOT</option>
-          <option value="Both">Both</option>
-        </select>
-      </td>
+        </td>
+      )}
       {/* Digital-only fields - hidden for analog-only radios */}
       {!analogOnly && (
         <>
@@ -660,7 +816,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                 max="15"
                 value={channel.colorCode}
                 onChange={(e) => handleCellChange(channel.number, 'colorCode', parseInt(e.target.value) || 0)}
-                className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-1 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full text-xs text-center"
+                className={`${FIELD} border rounded px-1 py-1 w-full text-xs text-center`}
               />
             ) : (
               <span className="text-cool-gray text-xs text-center block">-</span>
@@ -671,7 +827,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
               <select
                 value={channel.rxGroupListId ?? 0}
                 onChange={(e) => handleCellChange(channel.number, 'rxGroupListId', parseInt(e.target.value) || 0)}
-                className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[140px]"
+                className={`${FIELD} border rounded px-2 py-1 text-xs w-full max-w-[140px]`}
               >
                 <option value={0}>None</option>
                 {rxGroups
@@ -696,7 +852,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   const newSlot = currentSlot === 0 ? 1 : 0; // Toggle: 0→1, 1→0
                   handleCellChange(channel.number, 'slotOperation', newSlot);
                 }}
-                className="w-8 h-7 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white hover:bg-opacity-80 hover:border-neon-cyan focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs font-medium transition-colors"
+                className={`${BUTTON.field} w-8 h-7 border rounded text-xs font-medium`}
                 title={`Slot ${(channel.slotOperation ?? 0) === 0 ? 1 : 2}`}
               >
                 {(channel.slotOperation ?? 0) === 0 ? 1 : 2}
@@ -705,79 +861,89 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
               <span className="text-cool-gray text-xs text-center block">-</span>
             )}
           </td>
-          <td className="px-2 py-2 text-center">
-            {showColorCode ? (
-              <input
-                type="checkbox"
-                checked={channel.encryption ?? false}
-                onChange={(e) => handleCellChange(channel.number, 'encryption', e.target.checked)}
-                className="checkbox-theme"
-                title="Encryption"
-              />
-            ) : (
-              <span className="text-cool-gray text-xs">-</span>
-            )}
-          </td>
-          <td className="px-2 py-2">
-            {showColorCode ? (
-              <select
-                value={channel.encryptionId ?? 0}
-                onChange={(e) => handleCellChange(channel.number, 'encryptionId', parseInt(e.target.value) || 0)}
-                className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[120px]"
-                title="Encryption Key"
-              >
-                <option value={0}>None</option>
-                {encryptionKeys
-                  .filter(key => key.id >= 1 && key.id <= 8 && key.name.trim() !== '')
-                  .map((key) => (
-                    <option key={key.entryNumber} value={key.id}>
-                      {key.name || `Key ${key.id}`}
-                    </option>
-                  ))}
-              </select>
-            ) : (
-              <span className="text-cool-gray text-xs text-center block">-</span>
-            )}
-          </td>
-          <td className="px-2 py-2 text-center">
-            {showColorCode ? (
-              <input
-                type="checkbox"
-                checked={channel.tdmaDirectMode ?? false}
-                onChange={(e) => handleCellChange(channel.number, 'tdmaDirectMode', e.target.checked)}
-                className="checkbox-theme"
-                title="TDMA Direct Mode"
-              />
-            ) : (
-              <span className="text-cool-gray text-xs">-</span>
-            )}
-          </td>
-          <td className="px-2 py-2 text-center">
-            {showColorCode ? (
-              <input
-                type="checkbox"
-                checked={channel.shortDataConfirm ?? false}
-                onChange={(e) => handleCellChange(channel.number, 'shortDataConfirm', e.target.checked)}
-                className="checkbox-theme"
-                title="Short Data Confirm"
-              />
-            ) : (
-              <span className="text-cool-gray text-xs">-</span>
-            )}
-          </td>
-          <td className="px-2 py-2 text-center">
-            {showColorCode ? (
-              <input
-                type="checkbox"
-                checked={channel.privateConfirm ?? false}
-                onChange={(e) => handleCellChange(channel.number, 'privateConfirm', e.target.checked)}
-                className="checkbox-theme"
-                title="Private Confirm"
-              />
-            ) : (
-              <span className="text-cool-gray text-xs">-</span>
-            )}
-          </td>
+          {hasColumn('encryption') && (
+            <td className="px-2 py-2 text-center">
+              {showColorCode ? (
+                <input
+                  type="checkbox"
+                  checked={channel.encryption ?? false}
+                  onChange={(e) => handleCellChange(channel.number, 'encryption', e.target.checked)}
+                  className="checkbox-theme"
+                  title="Encryption"
+                />
+              ) : (
+                <span className="text-cool-gray text-xs">-</span>
+              )}
+            </td>
+          )}
+          {hasColumn('encryption') && (
+            <td className="px-2 py-2">
+              {showColorCode ? (
+                <select
+                  value={channel.encryptionId ?? 0}
+                  onChange={(e) => handleCellChange(channel.number, 'encryptionId', parseInt(e.target.value) || 0)}
+                  className={`${FIELD} border rounded px-2 py-1 text-xs w-full max-w-[120px]`}
+                  title="Encryption Key"
+                >
+                  <option value={0}>None</option>
+                  {encryptionKeys
+                    .filter(key => key.id >= 1 && key.id <= 8 && key.name.trim() !== '')
+                    .map((key) => (
+                      <option key={key.entryNumber} value={key.id}>
+                        {key.name || `Key ${key.id}`}
+                      </option>
+                    ))}
+                </select>
+              ) : (
+                <span className="text-cool-gray text-xs text-center block">-</span>
+              )}
+            </td>
+          )}
+          {hasColumn('tdma') && (
+            <td className="px-2 py-2 text-center">
+              {showColorCode ? (
+                <input
+                  type="checkbox"
+                  checked={channel.tdmaDirectMode ?? false}
+                  onChange={(e) => handleCellChange(channel.number, 'tdmaDirectMode', e.target.checked)}
+                  className="checkbox-theme"
+                  title="TDMA Direct Mode"
+                />
+              ) : (
+                <span className="text-cool-gray text-xs">-</span>
+              )}
+            </td>
+          )}
+          {hasColumn('confirmations') && (
+            <td className="px-2 py-2 text-center">
+              {showColorCode ? (
+                <input
+                  type="checkbox"
+                  checked={channel.shortDataConfirm ?? false}
+                  onChange={(e) => handleCellChange(channel.number, 'shortDataConfirm', e.target.checked)}
+                  className="checkbox-theme"
+                  title="Short Data Confirm"
+                />
+              ) : (
+                <span className="text-cool-gray text-xs">-</span>
+              )}
+            </td>
+          )}
+          {hasColumn('confirmations') && (
+            <td className="px-2 py-2 text-center">
+              {showColorCode ? (
+                <input
+                  type="checkbox"
+                  checked={channel.privateConfirm ?? false}
+                  onChange={(e) => handleCellChange(channel.number, 'privateConfirm', e.target.checked)}
+                  className="checkbox-theme"
+                  title="Private Confirm"
+                />
+              ) : (
+                <span className="text-cool-gray text-xs">-</span>
+              )}
+            </td>
+          )}
           <td className="px-2 py-2">
             {showColorCode ? (
               <select
@@ -787,7 +953,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
                   // 255 = None, store as 255 (will be converted to 0xFF when encoding)
                   handleCellChange(channel.number, 'dmrRadioIdIndex', value);
                 }}
-                className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[150px]"
+                className={`${FIELD} border rounded px-2 py-1 text-xs w-full max-w-[150px]`}
                 title="DMR Radio ID Index for TX"
               >
                 <option value="255">None</option>
@@ -812,13 +978,23 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           </td>
         </>
       )}
+      {/* Radio-specific extras. Same source array as the headers in
+          ChannelsTable, so the two cannot drift apart. */}
+      {extraColumnsFor(declaredColumns).map((c) => (
+        <ExtraColumnCell
+          key={c.field}
+          column={c}
+          channel={channel}
+          onCellChange={handleCellChange}
+        />
+      ))}
       {/* Common fields - work for both */}
       <td className="px-2 py-2">
         {showColorCode ? (
           <select
             value={channel.contactId}
             onChange={(e) => handleCellChange(channel.number, 'contactId', parseInt(e.target.value) || 0)}
-            className="bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan text-xs w-full max-w-[150px]"
+            className={`${FIELD} border rounded px-2 py-1 text-xs w-full max-w-[150px]`}
           >
             <option value={0}>None</option>
             {talkGroups.map((tg) => {
@@ -838,7 +1014,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         <div className="flex items-center justify-center gap-1">
           <button
             onClick={() => onEdit(channel)}
-            className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-neon-cyan border border-neon-cyan border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+            className={`${BUTTON.rowAction} px-1.5 py-0.5 text-xs border rounded opacity-60 hover:opacity-100`}
             title={`Edit ${isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : `channel ${channel.number}`}`}
           >
             ✎
@@ -846,7 +1022,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           {!isVFOChannel(channel.number) && (
             <button
               onClick={() => onClone(channel)}
-              className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-neon-magenta border border-neon-magenta border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+              className={`${BUTTON.rowAction} px-1.5 py-0.5 text-xs border rounded opacity-60 hover:opacity-100`}
               title={`Clone channel ${channel.number}`}
             >
               ⧉
@@ -855,7 +1031,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           {!isVFOChannel(channel.number) && (
             <button
               onClick={() => onDelete(channel)}
-              className="px-1.5 py-0.5 text-xs text-cool-gray hover:text-red-400 border border-red-600 border-opacity-0 hover:border-opacity-30 rounded transition-colors opacity-60 hover:opacity-100"
+              className={`${BUTTON.dangerQuiet} px-1.5 py-0.5 text-xs border rounded opacity-60 hover:opacity-100`}
               title={`Delete channel ${channel.number}`}
             >
               ×

@@ -6,10 +6,11 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { Button } from '../ui/Button';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { downloadOfflineAsZip } from '../../utils/offlineDownload';
+import { PageHeader } from '../ui/PageHeader';
 
 const OFFLINE_FALLBACK_MESSAGE =
   'The offline version is available on GitHub Pages.\n\n' +
-  'Click OK to open it, then use your browser\'s "Save Page As" to save as neonplug.html.\n\n' +
+  'Open the page, then use your browser\'s "Save Page As" to save it as neonplug.html.\n\n' +
   'Or build it locally using the instructions below.';
 
 const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
@@ -20,13 +21,11 @@ export const AboutTab: React.FC = () => {
 
   return (
     <>
-    <div className="h-full overflow-y-auto">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-neon-cyan mb-2">About NeonPlug</h2>
-        <p className="text-cool-gray">
-          Online Digital CPS — program your radio directly from your browser.
-        </p>
-      </div>
+    <div>
+      <PageHeader
+        title="About NeonPlug"
+        description="Online Digital CPS — program your radio directly from your browser."
+      />
 
       <div className="space-y-6">
         {/* Offline Version */}
@@ -53,6 +52,7 @@ export const AboutTab: React.FC = () => {
                   }
                 }}
                 variant="primary"
+                size="none"
                 className="inline-flex items-center justify-center px-6 py-3"
               >
                 📥 Download Offline Version (ZIP)
@@ -75,10 +75,10 @@ export const AboutTab: React.FC = () => {
                 To build your own offline version from source:
               </p>
               <pre className="bg-black rounded p-3 text-xs text-neon-cyan overflow-x-auto">
-                <code>git clone https://github.com/infamy/NeonPlug.git
-cd NeonPlug
-npm install
-npm run build:single</code>
+                {/* A string, not JSX text: JSX folds line breaks in text into
+                    single spaces, so these four commands rendered as one line
+                    that fails when pasted. */}
+                <code>{'git clone https://github.com/infamy/NeonPlug.git\ncd NeonPlug\nnpm install\nnpm run build:single'}</code>
               </pre>
               <p className="text-cool-gray text-xs mt-2">
                 The single-file HTML will be in the <code className="text-neon-cyan">dist/index.html</code> file.
@@ -338,8 +338,9 @@ npm run build:single</code>
       onConfirm={() => window.open(OFFLINE_VERSION_URL, '_blank')}
       title="Download offline version"
       message={OFFLINE_FALLBACK_MESSAGE}
-      confirmLabel="OK"
-      variant="alert"
+      confirmLabel="Open download page"
+      cancelLabel="Close"
+      variant="default"
     />
     </>
   );

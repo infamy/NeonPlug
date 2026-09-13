@@ -36,6 +36,22 @@ export class UV5RMiniProtocol extends BaseAnalogProtocol {
   /** Cached image from last readChannels (used by readRadioSettings and getFirmwareFromCache). */
   private cachedImage: Uint8Array | null = null;
 
+  /**
+   * Expose the cached clone image so `useRadioConnection` can persist it into
+   * `radioStore.cachedMemoryImage` after a read, which is what the Diagnostics
+   * memory-image viewer renders.
+   *
+   * Getter only, deliberately: `setMemoryImage` is NOT implemented, because the
+   * restore path exists to let a whole-image upload preserve untouched regions —
+   * and this radio doesn't do that. `writeChannels` builds a fresh image but
+   * only writes blocks inside the channel region, so everything else on the
+   * radio is preserved by scoping rather than by seeding. Adding a setter would
+   * change what `readRadioSettings` sees without making any write safer.
+   */
+  getMemoryImage(): Uint8Array | null {
+    return this.cachedImage;
+  }
+
   /** Parse firmware string from cached clone image (call after readChannels). Used to enrich radioInfo. */
   getFirmwareFromCache(): string {
     const img = this.cachedImage;

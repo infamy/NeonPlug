@@ -69,6 +69,46 @@ export async function geocodeLocation(
 }
 
 /**
+ * Geocode a free-form place query, returning several candidates.
+ *
+ * Deliberately separate from `geocodeLocation`, which appends ", USA" whenever
+ * no country is given — correct for the US repeater search it was written for,
+ * wrong for anyone entering a place anywhere else. This sends the query as
+ * typed.
+ *
+ * Returns candidates rather than a single best match: "Springfield" is a real
+ * question, not a lookup, and silently taking the first hit would drop a
+ * geofence in the wrong country.
+ *
+ * Network-dependent. Callers must handle the offline case — this is an
+ * offline-first app and the feature it serves has to degrade, not break.
+ */
+export async function geocodePlaces(
+  query: string,
+  limit = 5
+): Promise<GeocodeResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const url =
+    `https://nominatim.openstreetmap.org/search?format=json` +
+    `&q=${encodeURIComponent(trimmed)}&limit=${limit}`;
+
+  const response = await fetch(url, {
+    headers: { 'User-Agent': 'NeonPlug/1.0' },
+  });
+  if (!response.ok) throw new Error(`Location search failed: ${response.statusText}`);
+
+  const data = await response.json();
+  if (!Array.isArray(data)) return [];
+
+  return data.map((r: { lat: string; lon: string; display_name?: string }) => ({
+    latitude: parseFloat(r.lat),
+    longitude: parseFloat(r.lon),
+    formattedAddress: r.display_name,
+  }));
+}
+
+/**
  * Reverse geocode coordinates to address
  */
 export async function reverseGeocode(

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useRadioStore } from '../../store/radioStore';
 import { downloadHexDump, downloadBinary } from '../../utils/hexdump';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { OffsetInspector } from './OffsetInspector';
 import { BOOT_IMAGE } from '../../utils/bootImage';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 export const BootImagePanel: React.FC = () => {
   const { bootImageRaw } = useRadioStore();
@@ -25,7 +26,7 @@ export const BootImagePanel: React.FC = () => {
               <button
                 type="button"
                 onClick={() => downloadHexDump(bootImageRaw, 'boot-image-hexdump.txt')}
-                className="px-3 py-1 text-xs text-neon-cyan hover:text-cyan-300 border border-neon-cyan/40 hover:border-neon-cyan rounded transition-colors"
+                className={`${BUTTON.caution} px-3 py-1 text-xs border rounded`}
                 title="Download hex dump"
               >
                 Hex
@@ -33,7 +34,7 @@ export const BootImagePanel: React.FC = () => {
               <button
                 type="button"
                 onClick={() => downloadBinary(bootImageRaw, 'boot-image.bin')}
-                className="px-3 py-1 text-xs text-neon-cyan hover:text-cyan-300 border border-neon-cyan/40 hover:border-neon-cyan rounded transition-colors"
+                className={`${BUTTON.caution} px-3 py-1 text-xs border rounded`}
                 title="Download binary"
               >
                 Bin
@@ -41,7 +42,7 @@ export const BootImagePanel: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowBootImageSection(!showBootImageSection)}
-                className="text-sm text-neon-cyan hover:text-cyan-300"
+                className={`${BUTTON.cautionLink} text-sm`}
               >
                 {showBootImageSection ? '▼ Hide' : '▶ Show'}
               </button>
@@ -73,7 +74,7 @@ export const BootImagePanel: React.FC = () => {
                         value={inspectBootImageOffset}
                         onChange={(e) => setInspectBootImageOffset(e.target.value)}
                         placeholder="0x000"
-                        className="flex-1 px-3 py-2 bg-deep-gray border border-neon-cyan/30 rounded text-white text-sm font-mono focus:outline-none focus:border-neon-cyan"
+                        className={`${FIELD} flex-1 px-3 py-2 border rounded text-sm font-mono`}
                       />
                       <button
                         type="button"
@@ -83,7 +84,7 @@ export const BootImagePanel: React.FC = () => {
                             document.getElementById(`bootimg-hex-${offset}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                           }
                         }}
-                        className="px-4 py-2 bg-cyan-900/30 text-neon-cyan text-sm rounded border border-neon-cyan/30 hover:bg-cyan-900/50"
+                        className={`${BUTTON.caution} px-4 py-2 text-sm rounded border`}
                       >
                         Go
                       </button>

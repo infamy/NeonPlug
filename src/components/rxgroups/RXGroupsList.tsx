@@ -1,3 +1,4 @@
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import React, { useState } from 'react';
 import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
@@ -10,8 +11,13 @@ import type { PickerItem } from '../ui/pickerItems';
 import { Card } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 export const RXGroupsList: React.FC = () => {
+  const { caps } = useRadioCapabilities();
+  // One maximum for the subtitle, the add handler and the Add button. The button
+  // checked a literal 32, so a DA-7X2 (250 groups) could never add a 33rd.
+  const maxGroups = caps?.digital?.limits?.RX_GROUPS_MAX ?? 32;
   const { groups, selectedGroup, setSelectedGroup, addGroup, deleteGroup, updateGroup } = useRXGroupsStore();
   const [newGroupName, setNewGroupName] = useState('');
   const [editingName, setEditingName] = useState<number | null>(null);
@@ -20,8 +26,8 @@ export const RXGroupsList: React.FC = () => {
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
 
   const handleAddGroup = () => {
-    if (groups.length >= 32) {
-      showAlert('Maximum of 32 RX groups allowed.');
+    if (groups.length >= maxGroups) {
+      showAlert(`Maximum of ${maxGroups} RX groups allowed.`);
       return;
     }
     if (newGroupName.trim()) {
@@ -86,7 +92,7 @@ export const RXGroupsList: React.FC = () => {
                   onClick={(e) => e.stopPropagation()}
                   autoFocus
                   maxLength={11}
-                  className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-sm font-medium focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full"
+                  className={`${FIELD} border rounded px-2 py-1 text-sm font-medium w-full`}
                 />
               ) : (
                 <span
@@ -117,7 +123,7 @@ export const RXGroupsList: React.FC = () => {
                   e.stopPropagation();
                   setGroupToDelete({ index: group.index, name: group.name });
                 }}
-                className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                className={`${BUTTON.danger} px-2 py-0.5 rounded text-xs border`}
               >
                 Delete
               </button>
@@ -155,7 +161,7 @@ export const RXGroupsList: React.FC = () => {
                 }}
                 autoFocus
                 maxLength={11}
-                className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-neon-cyan font-bold focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan flex-1"
+                className={`${FIELD} border rounded px-2 py-1 text-neon-cyan font-bold flex-1`}
               />
             ) : (
               <div className="flex items-center gap-2 flex-1">
@@ -195,12 +201,12 @@ export const RXGroupsList: React.FC = () => {
     <>
       <ListDetailLayout
         listTitle="RX Groups"
-        listSubtitle={`${groups.length}/32 groups`}
+        listSubtitle={`${groups.length}/${maxGroups} groups`}
         addInputPlaceholder="Group name..."
         addInputValue={newGroupName}
         onAddInputChange={setNewGroupName}
         onAdd={handleAddGroup}
-        addDisabled={groups.length >= 32}
+        addDisabled={groups.length >= maxGroups}
         addInputMaxLength={11}
         listContent={listContent}
         detailContent={detailContent}
@@ -240,6 +246,8 @@ interface RXGroupEditorProps {
 }
 
 const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group, onAlert }) => {
+  // Per-radio limit, not a hardcoded DM-32 value.
+  const { caps } = useRadioCapabilities();
   const { updateGroup } = useRXGroupsStore();
   const { contacts: talkGroups } = useQuickContactsStore();
 
@@ -267,7 +275,7 @@ const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group, onAlert }) => {
           value={group.name}
           onChange={(e) => updateGroup(group.index, { name: e.target.value.slice(0, 11) })}
           maxLength={11}
-          className="flex-1 bg-transparent border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+          className={`${FIELD} flex-1 border rounded px-3 py-2 text-sm`}
           placeholder="Enter group name"
         />
       </div>
@@ -279,7 +287,7 @@ const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group, onAlert }) => {
           return tg ? talkGroupItem(tg) : undefined;
         }}
         onChange={(ids) => updateGroup(group.index, { talkGroupIndices: ids })}
-        maxItems={32}
+        maxItems={caps?.maxRxGroupMembers ?? 32}
         itemNoun="talk group"
         containerNoun="RX group"
         onAlert={onAlert}

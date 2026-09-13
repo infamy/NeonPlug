@@ -13,6 +13,7 @@ import {
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { SectionTitle } from '../../ui/SectionTitle';
+import { BUTTON, FIELD } from '../../ui/controlStyles';
 
 interface MmdvmSourceProps {
   onError: (msg: string) => void;
@@ -116,7 +117,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
               onChange={(e) => setMmdvmZoneName(e.target.value)}
               placeholder="Default: MMDVM"
               maxLength={16}
-              className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              className={`${FIELD} w-full border rounded px-3 py-2`}
             />
           </div>
           <div>
@@ -129,7 +130,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
               max={MMDVM_FREQ_MAX_MHZ}
               step="0.001"
               placeholder="431.150"
-              className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              className={`${FIELD} w-full border rounded px-3 py-2`}
             />
             <p className="text-xs text-cool-gray mt-1">
               {MMDVM_FREQ_MIN_MHZ}–{MMDVM_FREQ_MAX_MHZ} MHz
@@ -140,7 +141,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
             <select
               value={mmdvmDmrRadioIdIndex}
               onChange={(e) => setMmdvmDmrRadioIdIndex(e.target.value)}
-              className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              className={`${FIELD} w-full border rounded px-3 py-2`}
             >
               <option value="">None</option>
               {radioIds.map((radioId) => (
@@ -178,7 +179,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                     }}
                     placeholder="Optional"
                     maxLength={16}
-                    className="w-full bg-black border border-neon-cyan rounded px-2 py-1.5 text-white text-sm"
+                    className={`${FIELD} w-full border rounded px-2 py-1.5 text-sm`}
                   />
                 </div>
                 <div className="col-span-4">
@@ -193,7 +194,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                     }}
                     placeholder="e.g. Local"
                     maxLength={16}
-                    className="w-full bg-black border border-neon-cyan rounded px-2 py-1.5 text-white text-sm"
+                    className={`${FIELD} w-full border rounded px-2 py-1.5 text-sm`}
                   />
                 </div>
                 <div className="col-span-2">
@@ -210,7 +211,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                     min={0}
                     max={16776415}
                     placeholder="9"
-                    className="w-full bg-black border border-neon-cyan rounded px-2 py-1.5 text-white text-sm"
+                    className={`${FIELD} w-full border rounded px-2 py-1.5 text-sm`}
                   />
                 </div>
                 <div className="col-span-3 flex items-end gap-1">
@@ -218,7 +219,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                     <button
                       type="button"
                       onClick={() => setMmdvmEntries(mmdvmEntries.filter((_, i) => i !== index))}
-                      className="text-sm text-red-400 hover:text-red-300"
+                      className={`${BUTTON.dangerQuiet} text-sm`}
                     >
                       Remove
                     </button>
@@ -232,7 +233,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                           { channelName: '', talkGroupName: '', talkGroupId: 9 },
                         ])
                       }
-                      className="text-sm text-neon-cyan hover:text-neon-cyan-bright"
+                      className={`${BUTTON.link} text-sm`}
                     >
                       + Add channel
                     </button>
@@ -257,7 +258,8 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
       <Button
         onClick={handleAddMmdvmChannels}
         disabled={isAddingMmdvm}
-        className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
+        variant="accent"
+        className="w-full"
       >
         {isAddingMmdvm ? 'Adding MMDVM channels...' : 'Add MMDVM channels'}
       </Button>

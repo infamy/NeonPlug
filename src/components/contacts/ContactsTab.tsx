@@ -4,10 +4,15 @@ import { useContactsStore } from '../../store/contactsStore';
 import { useRadioStore } from '../../store/radioStore';
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { ContactsTable } from './ContactsTable';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { ProgressBar } from '../ui/ProgressBar';
 import { COUNTRIES_BY_REGION, type CountryRegion } from '../../constants/countries';
 import { US_STATES } from '../../constants/usStates';
 import type { Contact } from '../../models/Contact';
+import { PageHeader } from '../ui/PageHeader';
+import { resolveContactCapacity } from '../../utils/contactCapacity';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 // RadioID User interface
 interface RadioIDUser {
@@ -208,69 +213,75 @@ export const ContactsTab: React.FC = () => {
   const { contacts, setContacts } = useContactsStore();
   const { radioInfo } = useRadioStore();
   const { readContacts, writeContacts, isConnecting } = useRadioConnection();
+  // The store keeps a long operation's progress alive across this tab
+  // unmounting, so coming back mid-read shows the bar again rather than a
+  // stale idle screen. Local state still drives the write path.
+  const { radioProgress, radioBusy } = useRadioStore();
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState('');
   const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [customCountry, setCustomCountry] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  // Open until a download lands, then folded away so the loaded list gets the
+  // room — see handleDownloadFromRadioID.
+  const [radioIdOpen, setRadioIdOpen] = useState(true);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [truncationWarning, setTruncationWarning] = useState<string | null>(null);
   const [isReading, setIsReading] = useState(false);
   const [isWriting, setIsWriting] = useState(false);
+  // A ref, not state: the protocol polls this between frames and must see the
+  // latest value without waiting for a re-render.
+  const cancelWrite = useRef(false);
   
-  const contactCapacity = radioInfo?.maxContacts ?? 50000;
+  const { caps } = useRadioCapabilities();
+  const contactCapacity = resolveContactCapacity(caps, radioInfo);
 
-  // Estimate time based on 150k contacts = 6 minutes
-  const estimateTime = (contactCount: number): string => {
-    // 150,000 contacts = 6 minutes = 360 seconds
-    const seconds = Math.ceil((contactCount / 150000) * 360);
-    if (seconds < 60) {
-      return `~${seconds}s`;
-    }
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    if (remainingSeconds === 0) {
-      return `~${minutes}m`;
-    }
-    return `~${minutes}m ${remainingSeconds}s`;
-  };
 
   const handleReadContacts = async () => {
     setIsReading(true);
     setProgress(0);
     setProgressMessage('');
     setDownloadError(null);
-    const startTime = Date.now();
-    
+
+    /**
+     * ETA is measured from the FIRST progress report, not from the button
+     * press. The gap before that covers connecting, identifying the radio and
+     * reading the first block — real time, but not time that scales with the
+     * rest of the job, so including it inflates every estimate that follows.
+     */
+    let firstTick: { at: number; progress: number } | null = null;
+    let ticks = 0;
+    /** Ticks to see before quoting a number. Two gives a rate, three steadies it. */
+    const TICKS_BEFORE_ETA = 3;
+
     try {
       await readContacts((progress, message) => {
         setProgress(progress);
-        
-        // Calculate ETA based on progress, or use initial estimate if no progress yet
-        const elapsed = (Date.now() - startTime) / 1000; // seconds
+
         let etaMessage = message;
-        
         if (progress > 0 && progress < 100) {
-          // Use actual progress-based ETA
-          const estimatedTotal = elapsed / (progress / 100);
-          const remaining = estimatedTotal - elapsed;
-          
-          if (remaining > 0) {
+          ticks += 1;
+          if (!firstTick) firstTick = { at: Date.now(), progress };
+
+          const elapsed = (Date.now() - firstTick.at) / 1000;
+          const advanced = progress - firstTick.progress;
+
+          if (ticks < TICKS_BEFORE_ETA || advanced <= 0 || elapsed <= 0) {
+            // Say nothing rather than quote a number from one sample. The
+            // previous version guessed up front and was out by an order of
+            // magnitude, which is worse than an honest ellipsis.
+            etaMessage = `${message} - ETA: …`;
+          } else {
+            const remaining = ((100 - progress) / advanced) * elapsed;
             const minutes = Math.floor(remaining / 60);
             const seconds = Math.floor(remaining % 60);
-            
-            if (minutes > 0) {
-              etaMessage = `${message} - ETA: ${minutes}m ${seconds}s`;
-            } else {
-              etaMessage = `${message} - ETA: ${seconds}s`;
-            }
+            etaMessage = minutes > 0
+              ? `${message} - ETA: ${minutes}m ${seconds}s`
+              : `${message} - ETA: ${seconds}s`;
           }
-        } else if (progress === 0) {
-          // Show initial estimate before progress starts
-          etaMessage = `${message} - Estimated time: ${estimateTime(contactCapacity)}`;
         }
-        
+
         setProgressMessage(etaMessage);
       });
     } catch (err) {
@@ -292,41 +303,19 @@ export const ContactsTab: React.FC = () => {
     }
 
     setIsWriting(true);
+    cancelWrite.current = false;
     setProgress(0);
     setProgressMessage('');
     setDownloadError(null);
-    const startTime = Date.now();
     
     try {
       await writeContacts(contacts, (progress, message) => {
+        // The protocol measures real throughput and already reports the time
+        // remaining. Appending this tab's own estimate as well printed two
+        // ETAs on one line ("37s left - ETA: 38s").
         setProgress(progress);
-        
-        // Calculate ETA based on progress, or use initial estimate if no progress yet
-        const elapsed = (Date.now() - startTime) / 1000; // seconds
-        let etaMessage = message;
-        
-        if (progress > 0 && progress < 100) {
-          // Use actual progress-based ETA
-          const estimatedTotal = elapsed / (progress / 100);
-          const remaining = estimatedTotal - elapsed;
-          
-          if (remaining > 0) {
-            const minutes = Math.floor(remaining / 60);
-            const seconds = Math.floor(remaining % 60);
-            
-            if (minutes > 0) {
-              etaMessage = `${message} - ETA: ${minutes}m ${seconds}s`;
-            } else {
-              etaMessage = `${message} - ETA: ${seconds}s`;
-            }
-          }
-        } else if (progress === 0) {
-          // Show initial estimate before progress starts
-          etaMessage = `${message} - Estimated time: ${estimateTime(contacts.length)}`;
-        }
-        
-        setProgressMessage(etaMessage);
-      });
+        setProgressMessage(message);
+      }, () => cancelWrite.current);
     } catch (err) {
       console.error('Error writing contacts:', err);
       setDownloadError(err instanceof Error ? err.message : 'Failed to write contacts to radio');
@@ -467,6 +456,14 @@ export const ContactsTab: React.FC = () => {
           `Warning: ${removed.toLocaleString()} ${formatPlural(removed, 'contact')} were removed due to limited space. ` +
           `Your radio supports ${contactCapacity.toLocaleString()} contacts, but ${totalContacts.toLocaleString()} were downloaded.`
         );
+        // OPEN, not merely left alone: the warning renders inside this section,
+        // and a download takes long enough to collapse the section while it
+        // runs. Declining to close it would still leave the one message saying
+        // contacts were dropped folded out of sight.
+        setRadioIdOpen(true);
+      } else {
+        // Fold the picker away so the list that just loaded gets the room.
+        setRadioIdOpen(false);
       }
 
       setProgressMessage(`Successfully downloaded ${contactsToSave.length.toLocaleString()} ${formatPlural(contactsToSave.length, 'contact')} from ${countriesToFetch.length} ${formatPlural(countriesToFetch.length, 'country', 'countries')}${selectedStates.length > 0 ? ` (${selectedStates.length} US ${formatPlural(selectedStates.length, 'state')})` : ''}`);
@@ -482,6 +479,8 @@ export const ContactsTab: React.FC = () => {
     } catch (error) {
       console.error('Error downloading from RadioID.net:', error);
       setDownloadError(error instanceof Error ? error.message : 'Failed to download contacts from RadioID.net');
+      // The error renders inside this section too — same reason as truncation.
+      setRadioIdOpen(true);
       setProgress(0);
       setProgressMessage('');
     } finally {
@@ -542,9 +541,13 @@ export const ContactsTab: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col pb-12">
-      {/* Radio Read/Write Section */}
-      <div className="mb-6 bg-deep-gray rounded-lg border border-yellow-600 border-opacity-30 p-4">
-        <h3 className="text-lg font-semibold text-yellow-400 mb-3">⚠️ Radio Read/Write (Very Slow)</h3>
+      {/* Radio Read/Write Section. Open by default; folds away on request. */}
+      <CollapsibleSection
+        title="⚠️ Radio Read/Write (Very Slow)"
+        variant="yellow"
+        className="mb-6"
+        defaultOpen
+      >
         <p className="text-cool-gray text-sm mb-4">
           Reading and writing contacts directly from/to the radio is VERY SLOW (can take 10+ minutes for large databases).
           Use the RadioID.net download or CSV import for faster loading.
@@ -553,38 +556,78 @@ export const ContactsTab: React.FC = () => {
         <div className="flex items-center gap-4">
           <button
             onClick={handleReadContacts}
-            disabled={isReading || isWriting || isConnecting}
-            className="px-4 py-2 bg-yellow-600 text-dark-charcoal font-semibold rounded hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isReading || isWriting || isConnecting || radioBusy}
+            className={`${BUTTON.cautionSolid} px-4 py-2 font-semibold rounded`}
           >
             {isReading ? 'Reading from Radio...' : 'Read Contacts from Radio'}
           </button>
           
           <button
             onClick={handleWriteContacts}
-            disabled={isReading || isWriting || isConnecting || contacts.length === 0}
-            className="px-4 py-2 bg-yellow-600 text-dark-charcoal font-semibold rounded hover:bg-yellow-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isReading || isWriting || isConnecting || radioBusy || contacts.length === 0}
+            className={`${BUTTON.cautionSolid} px-4 py-2 font-semibold rounded`}
             title={contacts.length === 0 ? 'No contacts to write' : ''}
           >
             {isWriting ? 'Writing to Radio...' : 'Write Contacts to Radio'}
           </button>
         </div>
 
-        {(isReading || isWriting) && progressMessage && (
-          <div className="mt-3">
-            <ProgressBar progress={progress} message={progressMessage} />
-          </div>
-        )}
+        {(() => {
+          const live = radioProgress && radioProgress.label === 'Reading contacts';
+          const showProgress = live ? radioProgress.percent : progress;
+          const showMessage = live ? radioProgress.message : progressMessage;
+          if (!((isReading || isWriting || live) && showMessage)) return null;
+          // The slim inline bar the images area uses: a line of status, a
+          // percentage, and a 6px rule. A contact write is minutes long, so it
+          // has to sit in the page rather than take it over.
+          return (
+            <div className="mt-3">
+              <div className="flex items-baseline justify-between mb-1 gap-3">
+                <span className="text-xs text-neon-cyan truncate">{showMessage}</span>
+                <div className="flex items-baseline gap-3 shrink-0">
+                  <span className="text-xs text-muted font-mono">
+                    {Math.round(showProgress)}%
+                  </span>
+                  {isWriting && (
+                    <button
+                      type="button"
+                      onClick={() => { cancelWrite.current = true; }}
+                      className={`${BUTTON.cautionLink} text-xs underline underline-offset-2`}
+                      title="Stop after the current frame. The contact database will be INCOMPLETE and must be written again."
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="h-1.5 w-full bg-dark-charcoal rounded overflow-hidden">
+                <div
+                  className="h-full bg-neon-cyan transition-[width] duration-150"
+                  style={{ width: `${Math.max(0, Math.min(100, showProgress))}%` }}
+                />
+              </div>
+            </div>
+          );
+        })()}
 
         {downloadError && (
-          <div className="mt-3 p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-red-400 text-sm">
+          <div className="mt-3 p-2 bg-red-900 bg-opacity-30 border border-red-600 rounded text-red-400 text-sm whitespace-pre-line">
             {downloadError}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* RadioID.net Download Section */}
-      <div className="mb-6 bg-deep-gray rounded-lg border border-neon-cyan border-opacity-30 p-4">
-        <h3 className="text-lg font-semibold text-neon-cyan mb-3">Download from RadioID.net</h3>
+      {/* RadioID.net Download Section — a country picker some 600px tall.
+          Open by default because it is how most people fill this tab, and
+          CLOSED automatically after a clean download, because the next thing
+          anyone wants is to look at what just loaded. */}
+      <CollapsibleSection
+        title="Download from RadioID.net"
+        variant="cyan"
+        className="mb-6"
+        open={radioIdOpen}
+        onOpenChange={setRadioIdOpen}
+      >
         <p className="text-cool-gray text-sm mb-4">
           Select countries to download DMR contacts. This will replace all current contacts.
         </p>
@@ -620,7 +663,7 @@ export const ContactsTab: React.FC = () => {
               <button
                 type="button"
                 onClick={toggleAllStates}
-                className="text-xs text-cool-gray hover:text-neon-cyan transition-colors"
+                className={`${BUTTON.ghost} text-xs`}
               >
                 {selectedStates.length === US_STATES.length ? 'Deselect All' : 'Select All'}
               </button>
@@ -656,7 +699,7 @@ export const ContactsTab: React.FC = () => {
             value={customCountry}
             onChange={(e) => setCustomCountry(e.target.value)}
             placeholder="e.g., United States, Canada"
-            className="w-full px-3 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+            className={`${FIELD} w-full px-3 py-2 border rounded text-sm`}
           />
         </div>
 
@@ -664,7 +707,7 @@ export const ContactsTab: React.FC = () => {
           <button
             onClick={handleDownloadFromRadioID}
             disabled={isDownloading || (selectedCountries.length === 0 && !customCountry.trim())}
-            className="px-4 py-2 bg-neon-cyan text-dark-charcoal font-semibold rounded hover:bg-neon-cyan-bright transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`${BUTTON.primary} px-4 py-2 font-semibold rounded`}
           >
             {isDownloading ? 'Downloading...' : 'Download Contacts'}
           </button>
@@ -677,7 +720,7 @@ export const ContactsTab: React.FC = () => {
         </div>
 
         {downloadError && (
-          <div className="mt-3 p-2 bg-red-900 bg-opacity-30 border border-red-600 border-opacity-50 rounded text-red-300 text-sm">
+          <div className="mt-3 p-2 bg-red-900 bg-opacity-30 border border-red-600 border-opacity-50 rounded text-red-300 text-sm whitespace-pre-line">
             {downloadError}
           </div>
         )}
@@ -688,24 +731,36 @@ export const ContactsTab: React.FC = () => {
           </div>
         )}
 
-        {(isDownloading || progressMessage) && (
+        {(isDownloading || (progressMessage && !isWriting && !isReading)) && (
           <div className="mt-3">
             <ProgressBar progress={progress} message={progressMessage} />
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* Contacts Table Section */}
-      <div className="flex-1 flex flex-col min-h-0">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-neon-cyan">CSV Contacts</h2>
-          <div className="text-cool-gray">
-            {contacts.length} / {contactCapacity.toLocaleString()} {formatPlural(contacts.length, 'contact')}
-          </div>
-        </div>
-        <div className="mb-4 text-cool-gray text-sm">
-          CSV contacts are primarily imported from CSV or read from the radio. Use Import to load contacts.
-        </div>
+      {/* Contacts Table Section
+          `min-h-0` alone let this be crushed: it is the only flexible child of a
+          tab pinned to the viewport height, so the two cards above took what
+          they wanted and the table was left 55px tall with its contents clipped
+          and no way to scroll to them — reported 2026-09-12 with 7,183 contacts
+          loaded and invisible.
+
+          The floor is most of a screen on purpose. A short one technically
+          "worked" — the page scrolled and the list was reachable — but left a
+          five-row peephole scrolling inside a page that also scrolled, which is
+          the worst of both. At 70vh the list shows some thirty of its hundred
+          rows per page, and when the content above is tall the whole thing
+          OVERFLOWS rather than shrinking, handing the scroll to <main>. */}
+      <div className="flex-1 flex flex-col min-h-[70vh]">
+        <PageHeader
+          title="CSV Contacts"
+          description="CSV contacts are primarily imported from CSV or read from the radio. Use Import to load contacts."
+          actions={
+            <span>
+              {contacts.length} / {contactCapacity.toLocaleString()} {formatPlural(contacts.length, 'contact')}
+            </span>
+          }
+        />
         <div className="flex-1 min-h-0">
           <ContactsTable />
         </div>

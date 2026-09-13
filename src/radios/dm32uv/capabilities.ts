@@ -9,7 +9,7 @@ import { decodeBCDFrequency, decodeCTCSSDCS } from './structures';
 import { parseEncryptionKeys, parseDigitalEmergencies } from './structures';
 import { DM32_BLOCK_LAYOUTS } from './blockLayouts';
 import { LIMITS } from './constants';
-import { isFirmware049OrNewer } from '../../utils/firmware';
+import { isFirmware049OrNewer, DM32_CONTACTS_STANDARD } from '../../utils/firmware';
 
 export const DM32UV_CAPABILITIES: RadioCapabilities = {
   diagnostics: {
@@ -31,9 +31,19 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   },
   bandLimits: DEFAULT_BAND_LIMITS,
   isFirmware049OrNewer,
+  expectedFirmware: 'DM32.01.L01.048',
   writeValidations: {
     channelsMustBeInZones: true,
   },
+  /**
+   * The DM-32 is the radio this grid was originally built around, so it declares
+   * every optional column. Anything absent here would vanish from its UI.
+   */
+  channelColumns: [
+    'loneWorker', 'freeToAir', 'emergency', 'aprs', 'vox',
+    'audioProcessing', 'squelch', 'pttId', 'stepFrequency', 'signalType',
+    'encryption', 'tdma', 'confirmations',
+  ],
   maxChannels: 4000,
   supportsVfoChannels: true,
   supportsZones: true,
@@ -41,8 +51,17 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   analogOnly: false,
   supportsBulkRead: true,
   maxZones: LIMITS.ZONES_MAX,
+  maxZoneChannels: LIMITS.ZONE_CHANNELS_MAX,
+  maxRxGroupMembers: LIMITS.RX_GROUPS_MAX,
   maxScanLists: LIMITS.SCAN_LISTS_MAX,
+  maxScanListChannels: LIMITS.SCAN_LIST_CHANNELS_MAX,
+  maxRadioIds: LIMITS.DMR_RADIO_IDS_MAX,
+  maxTalkGroups: LIMITS.TALK_GROUPS_MAX,
+  // What every DM-32 holds. L01 firmware holds 150,000; a read reports that,
+  // and the reported number wins.
+  maxContacts: DM32_CONTACTS_STANDARD,
   supportsBootImage: true,
   supportsQuickMessages: true,
   supportsAnalogEmergency: true,
+  supportsDigitalEmergency: true,
 };

@@ -8,6 +8,7 @@ import { SelectAllButtons } from '../SelectAllButtons';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { SectionTitle } from '../../ui/SectionTitle';
+import { BUTTON, FIELD } from '../../ui/controlStyles';
 
 interface TaflSourceProps {
   entries: TaflData[];
@@ -143,7 +144,7 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
           value={taflSearchFilter}
           onChange={(e) => setTaflSearchFilter(e.target.value)}
           placeholder="Search entries..."
-          className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+          className={`${FIELD} w-full border rounded px-3 py-2`}
         />
       </div>
         <>
@@ -219,7 +220,7 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
                         />
                         <button
                           onClick={handleToggleExpand}
-                          className="mr-1 text-neon-cyan hover:text-neon-cyan-bright"
+                          className={`${BUTTON.link} mr-1`}
                           title={isExpanded ? 'Collapse' : 'Expand'}
                         >
                           {isExpanded ? '▼' : '▶'}
@@ -315,7 +316,8 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
             <Button
               onClick={handleAddTaflChannels}
               disabled={isAddingTafl}
-              className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
+              variant="accent"
+              className="w-full"
             >
               {isAddingTafl
                 ? 'Adding TAFL Channels...'

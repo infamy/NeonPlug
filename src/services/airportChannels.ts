@@ -251,3 +251,70 @@ export function generateAirportChannels(
   };
 }
 
+
+/**
+ * Airband edges, in MHz. The civil VHF air band, which is AM and receive-only
+ * on these radios.
+ */
+export const AIRBAND_MIN_MHZ = 108;
+export const AIRBAND_MAX_MHZ = 137;
+
+/** True when a frequency belongs in a separate AM airband table. */
+export function isAirbandFrequency(mhz: number): boolean {
+  return mhz >= AIRBAND_MIN_MHZ && mhz < AIRBAND_MAX_MHZ;
+}
+
+/**
+ * Split generated channels by where the radio actually stores them.
+ *
+ * On a radio with `separateAirbandTable`, an AM airband frequency CANNOT go in
+ * the main channel list: that record has no way to express AM receive-only, and
+ * writing one there corrupts the codeplug. The airband entries are returned
+ * separately so the caller can put them in the AM table instead.
+ *
+ * Zones are rebuilt to reference only the channels that stayed behind. A zone
+ * pointing at a channel number that was diverted would dangle, and on this
+ * family a dangling zone member is exactly the kind of thing that gets written
+ * to the radio and then cannot be explained.
+ */
+export function splitAirbandChannels(
+  channels: Channel[],
+  zones: Zone[]
+): {
+  channels: Channel[];
+  zones: Zone[];
+  airband: Channel[];
+  /**
+   * The airband members of each generated zone, by ORIGINAL channel number.
+   *
+   * Returned rather than resolved because AM zones index into the AM table's
+   * own numbering, and only the caller knows where these channels will land in
+   * that table — it depends on what is already there.
+   */
+  airbandZones: { name: string; channelNumbers: number[] }[];
+} {
+  const airband = channels.filter((c) => isAirbandFrequency(c.rxFrequency));
+  if (airband.length === 0) return { channels, zones, airband: [], airbandZones: [] };
+
+  const diverted = new Set(airband.map((c) => c.number));
+  const kept = channels.filter((c) => !diverted.has(c.number));
+  const keptNumbers = new Set(kept.map((c) => c.number));
+
+  // A generated zone can hold both kinds. Its airband half becomes an AM zone;
+  // whatever is left stays a normal zone. Dropping the airband half — as this
+  // did until the AM zone table was mapped — silently discarded the grouping
+  // the wizard had just built.
+  const airbandZones: { name: string; channelNumbers: number[] }[] = [];
+  const rebuiltZones: Zone[] = [];
+
+  for (const zone of zones) {
+    const airbandMembers = zone.channels.filter((n) => diverted.has(n));
+    const remaining = zone.channels.filter((n) => keptNumbers.has(n));
+    if (airbandMembers.length > 0) {
+      airbandZones.push({ name: zone.name, channelNumbers: airbandMembers });
+    }
+    if (remaining.length > 0) rebuiltZones.push({ ...zone, channels: remaining });
+  }
+
+  return { channels: kept, zones: rebuiltZones, airband, airbandZones };
+}

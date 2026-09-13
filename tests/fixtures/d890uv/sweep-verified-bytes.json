@@ -1,0 +1,1079 @@
+{
+ "_source": "DA7X2RESULTS/diffs.md \u2014 automated sweep of the vendor CPS, VERIFIED rows only",
+ "_how": "One control changed at a time in the CPS, the saved .rdt diffed against the baseline.",
+ "_why": "Byte values the vendor CPS is KNOWN to write. A settings field whose declared range cannot represent one of these is the btOnOff/callHoldTime bug: the UI renders a control that cannot express the value, so saving silently rewrites it. The fixture dump in settings.bin cannot catch this class, because a field that never varies across captures always looks in-range.",
+ "_note": "SHARED BYTE rows are excluded \u2014 those bytes are bitfields owned by several controls, so a whole-byte value says nothing about one field's range.",
+ "rows": [
+  {
+   "label": "ddress Book Is Sent With Its",
+   "tab": "Other",
+   "rdt": "0x0116b",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "TOT",
+   "tab": "Other",
+   "rdt": "0x0006d",
+   "before": 4,
+   "after": 8
+  },
+  {
+   "label": "Language",
+   "tab": "Other",
+   "rdt": "0x0006e",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "SQL Level(A)",
+   "tab": "Other",
+   "rdt": "0x00072",
+   "before": 1,
+   "after": 5
+  },
+  {
+   "label": "TBST",
+   "tab": "Other",
+   "rdt": "0x0009b",
+   "before": 2,
+   "after": 3
+  },
+  {
+   "label": "Call Channel is Maintained",
+   "tab": "Other",
+   "rdt": "0x000dd",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Main Channel Set",
+   "tab": "Work Mode",
+   "rdt": "0x00099",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Sub-Channel Mode",
+   "tab": "Work Mode",
+   "rdt": "0x0009a",
+   "before": 1,
+   "after": 0
+  },
+  {
+   "label": "Choose Working Mode",
+   "tab": "Work Mode",
+   "rdt": "0x01181",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "VOX On/Off",
+   "tab": "Vox/BT",
+   "rdt": "0x00075",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "VOX Delay",
+   "tab": "Vox/BT",
+   "rdt": "0x00076",
+   "before": 10,
+   "after": 25
+  },
+  {
+   "label": "VOX Detection",
+   "tab": "Vox/BT",
+   "rdt": "0x000a0",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Mute timing",
+   "tab": "Other",
+   "rdt": "0x01180",
+   "before": 0,
+   "after": 255
+  },
+  {
+   "label": "TOT Predict",
+   "tab": "Other",
+   "rdt": "0x011a7",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "TxPow Agc",
+   "tab": "Other",
+   "rdt": "0x011a8",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "NOAA Moni",
+   "tab": "Other",
+   "rdt": "0x011ce",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "NOAA Scan",
+   "tab": "Other",
+   "rdt": "0x011cf",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "NOAA Alert",
+   "tab": "Other",
+   "rdt": "0x01187",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Ste Time",
+   "tab": "STE",
+   "rdt": "0x0118f",
+   "before": 25,
+   "after": 100
+  },
+  {
+   "label": "Auto Shutdown",
+   "tab": "Power Save",
+   "rdt": "0x0006c",
+   "before": 0,
+   "after": 4
+  },
+  {
+   "label": "Power save",
+   "tab": "Power Save",
+   "rdt": "0x00074",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Auto Shutdown Type",
+   "tab": "Power Save",
+   "rdt": "0x011ab",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Record Function",
+   "tab": "Record",
+   "rdt": "0x00090",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Record Delay",
+   "tab": "Record",
+   "rdt": "0x000e8",
+   "before": 0,
+   "after": 25
+  },
+  {
+   "label": "Sate Location",
+   "tab": "Satellite",
+   "rdt": "0x011c5",
+   "before": 0,
+   "after": 8
+  },
+  {
+   "label": "Sate TX Power",
+   "tab": "Satellite",
+   "rdt": "0x011c6",
+   "before": 0,
+   "after": 3
+  },
+  {
+   "label": "Sate ANA sql",
+   "tab": "Satellite",
+   "rdt": "0x011c7",
+   "before": 0,
+   "after": 5
+  },
+  {
+   "label": "Sate Aos Limit",
+   "tab": "Satellite",
+   "rdt": "0x011c8",
+   "before": 0,
+   "after": 30
+  },
+  {
+   "label": "Get GPS Positioning",
+   "tab": "GPS/Ranging",
+   "rdt": "0x000ba",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Tme Zone",
+   "tab": "GPS/Ranging",
+   "rdt": "0x0009d",
+   "before": 24,
+   "after": 33
+  },
+  {
+   "label": "Gps Mode",
+   "tab": "GPS/Ranging",
+   "rdt": "0x0118e",
+   "before": 0,
+   "after": 6
+  },
+  {
+   "label": "Power-on Interface",
+   "tab": "Power-on",
+   "rdt": "0x0006f",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Power-on Password",
+   "tab": "Power-on",
+   "rdt": "0x00070",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Default Startup Channel",
+   "tab": "Power-on",
+   "rdt": "0x0116d",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Startup Reset",
+   "tab": "Power-on",
+   "rdt": "0x01184",
+   "before": 1,
+   "after": 0
+  },
+  {
+   "label": "VFO Scan Type",
+   "tab": "VFO Scan",
+   "rdt": "0x00077",
+   "before": 1,
+   "after": 2
+  },
+  {
+   "label": "AM/FM Function",
+   "tab": "AM/FM",
+   "rdt": "0x0008f",
+   "before": 0,
+   "after": 3
+  },
+  {
+   "label": "Power On Volume Type",
+   "tab": "Volume/Audio",
+   "rdt": "0x011cc",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Power On Volume",
+   "tab": "Volume/Audio",
+   "rdt": "0x011cd",
+   "before": 0,
+   "after": 15
+  },
+  {
+   "label": "Max Headphone Volume",
+   "tab": "Volume/Audio",
+   "rdt": "0x000e6",
+   "before": 0,
+   "after": 8
+  },
+  {
+   "label": "DMR Mic Gain",
+   "tab": "Volume/Audio",
+   "rdt": "0x00078",
+   "before": 2,
+   "after": 5
+  },
+  {
+   "label": "Enhanced Sound Quality",
+   "tab": "Volume/Audio",
+   "rdt": "0x000e0",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Ana Mic Gain",
+   "tab": "Volume/Audio",
+   "rdt": "0x011b0",
+   "before": 0,
+   "after": 5
+  },
+  {
+   "label": "DRC Dynamic Ranagle Control(Rx AGC)",
+   "tab": "Volume/Audio",
+   "rdt": "0x011b9",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "NX Mic Gain",
+   "tab": "Volume/Audio",
+   "rdt": "0x011ca",
+   "before": 0,
+   "after": 5
+  },
+  {
+   "label": "RX Noise Reduction",
+   "tab": "Volume/Audio",
+   "rdt": "0x011bb",
+   "before": 0,
+   "after": 5
+  },
+  {
+   "label": "TX Noise Reduction",
+   "tab": "Volume/Audio",
+   "rdt": "0x011bc",
+   "before": 0,
+   "after": 5
+  },
+  {
+   "label": "sub SpklnTx",
+   "tab": "Volume/Audio",
+   "rdt": "0x011d3",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Key Lock",
+   "tab": "Key Function",
+   "rdt": "0x0006b",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "PFI Short Key",
+   "tab": "Key Function",
+   "rdt": "0x00079",
+   "before": 1,
+   "after": 66
+  },
+  {
+   "label": "PF2 Short Key",
+   "tab": "Key Function",
+   "rdt": "0x0007a",
+   "before": 18,
+   "after": 66
+  },
+  {
+   "label": "PF3 Short Key",
+   "tab": "Key Function",
+   "rdt": "0x0007b",
+   "before": 12,
+   "after": 66
+  },
+  {
+   "label": "Pl Short Key",
+   "tab": "Key Function",
+   "rdt": "0x0007c",
+   "before": 19,
+   "after": 66
+  },
+  {
+   "label": "P2 Short Key",
+   "tab": "Key Function",
+   "rdt": "0x0007d",
+   "before": 8,
+   "after": 66
+  },
+  {
+   "label": "PFI Long Key",
+   "tab": "Key Function",
+   "rdt": "0x0007e",
+   "before": 0,
+   "after": 66
+  },
+  {
+   "label": "PF2 Long Key",
+   "tab": "Key Function",
+   "rdt": "0x0007f",
+   "before": 0,
+   "after": 66
+  },
+  {
+   "label": "Pl Long Key",
+   "tab": "Key Function",
+   "rdt": "0x00081",
+   "before": 0,
+   "after": 66
+  },
+  {
+   "label": "P2 Long Key",
+   "tab": "Key Function",
+   "rdt": "0x00082",
+   "before": 0,
+   "after": 66
+  },
+  {
+   "label": "Long Key Tme[s]",
+   "tab": "Key Function",
+   "rdt": "0x000c4",
+   "before": 1,
+   "after": 4
+  },
+  {
+   "label": "Group Call Hold Tme",
+   "tab": "Digital Func",
+   "rdt": "0x00087",
+   "before": 5,
+   "after": 32
+  },
+  {
+   "label": "Private Call Hold Tme",
+   "tab": "Digital Func",
+   "rdt": "0x00088",
+   "before": 5,
+   "after": 32
+  },
+  {
+   "label": "Voice header repetitions",
+   "tab": "Digital Func",
+   "rdt": "0x011b2",
+   "before": 0,
+   "after": 8
+  },
+  {
+   "label": "TX preamble duration",
+   "tab": "Digital Func",
+   "rdt": "0x0008a",
+   "before": 5,
+   "after": 40
+  },
+  {
+   "label": "Filter Own ID In MissCall",
+   "tab": "Digital Func",
+   "rdt": "0x000b4",
+   "before": 1,
+   "after": 0
+  },
+  {
+   "label": "Digital Remote Kill",
+   "tab": "Digital Func",
+   "rdt": "0x000b8",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Digital Monitor",
+   "tab": "Digital Func",
+   "rdt": "0x000c7",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Digital Monitor CC",
+   "tab": "Digital Func",
+   "rdt": "0x000e2",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Digital Monitor ID",
+   "tab": "Digital Func",
+   "rdt": "0x000e3",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Monitor Slot Hold",
+   "tab": "Digital Func",
+   "rdt": "0x000e4",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Remote Monitor",
+   "tab": "Digital Func",
+   "rdt": "0x000b9",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "SMS Format",
+   "tab": "Digital Func",
+   "rdt": "0x011ac",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Reset Digital Protocol",
+   "tab": "Digital Func",
+   "rdt": "0x011cb",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "NOAA Frequency",
+   "tab": "Other",
+   "rdt": "0x011be",
+   "before": 0,
+   "after": 9
+  },
+  {
+   "label": "STE Type Of CTCSS",
+   "tab": "STE",
+   "rdt": "0x00085",
+   "before": 1,
+   "after": 4
+  },
+  {
+   "label": "Startup GPS test",
+   "tab": "Power-on",
+   "rdt": "0x01183",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Auto Backlight Duration",
+   "tab": "Display",
+   "rdt": "0x00094",
+   "before": 1,
+   "after": 15
+  },
+  {
+   "label": "Backlight Delay Of",
+   "tab": "Display",
+   "rdt": "0x01177",
+   "before": 0,
+   "after": 30
+  },
+  {
+   "label": "Menu Exit Tme[s]",
+   "tab": "Display",
+   "rdt": "0x000b3",
+   "before": 2,
+   "after": 11
+  },
+  {
+   "label": "Tme Display",
+   "tab": "Display",
+   "rdt": "0x000ca",
+   "before": 1,
+   "after": 0
+  },
+  {
+   "label": "Last Caller",
+   "tab": "Display",
+   "rdt": "0x000e5",
+   "before": 3,
+   "after": 0
+  },
+  {
+   "label": "Call Display Mode",
+   "tab": "Display",
+   "rdt": "0x000e9",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Call Sign Display Color",
+   "tab": "Display",
+   "rdt": "0x01190",
+   "before": 0,
+   "after": 6
+  },
+  {
+   "label": "Call End Prompt Box",
+   "tab": "Display",
+   "rdt": "0x000b6",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Display Channel Number",
+   "tab": "Display",
+   "rdt": "0x000f1",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Display Current Contact",
+   "tab": "Display",
+   "rdt": "0x000f2",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Standby Char Color",
+   "tab": "Display",
+   "rdt": "0x011a5",
+   "before": 0,
+   "after": 7
+  },
+  {
+   "label": "Standby BK Picture",
+   "tab": "Display",
+   "rdt": "0x011a6",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Show Last Call On Launch",
+   "tab": "Display",
+   "rdt": "0x000f6",
+   "before": 1,
+   "after": 0
+  },
+  {
+   "label": "Separate display",
+   "tab": "Display",
+   "rdt": "0x01178",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "CH Switching Keeps Last",
+   "tab": "Display",
+   "rdt": "0x01179",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "A Channel Name Color",
+   "tab": "Display",
+   "rdt": "0x0117a",
+   "before": 0,
+   "after": 6
+  },
+  {
+   "label": "Receive Backlight Delay[s]",
+   "tab": "Display",
+   "rdt": "0x0117c",
+   "before": 0,
+   "after": 30
+  },
+  {
+   "label": "B Channel Name Color",
+   "tab": "Display",
+   "rdt": "0x011a3",
+   "before": 0,
+   "after": 6
+  },
+  {
+   "label": "Zone Name Colour A",
+   "tab": "Display",
+   "rdt": "0x011a9",
+   "before": 0,
+   "after": 6
+  },
+  {
+   "label": "Zone Name Colour B",
+   "tab": "Display",
+   "rdt": "0x011aa",
+   "before": 0,
+   "after": 6
+  },
+  {
+   "label": "Date Display Format",
+   "tab": "Display",
+   "rdt": "0x011af",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Volume Bar",
+   "tab": "Display",
+   "rdt": "0x000c5",
+   "before": 1,
+   "after": 0
+  },
+  {
+   "label": "Night Mode",
+   "tab": "Display",
+   "rdt": "0x011bd",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone1",
+   "rdt": "0x00e79",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone1",
+   "rdt": "0x00e7d",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone1",
+   "rdt": "0x00e81",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone1",
+   "rdt": "0x00e85",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone1",
+   "rdt": "0x00e89",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone1",
+   "rdt": "0x00e8d",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone1",
+   "rdt": "0x00e91",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone1",
+   "rdt": "0x00e95",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone1",
+   "rdt": "0x00e99",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone1",
+   "rdt": "0x00e9d",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "Auto Repeater A",
+   "tab": "Auto repeater",
+   "rdt": "0x000c6",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Auto Repeater B",
+   "tab": "Auto repeater",
+   "rdt": "0x0115a",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Repeater Check",
+   "tab": "Auto repeater",
+   "rdt": "0x01173",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Repeater Check Interval[:",
+   "tab": "Auto repeater",
+   "rdt": "0x01174",
+   "before": 0,
+   "after": 9
+  },
+  {
+   "label": "Repeater Check Reconm",
+   "tab": "Auto repeater",
+   "rdt": "0x01175",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Repeater Out of Range N",
+   "tab": "Auto repeater",
+   "rdt": "0x0117b",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Out of Range Notify(time:",
+   "tab": "Auto repeater",
+   "rdt": "0x01182",
+   "before": 0,
+   "after": 9
+  },
+  {
+   "label": "Auto Roaming",
+   "tab": "Auto repeater",
+   "rdt": "0x0117d",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "uto Roaming start cond",
+   "tab": "Auto repeater",
+   "rdt": "0x01176",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Auto Roaming at Fixed Tme[",
+   "tab": "Auto repeater",
+   "rdt": "0x000f3",
+   "before": 0,
+   "after": 255
+  },
+  {
+   "label": "Roaming Effect Wait Tme[s]",
+   "tab": "Auto repeater",
+   "rdt": "0x000f5",
+   "before": 0,
+   "after": 30
+  },
+  {
+   "label": "Min Freq Of Auto Repeater2",
+   "tab": "Auto repeater",
+   "rdt": "0x01194",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Max Freq Of Auto Repeater2",
+   "tab": "Auto repeater",
+   "rdt": "0x01195",
+   "before": 0,
+   "after": 128
+  },
+  {
+   "label": "Repeater Mode",
+   "tab": "Auto repeater",
+   "rdt": "0x011b3",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Rep Cc Limit",
+   "tab": "Auto repeater",
+   "rdt": "0x011b4",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Rep Slot PathA",
+   "tab": "Auto repeater",
+   "rdt": "0x011b5",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Rep Slot PathB",
+   "tab": "Auto repeater",
+   "rdt": "0x011b6",
+   "before": 0,
+   "after": 2
+  },
+  {
+   "label": "Repeater Whitelist",
+   "tab": "Auto repeater",
+   "rdt": "0x011d2",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "Simp Repearter",
+   "tab": "Auto repeater",
+   "rdt": "0x011d4",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "SMS Alert",
+   "tab": "Alert Tone",
+   "rdt": "0x00096",
+   "before": 1,
+   "after": 0
+  },
+  {
+   "label": "Call Alen",
+   "tab": "Alert Tone",
+   "rdt": "0x0009c",
+   "before": 1,
+   "after": 0
+  },
+  {
+   "label": "Digi Call ResetTone",
+   "tab": "Alert Tone",
+   "rdt": "0x0009f",
+   "before": 1,
+   "after": 0
+  },
+  {
+   "label": "Talk Permit",
+   "tab": "Alert Tone",
+   "rdt": "0x0009e",
+   "before": 0,
+   "after": 3
+  },
+  {
+   "label": "Key Tone",
+   "tab": "Alert Tone",
+   "rdt": "0x00069",
+   "before": 1,
+   "after": 0
+  },
+  {
+   "label": "Digi Idle Channel Tone",
+   "tab": "Alert Tone",
+   "rdt": "0x000b2",
+   "before": 0,
+   "after": 3
+  },
+  {
+   "label": "Startup Sound",
+   "tab": "Alert Tone",
+   "rdt": "0x000b5",
+   "before": 1,
+   "after": 0
+  },
+  {
+   "label": "Ana Idle Channel Tone",
+   "tab": "Alert Tone",
+   "rdt": "0x011ae",
+   "before": 0,
+   "after": 1
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e3d",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e41",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e45",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e49",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e4d",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e51",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e55",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e59",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e5d",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e61",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e65",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e69",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e6d",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e71",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "?",
+   "tab": "Alert Tone",
+   "rdt": "0x00e75",
+   "before": 100,
+   "after": 190
+  },
+  {
+   "label": "Frequency Step",
+   "tab": "Other",
+   "rdt": "0x00071",
+   "before": 5,
+   "after": 9
+  },
+  {
+   "label": "SQL Level(B)",
+   "tab": "Other",
+   "rdt": "0x00073",
+   "before": 1,
+   "after": 5
+  },
+  {
+   "label": "Analog Call Hold Tme[s]",
+   "tab": "Other",
+   "rdt": "0x000c9",
+   "before": 2,
+   "after": 30
+  }
+ ]
+}

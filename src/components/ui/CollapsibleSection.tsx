@@ -4,6 +4,14 @@ interface CollapsibleSectionProps {
   title: string;
   children: ReactNode;
   defaultOpen?: boolean;
+  /**
+   * Controlled mode. Pass `open` when the section must also close for a reason
+   * other than a click — the contacts tab folds the RadioID.net picker away
+   * once a download lands, so the loaded list gets the room. Omit it and the
+   * section keeps its own state, which is what every other caller wants.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   className?: string;
   variant?: 'cyan' | 'yellow';
 }
@@ -25,22 +33,31 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   title,
   children,
   defaultOpen = false,
+  open,
+  onOpenChange,
   className = '',
   variant = 'yellow',
 }) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [ownOpen, setOwnOpen] = useState(defaultOpen);
+  const isOpen = open ?? ownOpen;
+  const setOpen = (next: boolean) => {
+    if (open === undefined) setOwnOpen(next);
+    onOpenChange?.(next);
+  };
   const styles = VARIANT_CLASSES[variant];
 
   return (
     <div className={`bg-deep-gray rounded-lg border p-6 ${styles.container} ${className}`}>
-      <div className="flex items-center justify-between mb-4">
+      {/* The gap under the title only when something is under it — closed, it
+          was a margin's worth of empty card. */}
+      <div className={`flex items-center justify-between ${isOpen ? 'mb-4' : ''}`}>
         <h3 className={`text-lg font-semibold ${styles.title}`}>{title}</h3>
         <button
           type="button"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            setIsOpen(!isOpen);
+            setOpen(!isOpen);
           }}
           className={`text-xs ${styles.button}`}
         >

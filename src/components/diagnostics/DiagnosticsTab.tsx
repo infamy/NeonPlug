@@ -4,7 +4,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { MetadataBlockDisplay } from './MetadataBlockDisplay';
-import { CollapsibleSection } from './CollapsibleSection';
+import { CollapsibleSection } from '../ui/CollapsibleSection';
 import { OffsetInspector } from './OffsetInspector';
 import { FieldVerificationTable } from './FieldVerificationTable';
 import { DebugExportsCard } from './DebugExportsCard';
@@ -18,10 +18,14 @@ import { ContactWriteBlocksPanel } from './ContactWriteBlocksPanel';
 import { TxContactStructureReference } from './TxContactStructureReference';
 import { QuickContactsBlockDetails } from './QuickContactsBlockDetails';
 import { TalkGroupsBlockDetails } from './TalkGroupsBlockDetails';
+import { RegionDumpPanel } from './RegionDumpPanel';
+import { RecordLayoutPanel } from './RecordLayoutPanel';
+import { WriteDryRunPanel } from './WriteDryRunPanel';
+import { MemoryImagePanel } from './MemoryImagePanel';
 import { Card } from '../ui/Card';
-import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { PageHeader } from '../ui/PageHeader';
 
 export const DiagnosticsTab: React.FC = () => {
   const { rawRadioSettingsData, blockMetadata, blockData } = useRadioStore();
@@ -71,21 +75,50 @@ export const DiagnosticsTab: React.FC = () => {
   const block67 = getBlockByMetadata(0x67);
 
   if (!radioSettings || !rawRadioSettingsData) {
+    // Everything below this point inspects DM-32 clone blocks, which only exist
+    // for radios with a block layout. The simpler radios (and the sparse,
+    // address-addressed D890 family) never populate rawRadioSettingsData, so
+    // without this they would land on a permanently empty tab. Show the
+    // radio-agnostic tools instead — capability-gated, never model-gated.
+    const hasGenericTools =
+      caps?.supportsRawRegionDump === true ||
+      (caps?.memoryRegions?.length ?? 0) > 0;
+
     return (
       <>
-      <div className="h-full overflow-y-auto">
-        <div className="p-6">
-          <div className="mb-6">
-            <SectionTitle as="h2" size="xl" bold className="text-2xl !text-yellow-400">Diagnostics & Debug</SectionTitle>
-            <p className="text-cool-gray text-sm mt-1">Radio settings diagnostic tools</p>
-          </div>
+      <div>
+        {/* No p-6 here: <main> already has one, and doubling it put this title
+            48px in while the other Diagnostics path sat at 24. */}
+        <div>
+          <PageHeader
+            title="Diagnostics & Debug"
+            tone="caution"
+            description={hasGenericTools ? 'Raw memory inspection and debug exports' : 'Radio settings diagnostic tools'}
+          />
 
           {/* Debug Export Section - Always visible */}
           <DebugExportsCard showAlert={showAlert} />
 
-          <Card className="!border-yellow-600/30">
-            <EmptyState message="No radio settings data available. Read from radio to view diagnostics." />
-          </Card>
+          {/* Radio-agnostic tools, each capability-gated so they appear only
+              where they apply: clone radios with a contiguous image get the
+              image viewer, sparse address-addressed radios get the region dump. */}
+          <MemoryImagePanel showAlert={showAlert} />
+          <RegionDumpPanel showAlert={showAlert} />
+          {/* Byte maps and the protocol reference for sparse address-addressed
+              radios. Renders with no radio connected, which is when it is most
+              useful — the clone-block panels below have nothing to show for a
+              radio with no contiguous image, which is what left this tab nearly
+              empty for the DA-7X2. */}
+          <RecordLayoutPanel />
+          <WriteDryRunPanel />
+
+          {!hasGenericTools && (
+            <Card className="!border-yellow-600/30">
+              <EmptyState message="No radio settings data available. Read from radio to view diagnostics." />
+            </Card>
+          )}
+
+          <LogViewerPanel />
         </div>
       </div>
       <ConfirmModal
@@ -102,15 +135,12 @@ export const DiagnosticsTab: React.FC = () => {
 
   return (
     <>
-    <div className="h-full overflow-y-auto">
-      <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <SectionTitle as="h2" size="xl" bold className="text-2xl !text-yellow-400">Diagnostics & Debug</SectionTitle>
-            <p className="text-cool-gray text-sm mt-1">Inspect raw memory offsets and verify field parsing</p>
-          </div>
-        </div>
-      </div>
+    <div>
+      <PageHeader
+        title="Diagnostics & Debug"
+        tone="caution"
+        description="Inspect raw memory offsets and verify field parsing"
+      />
 
       {/* Debug Export Section */}
       <DebugExportsCard showAlert={showAlert} />

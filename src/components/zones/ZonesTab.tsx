@@ -4,6 +4,7 @@ import { useChannelsStore } from '../../store/channelsStore';
 import { useLogStore } from '../../store/logStore';
 import { ZonesList } from './ZonesList';
 import { formatPlural } from '../../utils/formatPlural';
+import { PageHeader } from '../ui/PageHeader';
 
 export const ZonesTab: React.FC = () => {
   const { zones, updateZone } = useZonesStore();
@@ -30,12 +31,10 @@ export const ZonesTab: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="mb-4 flex items-center justify-between flex-shrink-0">
-        <h2 className="text-2xl font-bold text-neon-cyan">Zones</h2>
-        <div className="text-cool-gray">
-          {zones.length} {formatPlural(zones.length, 'zone')}
-        </div>
-      </div>
+      <PageHeader
+        title="Zones"
+        actions={<span>{zones.length} {formatPlural(zones.length, 'zone')}</span>}
+      />
       <div className="flex-1 min-h-0">
         <ZonesList />
       </div>
