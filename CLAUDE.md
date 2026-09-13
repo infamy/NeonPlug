@@ -26,15 +26,15 @@ Releases are cut from the Actions tab, not the CLI — see "Releases and version
 
 ## Releases and versioning
 
-> ⚠️ **Landed but never exercised — no release has ever been cut, so this path is unverified
-> end-to-end.** Reviewed by three independent audits on 2026-08-06; every blocker and correctness
-> finding they raised is fixed (see `TODO-RELEASE.md` for the list and the reasoning behind each).
-> Use `dry_run` for the first attempt, and afterwards **confirm a Deploy run actually starts** — that
-> one fix (B1) is the only one that can't be tested without a real release.
+> **Exercised end to end on 2026-09-13**, when `v2026.9.0` was cut: two dry runs, then the real run,
+> which pushed the release commit and tag, published both assets, and started the Pages deploy (B1)
+> that put the release file at `/`. Tick `dry_run` first whenever the workflow changes.
 >
-> Two things the workflow cannot check for you: `main`'s branch protection must permit the
-> `github-actions[bot]` push (as of 2026-09-12 main has no branch protection or rulesets), and the
-> offline-download links in README/About 404 until the first release exists.
+> Two things the workflow cannot check for you. `main`'s branch protection must permit the
+> `github-actions[bot]` push (main had no branch protection or rulesets on 2026-09-13, and the
+> release push went through). And **neonplug.app sits behind Cloudflare, which injects its
+> bot-detection script into every HTML page**: `/` matches the release asset byte for byte only at the
+> GitHub Pages origin, and the in-app offline ZIP, which is fetched from the site, carries that script.
 
 Releases are **manual and deliberate** — Actions → *Release* → leave the version empty (the workflow
 works out the next `YEAR.MONTH.N` from the tags) or type one to override, optionally tick `dry_run`
@@ -316,7 +316,7 @@ Statement coverage is low (~20%) *by construction* — the two 3.8k-line DM-32 f
 | DA-7X2 hardware findings, in order | `D890UV-HARDWARE-CHECKLIST.md` |
 | What's next / why is X like that? | `TODO.md` (bugs, tiers, protocol review items, radio-family roadmap) |
 | How do I cut a release? | "Releases and versioning" above; `.github/workflows/release.yml` |
-| Why can't I cut a release yet? | `TODO-RELEASE.md` — blockers from the 2026-08-06 three-agent audit |
+| What's still open about releases? | `TODO-RELEASE.md` — the 2026-08-06 three-agent audit, with what has been fixed since |
 | What shipped when? | `CHANGELOG.md` (generated — edit `## [Unreleased]`, not released sections) |
 | DM-32 wire format | `DM32-Protocol-Spec/` — **gitignored, local only** (01-OVERVIEW → 06-ENCODING) |
 | Contributor-facing setup, style | `CONTRIBUTING.md` |

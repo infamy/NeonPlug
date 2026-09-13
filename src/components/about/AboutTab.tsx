@@ -5,7 +5,7 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { Button } from '../ui/Button';
 import { ConfirmModal } from '../ui/ConfirmModal';
-import { downloadOfflineAsZip } from '../../utils/offlineDownload';
+import { downloadOfflineAsZip, OFFLINE_RELEASE_URL } from '../../utils/offlineDownload';
 import { PageHeader } from '../ui/PageHeader';
 import { VERSION_LABEL, COMMIT_HASH, BUILD_TIME, IS_RELEASE_BUILD, RELEASE_NOTES_URL } from '../../utils/version';
 import { latestEntry, whatsNewItems } from '../../utils/changelog';
@@ -15,12 +15,6 @@ const OFFLINE_FALLBACK_MESSAGE =
   'The latest tagged release is published as a single downloadable HTML file.\n\n' +
   'Click Download to save neonplug-latest.html from GitHub Releases.\n\n' +
   'Or build it locally using the instructions below.';
-
-// Permanent redirect to the newest release's asset — the release workflow uploads
-// every build twice, as neonplug-vX.Y.Z.html and again as neonplug-latest.html,
-// so this URL never needs updating.
-const OFFLINE_VERSION_URL =
-  'https://github.com/infamy/NeonPlug/releases/latest/download/neonplug-latest.html';
 
 const LATEST_RELEASE = latestEntry(changelogSource);
 const WHATS_NEW = LATEST_RELEASE ? whatsNewItems(LATEST_RELEASE) : [];
@@ -111,9 +105,9 @@ export const AboutTab: React.FC = () => {
                 {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
                   <> From the dev server the downloaded file is the dev build (not standalone). For a single-file offline build, use the live site or run <code className="text-neon-cyan">npm run build:single</code>.</>
                 )}
-                {' '}If the button doesn't work, visit the{' '}
-                <a href="https://infamy.github.io/NeonPlug/" target="_blank" rel="noopener noreferrer" className="link-accent">live version</a>{' '}
-                and use your browser's "Save Page As" feature.
+                {' '}If the button doesn't work,{' '}
+                <a href={OFFLINE_RELEASE_URL} target="_blank" rel="noopener noreferrer" className="link-accent">download the latest release</a>{' '}
+                instead.
               </p>
             </div>
 
@@ -388,7 +382,7 @@ export const AboutTab: React.FC = () => {
     <ConfirmModal
       isOpen={offlineFallbackOpen}
       onClose={() => setOfflineFallbackOpen(false)}
-      onConfirm={() => window.open(OFFLINE_VERSION_URL, '_blank')}
+      onConfirm={() => window.open(OFFLINE_RELEASE_URL, '_blank')}
       title="Download offline version"
       message={OFFLINE_FALLBACK_MESSAGE}
       confirmLabel="Download"
