@@ -40,7 +40,9 @@ Releases are **manual and deliberate** — Actions → *Release* → leave the v
 works out the next `YEAR.MONTH.N` from the tags) or type one to override, optionally tick `dry_run`
 first. `.github/workflows/release.yml` runs tests + `npm run build` (**this is the test gate deploy.yml
 never had**), bumps `package.json`, generates notes via GitHub's `releases/generate-notes` API,
-prepends them to `CHANGELOG.md`, runs the tests again on that content, commits
+adds them to `CHANGELOG.md` under the new version, below whatever was written under `[Unreleased]`
+(the About tab shows that hand-written summary instead of GitHub's list whenever there is one), runs
+the tests again on that content, commits
 `chore(release): vYEAR.MONTH.N`, tags and pushes, **then builds `build:single` with `VITE_RELEASE=1`**,
 and publishes the release with two assets: `neonplug-vYEAR.MONTH.N.html` and `neonplug-latest.html`.
 

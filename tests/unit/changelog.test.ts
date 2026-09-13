@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseChangelog, latestEntry } from '../../src/utils/changelog';
+import { parseChangelog, latestEntry, whatsNewItems } from '../../src/utils/changelog';
 import changelogSource from '../../CHANGELOG.md?raw';
 
 // Mirrors exactly what .github/workflows/release.yml writes: an
@@ -82,16 +82,48 @@ describe('parseChangelog', () => {
     expect(latestEntry(SAMPLE)?.version).toBe('2026.9.0');
     expect(latestEntry('# Changelog\n\n## [Unreleased]\n')).toBeNull();
   });
+
+  it('reads hand-written lines above GitHub\'s list, and leaves out New Contributors', () => {
+    // The shape release.yml writes when something was under [Unreleased] and a PR
+    // came from a first-time contributor.
+    const [entry] = parseChangelog(
+      '## [2026.9.0] — 2026-09-13\n\n' +
+        '- First tagged release.\n\n' +
+        "### What's Changed\n" +
+        '* Fix zone write truncation by @someone-else in https://github.com/infamy/NeonPlug/pull/161\n\n' +
+        '### New Contributors\n' +
+        '* @someone-else made their first contribution in https://github.com/infamy/NeonPlug/pull/161\n\n' +
+        '**Full Changelog**: https://github.com/infamy/NeonPlug/commits/v2026.9.0\n'
+    );
+    expect(entry.items).toEqual(['First tagged release.', 'Fix zone write truncation']);
+    expect(entry.summary).toEqual(['First tagged release.']);
+    // The About tab lists the summary alone, not GitHub's list under it.
+    expect(whatsNewItems(entry)).toEqual(['First tagged release.']);
+  });
+
+  it('lists every item when a release has no hand-written summary', () => {
+    const [newest, older] = parseChangelog(SAMPLE);
+    expect(newest.summary).toEqual([]);
+    expect(whatsNewItems(newest)).toEqual(['Add FT-70D support', 'Fix zone write truncation']);
+    // With no GitHub list at all, there is nothing for a summary to sit above.
+    expect(older.summary).toEqual([]);
+    expect(whatsNewItems(older)).toEqual(['Earlier thing']);
+  });
 });
 
 describe('the real CHANGELOG.md', () => {
   // The About tab renders this file directly; if the shape drifts, the "What's
-  // New" panel silently goes blank rather than erroring.
-  it('parses to at least one entry the About tab can render', () => {
-    const entry = latestEntry(changelogSource);
-    expect(entry).not.toBeNull();
-    expect(entry!.version).toMatch(/^\d+\.\d+\.\d+/);
-    expect(entry!.items.length).toBeGreaterThan(0);
+  // New" panel silently goes blank rather than erroring. Before the first release
+  // there is no released entry at all, so every version heading is checked
+  // instead of requiring one.
+  it('parses every released entry into items the About tab can render', () => {
+    const headings = changelogSource.match(/^## \[\d+\.\d+\.\d+\]/gm) ?? [];
+    const entries = parseChangelog(changelogSource);
+    expect(entries).toHaveLength(headings.length);
+    for (const entry of entries) {
+      expect(entry.version).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(entry.items.length).toBeGreaterThan(0);
+    }
   });
 
   it('still contains the Unreleased marker release.yml inserts after', () => {

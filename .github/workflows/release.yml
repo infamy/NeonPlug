@@ -139,29 +139,47 @@ jobs:
             exit 1
           fi
 
-          {
-            printf '## [%s] — %s\n\n' "$version" "$today"
-            cat /tmp/notes-changelog.md
-            printf '\n'
-          } > /tmp/entry.md
-
-          if [ ! -s /tmp/entry.md ]; then
+          if [ ! -s /tmp/notes-changelog.md ]; then
             echo "::error::Generated release notes are empty."
             exit 1
           fi
 
-          # Inserted immediately after the marker, so the marker survives for the
-          # next cycle. Anything hand-written under Unreleased ends up inside this
-          # release's section — i.e. it ships as part of these notes, which is the
-          # intent, but it does not stay under Unreleased.
+          # Whatever was written under [Unreleased] opens this release's section,
+          # above GitHub's list, and the About tab shows it instead of that list
+          # (src/utils/changelog.ts reads it as the summary). The text moves rather
+          # than copies, and the marker stays for the next cycle.
+          awk '
+            /^## \[Unreleased\]/ && !seen { seen = 1; inside = 1; next }
+            inside && /^## / { exit }
+            inside { held[++n] = $0 }
+            END {
+              first = 1; while (first <= n && held[first] ~ /^[ \t]*$/) first++
+              last = n;  while (last >= first && held[last] ~ /^[ \t]*$/) last--
+              for (i = first; i <= last; i++) print held[i]
+            }
+          ' CHANGELOG.md > /tmp/unreleased.md
+
+          {
+            printf '## [%s] — %s\n\n' "$version" "$today"
+            if [ -s /tmp/unreleased.md ]; then
+              cat /tmp/unreleased.md
+              printf '\n'
+            fi
+            cat /tmp/notes-changelog.md
+            printf '\n'
+          } > /tmp/entry.md
+
           awk '
             /^## \[Unreleased\]/ && !done {
               print
               print ""
               while ((getline line < "/tmp/entry.md") > 0) print line
               done = 1
+              skipping = 1
               next
             }
+            skipping && /^## / { skipping = 0 }
+            skipping { next }
             { print }
           ' CHANGELOG.md > /tmp/CHANGELOG.md
 
@@ -170,6 +188,10 @@ jobs:
           # byte even when the entry was not inserted at all.
           if ! grep -q "^## \[$version\] — " /tmp/CHANGELOG.md; then
             echo "::error::CHANGELOG.md has no '## [$version]' section after insertion — the release notes were not written."
+            exit 1
+          fi
+          if [ -s /tmp/unreleased.md ] && ! grep -qxF -- "$(head -n 1 /tmp/unreleased.md)" /tmp/CHANGELOG.md; then
+            echo "::error::The text under [Unreleased] is missing from the $version section."
             exit 1
           fi
           mv /tmp/CHANGELOG.md CHANGELOG.md
