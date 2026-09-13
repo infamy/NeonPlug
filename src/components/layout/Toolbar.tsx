@@ -494,8 +494,10 @@ export const Toolbar: React.FC = () => {
         onRetry={handleRetry}
         onChangePort={!isWriting ? handleChangePort : undefined}
         onClose={handleCloseModal}
-        mode={isWriting ? 'write' : 'read'}
-        model={isWriting ? writeModel : readModel}
+        // lastOperationMode, not just isWriting: once a write fails isWriting is
+        // false, and the error popup would say "Reading as" for a write.
+        mode={isWriting || lastOperationMode === 'write' ? 'write' : 'read'}
+        model={isWriting || lastOperationMode === 'write' ? writeModel : readModel}
       />
       <ConfirmModal
         isOpen={writeWarningOpen}

@@ -132,6 +132,8 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   supportsBulkRead: false,
   /** Sparse addressed reads — this is what enables the Diagnostics region dump. */
   supportsRawRegionDump: true,
+  /** Measured 2026-09-11: a codeplug read took 3.58 s with the tab hidden, 3.51 s in front. */
+  readsSurviveBackgroundTab: true,
   supportsBootImage: false,
   /** "Pre-defined SMS" in the vendor CPS; layout confirmed on hardware 2026-08-30. */
   /**

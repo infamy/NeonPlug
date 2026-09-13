@@ -624,7 +624,11 @@ export function useRadioConnection() {
       await performRead(protocol);
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : 'Read failed';
-      const errorMessage = withVisibilityContext(rawMessage, tabWentHiddenDuringOperation);
+      // A hidden tab no longer explains a failed read on a radio whose reads were
+      // measured at full speed there (readsSurviveBackgroundTab).
+      const hiddenTabMatters =
+        tabWentHiddenDuringOperation && !getCapabilitiesForModel(effectiveModel)?.readsSurviveBackgroundTab;
+      const errorMessage = withVisibilityContext(rawMessage, hiddenTabMatters);
       const isPortSelectionCancelled = rawMessage.includes('cancelled') || rawMessage.includes('Port selection cancelled');
 
       if (!isPortSelectionCancelled && protocol) {
@@ -640,7 +644,7 @@ export function useRadioConnection() {
           return;
         } catch (retryErr) {
           const retryRawMessage = retryErr instanceof Error ? retryErr.message : 'Read failed';
-          const retryErrorMessage = withVisibilityContext(retryRawMessage, tabWentHiddenDuringOperation);
+          const retryErrorMessage = withVisibilityContext(retryRawMessage, hiddenTabMatters);
           setError(retryErrorMessage);
           setConnectionError(retryErrorMessage);
           onProgress?.(0, `Error: ${retryErrorMessage}`, 'Error');

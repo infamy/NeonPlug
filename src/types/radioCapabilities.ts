@@ -214,6 +214,20 @@ export interface RadioCapabilities {
   supportsBle?: boolean;
   /** When radio supports both serial and BLE, default transport to offer (store can override). */
   preferredTransport?: 'serial' | 'ble';
+  /**
+   * A read runs at full speed with the NeonPlug tab hidden, so the read popup
+   * does not ask the user to keep the tab in front, and a failed read is not
+   * blamed on a hidden tab.
+   *
+   * Chrome throttles timers in a background tab to about one a second, so a read
+   * path that sleeps on a timer crawls or times out there. BaseSerialConnection
+   * stopped sleeping between partial chunks (839d3ee), and a DA-7X2 read then
+   * measured 3.58 s hidden against 3.51 s in front (4cdf9d4). Set it only where
+   * that is measured on hardware: the DM-32 still sleeps 150 ms between blocks,
+   * the UV5R-Mini sleeps between BLE chunks, and no radio's WRITE has been
+   * measured hidden, so writes keep the note everywhere.
+   */
+  readsSurviveBackgroundTab?: boolean;
   /** If true, hook calls bulkReadRequiredBlocks() before parsing channels (e.g. DM-32UV). */
   supportsBulkRead?: boolean;
   /**

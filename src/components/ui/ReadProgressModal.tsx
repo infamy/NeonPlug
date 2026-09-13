@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { ProgressBar } from './ProgressBar';
+import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { useLogStore, type LogEntry } from '../../store/logStore';
 import { BUTTON } from './controlStyles';
 
@@ -90,6 +91,9 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
 
   const isError = !!error;
   const isWriting = mode === 'write';
+  // Looked up for the model this operation runs AS, the one named in the popup,
+  // which can differ from the app's effective model right after picking a radio.
+  const tabMustStayInFront = isWriting || !(model && getCapabilitiesForModel(model)?.readsSurviveBackgroundTab);
 
   return (
     <div
@@ -146,7 +150,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
                   <li>Verify radio is in programming mode</li>
                   <li>Try unplugging and replugging USB cable</li>
                   <li>Select the correct serial port</li>
-                  <li>Keep this tab in the foreground during read/write</li>
+                  {tabMustStayInFront && <li>Keep this tab in the foreground during read/write</li>}
                 </ul>
               </div>
 
@@ -177,9 +181,11 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
             </div>
           ) : (
             <div className="mb-6">
-              <p className="text-amber-400/90 text-sm mb-3">
-                Please keep this tab in the foreground for reliable communication.
-              </p>
+              {tabMustStayInFront && (
+                <p className="text-amber-400/90 text-sm mb-3">
+                  Please keep this tab in the foreground for reliable communication.
+                </p>
+              )}
               <ProgressBar progress={progress} message={message} />
             </div>
           )}
