@@ -255,6 +255,7 @@ Import sources (`components/import/sources/*.tsx`) all render `<SelectAllButtons
 - `rxGroupListId` is masked to 6 bits on parse but not clamped on encode — silent truncation risk.
 - DCS encoding uses BCD digit nibbles with 0x80 (normal) / 0xC0 (inverted) bases, per `DM32-Protocol-Spec/06-ENCODING.md`. Decode and encode were *both* wrong and mutually consistent for D0xx codes for a long time, which is why round-trip tests didn't catch it. Now covered over all 104 codes × both polarities — **if you touch the codec, keep those tests green.**
 - `concatenateCachedBlocks` silently shifts data if a block is missing from cache (open TODO).
+- **The calibration block (metadata 0x02) is never written.** `dm32uv/writeGuard.ts` checks every write in the connection's only two write methods, `writeMemory` and `writeMemoryBlock`, before a byte is sent. It refuses a write that overlaps a scanned calibration block, lands in the config memory without a block scan or at an address the scan did not report, or would tag a block 0x02; with no memory layout known, nothing is written. The codeplug, contact and boot-image writes also check all their blocks first, so a refusal never leaves a partial write. Never add a write path around those two methods.
 - **Scan lists (fixed + hardware-verified 2026-08-07 via live CPS↔NeonPlug round-trips):**
   channel byte 0x19 stores the scan list ref in **bits 5-0** (1-indexed, 0=None) — the spec's
   "bits 5-2" is wrong. Membership is the `+0x1A` list only, **max 15**; scan entry `+0x0F` is
