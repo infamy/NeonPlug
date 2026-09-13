@@ -24,6 +24,7 @@ import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION, LIMITS } from './cons
 import { BOOT_IMAGE } from '../../utils/bootImage';
 import { getContactCapacityWithFallback } from '../../utils/firmware';
 import { withTimeout } from './connection';
+import { assertBlockWritable, type WriteGuardContext } from './writeGuard';
 import { log } from '../../utils/protocolLogger';
 
 /**
@@ -380,6 +381,9 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     // Note: DM32Connection.connect() handles the post-open INIT_DELAY internally
     this.port = port;
     this.connection = new DM32Connection();
+    // Every write this connection sends is checked against the memory layout and
+    // block map as they stand at that moment: see writeGuard.ts.
+    this.connection.setWriteGuard(() => this.writeGuardContext());
     // Each request/response in connect() has its own 2s timeout (per-request basis)
     await this.connection.connect(port);
 
@@ -425,6 +429,48 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     // Enter programming mode
     // Each request/response in enterProgrammingMode() has its own 2s timeout
     await this.connection.enterProgrammingMode();
+  }
+
+  /**
+   * What every write is checked against (writeGuard.ts). Read at the moment of
+   * each write, so a fresh metadata scan is seen without anything having to hand
+   * it over. Null until the memory layout is known, which refuses everything.
+   */
+  private writeGuardContext(): WriteGuardContext | null {
+    const layout = this.radioInfo?.memoryLayout;
+    if (!layout) return null;
+    return { configStart: layout.configStart, configEnd: layout.configEnd, blocks: this.discoveredBlocks };
+  }
+
+  /**
+   * Refuse a contact write before its first block if any block it would touch
+   * runs past the contact memory V-frame 0x0F reports, or is one the write guard
+   * refuses.
+   *
+   * writeContacts walks 4 KB blocks up from that range's start, one for every 44
+   * contacts, and nothing else checks where the walk ends: a long enough list
+   * would carry on into whatever memory follows.
+   */
+  private assertContactWriteFits(baseAddr: number, endAddr: number, contactCount: number): void {
+    const CONTACTS_PER_BLOCK = 44; // writeContacts' own layout
+    const firstBlockAddr = Math.floor(baseAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD;
+    // The count header goes out even for an empty list, so there is always a block.
+    const blocks = Math.max(1, Math.ceil(contactCount / CONTACTS_PER_BLOCK));
+    const lastByte = firstBlockAddr + blocks * BLOCK_SIZE.STANDARD - 1;
+    if (lastByte > endAddr) {
+      const fit =
+        Math.max(0, Math.floor((endAddr + 1 - firstBlockAddr) / BLOCK_SIZE.STANDARD)) * CONTACTS_PER_BLOCK;
+      throw new Error(
+        `Refusing to write ${contactCount.toLocaleString()} contacts: they need ${blocks} blocks (4 KB each) ` +
+          `starting at 0x${firstBlockAddr.toString(16).toUpperCase()}, which runs past the end of the radio's ` +
+          `contact memory at 0x${endAddr.toString(16).toUpperCase()}. At most ${fit.toLocaleString()} fit. ` +
+          `Nothing was written.`
+      );
+    }
+    const guard = this.writeGuardContext();
+    for (let i = 0; i < blocks; i++) {
+      assertBlockWritable({ address: firstBlockAddr + i * BLOCK_SIZE.STANDARD, length: BLOCK_SIZE.STANDARD }, guard);
+    }
   }
 
   /**
@@ -1070,6 +1116,26 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     }
     const baseAddr = this.getBootImageBaseAddress();
     const fullBlocks = BOOT_IMAGE.FULL_BLOCKS;
+    // Every block checked before the first is sent. The base is V-frame 0x0E's,
+    // or a default when that is missing, and nothing else checks where it points.
+    // The image is pixels, not metadata blocks, so it must stay out of the config
+    // memory entirely.
+    const guard = this.writeGuardContext();
+    if (guard && baseAddr <= guard.configEnd && baseAddr + BOOT_IMAGE.SIZE - 1 >= guard.configStart) {
+      throw new Error(
+        `Refusing to write the boot image at 0x${baseAddr.toString(16).toUpperCase()}: it would overlap the ` +
+          `radio's config memory, where channels, settings and calibration live. Nothing was written.`
+      );
+    }
+    for (let i = 0; i < BOOT_IMAGE.BLOCKS; i++) {
+      assertBlockWritable(
+        {
+          address: baseAddr + i * BLOCK_SIZE.STANDARD,
+          length: i < fullBlocks ? BLOCK_SIZE.STANDARD : BOOT_IMAGE.LAST_CHUNK_SIZE,
+        },
+        guard
+      );
+    }
     for (let i = 0; i < fullBlocks; i++) {
       const progress = Math.floor(((i + 1) / BOOT_IMAGE.BLOCKS) * 100);
       this.onProgress?.(progress, `Writing boot image block ${i + 1} of ${BOOT_IMAGE.BLOCKS}...`);
@@ -1952,6 +2018,8 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     
     const ENTRY_SIZE = 0x5C; // 92 bytes per contact
     
+    this.assertContactWriteFits(baseAddr, endAddr, contacts.length);
+
     // Write contact count in first 16 bytes (4 bytes count + 12 bytes padding)
     // Count is at baseAddr, contacts start at baseAddr + 0x10
     this.onProgress?.(5, `Writing contact count header...`);
@@ -3802,6 +3870,17 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       log.debug(`${metadataHex} at ${addressHex} (${block.data.length} bytes)`, 'Protocol');
     }
     
+    // Every block checked before the first is sent. The connection refuses a bad
+    // block by itself, but only when it gets to it, and by then the blocks ahead
+    // of it are on the radio.
+    const guard = this.writeGuardContext();
+    for (const block of finalBlocksToWrite) {
+      assertBlockWritable(
+        { address: block.address, length: block.data.length, data: block.data, metadata: block.metadata },
+        guard
+      );
+    }
+
     // Step 5: Write all blocks to radio in the correct order
     this.onProgress?.(60, `Writing ${finalBlocksToWrite.length} blocks to radio in correct order...`);
     
