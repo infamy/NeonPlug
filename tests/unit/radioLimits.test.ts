@@ -40,6 +40,26 @@ describe('per-radio limits are exposed as capabilities', () => {
   });
 });
 
+describe('the scan-list editor follows each radio', () => {
+  it('the DM-32: 11-character names, 0.5 s hang time steps, priorities from members, lists by position', () => {
+    const caps = getCapabilitiesForModel('DM-32UV');
+    expect(caps?.maxScanListNameLength).toBe(11);
+    expect(caps?.scanListHangTime).toEqual({ stepMs: 500, max: 60, default: 6 });
+    expect(caps?.scanListPriorityMembersOnly).toBe(true);
+    expect(caps?.scanListsBySlot).toBeFalsy();
+  });
+
+  it('the D890UV family: 16-character names, hang time in tenths, priorities from any channel, lists by slot', () => {
+    for (const model of ['DA-7X2', 'AT-D890UV']) {
+      const caps = getCapabilitiesForModel(model);
+      expect(caps?.maxScanListNameLength).toBe(16);
+      expect(caps?.scanListHangTime).toEqual({ stepMs: 100, max: 255, default: 30 });
+      expect(caps?.scanListPriorityMembersOnly).toBeFalsy();
+      expect(caps?.scanListsBySlot).toBe(true);
+    }
+  });
+});
+
 describe('firmware warning is per-radio, not hardcoded', () => {
   // The status bar hardcoded the DM-32's 'DM32.01.L01.048' and warned on any
   // radio reporting anything else — so the D890UV, which reports 'V100',

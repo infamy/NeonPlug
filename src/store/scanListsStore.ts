@@ -55,7 +55,10 @@ export const useScanListsStore = create<ScanListsState>((set) => ({
     if (!trimmedNewName || trimmedNewName.length === 0) {
       return false;
     }
-    if (trimmedNewName.length > 16) {
+    // Per radio: the DM-32's name field is 11 bytes, the D890UV family's 16 characters.
+    const maxNameLength =
+      getCapabilitiesForModel(useRadioStore.getState().selectedRadioModel ?? '')?.maxScanListNameLength ?? 16;
+    if (trimmedNewName.length > maxNameLength) {
       return false;
     }
     

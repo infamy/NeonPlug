@@ -23,6 +23,8 @@ export const ScanListsList: React.FC = () => {
   // One maximum for the subtitle, the add handler and the Add button. The button
   // checked a literal 32, so a DA-7X2 (100 lists) could never add a 33rd.
   const maxScanLists = caps?.maxScanLists ?? 32;
+  // The DM-32 stores 11 characters, the D890UV family 16.
+  const maxNameLength = caps?.maxScanListNameLength ?? 16;
   const { scanLists, selectedScanList, setSelectedScanList, addScanList, deleteScanList, renameScanList } = useScanListsStore();
   const [newScanListName, setNewScanListName] = useState('');
   const [editingScanList, setEditingScanList] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export const ScanListsList: React.FC = () => {
       showAlert('A scan list with this name already exists.');
       return;
     }
-    const scanListName = newScanListName.trim().slice(0, 16);
+    const scanListName = newScanListName.trim().slice(0, maxNameLength);
     // The LOWEST FREE slot, not the list length. `slot` is a hardware slot and
     // the table can have holes: deleting a list clears its presence bit and
     // leaves the survivors where they are, so a radio holding one list in slot 1
@@ -102,7 +104,7 @@ export const ScanListsList: React.FC = () => {
       setEditingScanList(null);
       setEditScanListName('');
     } else {
-      showAlert('Invalid scan list name or name already exists. Scan list names must be 1-16 characters and unique.');
+      showAlert(`Invalid scan list name or name already exists. Scan list names must be 1-${maxNameLength} characters and unique.`);
     }
   };
 
@@ -148,7 +150,7 @@ export const ScanListsList: React.FC = () => {
                     }}
                     onClick={(e) => e.stopPropagation()}
                     className={`${FIELD} flex-1 border rounded px-2 py-1 text-sm`}
-                    maxLength={16}
+                    maxLength={maxNameLength}
                     autoFocus
                   />
                   <button
@@ -235,7 +237,7 @@ export const ScanListsList: React.FC = () => {
         onAddInputChange={setNewScanListName}
         onAdd={handleAddScanList}
         addDisabled={scanLists.length >= maxScanLists}
-        addInputMaxLength={16}
+        addInputMaxLength={maxNameLength}
         listContent={listContent}
         detailContent={detailContent}
         fullHeight
@@ -446,6 +448,10 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
   const anySettings = (['ctcScanMode', 'scanTxMode', 'hangTime', 'designatedTxChannel'] as const)
     .some(shows);
   const anyPriority = shows('priority1') || shows('priority2');
+  const priorityMembersOnly = caps?.scanListPriorityMembersOnly === true;
+  // Hang time is in the radio's own units: 0.5 s steps on the DM-32, tenths on the D890UV.
+  const hangTime = caps?.scanListHangTime ?? { stepMs: 100, max: 255, default: 30 };
+  const seconds = (units: number) => `${Number(((units * hangTime.stepMs) / 1000).toFixed(1))}s`;
 
   const availableItems = channels
     .filter(ch => !scanList.channels.includes(ch.number))
@@ -454,6 +460,14 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
 
   // Get sorted list of channels for dropdowns
   const sortedChannels = [...channels].sort((a, b) => a.number - b.number);
+
+  // Where priority channels must be list members (caps.scanListPriorityMembersOnly,
+  // the DM-32) they are picked with the P1/P2 buttons on the member rows below:
+  // the OEM CPS enforces membership and the radio ignores a priority channel that
+  // isn't in the list (hardware-observed 2026-08-07). Other radios pick from every
+  // channel.
+  const priorityLabel = (num?: number) =>
+    num !== undefined ? (channels.find(c => c.number === num)?.name ?? `Ch ${num}`) : 'None';
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4">
@@ -500,19 +514,26 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                 </select>
               </div>)}
 
+              {/* Hang Time, in the radio's own units (caps.scanListHangTime) */}
               {shows('hangTime') && (
               <div>
-                <label className="block text-cool-gray text-xs mb-1">Hang Time (tenths of second)</label>
+                <label className="block text-cool-gray text-xs mb-1">
+                  Hang Time
+                  <span className="text-neon-cyan ml-2">{(((scanList.hangTime || hangTime.default) * hangTime.stepMs) / 1000).toFixed(1)}s</span>
+                </label>
                 <input
-                  type="number"
+                  type="range"
                   min={1}
-                  max={255}
-                  value={scanList.hangTime || 30}
-                  onChange={(e) => updateScanList(scanList.name, { hangTime: parseInt(e.target.value) || 30 })}
-                  className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
-                  placeholder="30 = 3.0s"
+                  max={hangTime.max}
+                  step={1}
+                  value={scanList.hangTime || hangTime.default}
+                  onChange={(e) => updateScanList(scanList.name, { hangTime: parseInt(e.target.value) || hangTime.default })}
+                  className="w-full accent-neon-cyan"
                 />
-                <p className="text-cool-gray text-xs mt-0.5">{((scanList.hangTime || 30) / 10).toFixed(1)}s</p>
+                <div className="flex justify-between text-cool-gray text-[10px]">
+                  <span>{seconds(1)}</span>
+                  <span>{seconds(hangTime.max)}</span>
+                </div>
               </div>)}
 
               {shows('designatedTxChannel') && (
@@ -525,6 +546,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   includeNone={true}
                   includeCurrent={true}
                 />
+                <p className="text-cool-gray text-xs mt-0.5">Not written to radio yet — storage offset unverified</p>
               </div>)}
             </div>)}
 
@@ -548,7 +570,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                 </div>)}
 
                 {/* Priority Channel 1 */}
-                {shows('priority1') && (
+                {shows('priority1') && !priorityMembersOnly && (
                 <div>
                   <label className="block text-cool-gray text-xs mb-1">Priority Channel 1</label>
                   <SearchableChannelSelect
@@ -576,7 +598,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                 </div>)}
 
                 {/* Priority Channel 2 */}
-                {shows('priority2') && (
+                {shows('priority2') && !priorityMembersOnly && (
                 <div>
                   <label className="block text-cool-gray text-xs mb-1">Priority Channel 2</label>
                   <SearchableChannelSelect
@@ -588,6 +610,17 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   />
                 </div>)}
               </div>
+              {priorityMembersOnly && (
+              <p className="text-cool-gray text-xs mt-2">
+                Tip: set a type to “Specific Channel”, then use the P1 / P2 buttons on the
+                channel rows below to pick the priority channels.
+                {(scanList.priority1Type || 0) === 2 && (
+                  <span className="text-neon-cyan"> P1: {priorityLabel(scanList.priorityChannel1)}.</span>
+                )}
+                {(scanList.priority2Type || 0) === 2 && (
+                  <span className="text-neon-cyan"> P2: {priorityLabel(scanList.priorityChannel2)}.</span>
+                )}
+              </p>)}
             </div>)}
           </div>
         )}
@@ -607,6 +640,57 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
         containerNoun="scan list"
         onAlert={onAlert}
         padded={false}
+        renderRowExtras={priorityMembersOnly ? (id) => {
+          const p1Enabled = (scanList.priority1Type || 0) === 2;
+          const p2Enabled = (scanList.priority2Type || 0) === 2;
+          const isP1 = p1Enabled && scanList.priorityChannel1 === id;
+          const isP2 = p2Enabled && scanList.priorityChannel2 === id;
+          const chipBase = 'px-1.5 py-0.5 rounded text-[10px] font-medium border transition-colors';
+          const chipClass = (enabled: boolean, active: boolean) =>
+            !enabled
+              ? `${chipBase} bg-transparent text-cool-gray border-cool-gray border-opacity-20 opacity-30 cursor-not-allowed`
+              : active
+                ? `${chipBase} bg-neon-cyan text-dark-charcoal border-neon-cyan`
+                : `${chipBase} bg-transparent text-cool-gray border-cool-gray border-opacity-40 hover:text-neon-cyan hover:border-neon-cyan`;
+          return (
+            <div className="flex gap-1 mr-1">
+              <button
+                disabled={!p1Enabled}
+                onClick={() =>
+                  p1Enabled &&
+                  updateScanList(scanList.name, { priorityChannel1: isP1 ? undefined : id })
+                }
+                className={chipClass(p1Enabled, isP1)}
+                title={
+                  !p1Enabled
+                    ? 'Set Priority 1 Type to "Specific Channel" to enable'
+                    : isP1
+                      ? 'Clear Priority 1'
+                      : 'Set as Priority Channel 1'
+                }
+              >
+                P1
+              </button>
+              <button
+                disabled={!p2Enabled}
+                onClick={() =>
+                  p2Enabled &&
+                  updateScanList(scanList.name, { priorityChannel2: isP2 ? undefined : id })
+                }
+                className={chipClass(p2Enabled, isP2)}
+                title={
+                  !p2Enabled
+                    ? 'Set Priority 2 Type to "Specific Channel" to enable'
+                    : isP2
+                      ? 'Clear Priority 2'
+                      : 'Set as Priority Channel 2'
+                }
+              >
+                P2
+              </button>
+            </div>
+          );
+        } : undefined}
       />
     </div>
   );

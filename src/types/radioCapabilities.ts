@@ -330,6 +330,34 @@ export interface RadioCapabilities {
    * only for what it can honour.
    */
   scanListFields?: readonly ScanListField[];
+  /**
+   * Longest scan list name the radio stores. 11 on the DM-32, an 11-byte field
+   * null-terminated only when shorter; 16 on the D890UV family. Absent falls
+   * back to 16, what the editor allowed before this existed.
+   */
+  maxScanListNameLength?: number;
+  /**
+   * The units `ScanList.hangTime` is in, straight from the radio's record. The
+   * DM-32 stores 0.5 s steps in one byte (6 = 3.0 s); the D890UV family stores its
+   * dwell time in tenths of a second. `max` and `default` are in the same units.
+   * Absent falls back to tenths of a second, up to 25.5 s.
+   */
+  scanListHangTime?: { stepMs: number; max: number; default: number };
+  /**
+   * Priority channels must be members of the list. True on the DM-32, whose
+   * radio discards a priority channel that is not a member (hardware 2026-08-07),
+   * so the editor picks priorities from the member rows. Otherwise any channel
+   * can be chosen.
+   */
+  scanListPriorityMembersOnly?: boolean;
+  /**
+   * Channels reference a scan list by its hardware slot (a channel stores
+   * slot + 1), not by its position in the list. True on the D890UV family, whose
+   * table keeps holes where lists were deleted. The editor assigns
+   * `ScanList.slot` on every radio, so without this a slot is not a reference:
+   * the DM-32 writes its lists in order and never reads it.
+   */
+  scanListsBySlot?: boolean;
   /** If true, protocol supports readBootImage / writeBootImage. */
   supportsBootImage?: boolean;
   /** If true, protocol supports readQuickMessages. */

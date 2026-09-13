@@ -117,6 +117,12 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   // TX mode and designated TX channel are DM-32 concepts with no home here, so
   // the panel must not offer them — it used to, and discarded every edit.
   scanListFields: ['hangTime', 'priority1', 'priority2'],
+  // 16 characters of a 34-byte UTF-16 name. Hang time is the record's dwell
+  // time, u16 tenths of a second; the editor keeps the 25.5 s ceiling it had.
+  maxScanListNameLength: 16,
+  scanListHangTime: { stepMs: 100, max: 255, default: 30 },
+  // A channel stores its scan list's SLOT + 1, and deleted lists leave holes.
+  scanListsBySlot: true,
   supportsZones: true,
   supportsScanLists: true,
   analogOnly: false,
