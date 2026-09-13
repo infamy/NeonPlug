@@ -33,19 +33,20 @@ Releases are cut from the Actions tab, not the CLI — see "Releases and version
 > one fix (B1) is the only one that can't be tested without a real release.
 >
 > Two things the workflow cannot check for you: `main`'s branch protection must permit the
-> `github-actions[bot]` push, and the offline-download links in README/About 404 until the first
-> release exists.
+> `github-actions[bot]` push (as of 2026-09-12 main has no branch protection or rulesets), and the
+> offline-download links in README/About 404 until the first release exists.
 
-Releases are **manual and deliberate** — Actions → *Release* → pick `patch`/`minor`/`major` (or type an
-explicit version), optionally tick `dry_run` first. `.github/workflows/release.yml` runs tests +
-`npm run build` (**this is the test gate deploy.yml never had**), bumps `package.json`, generates notes
-via GitHub's `releases/generate-notes` API, prepends them to `CHANGELOG.md`, **builds `build:single`
-with `VITE_RELEASE=1`**, then commits `chore(release): vX.Y.Z`, tags, pushes, and publishes the release
-with two assets: `neonplug-vX.Y.Z.html` and `neonplug-latest.html`.
+Releases are **manual and deliberate** — Actions → *Release* → leave the version empty (the workflow
+works out the next `YEAR.MONTH.N` from the tags) or type one to override, optionally tick `dry_run`
+first. `.github/workflows/release.yml` runs tests + `npm run build` (**this is the test gate deploy.yml
+never had**), bumps `package.json`, generates notes via GitHub's `releases/generate-notes` API,
+prepends them to `CHANGELOG.md`, runs the tests again on that content, commits
+`chore(release): vYEAR.MONTH.N`, tags and pushes, **then builds `build:single` with `VITE_RELEASE=1`**,
+and publishes the release with two assets: `neonplug-vYEAR.MONTH.N.html` and `neonplug-latest.html`.
 
-Note the artifact is built *before* the commit/tag/push — which is why the release build currently
-stamps the wrong commit (`TODO-RELEASE.md` R4), and why the tested tree is not the published tree
-(R5: tests run before the CHANGELOG rewrite, but `CHANGELOG.md` is bundled into the app).
+The artifact is built *after* the commit, tag and push, so the commit it stamps is the one the tag
+points at (`TODO-RELEASE.md` R4, fixed), and the tests run a second time after the CHANGELOG rewrite
+because `CHANGELOG.md` is bundled into the app (R5, fixed).
 
 `neonplug-latest.html` exists so `/releases/latest/download/neonplug-latest.html` is a permanent URL —
 it's what the README and the About tab's offline download point at. Don't rename it.
@@ -77,13 +78,19 @@ Because the absolute `neonplug.app` URL always wins, the per-PR and `/dev/` data
 
 **Two independent version numbers — don't conflate them:**
 
-- **App version** (`package.json` → `__APP_VERSION__` → `src/utils/version.ts`). `VERSION_LABEL` is
-  `v1.2.3` for release builds and `v1.2.3-dev+abc1234` for everything else, keyed off `VITE_RELEASE`,
-  which *only* release.yml sets. A user on `/dev/` must never look like they're on the tagged release.
-  (Caveat: `-dev+` is semver-**backwards** — `1.2.3-dev` is a *pre*release of `1.2.3`, i.e. sorts
-  *before* it. Cosmetic today because nothing parses the label; `TODO-RELEASE.md` V3.)
+- **App version** (`package.json` → `__APP_VERSION__` → `src/utils/version.ts`) is **`YEAR.MONTH.N`**
+  (decided 2026-09-12): the UTC year and month a release was cut, and N counting that month's releases
+  from 0, worked out by release.yml from the existing tags. Nothing compares app versions; they say
+  which build and how old it is, and compatibility belongs to the format version below. Never
+  zero-padded: npm rejects `2026.09.0`. `VERSION_LABEL` is `v2026.9.0` for release builds and
+  `v2026.9.0-dev+abc1234` for everything else, keyed off `VITE_RELEASE`, which *only* release.yml
+  sets. A user on `/dev/` must never look like they're on the tagged release. (Caveat: `-dev+` is
+  semver-**backwards** — `2026.9.0-dev` is a *pre*release of `2026.9.0`, i.e. sorts *before* it.
+  Cosmetic today because nothing parses the label; `TODO-RELEASE.md` V3.)
 - **Codeplug format version** (`CODEPLUG_FORMAT_VERSION` in `services/codeplugExport.ts`), currently
-  `1.0.0`. Changes only when the `.neonplug` schema changes. `codeplugToJsonSafe` stamps
+  `1.1.0`, which added the optional `tables` field (main wrote `tables` files as plain
+  `version: '1.1.0'` before `formatVersion` existed, so a reader at 1.0.0 would warn on all of
+  them). Changes only when the `.neonplug` schema changes. `codeplugToJsonSafe` stamps
   `formatVersion` + `appVersion` + `appCommit` and **ignores any caller-supplied version** — four call
   sites used to hardcode `'1.0.0'`, so the writer is now the only authority. Reads accept older and
   same-major files (missing version ⇒ legacy `1.0.0`) and reject a **higher major** via
@@ -291,10 +298,9 @@ Statement coverage is low (~20%) *by construction* — the two 3.8k-line DM-32 f
   refactor. `DiagnosticsTab.tsx` is **400 lines** and no longer a rough edge (it was ~3.8k; the split
   landed 2026-08-02 — this bullet claimed the old number until 2026-08-06).
 - CI runs `npm audit` over dev deps too, so a dev-only advisory can redden the build; `audit:prod` exists for this.
-- Several root docs are **untracked** (`CLAUDE.md`, `TODO.md`, `TODO-RELEASE.md`, `ADDING_A_RADIO.md`,
+- Several root docs are **untracked** (`TODO.md`, `TODO-RELEASE.md`, `ADDING_A_RADIO.md`,
   `DESKTOP_APP.md`, `IMPROVEMENTS.md`, `TODO-DM32-SPEC-AUDIT.md`) — real project docs that should be
-  committed. **`CHANGELOG.md` is also untracked and is a hard build dependency** — committing the
-  release work without it breaks every fresh clone and every CI run (`TODO-RELEASE.md` B2).
+  committed.
 
 ## Where to look things up
 

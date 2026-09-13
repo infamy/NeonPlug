@@ -190,7 +190,6 @@ export const DebugExportsCard: React.FC<DebugExportsCardProps> = ({ showAlert })
         rxGroups,
         encryptionKeys,
         exportDate: new Date().toISOString(),
-        version: '1.0.0',
       };
 
       const codeplugBlob = await exportCodeplug(codeplugData, true);

@@ -24,6 +24,11 @@ import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type Snaps
 // Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { useAlert } from '../../hooks/useAlert';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
+import { confirmNewerFormat } from '../../utils/codeplugFormatPrompt';
+// Statically imported: codeplugSnapshots already pulls codeplugExport into this
+// component's graph, so lazy-loading it here would save nothing.
+import { readWithFormatOverride } from '../../services/codeplugExport';
 import { ReadProgressModal } from '../ui/ReadProgressModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { WriteConfirmBody } from './WriteConfirmBody';
@@ -64,6 +69,7 @@ export const Toolbar: React.FC = () => {
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
   const [writeConfirm, setWriteConfirm] = useState<WriteConfirmInput | null>(null);
   const { alertOpen, alertMessage, alertBody, alertSize, alertTitle, showAlert, showAlertBody, closeAlert } = useAlert();
+  const { confirm, confirmProps } = useConfirmDialog();
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [convertTargetModel, setConvertTargetModel] = useState<string>(() => getMigrationTargetModels()[0] ?? 'DM-32UV');
   const [readDropdownOpen, setReadDropdownOpen] = useState(false);
@@ -121,7 +127,6 @@ export const Toolbar: React.FC = () => {
     // backup silently omits AM/FM, roaming, DTMF, hot keys and the rest.
     tables: exportableTables(useRadioStore.getState().tables),
     exportDate: new Date().toISOString(),
-    version: '1.0.0',
   });
 
   const buildCodeplugDataFromStores = () => {
@@ -155,7 +160,6 @@ export const Toolbar: React.FC = () => {
       encryptionKeys: eks.keys,
       tables: exportableTables(rs.tables),
       exportDate: new Date().toISOString(),
-      version: '1.0.0',
     };
   };
 
@@ -207,8 +211,13 @@ export const Toolbar: React.FC = () => {
     try {
       // Lazy load codeplug import when needed
       const { importCodeplug } = await import('../../services/codeplugExport');
-      const codeplugData = await importCodeplug(file);
-      
+      const codeplugData = await readWithFormatOverride(
+        (opts) => importCodeplug(file, opts),
+        confirmNewerFormat(confirm)
+      );
+      // null = user declined the newer-format warning; not an error.
+      if (!codeplugData) return;
+
       // An import marks the radio settings changed so a write sends them
       // (issue #2); applyCodeplugToStores is the one place that decides it.
       applyCodeplugToStores(codeplugData, 'import');
@@ -372,7 +381,20 @@ export const Toolbar: React.FC = () => {
   };
 
   const handleRestoreSnapshot = async (id: string) => {
-    const data = await getSnapshotData(id);
+    let data;
+    try {
+      data = await readWithFormatOverride(
+        (opts) => getSnapshotData(id, opts),
+        confirmNewerFormat(confirm)
+      );
+    } catch (error) {
+      // Previously getSnapshotData swallowed everything and Restore just did
+      // nothing; a format reject now says why.
+      showAlert(
+        `Cannot restore snapshot: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+      return;
+    }
     if (!data) return;
     applyCodeplugToStores(data, 'restore');
     setSnapshotsModalOpen(false);
@@ -644,6 +666,7 @@ export const Toolbar: React.FC = () => {
         confirmLabel="Clear all"
         variant="danger"
       />
+      <ConfirmModal {...confirmProps} />
     </>
   );
 };
