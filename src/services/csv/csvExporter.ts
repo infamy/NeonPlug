@@ -1,5 +1,6 @@
 import type { Channel, Contact, Zone, ScanList, RXGroup, DMRRadioID, QuickContact } from '../../models';
 import { downloadFile } from '../../utils/download';
+import { CHANNEL_CSV_COLUMN_LIST } from './channelCsvColumns';
 
 function toCSV(headers: string[], rows: (string | number)[][]): string {
   return [
@@ -8,83 +9,12 @@ function toCSV(headers: string[], rows: (string | number)[][]): string {
   ].join('\n');
 }
 
+/** Every channel field, one column (or three, for a tone) each. See channelCsvColumns.ts. */
 export function exportChannelsToCSV(channels: Channel[]): string {
-  const headers = [
-    'Channel Number',
-    'Name',
-    'RX Frequency',
-    'TX Frequency',
-    'Mode',
-    'Bandwidth',
-    'Power',
-    'Forbid TX',
-    'Lone Worker',
-    'Scan List ID',
-    'Forbid Talkaround',
-    'APRS Receive',
-    'Emergency',
-    'Emergency Ack',
-    'Emergency ID',
-    'APRS TX',
-    'VOX',
-    'Scramble',
-    'Compander',
-    'Talkback',
-    'Squelch',
-    'PTT ID Display',
-    'PTT ID',
-    'Color Code',
-    'RX CTCSS/DCS Type',
-    'RX CTCSS/DCS Value',
-    'TX CTCSS/DCS Type',
-    'TX CTCSS/DCS Value',
-    'Compander Dup',
-    'VOX Related',
-    'RX Squelch Mode',
-    'Step Frequency',
-    'Signaling Type',
-    'PTT ID Type',
-    'Contact ID',
-  ];
-
-  const rows = channels.map(channel => [
-    channel.number.toString(),
-    channel.name,
-    channel.rxFrequency.toFixed(4),
-    channel.txFrequency.toFixed(4),
-    channel.mode,
-    channel.bandwidth,
-    channel.power,
-    channel.forbidTx ? 'Yes' : 'No',
-    channel.loneWorker ? 'Yes' : 'No',
-    channel.scanListId.toString(),
-    channel.forbidTalkaround ? 'Yes' : 'No',
-    channel.aprsReceive ? 'Yes' : 'No',
-    channel.emergencyIndicator ? 'Yes' : 'No',
-    channel.emergencyAck ? 'Yes' : 'No',
-    channel.emergencySystemId.toString(),
-    channel.aprsReportMode === 'Digital' ? 'Yes' : 'No',
-    channel.voxFunction ? 'Yes' : 'No',
-    channel.scramble ? 'Yes' : 'No',
-    channel.compander ? 'Yes' : 'No',
-    channel.talkback ? 'Yes' : 'No',
-    channel.squelchLevel.toString(),
-    channel.pttIdDisplay ? 'Yes' : 'No',
-    channel.pttId.toString(),
-    channel.colorCode.toString(),
-    channel.rxCtcssDcs.type,
-    channel.rxCtcssDcs.value?.toString() || '',
-    channel.txCtcssDcs.type,
-    channel.txCtcssDcs.value?.toString() || '',
-    channel.companderDup ? 'Yes' : 'No',
-    channel.voxRelated ? 'Yes' : 'No',
-    channel.rxSquelchMode,
-    channel.stepFrequency.toString(),
-    channel.signalingType,
-    channel.pttIdType,
-    channel.contactId.toString(),
-  ]);
-
+  const headers = CHANNEL_CSV_COLUMN_LIST.flatMap(([, column]) => [...column.headers]);
+  const rows = channels.map((channel) =>
+    CHANNEL_CSV_COLUMN_LIST.flatMap(([key, column]) => column.write(channel[key]))
+  );
   return toCSV(headers, rows);
 }
 
