@@ -9,6 +9,7 @@ export interface SerialLikePort {
   readonly writable: WritableStream<Uint8Array> | null;
   open(options: { baudRate: number }): Promise<void>;
   close(): Promise<void>;
+  setSignals?(signals: { dataTerminalReady?: boolean; requestToSend?: boolean; break?: boolean }): Promise<void>;
 }
 
 export abstract class BaseSerialConnection {
