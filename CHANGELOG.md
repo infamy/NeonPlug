@@ -19,6 +19,8 @@ version says how old a build is, not how big its changes are. Whether a saved
 
 ## [Unreleased]
 
+## [2026.9.0] — 2026-09-13
+
 - First tagged release. neonplug.app now serves the latest release, and
   neonplug.app/dev/ has the latest development build.
 - Radios: DM-32UV / DP570UV, UV5R-Mini (USB or Bluetooth), and Yaesu FT-65, FT-4, FT-4VR
@@ -28,3 +30,108 @@ version says how old a build is, not how big its changes are. Whether a saved
 - Build channel lists from CHIRP files, repeater lists, airports, TAFL and fixed channel
   sets, or with the Channel Wizard.
 - Works offline as a single HTML file.
+
+### What's Changed
+* Implement a few of the other meta data block reads by @infamy in https://github.com/infamy/NeonPlug/pull/1
+* lots of UI work, some attemps at new meta block reads, without great … by @infamy in https://github.com/infamy/NeonPlug/pull/2
+* Improved read operations to improve reliability and speed... by @infamy in https://github.com/infamy/NeonPlug/pull/3
+* Connection improvements around timeout by @infamy in https://github.com/infamy/NeonPlug/pull/4
+* Prework for the channel writing by @infamy in https://github.com/infamy/NeonPlug/pull/5
+* Initial smart importer, uses an airport json by @infamy in https://github.com/infamy/NeonPlug/pull/6
+* Feat/smart importer by @infamy in https://github.com/infamy/NeonPlug/pull/7
+* Feat/datasplit by @infamy in https://github.com/infamy/NeonPlug/pull/8
+* Tafl initial implementation by @infamy in https://github.com/infamy/NeonPlug/pull/9
+* Dynamic Loading of TAFL and Airport data by @infamy in https://github.com/infamy/NeonPlug/pull/10
+* Initial Radio Write by @infamy in https://github.com/infamy/NeonPlug/pull/11
+* Feat/makeitwrite by @infamy in https://github.com/infamy/NeonPlug/pull/13
+* Radio settings read by @infamy in https://github.com/infamy/NeonPlug/pull/14
+* Parse the menu item section and add drop down text for other settings by @infamy in https://github.com/infamy/NeonPlug/pull/15
+* Button mappings upport and debug log clean up by @infamy in https://github.com/infamy/NeonPlug/pull/18
+* Fix the defaults, resolves issue #16 by @infamy in https://github.com/infamy/NeonPlug/pull/22
+* Reconnect improvement and rename smart import by @infamy in https://github.com/infamy/NeonPlug/pull/23
+* Feat/buttonlock by @infamy in https://github.com/infamy/NeonPlug/pull/28
+* Feat/onetouch by @infamy in https://github.com/infamy/NeonPlug/pull/30
+* Feat/radioids by @infamy in https://github.com/infamy/NeonPlug/pull/32
+* Fix a write issue by @infamy in https://github.com/infamy/NeonPlug/pull/33
+* Feat/optimize by @infamy in https://github.com/infamy/NeonPlug/pull/34
+* Add a lot more fixed channels to the wizard by @infamy in https://github.com/infamy/NeonPlug/pull/35
+* Feat/compactlist by @infamy in https://github.com/infamy/NeonPlug/pull/37
+* Fix reading of channel power, add a whole area in debug for channel … by @infamy in https://github.com/infamy/NeonPlug/pull/41
+* solve sql parsing being wrong by @infamy in https://github.com/infamy/NeonPlug/pull/42
+* Fix how we handle firmware detection by @infamy in https://github.com/infamy/NeonPlug/pull/48
+* Fix the VFO in modal editing by @infamy in https://github.com/infamy/NeonPlug/pull/51
+* Feat/updateradioids by @infamy in https://github.com/infamy/NeonPlug/pull/53
+* support for using the rptr.json file from radioids by @infamy in https://github.com/infamy/NeonPlug/pull/54
+* Feat/dmgtg by @infamy in https://github.com/infamy/NeonPlug/pull/57
+* Feat/tgchan by @infamy in https://github.com/infamy/NeonPlug/pull/59
+* Use only 2byte for channel count, 4 byte is not needed and some radio… by @infamy in https://github.com/infamy/NeonPlug/pull/60
+* Feat/shrink by @infamy in https://github.com/infamy/NeonPlug/pull/63
+* Feat/csvcontacts by @infamy in https://github.com/infamy/NeonPlug/pull/64
+* clean up to the channel wizard page by @infamy in https://github.com/infamy/NeonPlug/pull/65
+* Fix for TX Radio ID by @infamy in https://github.com/infamy/NeonPlug/pull/66
+* Feat/diguiclean by @infamy in https://github.com/infamy/NeonPlug/pull/67
+* Feat/cleanup by @infamy in https://github.com/infamy/NeonPlug/pull/68
+* Rx groups work now.. and fixed some talkgroup issues by @infamy in https://github.com/infamy/NeonPlug/pull/69
+* Feat/lastpass by @infamy in https://github.com/infamy/NeonPlug/pull/73
+* remove busylock does not actually exist on the dm32 by @infamy in https://github.com/infamy/NeonPlug/pull/75
+* Feat/scanlistandradioids by @infamy in https://github.com/infamy/NeonPlug/pull/76
+* DMR Radio Write by @infamy in https://github.com/infamy/NeonPlug/pull/78
+* Remove reactgrid since we ended up doing full custom instead by @infamy in https://github.com/infamy/NeonPlug/pull/80
+* Messed up the little endian decoding on CTCSS by @infamy in https://github.com/infamy/NeonPlug/pull/81
+* Revamp of the readme by @infamy in https://github.com/infamy/NeonPlug/pull/82
+* Browser support detection by @infamy in https://github.com/infamy/NeonPlug/pull/83
+* Some channel fixes around zone and channel freq by @infamy in https://github.com/infamy/NeonPlug/pull/84
+* Bug/zones by @infamy in https://github.com/infamy/NeonPlug/pull/86
+* make the initial connection less aggresive to try and solve some conn… by @infamy in https://github.com/infamy/NeonPlug/pull/87
+* Feat/bootpicread by @infamy in https://github.com/infamy/NeonPlug/pull/88
+* More advance debug for connections issues, and make offline more visible by @infamy in https://github.com/infamy/NeonPlug/pull/91
+* Fix the debug on conns by @infamy in https://github.com/infamy/NeonPlug/pull/94
+* Feat/modular by @infamy in https://github.com/infamy/NeonPlug/pull/95
+* Fix chirp export by @infamy in https://github.com/infamy/NeonPlug/pull/97
+* MultiSelect Edit by @infamy in https://github.com/infamy/NeonPlug/pull/98
+* Modal! no more confirm that was upgly but had a place by @infamy in https://github.com/infamy/NeonPlug/pull/99
+* Feat/multiselectenhance by @infamy in https://github.com/infamy/NeonPlug/pull/100
+* Fix Color Codes by @infamy in https://github.com/infamy/NeonPlug/pull/101
+* Feat/exceljs by @infamy in https://github.com/infamy/NeonPlug/pull/104
+* Feat/offline by @infamy in https://github.com/infamy/NeonPlug/pull/105
+* enable compression by @infamy in https://github.com/infamy/NeonPlug/pull/106
+* Feat/smartchecks by @infamy in https://github.com/infamy/NeonPlug/pull/107
+* Feat/uichannelimprov by @infamy in https://github.com/infamy/NeonPlug/pull/109
+* Feat/csvonly by @infamy in https://github.com/infamy/NeonPlug/pull/111
+* Clean up central by @infamy in https://github.com/infamy/NeonPlug/pull/112
+* bump timing and few other small tweaks by @infamy in https://github.com/infamy/NeonPlug/pull/114
+* some addition debug for connection issues by @infamy in https://github.com/infamy/NeonPlug/pull/115
+* MMDVM wizard by @infamy in https://github.com/infamy/NeonPlug/pull/116
+* Feat/mmdvm by @infamy in https://github.com/infamy/NeonPlug/pull/117
+* Add test enviroments for PRs by @infamy in https://github.com/infamy/NeonPlug/pull/118
+* Feat/uv5rmini by @infamy in https://github.com/infamy/NeonPlug/pull/122
+* pmr446 by @infamy in https://github.com/infamy/NeonPlug/pull/123
+* Feat/localstorage by @infamy in https://github.com/infamy/NeonPlug/pull/124
+* US State support on csv contacts by @infamy in https://github.com/infamy/NeonPlug/pull/127
+* Feat/conimprov by @infamy in https://github.com/infamy/NeonPlug/pull/130
+* Fix hanging read issue, eating important bytes by @infamy in https://github.com/infamy/NeonPlug/pull/132
+* Clean up of some deadcode + some dedupping that needed to get done by @infamy in https://github.com/infamy/NeonPlug/pull/133
+* add test, and refactor the smart importer/channel wizard to make this… by @infamy in https://github.com/infamy/NeonPlug/pull/134
+* Feat/fixwrongmaxes by @infamy in https://github.com/infamy/NeonPlug/pull/135
+* Clean up of a CSS pattern, a plural pattern and a alert pattern by @infamy in https://github.com/infamy/NeonPlug/pull/136
+* Feat/newradio ft65r by @infamy in https://github.com/infamy/NeonPlug/pull/137
+* Feat/morecleanup by @infamy in https://github.com/infamy/NeonPlug/pull/140
+* Fix zones over 28 not working by @infamy in https://github.com/infamy/NeonPlug/pull/144
+* Chore/deps security and minor bumps by @infamy in https://github.com/infamy/NeonPlug/pull/147
+* Add common aircraft frequencies to airport channel import by @emuehlstein in https://github.com/infamy/NeonPlug/pull/141
+* Lots of changes mainly around the terrible terrible code i had in the… by @infamy in https://github.com/infamy/NeonPlug/pull/150
+* Fix/deploy fork prs by @infamy in https://github.com/infamy/NeonPlug/pull/152
+* Fix: write imported radio settings to the radio (fixes #148) by @emuehlstein in https://github.com/infamy/NeonPlug/pull/149
+* Move to virtual doms to greatly speed up channels with high counts by @infamy in https://github.com/infamy/NeonPlug/pull/153
+* Feat/da7x2 by @infamy in https://github.com/infamy/NeonPlug/pull/173
+* The DM-32's calibration block can never be written by @infamy in https://github.com/infamy/NeonPlug/pull/176
+* Bug/scanlist2 by @infamy in https://github.com/infamy/NeonPlug/pull/156
+* Move to supporting release versions.. lots of little bits attached to… by @infamy in https://github.com/infamy/NeonPlug/pull/154
+* Show a hand-written summary as the release notes by @infamy in https://github.com/infamy/NeonPlug/pull/177
+
+### New Contributors
+* @infamy made their first contribution in https://github.com/infamy/NeonPlug/pull/1
+* @emuehlstein made their first contribution in https://github.com/infamy/NeonPlug/pull/141
+
+**Full Changelog**: https://github.com/infamy/NeonPlug/commits/v2026.9.0
+
