@@ -2,23 +2,24 @@ import { describe, it, expect } from 'vitest';
 import { parseChangelog, latestEntry } from '../../src/utils/changelog';
 import changelogSource from '../../CHANGELOG.md?raw';
 
-// Mirrors exactly what .github/workflows/release.yml writes: an "## [x.y.z] — date"
-// heading, GitHub's auto-notes demoted to "### ", and a Full Changelog footer.
+// Mirrors exactly what .github/workflows/release.yml writes: an
+// "## [YEAR.MONTH.N] — date" heading, GitHub's auto-notes demoted to "### ", and
+// a Full Changelog footer.
 const SAMPLE = `# Changelog
 
 Preamble that must not be parsed as an entry.
 
 ## [Unreleased]
 
-## [0.3.0] — 2026-09-01
+## [2026.9.0] — 2026-09-01
 
 ### What's Changed
 * Add FT-70D support by @infamy in https://github.com/infamy/NeonPlug/pull/160
 * Fix zone write truncation by @someone-else in https://github.com/infamy/NeonPlug/pull/161
 
-**Full Changelog**: https://github.com/infamy/NeonPlug/compare/v0.2.0...v0.3.0
+**Full Changelog**: https://github.com/infamy/NeonPlug/compare/v2026.8.0...v2026.9.0
 
-## [0.2.0] - 2026-08-10
+## [2026.8.0] - 2026-08-10
 
 * Earlier thing
 `;
@@ -26,7 +27,7 @@ Preamble that must not be parsed as an entry.
 describe('parseChangelog', () => {
   it('returns released entries newest-first and skips Unreleased', () => {
     const entries = parseChangelog(SAMPLE);
-    expect(entries.map((e) => e.version)).toEqual(['0.3.0', '0.2.0']);
+    expect(entries.map((e) => e.version)).toEqual(['2026.9.0', '2026.8.0']);
   });
 
   it('captures the date from either dash style', () => {
@@ -78,7 +79,7 @@ describe('parseChangelog', () => {
   });
 
   it('latestEntry returns the newest release, or null when there is none', () => {
-    expect(latestEntry(SAMPLE)?.version).toBe('0.3.0');
+    expect(latestEntry(SAMPLE)?.version).toBe('2026.9.0');
     expect(latestEntry('# Changelog\n\n## [Unreleased]\n')).toBeNull();
   });
 });

@@ -23,7 +23,7 @@ function getCommitHash(): string {
   }
 }
 
-// The semver the build reports. release.yml bumps package.json and then sets
+// The version the build reports. release.yml bumps package.json and then sets
 // VITE_APP_VERSION to the same value, so the two can't drift; every other build
 // (local, main, PR preview) just reads whatever package.json currently says.
 function getAppVersion(): string {

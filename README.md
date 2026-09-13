@@ -86,7 +86,7 @@ You can use NeonPlug without an internet connection. Either:
 
 Either way the result is a single, self-contained HTML file (all assets inlined). No server or network required; Web Serial for the radio still works when the file is opened locally.
 
-The version you are running is shown in **Settings → About**. A tagged release reads `v1.2.3`; anything built from `main` or a PR reads `v1.2.3-dev+abc1234` so bug reports can be traced to an exact commit.
+Releases are numbered by date, `YEAR.MONTH.N`: `2026.9.0` is the first release of September 2026, and the next one that month is `2026.9.1`. The version you are running is shown in **Settings → About**. A tagged release reads `v2026.9.0`; anything built from `main` or a PR reads `v2026.9.0-dev+abc1234` so bug reports can be traced to an exact commit.
 
 ---
 

@@ -5,15 +5,15 @@
  * they are on, because "which build wrote this codeplug?" is the first question
  * on any radio-write bug report:
  *
- *   release  (neonplug.app/, and the downloadable offline file)  -> "v0.2.0"
- *   main     (neonplug.app/dev/)                                 -> "v0.2.0-dev+a1b2c3d"
- *   PR/local (neonplug.app/test/<branch>/, npm run dev)          -> "v0.2.0-dev+a1b2c3d"
+ *   release  (neonplug.app/, and the downloadable offline file)  -> "v2026.9.0"
+ *   main     (neonplug.app/dev/)                                 -> "v2026.9.0-dev+a1b2c3d"
+ *   PR/local (neonplug.app/test/<branch>/, npm run dev)          -> "v2026.9.0-dev+a1b2c3d"
  *
  * A dev build carries the version of the *last* release plus the commit it was
  * actually built from — it is ahead of that release, never equal to it.
  */
 
-/** Semver from package.json, pinned by the release workflow at tag time. */
+/** YEAR.MONTH.N from package.json, pinned by the release workflow at tag time. */
 export const APP_VERSION: string =
   typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
 
@@ -31,7 +31,7 @@ export const IS_RELEASE_BUILD: boolean =
 
 /**
  * The version string shown in the UI and stamped into bug reports.
- * Release builds are clean semver; everything else is explicitly marked -dev.
+ * Release builds show the bare version; everything else is explicitly marked -dev.
  */
 export const VERSION_LABEL: string = IS_RELEASE_BUILD
   ? `v${APP_VERSION}`

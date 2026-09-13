@@ -6,17 +6,8 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      bump:
-        description: 'Semver bump (ignored if "version" is set)'
-        type: choice
-        required: true
-        default: patch
-        options:
-          - patch
-          - minor
-          - major
       version:
-        description: 'Explicit version, e.g. 1.0.0 (overrides "bump")'
+        description: 'Leave empty for the next YEAR.MONTH.N (UTC). Set only to override, e.g. 2026.9.1'
         type: string
         required: false
       dry_run:
@@ -69,23 +60,30 @@ jobs:
         # Dispatch inputs come in through env, never `${{ }}` interpolated into the
         # script. Interpolation happens before the shell parses anything, so a
         # crafted `version` would execute in a job holding contents+actions write —
-        # and the semver check below, which runs after, could not stop it.
+        # and the format check below, which runs after, could not stop it.
         env:
           INPUT_VERSION: ${{ inputs.version }}
-          INPUT_BUMP: ${{ inputs.bump }}
         run: |
           set -euo pipefail
+          # Versions are YEAR.MONTH.N: the UTC year and month (the clock the
+          # CHANGELOG date uses), and N counting that month's releases from 0.
+          # Never zero-padded: npm rejects 2026.09.0.
           if [ -n "$INPUT_VERSION" ]; then
-            # Accept either "1.2.3" or "v1.2.3"; normalise to bare semver.
+            # Accept either "2026.9.0" or "v2026.9.0"; normalise to the bare version.
             raw="${INPUT_VERSION#v}"
-            if ! echo "$raw" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
-              echo "::error::'$raw' is not a valid semver version"
+            if ! echo "$raw" | grep -qE '^[0-9]{4}\.(1[0-2]|[1-9])\.(0|[1-9][0-9]*)$'; then
+              echo "::error::'$raw' is not YEAR.MONTH.N, e.g. 2026.9.0 (no zero padding)"
               exit 1
             fi
-            npm version "$raw" --no-git-tag-version --allow-same-version >/dev/null
           else
-            npm version "$INPUT_BUMP" --no-git-tag-version >/dev/null
+            month=$(date -u +%Y.%-m)
+            # One past the highest N already tagged this month, so a run that stopped
+            # before tagging gets the same number again. The dot in "v2026.1.*" is
+            # literal, so it cannot match v2026.10.0.
+            last=$(git tag -l "v${month}.*" | sed "s/^v${month}\.//" | grep -E '^(0|[1-9][0-9]*)$' | sort -n | tail -n 1 || true)
+            raw="${month}.$(( ${last:--1} + 1 ))"
           fi
+          npm version "$raw" --no-git-tag-version --allow-same-version >/dev/null
           # Read the result back rather than parsing npm's stdout, which can carry
           # notices. package.json is the authority the build reads anyway.
           new=$(node -p "require('./package.json').version")
@@ -207,7 +205,7 @@ jobs:
         env:
           VITE_APP_VERSION: ${{ steps.version.outputs.version }}
           # The only place this is set — it is what makes the About tab report a
-          # clean "v1.2.3" instead of "v1.2.3-dev+abc1234".
+          # clean "v2026.9.0" instead of "v2026.9.0-dev+abc1234".
           VITE_RELEASE: '1'
         run: |
           set -euo pipefail
