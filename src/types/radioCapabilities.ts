@@ -358,6 +358,12 @@ export interface RadioCapabilities {
    * the DM-32 writes its lists in order and never reads it.
    */
   scanListsBySlot?: boolean;
+  /**
+   * RX group members are talk group slots (0-based positions in the talk group
+   * list), not DMR IDs. The DA-7X2 stores slots; the DM-32 stores DMR IDs. The
+   * CSV carries DMR IDs for both and converts on import.
+   */
+  rxGroupMembersBySlot?: boolean;
   /** If true, protocol supports readBootImage / writeBootImage. */
   supportsBootImage?: boolean;
   /** If true, protocol supports readQuickMessages. */

@@ -123,6 +123,7 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   scanListHangTime: { stepMs: 100, max: 255, default: 30 },
   // A channel stores its scan list's SLOT + 1, and deleted lists leave holes.
   scanListsBySlot: true,
+  rxGroupMembersBySlot: true,
   supportsZones: true,
   supportsScanLists: true,
   analogOnly: false,

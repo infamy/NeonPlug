@@ -25,6 +25,17 @@ function parseNumberList(value: string): number[] {
     .filter(n => !isNaN(n));
 }
 
+/**
+ * A 0-based index column. Empty means next in order. The old
+ * `getInt(...) || (i - 1)` turned a real index 0 into a duplicate of whatever
+ * came after it.
+ */
+function readIndex(cell: string, position: number): number | string {
+  if (cell === '') return position;
+  const n = Number(cell);
+  return Number.isInteger(n) && n >= 0 ? n : `Index "${cell}" is not a whole number of 0 or more`;
+}
+
 export function parseCSV(content: string): string[][] {
   return content.split('\n')
     .filter(line => line.trim())
@@ -166,6 +177,8 @@ export function importContactsFromCSV(content: string): ImportResult {
           country: getValue(headers, row, 'country') || undefined,
           remark: getValue(headers, row, 'remark') || undefined,
         };
+        // Left unset when the file says nothing, so radios with no friends list stay distinguishable.
+        if (getValue(headers, row, 'friend') !== '') contact.isFriend = getBool(headers, row, 'friend');
 
         contacts.push(contact);
       } catch (error) {
@@ -202,11 +215,20 @@ export function importZonesFromCSV(content: string): ImportResult {
       if (row.length === 0 || row.every(cell => !cell.trim())) continue;
 
       try {
-        zones.push({
-          id: generateZoneId(),
+        // Keep the file's zone id when it has one: on the DA-7X2 the id is what
+        // keeps a zone in its slot. A file without the column gets new ids.
+        const id = getValue(headers, row, 'zone id') || generateZoneId();
+        if (zones.some((z) => z.id === id)) {
+          errors.push(`Row ${i + 1}: Zone ID "${id}" appears more than once`);
+          continue;
+        }
+        const zone: Zone = {
+          id,
           name: getValue(headers, row, 'zone name') || `Zone ${i}`,
           channels: parseNumberList(getValue(headers, row, 'channels')),
-        });
+        };
+        if (getValue(headers, row, 'hidden') !== '') zone.hidden = getBool(headers, row, 'hidden');
+        zones.push(zone);
       } catch (error) {
         errors.push(`Row ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
@@ -247,9 +269,20 @@ export function importScanListsFromCSV(content: string): ImportResult {
         const priority1Type = getValue(headers, row, 'priority 1 type');
         const priority2Type = getValue(headers, row, 'priority 2 type');
         const hangTime = getValue(headers, row, 'hang time');
+        const slotCell = getValue(headers, row, 'slot');
+        const slot = slotCell === '' ? undefined : Number(slotCell);
+        if (slot !== undefined && !(Number.isInteger(slot) && slot >= 0)) {
+          errors.push(`Row ${i + 1}: Slot "${slotCell}" is not a whole number of 0 or more`);
+          continue;
+        }
+        if (slot !== undefined && scanLists.some((l) => l.slot === slot)) {
+          errors.push(`Row ${i + 1}: Slot ${slot} appears more than once`);
+          continue;
+        }
 
         scanLists.push({
           name: getValue(headers, row, 'name') || `Scan List ${i}`,
+          ...(slot === undefined ? {} : { slot }),
           channels: parseNumberList(getValue(headers, row, 'channels')),
           ctcScanMode: getInt(headers, row, 'ctc scan mode', 0),
           scanTxMode: getInt(headers, row, 'scan tx mode', 0),
@@ -294,8 +327,19 @@ export function importRXGroupsFromCSV(content: string): ImportResult {
       if (row.length === 0 || row.every(cell => !cell.trim())) continue;
 
       try {
+        const index = readIndex(getValue(headers, row, 'index'), rxGroups.length);
+        if (typeof index === 'string') {
+          errors.push(`Row ${i + 1}: ${index}`);
+          continue;
+        }
+        if (rxGroups.some((g) => g.index === index)) {
+          errors.push(`Row ${i + 1}: Index ${index} appears more than once`);
+          continue;
+        }
+        // Members stay as the file's DMR IDs. A radio that stores slots converts
+        // them with rxGroupsWithRadioMembers.
         rxGroups.push({
-          index: getInt(headers, row, 'index', 0) || (i - 1),
+          index,
           name: getValue(headers, row, 'name') || `RX Group ${i}`,
           bitmask: 0, // Derived at encode time from the group's position, not stored per-entry
           statusFlag: 0,
@@ -344,8 +388,17 @@ export function importDMRRadioIDsFromCSV(content: string): ImportResult {
         bytes[1] = (dmrIdValue >> 8) & 0xFF;
         bytes[2] = (dmrIdValue >> 16) & 0xFF;
 
+        const index = readIndex(getValue(headers, row, 'index'), dmrRadioIds.length);
+        if (typeof index === 'string') {
+          errors.push(`Row ${i + 1}: ${index}`);
+          continue;
+        }
+        if (dmrRadioIds.some((r) => r.index === index)) {
+          errors.push(`Row ${i + 1}: Index ${index} appears more than once`);
+          continue;
+        }
         dmrRadioIds.push({
-          index: getInt(headers, row, 'index', 0) || (i - 1),
+          index,
           dmrId,
           dmrIdValue,
           dmrIdBytes: bytes,

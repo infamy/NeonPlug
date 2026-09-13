@@ -19,7 +19,7 @@ export function exportChannelsToCSV(channels: Channel[]): string {
 }
 
 export function exportContactsToCSV(contacts: Contact[]): string {
-  const headers = ['ID', 'Name', 'DMR ID', 'Call Sign', 'City', 'Province', 'Country', 'Remark'];
+  const headers = ['ID', 'Name', 'DMR ID', 'Call Sign', 'City', 'Province', 'Country', 'Remark', 'Friend'];
 
   const rows = contacts.map(contact => [
     contact.id.toString(),
@@ -30,6 +30,8 @@ export function exportContactsToCSV(contacts: Contact[]): string {
     contact.province || '',
     contact.country || '',
     contact.remark || '',
+    // Empty for radios with no friends list, so it reads back unset rather than "not a friend".
+    contact.isFriend === undefined ? '' : contact.isFriend ? 'Yes' : 'No',
   ]);
 
   return toCSV(headers, rows);
@@ -39,11 +41,15 @@ export function exportContactsToCSV(contacts: Contact[]): string {
 const CHANNEL_LIST_SEPARATOR = ';';
 
 export function exportZonesToCSV(zones: Zone[]): string {
-  const headers = ['Zone Name', 'Channels'];
+  // The id is what ties a zone to its slot on the DA-7X2. Without it every
+  // imported zone looks new, and the radio's zone slots get handed out again.
+  const headers = ['Zone Name', 'Channels', 'Zone ID', 'Hidden'];
 
   const rows = zones.map(zone => [
     zone.name,
     zone.channels.join(CHANNEL_LIST_SEPARATOR),
+    zone.id,
+    zone.hidden === undefined ? '' : zone.hidden ? 'Yes' : 'No',
   ]);
 
   return toCSV(headers, rows);
@@ -61,6 +67,8 @@ export function exportScanListsToCSV(scanLists: ScanList[]): string {
     'Priority Channel 1',
     'Priority Channel 2',
     'Designated TX Channel',
+    // The DA-7X2 writes each list to its slot, and refuses a list without one.
+    'Slot',
   ];
 
   const rows = scanLists.map(scanList => [
@@ -74,11 +82,16 @@ export function exportScanListsToCSV(scanLists: ScanList[]): string {
     scanList.priorityChannel1?.toString() ?? '',
     scanList.priorityChannel2?.toString() ?? '',
     scanList.designatedTxChannel?.toString() ?? '',
+    scanList.slot?.toString() ?? '',
   ]);
 
   return toCSV(headers, rows);
 }
 
+/**
+ * Members must already be talk group DMR IDs. A radio that stores them as slots
+ * converts first, with rxGroupsWithDmrIdMembers.
+ */
 export function exportRXGroupsToCSV(groups: RXGroup[]): string {
   const headers = ['Index', 'Name', 'Talk Group DMR IDs'];
 
