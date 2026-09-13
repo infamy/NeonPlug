@@ -3,23 +3,31 @@
  * offline. Deliberately tiny — this is not a markdown renderer, it only
  * understands the shape release.yml writes:
  *
- *   ## [0.2.0] — 2026-08-05
+ *   ## [2026.9.0] — 2026-09-13
+ *   - Anything that was written under [Unreleased]
  *   ### What's Changed
  *   * Some PR title by @someone in https://github.com/...
+ *   ### New Contributors
+ *   * @someone made their first contribution in https://github.com/...
  *
  *   **Full Changelog**: https://github.com/...
  */
 
 export interface ChangelogEntry {
-  /** Version without the leading 'v', e.g. "0.2.0". */
+  /** Version without the leading 'v', e.g. "2026.9.0". */
   version: string;
   /** Release date as written in the heading, or '' if absent. */
   date: string;
   /** Bullet lines, cleaned of trailing "by @user in <url>" noise. */
   items: string[];
+  /**
+   * The items written by hand above GitHub's list, which release.yml moves there
+   * from [Unreleased]. Empty when a release has none, or has no list to sit above.
+   */
+  summary: string[];
 }
 
-// "## [0.2.0] — 2026-08-05", "## [0.2.0] - 2026-08-05", or "## [Unreleased]".
+// "## [2026.9.0] — 2026-09-13", "## [2026.9.0] - 2026-09-13", or "## [Unreleased]".
 // Accepts both em dash and hyphen because the two are easy to mix up by hand.
 const HEADING = /^##\s+\[([^\]]+)\]\s*(?:[—-]\s*(.+))?$/;
 const BULLET = /^[*-]\s+(.+)$/;
@@ -39,6 +47,12 @@ function cleanItem(text: string): string {
 export function parseChangelog(markdown: string): ChangelogEntry[] {
   const entries: ChangelogEntry[] = [];
   let current: ChangelogEntry | null = null;
+  // Whether the current entry has reached its first sub-heading. The items
+  // before it are the hand-written summary.
+  let pastSummary = false;
+  // Inside GitHub's "New Contributors" list, which thanks people for a first PR.
+  // Those lines are not changes, so they never become items.
+  let inNewContributors = false;
 
   for (const rawLine of markdown.split('\n')) {
     const line = rawLine.trim();
@@ -52,7 +66,9 @@ export function parseChangelog(markdown: string): ChangelogEntry[] {
       current =
         version.toLowerCase() === 'unreleased'
           ? null
-          : { version: version.replace(/^v/i, ''), date: (heading[2] || '').trim(), items: [] };
+          : { version: version.replace(/^v/i, ''), date: (heading[2] || '').trim(), items: [], summary: [] };
+      pastSummary = false;
+      inNewContributors = false;
       continue;
     }
 
@@ -64,6 +80,17 @@ export function parseChangelog(markdown: string): ChangelogEntry[] {
       current = null;
       continue;
     }
+
+    // A sub-heading, such as GitHub's "### What's Changed".
+    if (line.startsWith('#')) {
+      if (!pastSummary) {
+        current.summary = [...current.items];
+        pastSummary = true;
+      }
+      inNewContributors = /^#+\s+New Contributors$/i.test(line);
+      continue;
+    }
+    if (inNewContributors) continue;
 
     const bullet = BULLET.exec(line);
     if (bullet) {
@@ -90,4 +117,13 @@ export function parseChangelog(markdown: string): ChangelogEntry[] {
 /** The most recent released entry, or null if the changelog has none yet. */
 export function latestEntry(markdown: string): ChangelogEntry | null {
   return parseChangelog(markdown)[0] ?? null;
+}
+
+/**
+ * What the About tab lists for a release: its hand-written summary when it has
+ * one, otherwise every item. A first release's GitHub list runs to every PR ever
+ * merged, oldest first, which is not what anyone opening What's New wants.
+ */
+export function whatsNewItems(entry: ChangelogEntry): string[] {
+  return entry.summary.length > 0 ? entry.summary : entry.items;
 }

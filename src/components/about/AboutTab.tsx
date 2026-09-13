@@ -8,7 +8,7 @@ import { ConfirmModal } from '../ui/ConfirmModal';
 import { downloadOfflineAsZip } from '../../utils/offlineDownload';
 import { PageHeader } from '../ui/PageHeader';
 import { VERSION_LABEL, COMMIT_HASH, BUILD_TIME, IS_RELEASE_BUILD, RELEASE_NOTES_URL } from '../../utils/version';
-import { latestEntry } from '../../utils/changelog';
+import { latestEntry, whatsNewItems } from '../../utils/changelog';
 import changelogSource from '../../../CHANGELOG.md?raw';
 
 const OFFLINE_FALLBACK_MESSAGE =
@@ -23,6 +23,7 @@ const OFFLINE_VERSION_URL =
   'https://github.com/infamy/NeonPlug/releases/latest/download/neonplug-latest.html';
 
 const LATEST_RELEASE = latestEntry(changelogSource);
+const WHATS_NEW = LATEST_RELEASE ? whatsNewItems(LATEST_RELEASE) : [];
 
 export const AboutTab: React.FC = () => {
   const { debugMode, setDebugMode } = useDebugStore();
@@ -53,13 +54,13 @@ export const AboutTab: React.FC = () => {
               </p>
             )}
             <ul className="list-disc list-inside text-cool-gray text-sm space-y-1 ml-4">
-              {LATEST_RELEASE.items.slice(0, 12).map((item, i) => (
+              {WHATS_NEW.slice(0, 12).map((item, i) => (
                 <li key={i}>{item}</li>
               ))}
             </ul>
-            {LATEST_RELEASE.items.length > 12 && (
+            {WHATS_NEW.length > 12 && (
               <p className="text-xs text-muted mt-2">
-                …and {LATEST_RELEASE.items.length - 12} more.
+                …and {WHATS_NEW.length - 12} more.
               </p>
             )}
             <p className="text-xs text-muted mt-3">
