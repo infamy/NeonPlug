@@ -3,6 +3,11 @@ import { BUTTON } from './controlStyles';
 
 export type ConfirmModalVariant = 'danger' | 'default' | 'alert';
 
+const DANGER_BUTTON =
+  'px-4 py-2 rounded font-medium bg-red-600 bg-opacity-20 border border-red-500 border-opacity-50 text-red-300 hover:bg-opacity-30 hover:border-opacity-70 transition-colors';
+const PRIMARY_BUTTON =
+  'px-4 py-2 rounded font-medium bg-neon-cyan bg-opacity-15 border border-neon-cyan border-opacity-50 text-neon-cyan hover:bg-opacity-25 transition-colors';
+
 interface ConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -24,6 +29,8 @@ interface ConfirmModalProps {
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: ConfirmModalVariant;
+  /** A third choice, between Cancel and the confirm button. Like them, it closes the dialog. */
+  extraAction?: { label: string; onClick: () => void; variant?: 'danger' | 'default' };
 }
 
 export const ConfirmModal: React.FC<ConfirmModalProps> = ({
@@ -37,6 +44,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   confirmLabel = 'Delete',
   cancelLabel = 'Cancel',
   variant = 'danger',
+  extraAction,
 }) => {
   if (!isOpen) return null;
 
@@ -78,14 +86,22 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
               {cancelLabel}
             </button>
           )}
+          {extraAction && (
+            <button
+              type="button"
+              onClick={() => {
+                extraAction.onClick();
+                onClose();
+              }}
+              className={extraAction.variant === 'danger' ? DANGER_BUTTON : PRIMARY_BUTTON}
+            >
+              {extraAction.label}
+            </button>
+          )}
           <button
             type="button"
             onClick={handleConfirm}
-            className={
-              isDanger
-                ? 'px-4 py-2 rounded font-medium bg-red-600 bg-opacity-20 border border-red-500 border-opacity-50 text-red-300 hover:bg-opacity-30 hover:border-opacity-70 transition-colors'
-                : 'px-4 py-2 rounded font-medium bg-neon-cyan bg-opacity-15 border border-neon-cyan border-opacity-50 text-neon-cyan hover:bg-opacity-25 transition-colors'
-            }
+            className={isDanger ? DANGER_BUTTON : PRIMARY_BUTTON}
           >
             {isAlert ? (confirmLabel ?? 'OK') : confirmLabel}
           </button>

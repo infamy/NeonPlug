@@ -6,6 +6,12 @@ import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { ChannelsTable } from './ChannelsTable';
 import { createDefaultChannel } from '../../utils/channelHelpers';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
+import { useAlert } from '../../hooks/useAlert';
+import { useCsvImport } from '../../hooks/useCsvImport';
+import { exportChannelsToCSV, importChannelsFromCSV, downloadCSV } from '../../services/csv';
+import { addChannels } from '../../services/csv/importModes';
+import { checkChannelLimits } from '../../services/csv/importLimits';
 import type { Channel } from '../../models/Channel';
 
 import { isVFOChannel } from '../../utils/vfoChannels';
@@ -19,7 +25,7 @@ import { BUTTON, FIELD } from '../ui/controlStyles';
 type ChannelView = 'main' | 'am' | 'fm';
 
 export const ChannelsTab: React.FC = () => {
-  const { channels, addChannel, deleteChannels } = useChannelsStore();
+  const { channels, addChannel, deleteChannels, setChannels } = useChannelsStore();
   const { settings: radioSettings } = useRadioSettingsStore();
   const { caps } = useRadioCapabilities();
   const supportsVfoChannels = caps?.supportsVfoChannels === true;
@@ -53,6 +59,9 @@ export const ChannelsTab: React.FC = () => {
         String(ch.index + 1).includes(query)
     );
   }, [broadcast, searchQuery]);
+
+  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Full CSV Export/Import');
+  const { startImport, csvImportDialog } = useCsvImport();
 
   const handleAddChannel = () => {
     // Find the next available channel number
@@ -102,6 +111,34 @@ export const ChannelsTab: React.FC = () => {
   }, [deleteChannels]);
 
   const handleClearSelection = useCallback(() => setSelectedChannelNumbers(new Set()), []);
+
+  // Full-fidelity CSV export/import (all channel modes and fields) — distinct from the
+  // Smart Import wizard's CHIRP export (analog-only): this round-trips the whole channel
+  // list. Importing asks whether to add the file's channels or replace the list with them.
+  const handleExportChannelsCsv = useCallback(() => {
+    downloadCSV(exportChannelsToCSV(channels), 'channels.csv');
+  }, [channels]);
+
+  const handleImportChannelsFile = useCallback((file: File) => {
+    file.text().then(content => {
+      const result = importChannelsFromCSV(content);
+      if (!result.success || !result.channels) {
+        showAlert(result.errors?.join('\n') || 'Failed to import channels CSV', 'Import failed');
+        return;
+      }
+      const imported = result.channels;
+      startImport({
+        noun: 'channel',
+        existing: channels,
+        imported,
+        add: () => addChannels(channels, imported),
+        check: (list) => checkChannelLimits(list, caps),
+        apply: (list) => setChannels(list),
+      });
+    }).catch(err => {
+      showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
+    });
+  }, [showAlert, startImport, channels, caps, setChannels]);
 
   // VFO A/B as channels 4001/4002 — DM-32 only; UV5R-Mini and other radios do not have these in the channel list
   const vfoChannels = useMemo(() => {
@@ -199,6 +236,14 @@ export const ChannelsTab: React.FC = () => {
               + Add
             </button>
           )}
+          {!isBroadcast && (
+            <CsvExportImportButtons
+              label="channels"
+              onExport={handleExportChannelsCsv}
+              onImportFile={handleImportChannelsFile}
+              exportDisabled={channels.length === 0}
+            />
+          )}
         </>}
       />
       <div className="mb-3 flex items-center gap-3 shrink-0">
@@ -280,6 +325,15 @@ export const ChannelsTab: React.FC = () => {
         message={`Delete ${pendingDeleteCount} selected ${formatPlural(pendingDeleteCount, 'channel')}?`}
         confirmLabel="Delete"
         variant="danger"
+      />
+      {csvImportDialog}
+      <ConfirmModal
+        isOpen={alertOpen}
+        onClose={closeAlert}
+        title={alertTitle}
+        message={alertMessage}
+        confirmLabel="OK"
+        variant="alert"
       />
     </div>
   );

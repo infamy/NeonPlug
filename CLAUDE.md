@@ -26,15 +26,15 @@ Releases are cut from the Actions tab, not the CLI — see "Releases and version
 
 ## Releases and versioning
 
-> ⚠️ **Landed but never exercised — no release has ever been cut, so this path is unverified
-> end-to-end.** Reviewed by three independent audits on 2026-08-06; every blocker and correctness
-> finding they raised is fixed (see `TODO-RELEASE.md` for the list and the reasoning behind each).
-> Use `dry_run` for the first attempt, and afterwards **confirm a Deploy run actually starts** — that
-> one fix (B1) is the only one that can't be tested without a real release.
+> **Exercised end to end on 2026-09-13**, when `v2026.9.0` was cut: two dry runs, then the real run,
+> which pushed the release commit and tag, published both assets, and started the Pages deploy (B1)
+> that put the release file at `/`. Tick `dry_run` first whenever the workflow changes.
 >
-> Two things the workflow cannot check for you: `main`'s branch protection must permit the
-> `github-actions[bot]` push (as of 2026-09-12 main has no branch protection or rulesets), and the
-> offline-download links in README/About 404 until the first release exists.
+> Two things the workflow cannot check for you. `main`'s branch protection must permit the
+> `github-actions[bot]` push (main had no branch protection or rulesets on 2026-09-13, and the
+> release push went through). And **neonplug.app sits behind Cloudflare, which injects its
+> bot-detection script into every HTML page**: `/` matches the release asset byte for byte only at the
+> GitHub Pages origin, and the in-app offline ZIP, which is fetched from the site, carries that script.
 
 Releases are **manual and deliberate** — Actions → *Release* → leave the version empty (the workflow
 works out the next `YEAR.MONTH.N` from the tags) or type one to override, optionally tick `dry_run`
@@ -264,7 +264,8 @@ Import sources (`components/import/sources/*.tsx`) all render `<SelectAllButtons
 - `rxGroupListId` is masked to 6 bits on parse but not clamped on encode — silent truncation risk.
 - DCS encoding uses BCD digit nibbles with 0x80 (normal) / 0xC0 (inverted) bases, per `DM32-Protocol-Spec/06-ENCODING.md`. Decode and encode were *both* wrong and mutually consistent for D0xx codes for a long time, which is why round-trip tests didn't catch it. Now covered over all 104 codes × both polarities — **if you touch the codec, keep those tests green.**
 - `concatenateCachedBlocks` silently shifts data if a block is missing from cache (open TODO).
-- **The calibration block (metadata 0x02) is never written.** `dm32uv/writeGuard.ts` checks every write in the connection's only two write methods, `writeMemory` and `writeMemoryBlock`, before a byte is sent. It refuses a write that overlaps a scanned calibration block, lands in the config memory without a block scan or at an address the scan did not report, or would tag a block 0x02; with no memory layout known, nothing is written. The codeplug, contact and boot-image writes also check all their blocks first, so a refusal never leaves a partial write. Never add a write path around those two methods.
+- **The calibration block (metadata 0x02) is never written.** `dm32uv/writeGuard.ts` checks every write in the connection's only two write methods, `writeMemory` and `writeMemoryBlock`, before a byte is sent. It refuses a write that overlaps a scanned calibration block, lands in the config memory without a block scan or at an address the scan did not report, or would tag a block 0x02; with no memory layout known, nothing is written. The codeplug, contact, talk group and boot-image writes also check all their blocks first, so a refusal never leaves a partial write. Never add a write path around those two methods.
+- **Talk groups span blocks 0x44–0x48**: each starts with a 1-byte header (skipped whatever it holds), then 170 slots of 24 bytes, 800 in all. Channels (0x42/0x43) and the Quick Access Contact List (0x0B) reference talk groups by **slot**, numbered on from block to block, so `readQuickContacts` refuses rather than return a list with a block missing, and a write fills exactly the blocks the radio already has; `assertTalkGroupWriteFits` refuses a list that needs more before the channel write starts. A 0x0B reference packs a 12-bit slot under the call type nibble, and the name table sorts in byte order, as the vendor CPS does. **`0x06[0x1FF]` is not the talk group count** (`TODO-DM32-SPEC-AUDIT.md` item 17); the talk group write leaves block 0x06 alone. The layout comes from Will-83's hardware captures in PR #168.
 - **Scan lists (fixed + hardware-verified 2026-08-07 via live CPS↔NeonPlug round-trips):**
   channel byte 0x19 stores the scan list ref in **bits 5-0** (1-indexed, 0=None) — the spec's
   "bits 5-2" is wrong. Membership is the `+0x1A` list only, **max 15**; scan entry `+0x0F` is
@@ -316,7 +317,7 @@ Statement coverage is low (~20%) *by construction* — the two 3.8k-line DM-32 f
 | DA-7X2 hardware findings, in order | `D890UV-HARDWARE-CHECKLIST.md` |
 | What's next / why is X like that? | `TODO.md` (bugs, tiers, protocol review items, radio-family roadmap) |
 | How do I cut a release? | "Releases and versioning" above; `.github/workflows/release.yml` |
-| Why can't I cut a release yet? | `TODO-RELEASE.md` — blockers from the 2026-08-06 three-agent audit |
+| What's still open about releases? | `TODO-RELEASE.md` — the 2026-08-06 three-agent audit, with what has been fixed since |
 | What shipped when? | `CHANGELOG.md` (generated — edit `## [Unreleased]`, not released sections) |
 | DM-32 wire format | `DM32-Protocol-Spec/` — **gitignored, local only** (01-OVERVIEW → 06-ENCODING) |
 | Contributor-facing setup, style | `CONTRIBUTING.md` |

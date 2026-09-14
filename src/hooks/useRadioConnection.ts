@@ -1295,6 +1295,12 @@ export function useRadioConnection() {
 
       // Step 4: Write channels (and zones/scan lists for DM-32; analog radios use writeChannels only)
       if (dm32) {
+        // A talk group list the radio can't hold is refused here, before the
+        // channels that reference it are written, not after.
+        const talkGroupsToWrite = useQuickContactsStore.getState().contacts;
+        if (talkGroupsToWrite.length > 0) {
+          await dm32.assertTalkGroupWriteFits(talkGroupsToWrite.length);
+        }
         onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
         await dm32.writeAllData(validChannels, filteredZones, filteredScanLists);
       } else {

@@ -4,14 +4,12 @@ import { ConfirmModal } from './ConfirmModal';
 import { getRadioPickerOptions } from '../../radios';
 import { useRadioStore } from '../../store/radioStore';
 import { isWebSerialSupported, isWebBluetoothSupported, getSupportedBrowsers } from '../../utils/browserSupport';
-import { downloadOfflineAsZip } from '../../utils/offlineDownload';
+import { downloadOfflineAsZip, OFFLINE_RELEASE_URL } from '../../utils/offlineDownload';
 import { getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
 import { readWithFormatOverride, type CodeplugData } from '../../services/codeplugExport';
 import { BUTTON } from './controlStyles';
 import { useConfirmDialog } from '../../hooks/useConfirmDialog';
 import { confirmNewerFormat } from '../../utils/codeplugFormatPrompt';
-
-const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
 
 function formatEventType(eventType?: SnapshotEventType): string {
   if (!eventType) return '';
@@ -44,8 +42,8 @@ interface StartupModalProps {
 }
 
 const OFFLINE_FALLBACK_MESSAGE =
-  'The offline version is available on GitHub Pages.\n\n' +
-  'Open the page, then use your browser\'s "Save Page As" to save it as neonplug.html.\n\n' +
+  'The latest tagged release is published as a single downloadable HTML file.\n\n' +
+  'Click Download to save neonplug-latest.html from GitHub Releases.\n\n' +
   'Or build it locally using the instructions in the About tab.';
 
 export const StartupModal: React.FC<StartupModalProps> = ({
@@ -383,10 +381,10 @@ export const StartupModal: React.FC<StartupModalProps> = ({
       <ConfirmModal
         isOpen={offlineFallbackOpen}
         onClose={() => setOfflineFallbackOpen(false)}
-        onConfirm={() => window.open(OFFLINE_VERSION_URL, '_blank')}
+        onConfirm={() => window.open(OFFLINE_RELEASE_URL, '_blank')}
         title="Download offline version"
         message={OFFLINE_FALLBACK_MESSAGE}
-        confirmLabel="Open download page"
+        confirmLabel="Download"
         cancelLabel="Close"
         variant="default"
       />

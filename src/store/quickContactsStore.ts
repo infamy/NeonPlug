@@ -12,6 +12,8 @@ interface QuickContactsState {
   setMaxTalkGroups: (max: number) => void;
   updateContact: (index: number, contact: Partial<QuickContact>) => void;
   addContact: (contact: Omit<QuickContact, 'index' | 'offset' | 'rawData' | 'hasHeader'>) => void;
+  /** Append multiple talk groups atomically against the latest state (safe against concurrent/rapid add actions) */
+  addContacts: (contacts: Omit<QuickContact, 'index' | 'offset' | 'rawData' | 'hasHeader'>[]) => void;
   deleteContact: (index: number) => void;
 }
 
@@ -71,6 +73,26 @@ export const useQuickContactsStore = create<QuickContactsState>((set, get) => ({
       rawData: new Uint8Array(0), // Will be generated when writing
     };
     set({ contacts: [...contacts, contact] });
+  },
+  addContacts: (newContacts) => {
+    const { contacts, maxTalkGroups } = get();
+    const max = maxTalkGroups ?? DEFAULT_TALK_GROUPS_MAX;
+    const room = Math.max(0, max - contacts.length);
+    if (newContacts.length > room) {
+      console.warn(`Maximum of ${max} talk groups allowed — adding ${room} of ${newContacts.length} requested`);
+    }
+    const toAdd = newContacts.slice(0, room).map((newContact, i) => {
+      const newIndex = contacts.length + i + 1;
+      return {
+        ...newContact,
+        name: cleanContactName(newContact.name),
+        index: newIndex,
+        offset: 0,
+        hasHeader: newIndex === 1,
+        rawData: new Uint8Array(0),
+      };
+    });
+    set({ contacts: [...contacts, ...toAdd] });
   },
   deleteContact: (index) => {
     const contacts = get().contacts.filter(contact => contact.index !== index);

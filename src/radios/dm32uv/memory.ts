@@ -4,13 +4,18 @@
  */
 
 import { DM32Connection } from './connection';
-import { BLOCK_SIZE, CONNECTION } from './constants';
+import { BLOCK_SIZE, CONNECTION, METADATA } from './constants';
 import { log } from '../../utils/protocolLogger';
 
 export interface MemoryBlock {
   address: number;
   metadata: number;
-  type: 'channel' | 'zone' | 'contact' | 'scan' | 'rxgroup' | 'message' | 'vfo' | 'digitalemergency' | 'analogemergency' | 'dmrradioid' | 'calibration' | 'config' | 'empty' | 'unknown';
+  type: 'channel' | 'zone' | 'talkgroup' | 'contact' | 'scan' | 'rxgroup' | 'message' | 'vfo' | 'digitalemergency' | 'analogemergency' | 'dmrradioid' | 'calibration' | 'config' | 'empty' | 'unknown';
+}
+
+/** One of the talk group blocks, 0x44-0x48. */
+export function isTalkGroupBlock(block: { metadata: number }): boolean {
+  return block.metadata >= METADATA.TALK_GROUP_FIRST && block.metadata <= METADATA.TALK_GROUP_LAST;
 }
 
 /**
@@ -48,6 +53,8 @@ export async function discoverMemoryBlocks(
       type = 'channel'; // Channel blocks (0x12 = first, 0x41 = last)
     } else if (metadata >= 0x5c && metadata <= 0x64) {
       type = 'zone'; // Zone blocks (0x5c = first, 0x64 = last, 9 blocks) — extended from the single 0x5c value identified in debug export analysis to cover LIMITS.ZONES_MAX (250)
+    } else if (metadata >= 0x44 && metadata <= 0x48) {
+      type = 'talkgroup'; // Talk Groups blocks (0x44 = first, 0x48 = last, 5 blocks) — previously only 0x44 was read, capping the list at ~170 entries instead of the advertised 800
     } else if (metadata === 0x11) {
       type = 'scan'; // Scan lists identified as metadata 0x11 (17) from debug export analysis
     } else if (metadata === 0x03) {
@@ -65,7 +72,7 @@ export async function discoverMemoryBlocks(
     } else if (metadata === 0x67) {
       type = 'dmrradioid'; // DMR Radio ID list
     } else if (metadata === 0x06) {
-      type = 'config'; // Config section 4 (contains Talk Groups counter at 0x1FF)
+      type = 'config'; // Config section 4
     } else if (metadata === 0xFF) {
       type = 'empty'; // Invalid/unavailable
     } else {
@@ -92,11 +99,12 @@ export async function discoverMemoryBlocks(
 
   const channelCount = blocks.filter(b => b.type === 'channel').length;
   const zoneCount = blocks.filter(b => b.type === 'zone').length;
+  const talkGroupCount = blocks.filter(b => b.type === 'talkgroup').length;
   const scanCount = blocks.filter(b => b.type === 'scan').length;
   const unknownCount = blocks.filter(b => b.type === 'unknown').length;
   const emptyCount = blocks.filter(b => b.type === 'empty').length;
-  
-  log.info(`Discovered ${blocks.length} blocks: Channels=${channelCount}, Zones=${zoneCount}, Scan Lists=${scanCount}, Unknown=${unknownCount}, Empty=${emptyCount}`, 'Memory');
+
+  log.info(`Discovered ${blocks.length} blocks: Channels=${channelCount}, Zones=${zoneCount}, Talk Group blocks=${talkGroupCount}, Scan Lists=${scanCount}, Unknown=${unknownCount}, Empty=${emptyCount}`, 'Memory');
   
   // Log unknown metadata values for investigation
   if (unknownCount > 0) {
