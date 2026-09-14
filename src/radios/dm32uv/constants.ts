@@ -21,7 +21,7 @@ export const METADATA = {
   METADATA_0x44: 0x44,      // Metadata block 0x44 (Talk Groups, first block)
   TALK_GROUP_FIRST: 0x44,   // First Talk Groups block
   TALK_GROUP_LAST: 0x48,    // Last Talk Groups block (5 blocks total — DM32-Protocol-Spec 05-DATA-STRUCTURES.md, confirmed by OEM CPS write capture walking 0x44-0x48 contiguously)
-  METADATA_0x06: 0x06,      // Metadata block 0x06 (Config section 4 - contains Talk Groups counter at 0x1FF)
+  METADATA_0x06: 0x06,      // Metadata block 0x06 (Config section 4). Byte 0x1FF is NOT the talk group count: in both CPS captures it tracks the analog contact count (TODO-DM32-SPEC-AUDIT.md item 17), so talk group writes leave this block alone
   TX_CONTACT_LOW: 0x42,     // TX Contact for channels 1-2048 (2 bytes per channel)
   TX_CONTACT_HIGH: 0x43,    // TX Contact for channels 2049+ and VFOs (2 bytes per channel)
   DMR_RADIO_IDS: 0x67,      // DMR Radio ID list block
@@ -57,7 +57,6 @@ export const OFFSET = {
   QUICK_MESSAGE_ENTRY_START: 0x10, // Entries start at offset 0x10
   DMR_RADIO_ID_COUNT: 0x00,  // Count field at offset 0 (4 bytes, DWORD, little-endian)
   DMR_RADIO_ID_BASE: 0x00,   // Entry base offset (entries start at buffer base)
-  TALK_GROUP_COUNTER: 0x1FF, // Talk Groups counter in block 0x06 (offset 511)
   TX_CONTACT_VFO_A: 0x0FFA,  // VFO A TX Contact offset in block 0x43 (4KB block-relative)
   TX_CONTACT_VFO_B: 0x0FFC,  // VFO B TX Contact offset in block 0x43 (4KB block-relative)
 } as const;
@@ -122,5 +121,6 @@ export const LIMITS = {
   RX_GROUPS_MAX: 32,        // Max 32 groups (limited by 32-bit bitmask in header)
   DMR_RADIO_IDS_MAX: 250,   // Maximum of 250 DMR Radio IDs per spec
   TALK_GROUPS_MAX: 800,     // Maximum of 800 talk groups
+  TALK_GROUPS_PER_BLOCK: 170, // Blocks 0x44-0x48: a 1-byte header, then 24-byte slots, stopping before the metadata byte at 0xFFF
 } as const;
 

@@ -4,13 +4,18 @@
  */
 
 import { DM32Connection } from './connection';
-import { BLOCK_SIZE, CONNECTION } from './constants';
+import { BLOCK_SIZE, CONNECTION, METADATA } from './constants';
 import { log } from '../../utils/protocolLogger';
 
 export interface MemoryBlock {
   address: number;
   metadata: number;
   type: 'channel' | 'zone' | 'talkgroup' | 'contact' | 'scan' | 'rxgroup' | 'message' | 'vfo' | 'digitalemergency' | 'analogemergency' | 'dmrradioid' | 'calibration' | 'config' | 'empty' | 'unknown';
+}
+
+/** One of the talk group blocks, 0x44-0x48. */
+export function isTalkGroupBlock(block: { metadata: number }): boolean {
+  return block.metadata >= METADATA.TALK_GROUP_FIRST && block.metadata <= METADATA.TALK_GROUP_LAST;
 }
 
 /**
@@ -67,7 +72,7 @@ export async function discoverMemoryBlocks(
     } else if (metadata === 0x67) {
       type = 'dmrradioid'; // DMR Radio ID list
     } else if (metadata === 0x06) {
-      type = 'config'; // Config section 4 (contains Talk Groups counter at 0x1FF)
+      type = 'config'; // Config section 4
     } else if (metadata === 0xFF) {
       type = 'empty'; // Invalid/unavailable
     } else {

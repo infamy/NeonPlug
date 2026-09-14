@@ -3366,16 +3366,6 @@ export function encodeRXGroups(
   return data;
 }
 
-/**
- * Parse Talk Groups from metadata block 0x44
- * Fixed-size entries:
- * - Contact 1: 26 bytes total = 2-byte header (0x0000) + 24-byte structure
- * - Contact 2+: 24 bytes total (no header)
- * 
- * The 24-byte structure contains:
- * - Variable-length name (null-terminated)
- * - Remaining bytes: padding + 3-byte contact number + 1-byte call type + padding
- */
 export interface ParseQuickContactsResult {
   contacts: QuickContact[];
   /** Next 1-based index after this block — physical slot position continues across the
@@ -3384,6 +3374,19 @@ export interface ParseQuickContactsResult {
   nextIndex: number;
 }
 
+/**
+ * Parse one Talk Groups block (metadata 0x44-0x48).
+ *
+ * Talk groups run across up to five 4 KB blocks. Each block starts with a
+ * 1-byte header, then holds 170 fixed 24-byte slots:
+ * [flag] [16-byte name] [null] [3-byte DMR ID, little-endian] [call type] [2 pad].
+ *
+ * A slot whose name starts 0x00 or 0xFF is empty, and still counts: `index` is
+ * the slot number channels and block 0x0B reference, so it runs on across empty
+ * slots and, through `startIndex`, from one block to the next.
+ *
+ * Pass the block without its metadata byte (0xFFF), as readQuickContacts does.
+ */
 export function parseQuickContacts(
   data: Uint8Array,
   onRawContactParsed?: (contactIndex: number, rawData: Uint8Array, name: string) => void,
@@ -3397,17 +3400,14 @@ export function parseQuickContacts(
     const entryStartOffset = offset;
     let hasHeader = false;
 
-    // Check for a 1-byte header (0x00) at the start of THIS buffer — every Talk Groups
-    // block (0x44-0x48) has its own leading header before its first entry, not just the
-    // very first block. Checking offset===0 (rather than contactIndex===1) means this
-    // correctly re-triggers for each block when parseQuickContacts is called once per
-    // block with a fresh buffer, instead of only ever matching the global first entry.
-    if (offset === 0 && offset + 1 <= data.length) {
-      const header = data[offset];
-      if (header === 0x00) {
-        hasHeader = true;
-        offset += 1; // Skip the 1-byte header
-      }
+    // Every Talk Groups block (0x44-0x48) starts with its own 1-byte header, not just
+    // the first block, and it is skipped whatever it holds: NeonPlug writes 0x00 there,
+    // and so does one CPS write capture, while the one in TODO-DM32-SPEC-AUDIT.md item 29
+    // has 0xFF. Checking offset===0 (rather than contactIndex===1) re-triggers for each
+    // block when parseQuickContacts is called once per block.
+    if (offset === 0 && data.length > 0) {
+      hasHeader = true;
+      offset += 1; // Skip the 1-byte header
     }
 
     // Read flag byte (0x00 = PC-created, 0x01 = radio-created)
@@ -3422,8 +3422,9 @@ export function parseQuickContacts(
       break; // Not enough space for name + null
     }
 
-    // Check if entry is empty (first byte of name is 0x00)
-    if (data[nameStart] === 0x00) {
+    // An empty slot: 0x00 as NeonPlug leaves it, or 0xFF, the vendor CPS's fill
+    // (TODO-DM32-SPEC-AUDIT.md item 29).
+    if (data[nameStart] === 0x00 || data[nameStart] === 0xFF) {
       // Empty/unused entry - skip it
       // Skip entire entry: 16 (name) + 1 (null) + 3 (contact) + 1 (call) + 2 (pad) = 23 bytes
       // Note: flag byte already consumed above, so offset is already after it
@@ -3550,22 +3551,8 @@ export function encodeQuickContactsBlock(contacts: QuickContact[], metadata: num
     data[offset] = 0x00;
     offset++;
 
-    // Write name (16 bytes, null-padded). Names are windows-1252/Latin-1, not strict
-    // ASCII — the radio's own OEM CPS writes accented characters (e.g. "Perú", "Türkiye")
-    // as single high bytes (0xFA, 0xFC, ...), and the read side already decodes them
-    // correctly via TextDecoder('ascii'), which WHATWG aliases to windows-1252. Filtering
-    // to 0x20-0x7E and UTF-8-encoding with TextEncoder (both as this used to do) would
-    // silently drop those characters and multi-byte-encode any that survived — verified
-    // against a real OEM CPS write capture, which round-trips them as single bytes.
-    const cleanName = contact.name
-      .split('')
-      .filter(char => {
-        const code = char.charCodeAt(0);
-        return code >= 0x20 && code <= 0xFE && code !== 0x7F; // Printable, excluding DEL and the 0xFF terminator/padding marker
-      })
-      .join('')
-      .substring(0, 16); // Limit to 16 bytes
-
+    // Write name (16 single bytes, null-padded)
+    const cleanName = talkGroupNameOnRadio(contact.name);
     for (let j = 0; j < 16; j++) {
       data[offset] = j < cleanName.length ? (cleanName.charCodeAt(j) & 0xFF) : 0x00;
       offset++;
@@ -3643,6 +3630,118 @@ export function encodeQuickContactsBlocks(contacts: QuickContact[], metadataIds:
   }
 
   return blocks;
+}
+
+/**
+ * A talk group name as the radio stores it: up to 16 single bytes.
+ *
+ * Names are windows-1252/Latin-1, not strict ASCII — the radio's own OEM CPS writes
+ * accented characters (e.g. "Perú", "Türkiye") as single high bytes (0xFA, 0xFC, ...),
+ * and the read side already decodes them correctly via TextDecoder('ascii'), which
+ * WHATWG aliases to windows-1252. Filtering to 0x20-0x7E and UTF-8-encoding with
+ * TextEncoder (both as this used to do) would silently drop those characters and
+ * multi-byte-encode any that survived — verified against a real OEM CPS write capture,
+ * which round-trips them as single bytes.
+ */
+function talkGroupNameOnRadio(name: string): string {
+  return name
+    .split('')
+    .filter(char => {
+      const code = char.charCodeAt(0);
+      return code >= 0x20 && code <= 0xFE && code !== 0x7F; // Printable, excluding DEL and the 0xFF terminator/padding marker
+    })
+    .join('')
+    .substring(0, 16); // Limit to 16 bytes
+}
+
+// Block 0x0B's two tables. The ends are the bounds NeonPlug has always written to:
+// no capture yet holds a list long enough to reach them.
+const QUICK_ACCESS_NAME_TABLE = 0x100;
+const QUICK_ACCESS_NAME_TABLE_END = 0x700;
+const QUICK_ACCESS_ID_TABLE = 0x740;
+const QUICK_ACCESS_ID_TABLE_END = 0xD00;
+
+/**
+ * Block 0x0B, the Quick Access Contact List, for a talk group list: a header of
+ * counts, a mask of used positions, and two tables of 2-byte references to the
+ * talk groups, one sorted by name and one by DMR ID. Returns a copy of `block`
+ * with those rewritten and every other byte kept.
+ *
+ * A reference is the talk group's slot (1-based, counted across blocks 0x44-0x48)
+ * packed as 12 bits under the call type: byte 0 is the slot's low 8 bits, and
+ * byte 1 is the type (0x30 private, 0x40 group, 0x50 all call) with the slot's
+ * bits 8-11 in its low nibble, the way 0x42/0x43 pack a channel's talk group.
+ * A list under 256 never sets that nibble, which is how storing the slot in
+ * byte 0 alone went unnoticed.
+ *
+ * Checked against a vendor CPS write of 607 talk groups: every reference in both
+ * tables matched, bar the order of four pairs of identical duplicates.
+ */
+export function encodeQuickAccessList(block: Uint8Array, contacts: QuickContact[]): Uint8Array {
+  const data = new Uint8Array(block);
+
+  let groupCallCount = 0;
+  let privateCallCount = 0;
+  for (const contact of contacts) {
+    if (contact.callType === 0x04) groupCallCount++;
+    else if (contact.callType === 0x03) privateCallCount++;
+  }
+
+  // Header (0x00-0x0F)
+  data[0x00] = contacts.length & 0xFF;          // Total count low byte
+  data[0x01] = (contacts.length >> 8) & 0xFF;   // Total count high byte
+  data[0x02] = groupCallCount & 0xFF;           // Group call count low byte
+  data[0x03] = (groupCallCount >> 8) & 0xFF;    // Group call count high byte
+  data[0x04] = privateCallCount & 0xFF;         // Private call count (probably the All Call count instead: TODO-DM32-SPEC-AUDIT.md item 18)
+  log.info(`Updating Quick Access List: Total=${contacts.length}, Group=${groupCallCount}, Private=${privateCallCount}`, 'Structures');
+
+  // The used mask (0x10-0x1F, 1 = free, 0 = used) and both tables start cleared
+  data.fill(0xFF, 0x10, 0x20);
+  data.fill(0xFF, QUICK_ACCESS_NAME_TABLE, QUICK_ACCESS_NAME_TABLE_END);
+  data.fill(0xFF, QUICK_ACCESS_ID_TABLE, QUICK_ACCESS_ID_TABLE_END);
+
+  const references = contacts.map((contact, i) => ({
+    slot: i + 1,
+    name: talkGroupNameOnRadio(contact.name),
+    contactNumber: contact.contactNumber,
+    typeByte: contact.callType === 0x03 ? 0x30 : contact.callType === 0x05 ? 0x50 : 0x40, // Private, All Call, else Group
+  }));
+  const put = (offset: number, reference: (typeof references)[number]) => {
+    data[offset] = reference.slot & 0xFF;
+    data[offset + 1] = reference.typeByte | ((reference.slot >> 8) & 0x0F);
+  };
+
+  // Table 1: by name in byte order, as the vendor CPS sorts ("ALERT-K4NWS" before "Alabama")
+  const byName = [...references].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  byName.forEach((reference, position) => {
+    const offset = QUICK_ACCESS_NAME_TABLE + position * 2;
+    if (offset >= QUICK_ACCESS_NAME_TABLE_END) return;
+    put(offset, reference);
+    // The mask covers the first 128 positions
+    if (position < 128) data[0x10 + (position >> 3)] &= ~(1 << (position % 8));
+  });
+
+  // Table 2: by DMR ID. A talk group with ID 0 keeps its position but its reference
+  // is left blank, as the vendor CPS writes it; leaving it out instead moved every
+  // later reference down one.
+  const byId = [...references].sort((a, b) => a.contactNumber - b.contactNumber);
+  byId.forEach((reference, position) => {
+    const offset = QUICK_ACCESS_ID_TABLE + position * 2;
+    if (reference.contactNumber === 0 || offset >= QUICK_ACCESS_ID_TABLE_END) return;
+    put(offset, reference);
+  });
+
+  const nameTableRoom = (QUICK_ACCESS_NAME_TABLE_END - QUICK_ACCESS_NAME_TABLE) / 2;
+  const idTableRoom = (QUICK_ACCESS_ID_TABLE_END - QUICK_ACCESS_ID_TABLE) / 2;
+  if (contacts.length > idTableRoom) {
+    log.warn(
+      `${contacts.length} talk groups, but the Quick Access Contact List tables hold ${nameTableRoom} by name ` +
+        `and ${idTableRoom} by DMR ID. The rest are still written to blocks 0x44-0x48, but left out of those tables.`,
+      'Structures'
+    );
+  }
+
+  return data;
 }
 
 /**
