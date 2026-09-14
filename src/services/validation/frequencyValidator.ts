@@ -33,13 +33,29 @@ export function isValidFrequencyRange(frequency: number, limits?: RadioBandLimit
 }
 
 /**
+ * True if the channel's TX is blank (NO_TX_FREQUENCY) where the radio can hold one: in
+ * 87–136 MHz on any radio, and in any band on a radio with `blankTxAnyBand`.
+ */
+export function hasBlankTx(channel: Pick<Channel, 'rxFrequency' | 'txFrequency'>, blankTxAnyBand?: boolean): boolean {
+  return isNoTxFrequency(channel.txFrequency) && (blankTxAnyBand === true || isRxInNoTxBand(channel.rxFrequency));
+}
+
+/**
  * Check if a channel's frequencies are within supported ranges.
  * When limits is provided (e.g. from getCapabilitiesForModel(radioInfo?.model)?.bandLimits), uses those.
- * Channels with RX in 87–136 MHz and Forbid TX use 0xFF for TX (sentinel); only RX is validated for those.
+ * A channel with a blank TX only has its RX checked: in 87–136 MHz with Forbid TX on any radio,
+ * and in any band, Forbid TX or not, on a radio with `blankTxAnyBand`.
  */
-export function isValidChannelFrequency(channel: Channel, limits?: RadioBandLimits | null): boolean {
+export function isValidChannelFrequency(
+  channel: Channel,
+  limits?: RadioBandLimits | null,
+  options?: { blankTxAnyBand?: boolean }
+): boolean {
   if (channel.rxFrequency <= 0) return false;
-  if (isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx && isNoTxFrequency(channel.txFrequency)) {
+  const blankTx = options?.blankTxAnyBand
+    ? isNoTxFrequency(channel.txFrequency)
+    : isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx && isNoTxFrequency(channel.txFrequency);
+  if (blankTx) {
     return isValidFrequencyRange(channel.rxFrequency, limits);
   }
   if (channel.txFrequency <= 0) return false;

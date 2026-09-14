@@ -1173,7 +1173,8 @@ export function useRadioConnection() {
     try {
       // Filter channels to only include those with valid frequencies (use effective model for capabilities)
       const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
-      const bandLimits = getCapabilitiesForModel(effectiveModel)?.bandLimits;
+      const writeCaps = getCapabilitiesForModel(effectiveModel);
+      const bandLimits = writeCaps?.bandLimits;
       //
       // ⚠️ NOT applied to the DA-7X2.
       //
@@ -1190,7 +1191,7 @@ export function useRadioConnection() {
       const isD890 = protocolIsD890(radioInfo?.model ?? selectedRadioModel ?? null);
       const validChannels = isD890
         ? channels
-        : channels.filter(ch => isValidChannelFrequency(ch, bandLimits));
+        : channels.filter(ch => isValidChannelFrequency(ch, bandLimits, { blankTxAnyBand: writeCaps?.blankTxAnyBand }));
       const filteredCount = channels.length - validChannels.length;
 
       if (filteredCount > 0) {

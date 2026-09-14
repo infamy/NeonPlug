@@ -7,7 +7,7 @@ import type { EncryptionKey } from '../../models/EncryptionKey';
 import type { QuickContact } from '../../models/QuickContact';
 import type { AnalogEmergency } from '../../models/AnalogEmergency';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
-import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
+import { hasBlankTx, isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
 import { validateChannel, type ValidationError } from '../../services/validation/channelValidator';
 import type { RadioBandLimits } from '../../types/radioCapabilities';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
@@ -234,7 +234,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <label className="block text-xs font-medium text-cool-gray mb-1">
                     Transmit Frequency (MHz)
                   </label>
-                  {isRxInNoTxBand(editedChannel.rxFrequency) && isNoTxFrequency(editedChannel.txFrequency) ? (
+                  {hasBlankTx(editedChannel, caps?.blankTxAnyBand) ? (
                     <>
                       <input
                         type="text"
@@ -245,7 +245,11 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                         aria-label="No transmit"
                         className={`${FIELD} w-full border rounded px-2 py-1 text-sm text-cool-gray opacity-60 cursor-not-allowed`}
                       />
-                      <p className="text-xs text-cool-gray mt-0.5">Receive-only (87–136 MHz); TX disabled</p>
+                      <p className="text-xs text-cool-gray mt-0.5">
+                        {isRxInNoTxBand(editedChannel.rxFrequency)
+                          ? 'Receive-only (87–136 MHz); TX disabled'
+                          : 'No TX frequency. → copies RX to TX.'}
+                      </p>
                     </>
                   ) : (
                     <>
