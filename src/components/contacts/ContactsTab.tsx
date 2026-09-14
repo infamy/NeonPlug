@@ -11,7 +11,10 @@ import { US_STATES } from '../../constants/usStates';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
 import { useAlert } from '../../hooks/useAlert';
+import { useCsvImport } from '../../hooks/useCsvImport';
 import { exportContactsToCSV, importContactsFromCSV, downloadCSV } from '../../services/csv';
+import { addContacts } from '../../services/csv/importModes';
+import { checkContactLimits } from '../../services/csv/importLimits';
 import type { Contact } from '../../models/Contact';
 import { PageHeader } from '../ui/PageHeader';
 import { resolveContactCapacity } from '../../utils/contactCapacity';
@@ -242,10 +245,10 @@ export const ContactsTab: React.FC = () => {
   const contactCapacity = resolveContactCapacity(caps, radioInfo);
 
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Full CSV Export/Import');
-  const [pendingContactsImport, setPendingContactsImport] = useState<Contact[] | null>(null);
+  const { startImport, csvImportDialog } = useCsvImport();
 
   // Full-fidelity CSV export/import (ID, DMR ID, call sign, city, province, country, remark) —
-  // distinct from the RadioID.net download above. Importing REPLACES all contacts.
+  // distinct from the RadioID.net download above. Importing asks whether to add or replace.
   const handleExportContactsCsv = useCallback(() => {
     downloadCSV(exportContactsToCSV(contacts), 'contacts.csv');
   }, [contacts]);
@@ -257,18 +260,19 @@ export const ContactsTab: React.FC = () => {
         showAlert(result.errors?.join('\n') || 'Failed to import contacts CSV', 'Import failed');
         return;
       }
-      setPendingContactsImport(result.contacts);
+      const imported = result.contacts;
+      startImport({
+        noun: 'contact',
+        existing: contacts,
+        imported,
+        add: () => addContacts(contacts, imported),
+        check: (list) => checkContactLimits(list, contactCapacity),
+        apply: (list) => setContacts(list),
+      });
     }).catch(err => {
       showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
     });
-  }, [showAlert]);
-
-  const handleImportContactsConfirm = useCallback(() => {
-    if (pendingContactsImport) {
-      setContacts(pendingContactsImport);
-    }
-    setPendingContactsImport(null);
-  }, [pendingContactsImport, setContacts]);
+  }, [showAlert, startImport, contacts, contactCapacity, setContacts]);
 
 
   const handleReadContacts = async () => {
@@ -806,15 +810,7 @@ export const ContactsTab: React.FC = () => {
           <ContactsTable />
         </div>
       </div>
-      <ConfirmModal
-        isOpen={pendingContactsImport !== null}
-        onClose={() => setPendingContactsImport(null)}
-        onConfirm={handleImportContactsConfirm}
-        title="Import Contacts CSV"
-        message={`Replace all ${contacts.length} existing ${formatPlural(contacts.length, 'contact')} with ${pendingContactsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
-        confirmLabel="Replace"
-        variant="danger"
-      />
+      {csvImportDialog}
       <ConfirmModal
         isOpen={alertOpen}
         onClose={closeAlert}

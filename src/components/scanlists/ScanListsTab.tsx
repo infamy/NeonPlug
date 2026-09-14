@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import { useScanListsStore } from '../../store/scanListsStore';
 import { formatPlural } from '../../utils/formatPlural';
 import { ScanListsList } from './ScanListsList';
@@ -6,13 +6,17 @@ import { PageHeader } from '../ui/PageHeader';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
 import { useAlert } from '../../hooks/useAlert';
+import { useCsvImport } from '../../hooks/useCsvImport';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { exportScanListsToCSV, importScanListsFromCSV, downloadCSV } from '../../services/csv';
-import type { ScanList } from '../../models/ScanList';
+import { addScanLists } from '../../services/csv/importModes';
+import { checkScanListLimits } from '../../services/csv/importLimits';
 
 export const ScanListsTab: React.FC = () => {
   const { scanLists, setScanLists } = useScanListsStore();
+  const { caps } = useRadioCapabilities();
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Full CSV Export/Import');
-  const [pendingScanListsImport, setPendingScanListsImport] = useState<ScanList[] | null>(null);
+  const { startImport, csvImportDialog } = useCsvImport();
 
   const handleExportScanListsCsv = useCallback(() => {
     downloadCSV(exportScanListsToCSV(scanLists), 'scanlists.csv');
@@ -25,18 +29,19 @@ export const ScanListsTab: React.FC = () => {
         showAlert(result.errors?.join('\n') || 'Failed to import scan lists CSV', 'Import failed');
         return;
       }
-      setPendingScanListsImport(result.scanLists);
+      const imported = result.scanLists;
+      startImport({
+        noun: 'scan list',
+        existing: scanLists,
+        imported,
+        add: () => addScanLists(scanLists, imported, caps),
+        check: (list) => checkScanListLimits(list, caps),
+        apply: (list) => setScanLists(list),
+      });
     }).catch(err => {
       showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
     });
-  }, [showAlert]);
-
-  const handleImportScanListsConfirm = useCallback(() => {
-    if (pendingScanListsImport) {
-      setScanLists(pendingScanListsImport);
-    }
-    setPendingScanListsImport(null);
-  }, [pendingScanListsImport, setScanLists]);
+  }, [showAlert, startImport, scanLists, caps, setScanLists]);
 
   return (
     <div className="h-full flex flex-col">
@@ -58,15 +63,7 @@ export const ScanListsTab: React.FC = () => {
       <div className="flex-1 min-h-0">
         <ScanListsList />
       </div>
-      <ConfirmModal
-        isOpen={pendingScanListsImport !== null}
-        onClose={() => setPendingScanListsImport(null)}
-        onConfirm={handleImportScanListsConfirm}
-        title="Import Scan Lists CSV"
-        message={`Replace all ${scanLists.length} existing ${formatPlural(scanLists.length, 'scan list')} with ${pendingScanListsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
-        confirmLabel="Replace"
-        variant="danger"
-      />
+      {csvImportDialog}
       <ConfirmModal
         isOpen={alertOpen}
         onClose={closeAlert}

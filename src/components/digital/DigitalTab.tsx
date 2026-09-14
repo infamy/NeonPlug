@@ -30,10 +30,11 @@ import { PageHeader } from '../ui/PageHeader';
 import { BUTTON, FIELD } from '../ui/controlStyles';
 import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
 import { exportRXGroupsToCSV, importRXGroupsFromCSV, exportDMRRadioIDsToCSV, importDMRRadioIDsFromCSV, exportQuickContactsToCSV, importQuickContactsFromCSV, downloadCSV } from '../../services/csv';
-import { planTalkGroupImport, describeTalkGroupImportLosses, type TalkGroupImportPlan } from '../../services/csv/talkGroupImport';
-import type { RXGroup } from '../../models/RXGroup';
-import type { DMRRadioID } from '../../models/DMRRadioID';
-import { formatPlural } from '../../utils/formatPlural';
+import { planTalkGroupImport, describeTalkGroupImportLosses } from '../../services/csv/talkGroupImport';
+import { addRadioIds, addRxGroups, addTalkGroups } from '../../services/csv/importModes';
+import { checkRadioIdLimits, checkRxGroupLimits, checkTalkGroupLimits } from '../../services/csv/importLimits';
+import { rxGroupsWithDmrIdMembers, rxGroupsWithRadioMembers } from '../../services/csv/rxGroupMembers';
+import { useCsvImport } from '../../hooks/useCsvImport';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
 const DEFAULT_DMR_RADIO_IDS_MAX = 250;
@@ -181,7 +182,8 @@ export const DigitalTab: React.FC = () => {
     { type: 'contact'; index: number } | { type: 'message'; index: number } | { type: 'radioId'; index: number } | null
   >(null);
 
-  const [pendingRadioIdsImport, setPendingRadioIdsImport] = useState<DMRRadioID[] | null>(null);
+  const { startImport, csvImportDialog } = useCsvImport();
+
   const handleExportRadioIdsCsv = () => downloadCSV(exportDMRRadioIDsToCSV(radioIds), 'dmr_radio_ids.csv');
   const handleImportRadioIdsFile = (file: File) => {
     file.text().then(content => {
@@ -190,18 +192,24 @@ export const DigitalTab: React.FC = () => {
         showAlert(result.errors?.join('\n') || 'Failed to import DMR Radio IDs CSV', 'Import failed');
         return;
       }
-      setPendingRadioIdsImport(result.dmrRadioIds);
+      const imported = result.dmrRadioIds;
+      startImport({
+        noun: 'DMR radio ID',
+        existing: radioIds,
+        imported,
+        add: () => addRadioIds(radioIds, imported, caps?.maxRadioIds),
+        check: (list) => checkRadioIdLimits(list, caps),
+        apply: (list) => setRadioIds(list),
+      });
     }).catch(err => {
       showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
     });
   };
-  const handleImportRadioIdsConfirm = () => {
-    if (pendingRadioIdsImport) setRadioIds(pendingRadioIdsImport);
-    setPendingRadioIdsImport(null);
-  };
 
-  const [pendingRXGroupsImport, setPendingRXGroupsImport] = useState<RXGroup[] | null>(null);
-  const handleExportRXGroupsCsv = () => downloadCSV(exportRXGroupsToCSV(rxGroups), 'rx_groups.csv');
+  // RX group members travel as talk group DMR IDs, whichever form the radio stores them in.
+  const membersBySlot = !!caps?.rxGroupMembersBySlot;
+  const handleExportRXGroupsCsv = () =>
+    downloadCSV(exportRXGroupsToCSV(rxGroupsWithDmrIdMembers(rxGroups, quickContacts, membersBySlot)), 'rx_groups.csv');
   const handleImportRXGroupsFile = (file: File) => {
     file.text().then(content => {
       const result = importRXGroupsFromCSV(content);
@@ -209,17 +217,25 @@ export const DigitalTab: React.FC = () => {
         showAlert(result.errors?.join('\n') || 'Failed to import RX Groups CSV', 'Import failed');
         return;
       }
-      setPendingRXGroupsImport(result.rxGroups);
+      const members = rxGroupsWithRadioMembers(result.rxGroups, quickContacts, membersBySlot);
+      const imported = members.trimmed;
+      startImport({
+        noun: 'RX group',
+        existing: rxGroups,
+        imported,
+        add: () => addRxGroups(rxGroups, imported, caps?.digital?.limits?.RX_GROUPS_MAX),
+        // A member the talk group list doesn't have can only be dropped, so it is asked about like a limit.
+        check: (list) => {
+          const limits = checkRxGroupLimits(list, caps);
+          return { issues: [...members.issues, ...limits.issues], trimmed: limits.trimmed };
+        },
+        apply: (list) => setRXGroups(list),
+      });
     }).catch(err => {
       showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
     });
   };
-  const handleImportRXGroupsConfirm = () => {
-    if (pendingRXGroupsImport) setRXGroups(pendingRXGroupsImport);
-    setPendingRXGroupsImport(null);
-  };
 
-  const [pendingTalkGroupsImport, setPendingTalkGroupsImport] = useState<TalkGroupImportPlan | null>(null);
   const handleExportTalkGroupsCsv = () => downloadCSV(exportQuickContactsToCSV(quickContacts), 'talk_groups.csv');
   const handleImportTalkGroupsFile = (file: File) => {
     file.text().then(content => {
@@ -228,20 +244,35 @@ export const DigitalTab: React.FC = () => {
         showAlert(result.errors?.join('\n') || 'Failed to import Talk Groups CSV', 'Import failed');
         return;
       }
-      // Matched against the current list, so channels keep pointing at the same talk groups.
-      setPendingTalkGroupsImport(planTalkGroupImport(quickContacts, result.quickContacts, channels, rxGroups, caps ?? {}));
+      const imported = result.quickContacts;
+      // Replace matches rows to the current list, so channels keep pointing at the same talk groups.
+      const plan = planTalkGroupImport(quickContacts, imported, channels, rxGroups, caps ?? {});
+      startImport({
+        noun: 'talk group',
+        existing: quickContacts,
+        imported,
+        add: () => addTalkGroups(quickContacts, imported),
+        replace: () => plan.talkGroups,
+        replaceNote: describeTalkGroupImportLosses(plan) || undefined,
+        check: (list) => checkTalkGroupLimits(list, caps),
+        apply: (list, mode) => {
+          if (mode === 'add') {
+            setQuickContacts(list);
+            return;
+          }
+          // A trim keeps the file's first rows, so plan again with only those.
+          const final =
+            list.length === plan.talkGroups.length
+              ? plan
+              : planTalkGroupImport(quickContacts, imported.slice(0, list.length), channels, rxGroups, caps ?? {});
+          setQuickContacts(final.talkGroups);
+          if (final.channels.some((ch, i) => ch !== channels[i])) setChannels(final.channels);
+          if (final.rxGroups.some((group, i) => group !== rxGroups[i])) setRXGroups(final.rxGroups);
+        },
+      });
     }).catch(err => {
       showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
     });
-  };
-  const handleImportTalkGroupsConfirm = () => {
-    const plan = pendingTalkGroupsImport;
-    if (plan) {
-      setQuickContacts(plan.talkGroups);
-      if (plan.channels.some((ch, i) => ch !== channels[i])) setChannels(plan.channels);
-      if (plan.rxGroups.some((group, i) => group !== rxGroups[i])) setRXGroups(plan.rxGroups);
-    }
-    setPendingTalkGroupsImport(null);
   };
 
   const handleDeleteContactClick = (index: number) => {
@@ -1029,36 +1060,7 @@ export const DigitalTab: React.FC = () => {
       confirmLabel="OK"
       variant="alert"
     />
-    <ConfirmModal
-      isOpen={pendingRadioIdsImport !== null}
-      onClose={() => setPendingRadioIdsImport(null)}
-      onConfirm={handleImportRadioIdsConfirm}
-      title="Import DMR Radio IDs CSV"
-      message={`Replace all ${radioIds.length} existing DMR Radio ${formatPlural(radioIds.length, 'ID')} with ${pendingRadioIdsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
-      confirmLabel="Replace"
-      variant="danger"
-    />
-    <ConfirmModal
-      isOpen={pendingRXGroupsImport !== null}
-      onClose={() => setPendingRXGroupsImport(null)}
-      onConfirm={handleImportRXGroupsConfirm}
-      title="Import RX Groups CSV"
-      message={`Replace all ${rxGroups.length} existing RX ${formatPlural(rxGroups.length, 'Group')} with ${pendingRXGroupsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
-      confirmLabel="Replace"
-      variant="danger"
-    />
-    <ConfirmModal
-      isOpen={pendingTalkGroupsImport !== null}
-      onClose={() => setPendingTalkGroupsImport(null)}
-      onConfirm={handleImportTalkGroupsConfirm}
-      title="Import Talk Groups CSV"
-      message={[
-        `Replace all ${quickContacts.length} existing talk ${formatPlural(quickContacts.length, 'group')} with ${pendingTalkGroupsImport?.talkGroups.length ?? 0} imported from CSV? This cannot be undone.`,
-        pendingTalkGroupsImport ? describeTalkGroupImportLosses(pendingTalkGroupsImport) : '',
-      ].filter(Boolean).join('\n\n')}
-      confirmLabel="Replace"
-      variant="danger"
-    />
+    {csvImportDialog}
     </>
   );
 };

@@ -8,7 +8,10 @@ import { createDefaultChannel } from '../../utils/channelHelpers';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
 import { useAlert } from '../../hooks/useAlert';
+import { useCsvImport } from '../../hooks/useCsvImport';
 import { exportChannelsToCSV, importChannelsFromCSV, downloadCSV } from '../../services/csv';
+import { addChannels } from '../../services/csv/importModes';
+import { checkChannelLimits } from '../../services/csv/importLimits';
 import type { Channel } from '../../models/Channel';
 
 import { isVFOChannel } from '../../utils/vfoChannels';
@@ -58,7 +61,7 @@ export const ChannelsTab: React.FC = () => {
   }, [broadcast, searchQuery]);
 
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Full CSV Export/Import');
-  const [pendingChannelsImport, setPendingChannelsImport] = useState<Channel[] | null>(null);
+  const { startImport, csvImportDialog } = useCsvImport();
 
   const handleAddChannel = () => {
     // Find the next available channel number
@@ -110,9 +113,8 @@ export const ChannelsTab: React.FC = () => {
   const handleClearSelection = useCallback(() => setSelectedChannelNumbers(new Set()), []);
 
   // Full-fidelity CSV export/import (all channel modes and fields) — distinct from the
-  // Smart Import wizard's CHIRP export (analog-only) and Add-style merges: this round-trips
-  // the whole channel list and importing REPLACES it, matching an OEM-CPS-style backup/edit
-  // workflow rather than an additive import.
+  // Smart Import wizard's CHIRP export (analog-only): this round-trips the whole channel
+  // list. Importing asks whether to add the file's channels or replace the list with them.
   const handleExportChannelsCsv = useCallback(() => {
     downloadCSV(exportChannelsToCSV(channels), 'channels.csv');
   }, [channels]);
@@ -124,18 +126,19 @@ export const ChannelsTab: React.FC = () => {
         showAlert(result.errors?.join('\n') || 'Failed to import channels CSV', 'Import failed');
         return;
       }
-      setPendingChannelsImport(result.channels);
+      const imported = result.channels;
+      startImport({
+        noun: 'channel',
+        existing: channels,
+        imported,
+        add: () => addChannels(channels, imported),
+        check: (list) => checkChannelLimits(list, caps),
+        apply: (list) => setChannels(list),
+      });
     }).catch(err => {
       showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
     });
-  }, [showAlert]);
-
-  const handleImportChannelsConfirm = useCallback(() => {
-    if (pendingChannelsImport) {
-      setChannels(pendingChannelsImport);
-    }
-    setPendingChannelsImport(null);
-  }, [pendingChannelsImport, setChannels]);
+  }, [showAlert, startImport, channels, caps, setChannels]);
 
   // VFO A/B as channels 4001/4002 — DM-32 only; UV5R-Mini and other radios do not have these in the channel list
   const vfoChannels = useMemo(() => {
@@ -323,15 +326,7 @@ export const ChannelsTab: React.FC = () => {
         confirmLabel="Delete"
         variant="danger"
       />
-      <ConfirmModal
-        isOpen={pendingChannelsImport !== null}
-        onClose={() => setPendingChannelsImport(null)}
-        onConfirm={handleImportChannelsConfirm}
-        title="Import Channels CSV"
-        message={`Replace all ${channels.length} existing ${formatPlural(channels.length, 'channel')} with ${pendingChannelsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
-        confirmLabel="Replace"
-        variant="danger"
-      />
+      {csvImportDialog}
       <ConfirmModal
         isOpen={alertOpen}
         onClose={closeAlert}

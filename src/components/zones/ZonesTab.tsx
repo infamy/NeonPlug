@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useZonesStore } from '../../store/zonesStore';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useLogStore } from '../../store/logStore';
@@ -8,15 +8,19 @@ import { PageHeader } from '../ui/PageHeader';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
 import { useAlert } from '../../hooks/useAlert';
+import { useCsvImport } from '../../hooks/useCsvImport';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { exportZonesToCSV, importZonesFromCSV, downloadCSV } from '../../services/csv';
-import type { Zone } from '../../models/Zone';
+import { addZones } from '../../services/csv/importModes';
+import { checkZoneLimits } from '../../services/csv/importLimits';
 
 export const ZonesTab: React.FC = () => {
   const { zones, updateZone, setZones } = useZonesStore();
   const { channels } = useChannelsStore();
+  const { caps } = useRadioCapabilities();
   const addLog = useLogStore((s) => s.addLog);
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Full CSV Export/Import');
-  const [pendingZonesImport, setPendingZonesImport] = useState<Zone[] | null>(null);
+  const { startImport, csvImportDialog } = useCsvImport();
 
   const handleExportZonesCsv = useCallback(() => {
     downloadCSV(exportZonesToCSV(zones), 'zones.csv');
@@ -29,18 +33,19 @@ export const ZonesTab: React.FC = () => {
         showAlert(result.errors?.join('\n') || 'Failed to import zones CSV', 'Import failed');
         return;
       }
-      setPendingZonesImport(result.zones);
+      const imported = result.zones;
+      startImport({
+        noun: 'zone',
+        existing: zones,
+        imported,
+        add: () => addZones(zones, imported),
+        check: (list) => checkZoneLimits(list, caps),
+        apply: (list) => setZones(list),
+      });
     }).catch(err => {
       showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
     });
-  }, [showAlert]);
-
-  const handleImportZonesConfirm = useCallback(() => {
-    if (pendingZonesImport) {
-      setZones(pendingZonesImport);
-    }
-    setPendingZonesImport(null);
-  }, [pendingZonesImport, setZones]);
+  }, [showAlert, startImport, zones, caps, setZones]);
 
   // On zone page: remove any zone channel refs that point to non-existent channels, and log to debug
   useEffect(() => {
@@ -77,15 +82,7 @@ export const ZonesTab: React.FC = () => {
       <div className="flex-1 min-h-0">
         <ZonesList />
       </div>
-      <ConfirmModal
-        isOpen={pendingZonesImport !== null}
-        onClose={() => setPendingZonesImport(null)}
-        onConfirm={handleImportZonesConfirm}
-        title="Import Zones CSV"
-        message={`Replace all ${zones.length} existing ${formatPlural(zones.length, 'zone')} with ${pendingZonesImport?.length ?? 0} imported from CSV? This cannot be undone.`}
-        confirmLabel="Replace"
-        variant="danger"
-      />
+      {csvImportDialog}
       <ConfirmModal
         isOpen={alertOpen}
         onClose={closeAlert}
