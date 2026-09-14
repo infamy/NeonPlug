@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useImportStores } from '../../../hooks/useImportStores';
+import { useRadioCapabilities } from '../../../hooks/useRadioCapabilities';
 import { useQuickContactsStore } from '../../../store/quickContactsStore';
 import { useDMRRadioIDsStore } from '../../../store/dmrRadioIdsStore';
 import { getNextChannelNumber } from '../../../utils/importHelpers';
 import { generateZoneId } from '../../../utils/zoneHelpers';
+import { formatPlural } from '../../../utils/formatPlural';
 import {
   generateMMDVMChannels,
   isValidMMDVMFrequency,
@@ -48,6 +50,7 @@ const isEntryFilled = (e: MmdvmUiEntry): boolean =>
 
 export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationResult }) => {
   const { channels, setChannels, zones, setZones } = useImportStores();
+  const { caps } = useRadioCapabilities();
   const { radioIds } = useDMRRadioIDsStore();
   const { contacts: talkGroups, addContacts: addTalkGroups } = useQuickContactsStore();
 
@@ -114,6 +117,28 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
       return;
     }
 
+    // Refused up front rather than trimmed: new talk groups are appended and each channel
+    // names its talk group by slot, so one that didn't fit would leave its channel pointing
+    // past the end of the list. The same goes for channels a zone has no room for.
+    const newTalkGroupCount = filledEntries.filter((entry) => !entry.useExisting).length;
+    const maxTalkGroups = caps?.maxTalkGroups;
+    if (maxTalkGroups !== undefined && talkGroups.length + newTalkGroupCount > maxTalkGroups) {
+      onError(
+        `This radio holds ${maxTalkGroups} talk groups and ${talkGroups.length} are in use, so ` +
+          `${newTalkGroupCount} new ${formatPlural(newTalkGroupCount, 'one')} won't fit. Pick existing talk groups instead.`
+      );
+      return;
+    }
+    const existingZone = mmdvmUseExistingZone ? zones.find((z) => z.id === mmdvmExistingZoneId) : undefined;
+    const maxZoneChannels = caps?.maxZoneChannels;
+    if (existingZone && maxZoneChannels !== undefined && existingZone.channels.length + filledEntries.length > maxZoneChannels) {
+      onError(
+        `Zone "${existingZone.name}" has room for ${Math.max(0, maxZoneChannels - existingZone.channels.length)} more ` +
+          `${formatPlural(filledEntries.length, 'channel')}, not ${filledEntries.length}.`
+      );
+      return;
+    }
+
     setIsAddingMmdvm(true);
     onError('');
 
@@ -167,10 +192,10 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
       setChannels([...channels, ...result.channels]);
 
       const newChannelNumbers = result.channels.map((c) => c.number);
-      if (mmdvmUseExistingZone && mmdvmExistingZoneId) {
+      if (existingZone) {
         setZones(zones.map((zone) =>
-          zone.id === mmdvmExistingZoneId
-            ? { ...zone, channels: Array.from(new Set([...zone.channels, ...newChannelNumbers])).slice(0, 64) }
+          zone.id === existingZone.id
+            ? { ...zone, channels: Array.from(new Set([...zone.channels, ...newChannelNumbers])) }
             : zone
         ));
       } else {
@@ -183,7 +208,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
 
       onGenerationResult({
         channels: result.channels.length,
-        zones: 1,
+        zones: existingZone ? 0 : 1,
       });
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Failed to add MMDVM channels');
@@ -279,7 +304,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
             <select
               value={mmdvmTimeslot}
               onChange={(e) => setMmdvmTimeslot(e.target.value === '1' ? '1' : '2')}
-              className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              className={`${FIELD} w-full border rounded px-3 py-2`}
             >
               <option value="1">TS1</option>
               <option value="2">TS2</option>
@@ -311,7 +336,7 @@ export const MmdvmSource: React.FC<MmdvmSourceProps> = ({ onError, onGenerationR
                 max={MMDVM_DUPLEX_UHF_MAX_MHZ}
                 step="0.001"
                 placeholder="e.g. 436.150"
-                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+                className={`${FIELD} w-full border rounded px-3 py-2`}
               />
               <p className="text-xs text-cool-gray mt-1">
                 {MMDVM_DUPLEX_RANGE_DESCRIPTION} — the repeater's input frequency
