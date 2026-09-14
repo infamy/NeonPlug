@@ -30,7 +30,7 @@ import { PageHeader } from '../ui/PageHeader';
 import { BUTTON, FIELD } from '../ui/controlStyles';
 import { CsvExportImportButtons } from '../ui/CsvExportImportButtons';
 import { exportRXGroupsToCSV, importRXGroupsFromCSV, exportDMRRadioIDsToCSV, importDMRRadioIDsFromCSV, exportQuickContactsToCSV, importQuickContactsFromCSV, downloadCSV } from '../../services/csv';
-import type { QuickContact } from '../../models/QuickContact';
+import { planTalkGroupImport, describeTalkGroupImportLosses, type TalkGroupImportPlan } from '../../services/csv/talkGroupImport';
 import type { RXGroup } from '../../models/RXGroup';
 import type { DMRRadioID } from '../../models/DMRRadioID';
 import { formatPlural } from '../../utils/formatPlural';
@@ -68,7 +68,7 @@ export const DigitalTab: React.FC = () => {
   const { contacts: quickContacts, contactsLoaded: quickContactsLoaded, updateContact, addContact, deleteContact, setMaxTalkGroups, setContacts: setQuickContacts } = useQuickContactsStore();
   const { groups: rxGroups, groupsLoaded: rxGroupsLoaded, setGroups: setRXGroups } = useRXGroupsStore();
   const { messages, messagesLoaded, updateMessage, addMessage, deleteMessage } = useQuickMessagesStore();
-  const { channels } = useChannelsStore();
+  const { channels, setChannels } = useChannelsStore();
 
   // Find block with metadata 0x10 (Encryption Keys)
   const block10Address = useMemo(() => {
@@ -219,7 +219,7 @@ export const DigitalTab: React.FC = () => {
     setPendingRXGroupsImport(null);
   };
 
-  const [pendingTalkGroupsImport, setPendingTalkGroupsImport] = useState<QuickContact[] | null>(null);
+  const [pendingTalkGroupsImport, setPendingTalkGroupsImport] = useState<TalkGroupImportPlan | null>(null);
   const handleExportTalkGroupsCsv = () => downloadCSV(exportQuickContactsToCSV(quickContacts), 'talk_groups.csv');
   const handleImportTalkGroupsFile = (file: File) => {
     file.text().then(content => {
@@ -228,13 +228,19 @@ export const DigitalTab: React.FC = () => {
         showAlert(result.errors?.join('\n') || 'Failed to import Talk Groups CSV', 'Import failed');
         return;
       }
-      setPendingTalkGroupsImport(result.quickContacts);
+      // Matched against the current list, so channels keep pointing at the same talk groups.
+      setPendingTalkGroupsImport(planTalkGroupImport(quickContacts, result.quickContacts, channels, rxGroups, caps ?? {}));
     }).catch(err => {
       showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
     });
   };
   const handleImportTalkGroupsConfirm = () => {
-    if (pendingTalkGroupsImport) setQuickContacts(pendingTalkGroupsImport);
+    const plan = pendingTalkGroupsImport;
+    if (plan) {
+      setQuickContacts(plan.talkGroups);
+      if (plan.channels.some((ch, i) => ch !== channels[i])) setChannels(plan.channels);
+      if (plan.rxGroups.some((group, i) => group !== rxGroups[i])) setRXGroups(plan.rxGroups);
+    }
     setPendingTalkGroupsImport(null);
   };
 
@@ -1046,7 +1052,10 @@ export const DigitalTab: React.FC = () => {
       onClose={() => setPendingTalkGroupsImport(null)}
       onConfirm={handleImportTalkGroupsConfirm}
       title="Import Talk Groups CSV"
-      message={`Replace all ${quickContacts.length} existing talk ${formatPlural(quickContacts.length, 'group')} with ${pendingTalkGroupsImport?.length ?? 0} imported from CSV? This cannot be undone.`}
+      message={[
+        `Replace all ${quickContacts.length} existing talk ${formatPlural(quickContacts.length, 'group')} with ${pendingTalkGroupsImport?.talkGroups.length ?? 0} imported from CSV? This cannot be undone.`,
+        pendingTalkGroupsImport ? describeTalkGroupImportLosses(pendingTalkGroupsImport) : '',
+      ].filter(Boolean).join('\n\n')}
       confirmLabel="Replace"
       variant="danger"
     />

@@ -422,12 +422,15 @@ export function importDMRRadioIDsFromCSV(content: string): ImportResult {
   }
 }
 
-function callTypeFromLabel(value: string): number {
-  const v = value.trim().toLowerCase();
-  if (v === 'all' || v === '0x05' || v === '5') return 0x05;
-  if (v === 'private' || v === 'prv' || v === '0x03' || v === '3') return 0x03;
-  return 0x04; // Group (default)
-}
+/** The labels the exporter writes, their longer forms, and the raw call type byte. Nothing else is guessed at. */
+const CALL_TYPES: Record<string, number> = {
+  'private': 0x03, 'private call': 0x03, 'prv': 0x03, '3': 0x03, '0x03': 0x03,
+  'group': 0x04, 'group call': 0x04, '4': 0x04, '0x04': 0x04,
+  'all': 0x05, 'all call': 0x05, '5': 0x05, '0x05': 0x05,
+};
+
+/** The largest 24-bit DMR ID, and the one an All Call uses. */
+const ALL_CALL_ID = 0xFFFFFF;
 
 export function importQuickContactsFromCSV(content: string): ImportResult {
   try {
@@ -444,21 +447,34 @@ export function importQuickContactsFromCSV(content: string): ImportResult {
       const row = rows[i];
       if (row.length === 0 || row.every(cell => !cell.trim())) continue;
 
-      try {
-        const newIndex = quickContacts.length + 1;
-        quickContacts.push({
-          index: newIndex,
-          offset: 0,
-          name: getValue(headers, row, 'name') || `TG ${newIndex}`,
-          contactNumber: getInt(headers, row, 'contact number', 0),
-          callType: callTypeFromLabel(getValue(headers, row, 'call type')),
-          hasHeader: newIndex === 1,
-          flag: 0,
-          rawData: new Uint8Array(0),
-        });
-      } catch (error) {
-        errors.push(`Row ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const label = getValue(headers, row, 'call type');
+      const callType = CALL_TYPES[label.toLowerCase()];
+      if (callType === undefined) {
+        errors.push(`Row ${i + 1}: call type "${label}" isn't Group Call, Private Call or All Call`);
+        continue;
       }
+      const idText = getValue(headers, row, 'contact number');
+      const contactNumber = /^\d+$/.test(idText) ? Number(idText) : NaN;
+      if (!(contactNumber >= 1 && contactNumber <= ALL_CALL_ID)) {
+        errors.push(`Row ${i + 1}: DMR ID "${idText}" must be a whole number from 1 to ${ALL_CALL_ID}`);
+        continue;
+      }
+      if (callType === 0x05 && contactNumber !== ALL_CALL_ID) {
+        errors.push(`Row ${i + 1}: an All Call uses DMR ID ${ALL_CALL_ID}, not ${contactNumber}`);
+        continue;
+      }
+
+      const newIndex = quickContacts.length + 1;
+      quickContacts.push({
+        index: newIndex,
+        offset: 0,
+        name: getValue(headers, row, 'name') || `TG ${newIndex}`,
+        contactNumber,
+        callType,
+        hasHeader: newIndex === 1,
+        flag: 0,
+        rawData: new Uint8Array(0),
+      });
     }
 
     return {

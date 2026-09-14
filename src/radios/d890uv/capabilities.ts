@@ -124,6 +124,7 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   // A channel stores its scan list's SLOT + 1, and deleted lists leave holes.
   scanListsBySlot: true,
   rxGroupMembersBySlot: true,
+  renumbersTalkGroupRefsOnWrite: true,
   supportsZones: true,
   supportsScanLists: true,
   analogOnly: false,

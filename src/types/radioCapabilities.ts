@@ -364,6 +364,13 @@ export interface RadioCapabilities {
    * CSV carries DMR IDs for both and converts on import.
    */
   rxGroupMembersBySlot?: boolean;
+  /**
+   * The write moves channel TX contacts and slot-based RX group members to follow
+   * their talk groups, by `QuickContact.readSlot` (d890uv/talkgroupRenumber.ts).
+   * A talk group CSV import then only keeps each match's `readSlot`; on a radio
+   * without this, the import moves the references itself.
+   */
+  renumbersTalkGroupRefsOnWrite?: boolean;
   /** If true, protocol supports readBootImage / writeBootImage. */
   supportsBootImage?: boolean;
   /** If true, protocol supports readQuickMessages. */
