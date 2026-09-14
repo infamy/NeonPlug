@@ -1,3 +1,4 @@
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import React, { useState } from 'react';
 import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
@@ -5,11 +6,18 @@ import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
 import type { RXGroup } from '../../models/RXGroup';
 import { ListDetailLayout } from '../ui/ListDetailLayout';
+import { OrderedItemPicker } from '../ui/OrderedItemPicker';
+import type { PickerItem } from '../ui/pickerItems';
 import { Card } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 export const RXGroupsList: React.FC = () => {
+  const { caps } = useRadioCapabilities();
+  // One maximum for the subtitle, the add handler and the Add button. The button
+  // checked a literal 32, so a DA-7X2 (250 groups) could never add a 33rd.
+  const maxGroups = caps?.digital?.limits?.RX_GROUPS_MAX ?? 32;
   const { groups, selectedGroup, setSelectedGroup, addGroup, deleteGroup, updateGroup } = useRXGroupsStore();
   const [newGroupName, setNewGroupName] = useState('');
   const [editingName, setEditingName] = useState<number | null>(null);
@@ -18,8 +26,8 @@ export const RXGroupsList: React.FC = () => {
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
 
   const handleAddGroup = () => {
-    if (groups.length >= 32) {
-      showAlert('Maximum of 32 RX groups allowed.');
+    if (groups.length >= maxGroups) {
+      showAlert(`Maximum of ${maxGroups} RX groups allowed.`);
       return;
     }
     if (newGroupName.trim()) {
@@ -84,7 +92,7 @@ export const RXGroupsList: React.FC = () => {
                   onClick={(e) => e.stopPropagation()}
                   autoFocus
                   maxLength={11}
-                  className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-sm font-medium focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full"
+                  className={`${FIELD} border rounded px-2 py-1 text-sm font-medium w-full`}
                 />
               ) : (
                 <span
@@ -115,7 +123,7 @@ export const RXGroupsList: React.FC = () => {
                   e.stopPropagation();
                   setGroupToDelete({ index: group.index, name: group.name });
                 }}
-                className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                className={`${BUTTON.danger} px-2 py-0.5 rounded text-xs border`}
               >
                 Delete
               </button>
@@ -153,7 +161,7 @@ export const RXGroupsList: React.FC = () => {
                 }}
                 autoFocus
                 maxLength={11}
-                className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-neon-cyan font-bold focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan flex-1"
+                className={`${FIELD} border rounded px-2 py-1 text-neon-cyan font-bold flex-1`}
               />
             ) : (
               <div className="flex items-center gap-2 flex-1">
@@ -193,12 +201,12 @@ export const RXGroupsList: React.FC = () => {
     <>
       <ListDetailLayout
         listTitle="RX Groups"
-        listSubtitle={`${groups.length}/32 groups`}
+        listSubtitle={`${groups.length}/${maxGroups} groups`}
         addInputPlaceholder="Group name..."
         addInputValue={newGroupName}
         onAddInputChange={setNewGroupName}
         onAdd={handleAddGroup}
-        addDisabled={groups.length >= 32}
+        addDisabled={groups.length >= maxGroups}
         addInputMaxLength={11}
         listContent={listContent}
         detailContent={detailContent}
@@ -238,79 +246,25 @@ interface RXGroupEditorProps {
 }
 
 const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group, onAlert }) => {
+  // Per-radio limit, not a hardcoded DM-32 value.
+  const { caps } = useRadioCapabilities();
   const { updateGroup } = useRXGroupsStore();
   const { contacts: talkGroups } = useQuickContactsStore();
-  const [searchQuery, setSearchQuery] = useState('');
 
-  const handleAddTalkGroup = (talkGroupIndex: number) => {
-    // Find the talk group by index to get its DMR ID (contactNumber)
-    const talkGroup = talkGroups.find(tg => tg.index === talkGroupIndex);
-    if (!talkGroup) return;
-    
-    if (group.talkGroupIndices.length >= 32) {
-      onAlert('Maximum of 32 talk groups per RX group allowed.');
-      return;
-    }
-    
-    const dmrId = talkGroup.contactNumber;
-    if (!group.talkGroupIndices.includes(dmrId)) {
-      updateGroup(group.index, {
-        talkGroupIndices: [...group.talkGroupIndices, dmrId].sort((a, b) => a - b),
-      });
-    }
-  };
+  // group.talkGroupIndices stores DMR IDs (contactNumber); rows display "index: name".
+  const talkGroupItem = (tg: (typeof talkGroups)[number]): PickerItem => ({
+    id: tg.contactNumber,
+    label: `${tg.index}: ${tg.name}`,
+    searchText: `${tg.index} ${tg.name} ${tg.contactNumber}`,
+  });
 
-  const handleRemoveTalkGroup = (talkGroupIndex: number) => {
-    // Find the talk group by index to get its DMR ID (contactNumber)
-    const talkGroup = talkGroups.find(tg => tg.index === talkGroupIndex);
-    if (!talkGroup) return;
-    
-    const dmrId = talkGroup.contactNumber;
-    updateGroup(group.index, {
-      talkGroupIndices: group.talkGroupIndices.filter(id => id !== dmrId),
-    });
-  };
-
-  const handleReorderTalkGroup = (fromIndex: number, toIndex: number) => {
-    // fromIndex/toIndex are array indices in groupTalkGroups array
-    const newPositions = [...group.talkGroupIndices];
-    const [removed] = newPositions.splice(fromIndex, 1);
-    newPositions.splice(toIndex, 0, removed);
-    updateGroup(group.index, { talkGroupIndices: newPositions });
-  };
-
-  const availableTalkGroups = talkGroups
-    .filter(tg => {
-      return !group.talkGroupIndices.includes(tg.contactNumber) && 
-             tg.callType === 0x04; // Only Group Call (exclude Private Call 0x03 and All Call 0x05)
-    })
-    .map(tg => tg.index)
-    .sort((a, b) => a - b);
-
-  const filteredAvailableTalkGroups = searchQuery.trim()
-    ? availableTalkGroups.filter((tgIndex) => {
-        const talkGroup = talkGroups.find(tg => tg.index === tgIndex);
-        if (!talkGroup) return false;
-        
-        const query = searchQuery.toLowerCase().trim();
-        
-        // Search in name
-        if (talkGroup.name.toLowerCase().includes(query)) return true;
-        
-        // Search in index
-        if (talkGroup.index.toString().includes(query)) return true;
-        
-        // Search in contact number
-        if (talkGroup.contactNumber?.toString().includes(query)) return true;
-        
-        return false;
-      })
-    : availableTalkGroups;
-
-  // Find talk groups by matching DMR ID (contactNumber)
-  const groupTalkGroups = group.talkGroupIndices
-    .map(dmrId => talkGroups.find(tg => tg.contactNumber === dmrId))
-    .filter(tg => tg !== undefined);
+  const availableItems = talkGroups
+    .filter(tg =>
+      !group.talkGroupIndices.includes(tg.contactNumber) &&
+      tg.callType === 0x04 // Only Group Call (exclude Private Call 0x03 and All Call 0x05)
+    )
+    .sort((a, b) => a.index - b.index)
+    .map(talkGroupItem);
 
   return (
     <div className="p-4 space-y-4">
@@ -321,118 +275,24 @@ const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group, onAlert }) => {
           value={group.name}
           onChange={(e) => updateGroup(group.index, { name: e.target.value.slice(0, 11) })}
           maxLength={11}
-          className="flex-1 bg-transparent border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+          className={`${FIELD} flex-1 border rounded px-3 py-2 text-sm`}
           placeholder="Enter group name"
         />
       </div>
-      <div>
-        <h4 className="text-white font-medium mb-2">
-          Talk Groups in RX Group ({group.talkGroupIndices.length}/32)
-        </h4>
-        {group.talkGroupIndices.length === 0 ? (
-          <p className="text-cool-gray text-sm">No talk groups in this RX group</p>
-        ) : (
-          <div className="space-y-1 max-h-96 overflow-y-auto">
-            {groupTalkGroups.map((talkGroup, index) => (
-              <div
-                key={talkGroup!.index}
-                className="px-3 py-2 bg-neon-cyan bg-opacity-10 border border-neon-cyan border-opacity-30 rounded flex items-center justify-between hover:bg-opacity-20"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-cool-gray text-xs w-8">{index + 1}.</span>
-                  <span className="text-white text-xs">
-                    {talkGroup!.index}: {talkGroup!.name}
-                  </span>
-                </div>
-                <div className="flex gap-1">
-                  {index > 0 && (
-                    <button
-                      onClick={() => handleReorderTalkGroup(index, index - 1)}
-                      className="px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-neon-cyan text-xs hover:bg-opacity-50"
-                      title="Move up"
-                    >
-                      ↑
-                    </button>
-                  )}
-                  {index < groupTalkGroups.length - 1 && (
-                    <button
-                      onClick={() => handleReorderTalkGroup(index, index + 1)}
-                      className="px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-neon-cyan text-xs hover:bg-opacity-50"
-                      title="Move down"
-                    >
-                      ↓
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      // talkGroup.index is 1-based, handleRemoveTalkGroup expects 1-based
-                      handleRemoveTalkGroup(talkGroup!.index);
-                    }}
-                    className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <h4 className="text-white font-medium mb-2">
-          Available Talk Groups ({filteredAvailableTalkGroups.length} of {availableTalkGroups.length})
-        </h4>
-        {availableTalkGroups.length === 0 ? (
-          <p className="text-cool-gray text-sm">All talk groups are in this RX group</p>
-        ) : group.talkGroupIndices.length >= 32 ? (
-          <p className="text-cool-gray text-sm">RX group is full (32 talk groups maximum)</p>
-        ) : (
-          <>
-            <div className="mb-3">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search talk groups..."
-                  className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-3 py-1.5 pl-9 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                />
-                <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-cool-gray text-xs">
-                  🔍
-                </span>
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-cool-gray hover:text-white text-sm"
-                    title="Clear search"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            </div>
-            {filteredAvailableTalkGroups.length === 0 ? (
-              <p className="text-cool-gray text-sm">No talk groups match your search</p>
-            ) : (
-              <div className="flex flex-wrap gap-2 max-h-80 overflow-y-auto">
-                {filteredAvailableTalkGroups.map((tgIndex) => {
-                  const talkGroup = talkGroups.find(tg => tg.index === tgIndex);
-                  return (
-                    <button
-                      key={tgIndex}
-                      onClick={() => handleAddTalkGroup(tgIndex)}
-                      className="px-3 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-xs hover:bg-opacity-50 hover:border-neon-cyan transition-colors"
-                    >
-                      {tgIndex}: {talkGroup?.name || 'Unknown'}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+      <OrderedItemPicker
+        selectedIds={group.talkGroupIndices}
+        availableItems={availableItems}
+        resolveItem={(dmrId) => {
+          const tg = talkGroups.find(t => t.contactNumber === dmrId);
+          return tg ? talkGroupItem(tg) : undefined;
+        }}
+        onChange={(ids) => updateGroup(group.index, { talkGroupIndices: ids })}
+        maxItems={caps?.maxRxGroupMembers ?? 32}
+        itemNoun="talk group"
+        containerNoun="RX group"
+        onAlert={onAlert}
+        padded={false}
+      />
     </div>
   );
 };

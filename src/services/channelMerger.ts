@@ -28,8 +28,10 @@ function mergeChannels(ch1: Channel, ch2: Channel): Channel {
     mergedName = mergedName.substring(0, 16);
   }
   
-  // Use higher power (High > Medium > Low)
-  const powerOrder = { 'Low': 0, 'Medium': 1, 'High': 2 };
+  // Use higher power (Turbo > High > Medium > Low)
+  const powerOrder: Record<Channel['power'], number> = {
+    'Low': 0, 'Medium': 1, 'High': 2, 'Turbo': 3,
+  };
   const power = powerOrder[ch1.power] >= powerOrder[ch2.power] ? ch1.power : ch2.power;
   
   // Merge other settings - prefer ch1 but use ch2 if ch1 has defaults
@@ -62,7 +64,13 @@ export function mergeOverlappingChannels(
   // Process all channels from all sets
   for (const channelSet of channelSets) {
     for (const channel of channelSet) {
-      const freqKey = `${channel.rxFrequency.toFixed(4)}-${channel.txFrequency.toFixed(4)}`;
+      // Digital channels commonly share an RX/TX pair on purpose — multiple talk groups
+      // or timeslots on the same repeater/hotspot frequency are distinct channels, not
+      // duplicates. Only collapse them if color code, slot, and talk group also match;
+      // analog channels keep the plain frequency-only key (e.g. FRS/GMRS overlap merging).
+      const freqKey = channel.mode === 'Digital' || channel.mode === 'Fixed Digital'
+        ? `${channel.rxFrequency.toFixed(4)}-${channel.txFrequency.toFixed(4)}-${channel.colorCode}-${channel.slotOperation ?? 0}-${channel.contactId}`
+        : `${channel.rxFrequency.toFixed(4)}-${channel.txFrequency.toFixed(4)}`;
 
       if (frequencyMap.has(freqKey)) {
         // Channel with same frequencies exists - merge them
@@ -99,6 +107,56 @@ export function mergeOverlappingChannels(
   }
   
   return { mergedChannels, channelMapping };
+}
+
+/**
+ * Merge new channel sets against each other AND against the existing channel list.
+ *
+ * - Overlapping frequencies WITHIN the new sets are merged (combined name, higher power).
+ * - A new channel whose full key (frequency + name + mode + bandwidth + power + tones)
+ *   matches an existing channel is dropped and mapped to the existing channel's number.
+ * - Existing channels are never renumbered, merged, or modified.
+ *
+ * IMPORTANT: channel numbers must be unique ACROSS all newChannelSets — the returned
+ * mapping is keyed by them. Number each set with a distinct range before calling
+ * (e.g. set 1 → 1..N, set 2 → N+1..M).
+ *
+ * Returns the channels to append and a mapping from each new channel's original
+ * number to its final number, for remapping zone/scan-list references.
+ */
+export function mergeChannelSetsWithExisting(
+  existingChannels: Channel[],
+  newChannelSets: Channel[][],
+  startChannelNumber: number
+): {
+  channelsToAdd: Channel[];
+  channelMapping: Map<number, number>; // original number -> final number
+} {
+  const existingChannelMap = new Map<string, number>(); // full key -> channel number
+  for (const ch of existingChannels) {
+    existingChannelMap.set(getChannelFullKey(ch), ch.number);
+  }
+
+  const { mergedChannels, channelMapping } = mergeOverlappingChannels(newChannelSets, startChannelNumber);
+
+  const finalChannelMapping = new Map<number, number>();
+  const channelsToAdd: Channel[] = [];
+
+  for (const newChannel of mergedChannels) {
+    const fullKey = getChannelFullKey(newChannel);
+    // An exact match reuses the existing channel; otherwise the channel is added.
+    const finalNumber = existingChannelMap.get(fullKey) ?? newChannel.number;
+    if (finalNumber === newChannel.number) {
+      channelsToAdd.push(newChannel);
+    }
+    for (const [origNum, mergedNum] of channelMapping.entries()) {
+      if (mergedNum === newChannel.number) {
+        finalChannelMapping.set(origNum, finalNumber);
+      }
+    }
+  }
+
+  return { channelsToAdd, channelMapping: finalChannelMapping };
 }
 
 /**

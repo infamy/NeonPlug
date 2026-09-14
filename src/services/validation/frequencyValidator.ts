@@ -25,23 +25,37 @@ export function isRxInNoTxBand(rxFrequency: number): boolean {
  */
 export function isValidFrequencyRange(frequency: number, limits?: RadioBandLimits | null): boolean {
   const resolved = limits ?? DEFAULT_BAND_LIMITS;
-  const vhfMin = resolved.vhfMin;
-  const vhfMax = resolved.vhfMax;
-  const uhfMin = resolved.uhfMin;
-  const uhfMax = resolved.uhfMax;
-  const isVHF = frequency >= vhfMin && frequency <= vhfMax;
-  const isUHF = frequency >= uhfMin && frequency <= uhfMax;
+  const isVHF = frequency >= resolved.vhfMin && frequency <= resolved.vhfMax;
+  // VHF-only radios (e.g. FT-25R, FT-4VR) have no UHF band at all.
+  const isUHF = resolved.uhfMin != null && resolved.uhfMax != null &&
+    frequency >= resolved.uhfMin && frequency <= resolved.uhfMax;
   return isVHF || isUHF;
+}
+
+/**
+ * True if the channel's TX is blank (NO_TX_FREQUENCY) where the radio can hold one: in
+ * 87–136 MHz on any radio, and in any band on a radio with `blankTxAnyBand`.
+ */
+export function hasBlankTx(channel: Pick<Channel, 'rxFrequency' | 'txFrequency'>, blankTxAnyBand?: boolean): boolean {
+  return isNoTxFrequency(channel.txFrequency) && (blankTxAnyBand === true || isRxInNoTxBand(channel.rxFrequency));
 }
 
 /**
  * Check if a channel's frequencies are within supported ranges.
  * When limits is provided (e.g. from getCapabilitiesForModel(radioInfo?.model)?.bandLimits), uses those.
- * Channels with RX in 87–136 MHz and Forbid TX use 0xFF for TX (sentinel); only RX is validated for those.
+ * A channel with a blank TX only has its RX checked: in 87–136 MHz with Forbid TX on any radio,
+ * and in any band, Forbid TX or not, on a radio with `blankTxAnyBand`.
  */
-export function isValidChannelFrequency(channel: Channel, limits?: RadioBandLimits | null): boolean {
+export function isValidChannelFrequency(
+  channel: Channel,
+  limits?: RadioBandLimits | null,
+  options?: { blankTxAnyBand?: boolean }
+): boolean {
   if (channel.rxFrequency <= 0) return false;
-  if (isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx && isNoTxFrequency(channel.txFrequency)) {
+  const blankTx = options?.blankTxAnyBand
+    ? isNoTxFrequency(channel.txFrequency)
+    : isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx && isNoTxFrequency(channel.txFrequency);
+  if (blankTx) {
     return isValidFrequencyRange(channel.rxFrequency, limits);
   }
   if (channel.txFrequency <= 0) return false;
@@ -60,7 +74,8 @@ export function isValidFrequency(frequency: number, bandLimits?: RadioBandLimits
 export function getFrequencyBand(frequency: number, bandLimits?: RadioBandLimits | null): 'VHF' | 'UHF' | 'Unknown' {
   if (!bandLimits) return 'Unknown';
   if (frequency >= bandLimits.vhfMin && frequency <= bandLimits.vhfMax) return 'VHF';
-  if (frequency >= bandLimits.uhfMin && frequency <= bandLimits.uhfMax) return 'UHF';
+  if (bandLimits.uhfMin != null && bandLimits.uhfMax != null &&
+      frequency >= bandLimits.uhfMin && frequency <= bandLimits.uhfMax) return 'UHF';
   return 'Unknown';
 }
 

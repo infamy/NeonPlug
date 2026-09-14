@@ -1,10 +1,16 @@
 import React from 'react';
+import { BUTTON } from './controlStyles';
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  /**
+   * Actions, kept below the scrolling body so they stay on screen however long
+   * the content is — the same rule ConfirmModal and ReadProgressModal follow.
+   */
+  footer?: React.ReactNode;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -12,6 +18,7 @@ export const Modal: React.FC<ModalProps> = ({
   onClose,
   title,
   children,
+  footer,
 }) => {
   if (!isOpen) return null;
 
@@ -28,7 +35,7 @@ export const Modal: React.FC<ModalProps> = ({
           <h2 className="text-xl font-bold text-electric-purple">{title}</h2>
           <button
             onClick={onClose}
-            className="text-cool-gray hover:text-white text-2xl"
+            className={`${BUTTON.ghost} text-2xl`}
           >
             ×
           </button>
@@ -36,6 +43,9 @@ export const Modal: React.FC<ModalProps> = ({
         <div className="text-white flex-1 overflow-y-auto min-h-0">
           {children}
         </div>
+        {footer && (
+          <div className="flex-shrink-0 mt-3 pt-3 border-t border-neon-cyan border-opacity-30">{footer}</div>
+        )}
       </div>
     </div>
   );

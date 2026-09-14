@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateAirportChannels } from '../../src/services/airportChannels';
+import { generateAirportChannels, COMMON_AIRCRAFT_FREQUENCIES } from '../../src/services/airportChannels';
 import type { AirportData } from '../../src/data/airportsData';
 
 function airport(code: string, lat: number, lon: number, frequencies: number | [number, string][]): AirportData {
@@ -69,5 +69,55 @@ describe('generateAirportChannels', () => {
     const result = generateAirportChannels(1, [yvr, klax]);
     expect(result.summary.channelsCreated).toBe(result.channels.length);
     expect(result.summary.zonesCreated).toBe(result.zones.length);
+  });
+});
+
+describe('generateAirportChannels with common frequencies', () => {
+  it('does not add common frequencies by default', () => {
+    const base = generateAirportChannels(1, [yvr, klax], true);
+    expect(base.channels.length).toBe(4); // 2 freqs x 2 airports
+  });
+
+  it('appends common frequencies to the Airports zone in single zone mode', () => {
+    const result = generateAirportChannels(1, [yvr, klax], true, COMMON_AIRCRAFT_FREQUENCIES);
+    expect(result.channels.length).toBe(4 + COMMON_AIRCRAFT_FREQUENCIES.length);
+    expect(result.zones.length).toBe(1);
+    expect(result.zones[0].name).toBe('Airports');
+    expect(result.zones[0].channels.length).toBe(4 + COMMON_AIRCRAFT_FREQUENCIES.length);
+  });
+
+  it('adds common frequencies as a separate Aircraft zone in individual mode', () => {
+    const result = generateAirportChannels(1, [yvr, klax], false, COMMON_AIRCRAFT_FREQUENCIES);
+    expect(result.channels.length).toBe(4 + COMMON_AIRCRAFT_FREQUENCIES.length);
+    expect(result.zones.length).toBe(3); // 2 airport zones + 1 Aircraft zone
+    const aircraftZone = result.zones.find(z => z.name === 'Aircraft');
+    expect(aircraftZone).toBeDefined();
+    expect(aircraftZone!.channels.length).toBe(COMMON_AIRCRAFT_FREQUENCIES.length);
+  });
+
+  it('only adds the selected subset of common frequencies', () => {
+    const subset = COMMON_AIRCRAFT_FREQUENCIES.slice(0, 3);
+    const result = generateAirportChannels(1, [yvr], true, subset);
+    expect(result.channels.length).toBe(2 + 3);
+  });
+
+  it('adds no common frequencies when the list is empty', () => {
+    const result = generateAirportChannels(1, [yvr, klax], false, []);
+    expect(result.channels.length).toBe(4);
+    expect(result.zones.every(z => z.name !== 'Aircraft')).toBe(true);
+  });
+
+  it('common frequency channels are receive-only', () => {
+    const result = generateAirportChannels(1, [yvr], true, COMMON_AIRCRAFT_FREQUENCIES);
+    const commonChannels = result.channels.slice(-COMMON_AIRCRAFT_FREQUENCIES.length);
+    commonChannels.forEach(ch => {
+      expect(ch.forbidTx).toBe(true);
+    });
+  });
+
+  it('common frequency channel names are 16 chars or fewer', () => {
+    COMMON_AIRCRAFT_FREQUENCIES.forEach(f => {
+      expect(f.name.length).toBeLessThanOrEqual(16);
+    });
   });
 });

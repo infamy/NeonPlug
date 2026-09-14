@@ -1,7 +1,21 @@
 import { useState, useCallback } from 'react';
 import type { RadioProtocol } from '../types/radio';
 import { createDefaultProtocol, createProtocolForModel } from '../radios';
+import { D890UVProtocol } from '../radios/d890uv/protocol';
+import { DM32UVProtocol } from '../radios/dm32uv/protocol';
+import { BaseDigitalProtocol } from '../radios/shared/BaseProtocols';
+import type { OptionalDigitalReads } from '../radios/optionalReads';
+import { CODEPLUG_READS } from '../radios/codeplugReads';
+import type { D890IntegrityFinding } from '../radios/d890uv/integrity';
+import { planChannelWrite } from '../radios/d890uv/writePlan';
+import { dryRunWrite } from '../radios/d890uv/writeDryRun';
+import type { CodeplugReadSinks } from '../radios/codeplugReads';
 import { getCapabilitiesForModel } from '../radios/capabilities';
+import { D890_MODEL_IDS } from '../radios/d890uv/constants';
+
+/** True for the DA-7X2 family, which plans its own band check. */
+const protocolIsD890 = (model: string | null) =>
+  model != null && (D890_MODEL_IDS as readonly string[]).includes(model);
 import type { Contact } from '../models/Contact';
 import { useRadioStore } from '../store/radioStore';
 import { useChannelsStore } from '../store/channelsStore';
@@ -22,6 +36,15 @@ import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
 import { isValidChannelFrequency } from '../services/validation/frequencyValidator';
 import { parseBootImageHeader } from '../utils/bootImage';
+import { formatPlural } from '../utils/formatPlural';
+import {
+  buildD890CodeplugTables,
+  d890RenumberedChannels,
+  buildD890WriteOriginals,
+  d890ZoneSlots,
+  d890Zones,
+} from '../services/d890WriteInput';
+import { diffPlanAgainstRead } from '../radios/d890uv/writeDiff';
 
 /** Augment error message when tab was hidden during a serial operation (better reporting). */
 function withVisibilityContext(message: string, tabWentHidden: boolean): string {
@@ -47,11 +70,80 @@ const WRITE_CHANNELS_STEPS: string[] = [
   'Writing channels',
 ];
 
+/**
+ * The model a read will actually be attempted as.
+ *
+ * NOT the same precedence as `useEffectiveRadioModel`, which prefers the model
+ * of the last successful read. Here the user's explicit pick wins, because that
+ * is what builds the protocol — and after reading a DM-32 and then picking a
+ * DA-7X2, the two disagree. Anything that TELLS the user which radio is being
+ * read must use this, or it will confidently name the wrong one in exactly the
+ * situation the label exists to resolve.
+ */
+export function modelForRead(): string | null {
+  const { selectedRadioModel, radioInfo } = useRadioStore.getState();
+  return selectedRadioModel ?? radioInfo?.model ?? null;
+}
+
+/**
+ * Everything a DA-7X2 channel write needs, gathered from the stores.
+ *
+ * Shared by the real write and by `previewChannelWrite` on purpose. A preview
+ * built from different inputs than the write is worse than no preview: it would
+ * show a user one plan and send another, and the whole point of showing it is
+ * that clearing a channel must never be a surprise.
+ *
+ * Returns null when nothing has been read, or when what was read came from a
+ * different radio — one radio's bytes must never patch another's.
+ */
+
+export interface D890WritePreview {
+  recordFrames: number;
+  maskFrames: number;
+  totalFrames: number;
+  bytesOnWire: number;
+  estimatedSeconds: number;
+  /** Channel numbers whose bytes actually change, verified against the read. */
+  changedChannels: number[];
+  /** Zone slots this write would mark absent. */
+  clearedZoneSlots?: number[];
+  /** True when this plans the whole codeplug rather than channels alone. */
+  wholeCodeplug?: boolean;
+  /** Bytes that differ from what was read. 0 means a write-back no-op. */
+  bytesChanged?: number;
+  /** Regions whose bytes actually differ, most-changed first. */
+  changedRegions?: { what: string; frames: number; bytes: number }[];
+  /**
+   * Bytes going where the radio has nothing — an ADD.
+   *
+   * Kept apart from `bytesChanged` because the two are different promises: one
+   * says "these bytes replace what is there", the other "these bytes are new".
+   * Reported separately because a diff cannot see an add at all — there is no
+   * original to compare with — and the dialog offered a 7-byte write while
+   * sending 263 on 2026-09-11.
+   */
+  bytesNew?: number;
+  /** Regions being created rather than changed. */
+  newRegions?: { what: string; frames: number; bytes: number }[];
+  /** Channels the radio HAS that this write would remove. Destructive. */
+  clearedChannels: number[];
+  /**
+   * What the plan will NOT write, already rendered.
+   *
+   * The two planners describe skips differently — the channel planner names a
+   * channel, the codeplug planner names a region and address — so they are
+   * flattened to text here rather than leaking a union into the dialog.
+   */
+  skipped: string[];
+  /** Set when the plan refuses outright; nothing can be sent. */
+  refusal?: string;
+}
+
 export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setConnectionError } = useRadioStore();
+  const { selectedRadioModel, preferredTransport, radioInfo, setConnected, setRadioInfo, setRawRadioSettingsData, setRawContactBlockData, setRawContactBlocks, setBlockMetadata, setBlockData, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setBootImageRaw, setBootImageDescription, setRadioBusy, setRadioProgress, setConnectionError, setTable, clearTables } = useRadioStore();
   const { setChannels, setRawChannelData } = useChannelsStore();
   const { setZones, setRawZoneData } = useZonesStore();
   const { setScanLists, setRawScanListData } = useScanListsStore();
@@ -64,12 +156,14 @@ export function useRadioConnection() {
   const { setRadioIds, setRawRadioIdData, setRadioIdsLoaded } = useDMRRadioIDsStore();
   const { setCalibration, setCalibrationLoaded } = useCalibrationStore();
   const { setGroups: setRXGroups, setRawGroupData, setGroupsLoaded } = useRXGroupsStore();
-  const { clearKeys: clearEncryptionKeys } = useEncryptionKeysStore();
+  const { clearKeys: clearEncryptionKeys, setKeys: setEncryptionKeys } = useEncryptionKeysStore();
 
   const readFromRadio = useCallback(async (
-    onProgress?: (progress: number, message: string, step?: string) => void
+    onProgress?: (progress: number, message: string, step?: string) => void,
+    { forcePortSelection = true }: { forcePortSelection?: boolean } = {}
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
     setError(null);
     setConnectionError(null);
 
@@ -102,7 +196,15 @@ export function useRadioConnection() {
     setAnalogEmergencies([]);
     setBlockMetadata(new Map());
     setBlockData(new Map());
+    setCachedMemoryImage(null);
     setRawRadioSettingsData(null);
+    // The optional tables were NOT cleared here before the keyed-store change,
+    // because each was a separately named slot and the ten of them were simply
+    // missed. Reading a DM-32 after a DA-7X2 therefore left the DA-7X2's AM/FM
+    // tables and tone lists in the store, and ChannelsTab shows its AM/FM pills
+    // whenever `tables.broadcast` is present — so the previous radio's channels
+    // stayed on screen.
+    clearTables();
 
     let protocol: RadioProtocol | null = null;
     let tabWentHiddenDuringOperation = false;
@@ -116,8 +218,7 @@ export function useRadioConnection() {
     // Read model from live store — selectedRadioModel may be null if the user never explicitly
     // used the picker (UI pre-selects it via useEffectiveRadioModel but doesn't write the store).
     // Fall back to the model from the last successful read.
-    const { selectedRadioModel: liveModel, radioInfo: liveRadioInfo } = useRadioStore.getState();
-    const effectiveModel: string | null = liveModel ?? liveRadioInfo?.model ?? null;
+    const effectiveModel: string | null = modelForRead();
 
     // All data-reading steps after connect() are extracted here so both the first attempt
     // and the retry go through exactly the same code path.
@@ -131,25 +232,96 @@ export function useRadioConnection() {
       // on first connect, which would cause bulk read to be skipped if we used it here.
       const caps = getCapabilitiesForModel(info.model ?? effectiveModel);
 
-      if (caps?.supportsBulkRead && typeof (proto as any).bulkReadRequiredBlocks === 'function') {
-        onProgress?.(15, 'Reading all memory blocks...', steps[3]);
-        await (proto as any).bulkReadRequiredBlocks();
+      // A miss here disables every capability flag at once — zones, scan lists,
+      // channel-read support, band limits — and does it silently, because each
+      // site reads `caps?.x`. That is exactly how a D890 read looked like a
+      // channel-parser failure when the real cause was getRadioInfo() returning
+      // the radio's wire ID ("ID890UV") instead of a descriptor model ID.
+      // getRadioInfo() must return a registered model ID, not the wire string.
+      if (!caps) {
+        console.warn(
+          `[Connection] No capabilities registered for model "${info.model ?? effectiveModel}" — ` +
+            'every capability flag will be treated as unset. getRadioInfo() should return a ' +
+            'model ID registered in RADIO_DESCRIPTORS, not the identity string the radio reports.'
+        );
       }
 
-      onProgress?.(20, 'Parsing channels...', steps[4]);
-      const channels = await proto.readChannels();
-      setChannels(channels);
-      // Enrich radioInfo with firmware from cached image (UV5R-Mini path)
-      if (typeof (proto as any).getFirmwareFromCache === 'function') {
-        const fw = (proto as any).getFirmwareFromCache();
-        if (fw) {
-          const current = useRadioStore.getState().radioInfo;
-          if (current) setRadioInfo({ ...current, firmware: fw });
-        }
+      // Narrow to DM32UVProtocol once; all DM32-specific calls go through this variable.
+      const dm32 = proto instanceof DM32UVProtocol ? proto : null;
+      // Any DMR radio, DM-32 included. `readRXGroups` and `readQuickContacts`
+      // are optional on the base, so they are called defensively below.
+      const digital = proto instanceof BaseDigitalProtocol
+        ? (proto as BaseDigitalProtocol & Partial<OptionalDigitalReads>)
+        : null;
+
+      if (caps?.supportsBulkRead && dm32) {
+        onProgress?.(15, 'Reading all memory blocks...', steps[3]);
+        await dm32.bulkReadRequiredBlocks();
       }
-      if ((proto as any).rawChannelData) setRawChannelData((proto as any).rawChannelData);
-      if ((proto as any).allBlockMetadata) setBlockMetadata(new Map<number, { metadata: number; type: string }>((proto as any).allBlockMetadata));
-      if ((proto as any).allBlockData) setBlockData(new Map<number, Uint8Array>((proto as any).allBlockData));
+
+      // Sections that fail to read are collected here and surfaced in the
+      // completion message — a silent failure would leave the UI showing an
+      // empty section while the radio still holds data.
+      const sectionReadWarnings: string[] = [];
+
+      // Every section below is independent: a section that fails must not cost
+      // the user the sections that already read. Warn, record the name for the
+      // completion message, and carry on.
+      const readSection = async (label: string, read: () => Promise<void>) => {
+        try {
+          await read();
+        } catch (err) {
+          console.warn(`Could not read ${label}:`, err);
+          sectionReadWarnings.push(label);
+        }
+      };
+
+      // Where CODEPLUG_READS puts what it reads. Passed in rather than
+      // imported, so the registry does not depend on this store.
+      const sinks: CodeplugReadSinks = {
+        setTable,
+        setEncryptionKeys,
+        setMessages,
+        setMessagesLoaded,
+        setRXGroups,
+        setQuickContacts,
+      };
+
+      onProgress?.(20, 'Parsing channels...', steps[4]);
+      // A driver still being brought up can declare channels unreadable instead
+      // of throwing. Without this the throw escapes the per-section handling
+      // below, aborting the whole read — so the user loses zones, scan lists and
+      // talkgroups that read perfectly well.
+      if (caps?.supportsChannelRead === false) {
+        console.warn('[Connection] Channel read not implemented for this radio yet');
+        setChannels([]);
+        sectionReadWarnings.push('Channels');
+      } else {
+        // Channels own 20-70% of the bar because they own most of the wall clock.
+        const withChannelProgress = proto as typeof proto & {
+          readChannels(cb?: (done: number, total: number) => void): Promise<Channel[]>;
+        };
+        const channels = await withChannelProgress.readChannels((done, total) => {
+          if (total > 0) {
+            onProgress?.(20 + (done / total) * 50, `Reading channel ${done} of ${total}...`, steps[4]);
+          }
+        });
+        setChannels(channels);
+
+      }
+
+      // Enrich radioInfo with firmware from cached image (UV5R-Mini and DM-32UV)
+      const fw = proto.getFirmwareFromCache?.();
+      if (fw) {
+        const current = useRadioStore.getState().radioInfo;
+        if (current) setRadioInfo({ ...current, firmware: fw });
+      }
+
+      if (dm32) {
+        setRawChannelData(dm32.rawChannelData);
+        setBlockMetadata(new Map(dm32.blockMetadata));
+        setBlockData(new Map(dm32.blockData));
+      }
 
       // Suppress per-item progress messages during config parsing; only surface the percentage.
       const savedProgress = proto.onProgress;
@@ -157,76 +329,279 @@ export function useRadioConnection() {
         onProgress?.(70 + (progress * 0.25), 'Parsing configuration...', steps[5]);
       };
 
-      onProgress?.(70, 'Parsing configuration from cache...', steps[5]);
+      // 70-90% is the configuration phase, and it used to be SILENT.
+      //
+      // The bar is driven either by explicit onProgress calls or by the
+      // `proto.onProgress` bridge above — and the DA-7X2's driver never calls
+      // the latter (the DM-32's calls it 133 times). So on that radio the bar
+      // sat at exactly 70% through zones, scan lists, radio IDs and thirteen
+      // table reads: on a link that moves ~10 KB/s, ten seconds of looking
+      // frozen.
+      //
+      // Every step is planned up front so the denominator is the work that will
+      // actually run, not the work this radio might have had. Planning is just
+      // a method-presence check and is side-effect free.
+      // `run` may report progress WITHIN its own slice of the bar. Only the
+      // long steps bother: the preserve pass is over half the bytes of a whole
+      // read, so without this the bar sits on one number through the slowest
+      // stage and looks hung.
+      const configSteps: {
+        label: string;
+        run: (report?: (fraction: number) => void) => Promise<void>;
+      }[] = [];
 
-      const zones = await proto.readZones();
-      setZones(zones);
-      if ((proto as any).rawZoneData) setRawZoneData((proto as any).rawZoneData);
+      if (caps?.supportsZones) {
+        configSteps.push({
+          label: 'Zones',
+          run: async () => {
+            setZones(await proto.readZones());
+            if (dm32) setRawZoneData(dm32.rawZoneData);
+          },
+        });
+      }
 
-      const scanLists = await proto.readScanLists();
-      setScanLists(scanLists);
-      if ((proto as any).rawScanListData) setRawScanListData((proto as any).rawScanListData);
-      if ((proto as any).blockData) setBlockData((proto as any).blockData);
+      if (caps?.supportsScanLists) {
+        configSteps.push({
+          label: 'Scan lists',
+          run: async () => {
+            // The DA-7X2 keeps its FULL decoded records as well as the narrowed
+            // ones: the shared model has no home for scan mode, priority
+            // select, the raw priority channels or the four timers, and the
+            // encoder needs every one of them. One read serves both.
+            if (proto instanceof D890UVProtocol) {
+              setTable('scanListsDetailed', await proto.readScanListsDetailed());
+            }
+            setScanLists(await proto.readScanLists());
+            if (dm32) setRawScanListData(dm32.rawScanListData);
+          },
+        });
+      }
 
-      try {
-        const messages = await (proto as any).readQuickMessages();
-        setMessages(messages);
-        const rawMsgMap = new Map<number, { data: Uint8Array; messageIndex: number; offset: number }>();
-        for (const [i, raw] of (proto as any).rawMessageData.entries()) rawMsgMap.set(i, raw);
-        setRawMessageData(rawMsgMap);
-      } catch { console.warn('Could not read Quick Messages'); }
 
-      try {
-        const radioIds = await proto.readDMRRadioIDs();
-        setRadioIds(radioIds);
-        const rawIdMap = new Map<number, { data: Uint8Array; idIndex: number; offset: number }>();
-        for (const [i, raw] of (proto as any).rawDMRRadioIDData.entries()) rawIdMap.set(i, raw);
-        setRawRadioIdData(rawIdMap);
-      } catch { console.warn('Could not read DMR Radio IDs'); }
+      // Generic DMR content — radio IDs, receive groups and talkgroups — is
+      // common to every digital radio, so it is gated on the DIGITAL base class
+      // and not on the DM-32. It used to sit inside the `if (dm32)` block below,
+      // which meant the DA-7X2 read its channels, zones and scan lists and then
+      // silently skipped everything the Digital tab renders: the tab came up
+      // empty on a radio whose driver could read all three.
+      //
+      // The raw block captures stay DM-32-only. Those are its clone-image
+      // debugging aids and have no meaning for an address-addressed radio.
+      if (digital && !dm32) {
+        configSteps.push({
+          label: 'DMR Radio IDs',
+          run: async () => setRadioIds(await digital.readDMRRadioIDs()),
+        });
 
-      try {
-        setCalibration(await (proto as any).readCalibration());
-      } catch { console.warn('Could not read calibration data'); }
+        // Everything else this radio may hold is declared in CODEPLUG_READS,
+        // in the order the radio is asked. This hook does not name a table.
+        //
+        // Pictures are deliberately NOT among them: three 40 KB regions is the
+        // largest thing this radio can be asked for, and they are cosmetic and
+        // rarely looked at. The Settings area reads them on demand instead.
+        for (const spec of CODEPLUG_READS) {
+          const run = spec.plan(digital);
+          if (run) configSteps.push({ label: spec.label, run: () => run(sinks) });
+        }
+      }
 
-      try {
-        const rxGroups = await (proto as any).readRXGroups();
-        setRXGroups(rxGroups);
-        const rawGroupMap = new Map<number, { data: Uint8Array; groupIndex: number; offset: number }>();
-        for (const [i, raw] of (proto as any).rawRXGroupData.entries()) rawGroupMap.set(i, raw);
-        setRawGroupData(rawGroupMap);
-      } catch { console.warn('Could not read RX Groups'); }
+      // Preserve everything the vendor writes that nothing above reads.
+      //
+      // Not for display — a write has to be a whole codeplug, and a region that
+      // was never read cannot be written back, because the planner refuses to
+      // invent bytes. This is what makes a NeonPlug write leave the codeplug
+      // whole rather than only the tables it models.
+      if (digital && !dm32) {
+        const preserver = digital as typeof digital & {
+          readPreserveRegions?: (
+            cb?: (done: number, total: number) => void
+          ) => Promise<{ spans: number; bytes: number }>;
+        };
+        if (preserver.readPreserveRegions) {
+          configSteps.push({
+            label: 'Unmodelled regions',
+            run: async (report) => {
+              const { spans, bytes } = await preserver.readPreserveRegions!(
+                (done, total) => report?.(total > 0 ? done / total : 0)
+              );
+              console.info(
+                `[D890] preserved ${spans} unmodelled region(s), ${bytes.toLocaleString()} bytes, ` +
+                  `so a write can put them back unchanged.`
+              );
+            },
+          });
+        }
+      }
 
-      try {
-        setQuickContacts(await (proto as any).readQuickContacts());
-      } catch { console.warn('Could not read Talk Groups'); }
+      // Run them, moving the bar and naming what is being read.
+      //
+      // Zones and scan lists are now inside `readSection` where they used to
+      // throw. That is deliberate and matches what the channel read already
+      // does: a section that cannot be read is reported in the completion
+      // message rather than aborting the whole read and costing the user the
+      // sections that read perfectly well.
+      for (const [i, step] of configSteps.entries()) {
+        onProgress?.(
+          70 + (i / configSteps.length) * 20,
+          `Reading ${step.label}...`,
+          steps[5]
+        );
+        // Each step owns one slice of 70-90%; a step that reports progress
+        // moves the bar inside its own slice rather than jumping at the end.
+        const base = 70 + (i / configSteps.length) * 20;
+        const slice = 20 / configSteps.length;
+        await readSection(step.label, () =>
+          step.run((fraction) =>
+            onProgress?.(base + fraction * slice, `Reading ${step.label}...`, steps[5])
+          )
+        );
+      }
+
+      // Stage what a write needs — AFTER every read, not after the channels.
+      //
+      // This ran immediately after `readChannels` until 2026-09-02, which meant
+      // the read log it captured held ONLY the channel spans: zones, the
+      // CODEPLUG_READS tables and the ~83 KB preservation pass all run after
+      // it. A whole-codeplug write then skipped every one of them
+      // 'not-read', and the dry run showed it plainly — 10 spans staged, 11
+      // regions skipped, 15,872 bytes planned against the vendor's 134,224.
+      // Nothing was lost on the radio, but the write was a channel write
+      // wearing a codeplug write's name.
+      // Keep the raw records and the presence mask for a later write.
+      //
+      // This hook builds a FRESH protocol instance per operation, so anything
+      // left on this one is gone by the time a write runs — and every encoder
+      // here patches the bytes the radio gave us rather than building a
+      // record, because a 16-byte frame carries fields this driver does not
+      // model. Without this a write plan refuses outright.
+      //
+      // Model-tagged: one radio's bytes must never patch another's, the same
+      // rule the clone radios' cached memory image follows.
+      const staging = proto as typeof proto & {
+        rawChannelRecords?: ReadonlyMap<number, Uint8Array>;
+        rawChannelMask?: Uint8Array | null;
+        integrityFindings?: readonly D890IntegrityFinding[];
+        rawReadLog?: ReadonlyMap<number, Uint8Array>;
+        rawZoneIndices?: readonly number[];
+      };
+      if (staging.rawChannelRecords && staging.rawChannelMask) {
+        // A/B edits belong to the codeplug they were made against. This read
+        // installs a new baseline, so anything staged against the old one is
+        // stale — keeping it would write a pointer the user set for a zone list
+        // that no longer exists.
+        setTable('zoneCurrentEdits', null);
+        setTable('writeOriginals', {
+          channelRecords: new Map(staging.rawChannelRecords),
+          channelMask: Uint8Array.from(staging.rawChannelMask),
+          model: info.model,
+          integrity: staging.integrityFindings ?? [],
+          // Copied, not referenced: the connection this log belongs to is
+          // closed and discarded at the end of the read, and a write runs on a
+          // fresh instance whose own log is empty.
+          readLog: staging.rawReadLog
+            ? new Map([...staging.rawReadLog].map(([at, b]) => [at, Uint8Array.from(b)]))
+            : undefined,
+          zoneSlots: staging.rawZoneIndices ? [...staging.rawZoneIndices] : undefined,
+          // Identity-keyed, because position stops being a key the moment the user
+          // adds or deletes a zone. Built HERE because this is the only point where
+          // the zones array and `rawZoneIndices` are still known to correspond —
+          // the read produced them together, in the same order.
+          ...(() => {
+            const zonesRead = useZonesStore.getState().zones;
+            const slots = staging.rawZoneIndices ?? [];
+            if (zonesRead.length === 0 || zonesRead.length !== slots.length) return {};
+            const current = useRadioStore.getState().tables.zoneCurrentChannels;
+            const zoneSlotById: Record<string, number> = {};
+            const zoneCurrentById: Record<string, { a: number; b: number }> = {};
+            zonesRead.forEach((z, idx) => {
+              zoneSlotById[z.id] = slots[idx]!;
+              zoneCurrentById[z.id] = { a: current?.a?.[idx] ?? 0, b: current?.b?.[idx] ?? 0 };
+            });
+            return { zoneSlotById, zoneCurrentById };
+          })(),
+          // Only to detect a later DELETE — see `talkgroupCountAtRead`.
+          talkgroupCountAtRead: useQuickContactsStore.getState().contacts.length,
+          // Which key slots exist right now, so a later delete can clear them.
+          encryptionKeysAtRead: useEncryptionKeysStore
+            .getState()
+            .keys.map((k) => ({ encryptionType: k.encryptionType, id: k.id })),
+          radioIdSlotsAtRead: useDMRRadioIDsStore.getState().radioIds.map((r) => r.index),
+        });
+      }
+
+      if (dm32) {
+        await readSection('Quick Messages', async () => {
+          setMessages(await dm32.readQuickMessages());
+          setRawMessageData(new Map(dm32.rawMessageData));
+        });
+
+        await readSection('DMR Radio IDs', async () => {
+          setRadioIds(await dm32.readDMRRadioIDs());
+          setRawRadioIdData(new Map(dm32.rawDMRRadioIDData));
+        });
+
+        await readSection('Calibration', async () => setCalibration(await dm32.readCalibration()));
+
+        await readSection('RX Groups', async () => {
+          setRXGroups(await dm32.readRXGroups());
+          setRawGroupData(new Map(dm32.rawRXGroupData));
+        });
+
+        await readSection('Talk Groups', async () => setQuickContacts(await dm32.readQuickContacts()));
+      }
 
       try {
         onProgress?.(90, 'Reading configuration...', 'Reading configuration');
 
-        try {
+        await readSection('Radio Settings', async () => {
           const radioSettings = await proto.readRadioSettings();
           if (radioSettings) setRadioSettings(radioSettings);
-          if ((proto as any).rawRadioSettingsData) setRawRadioSettingsData((proto as any).rawRadioSettingsData);
-        } catch { console.warn('Could not read Radio Settings'); }
+          if (dm32?.rawRadioSettingsData) setRawRadioSettingsData(dm32.rawRadioSettingsData);
+        });
 
-        try {
-          const digitalEmergency = await (proto as any).readDigitalEmergencies();
-          if (digitalEmergency) {
-            setDigitalEmergencies(digitalEmergency.systems);
-            setDigitalEmergencyConfig(digitalEmergency.config);
-          }
-        } catch { console.warn('Could not read Digital Emergency Systems'); }
+        if (dm32) {
+          await readSection('Digital Emergency Systems', async () => {
+            const digitalEmergency = await dm32.readDigitalEmergencies();
+            if (digitalEmergency) {
+              setDigitalEmergencies(digitalEmergency.systems);
+              setDigitalEmergencyConfig(digitalEmergency.config);
+            }
+          });
 
-        try {
-          const analogEmergencies = await (proto as any).readAnalogEmergencies();
-          if (analogEmergencies) setAnalogEmergencies(analogEmergencies);
-        } catch { console.warn('Could not read Analog Emergency Systems'); }
-
-        if ((proto as any).blockData) setBlockData((proto as any).blockData);
-      } catch { console.warn('Error reading configuration blocks'); }
+          await readSection('Analog Emergency Systems', async () => {
+            const analogEmergencies = await dm32.readAnalogEmergencies();
+            if (analogEmergencies) setAnalogEmergencies(analogEmergencies);
+          });
+        }
+      } catch (err) { console.warn('Error reading configuration blocks:', err); sectionReadWarnings.push('configuration blocks'); }
 
       proto.onProgress = savedProgress;
-      onProgress?.(100, 'Read complete!', steps[5]);
+
+      // Persist the clone-radio memory image (FT-65 family) so a later write —
+      // which runs on a fresh protocol instance — can preserve non-channel
+      // regions (settings, DTMF, P-keys) instead of writing zeros.
+      const memoryImage = proto.getMemoryImage?.();
+      if (memoryImage) {
+        setCachedMemoryImage({ model: info.model, image: memoryImage });
+      }
+
+      // Close the connection — everything past this point parses from cache.
+      // DM-32 already disconnected itself after its bulk read (disconnect is
+      // idempotent); for clone radios this releases the port's stream locks so
+      // the next operation can reopen the port instead of hitting
+      // InvalidStateError ("port already open").
+      try { await proto.disconnect(); } catch { /* already closed */ }
+
+      if (sectionReadWarnings.length > 0) {
+        onProgress?.(
+          100,
+          `Read complete — warning: could not read ${sectionReadWarnings.join(', ')}. ` +
+            'These sections show as empty; re-read before editing them.',
+          steps[5]
+        );
+      } else {
+        onProgress?.(100, 'Read complete!', steps[5]);
+      }
     };
 
     try {
@@ -239,13 +614,21 @@ export function useRadioConnection() {
       const transport = caps?.supportsBle
         ? (preferredTransport ?? caps?.preferredTransport ?? 'serial')
         : undefined;
-      onProgress?.(5, transport === 'ble' ? 'Select BLE device...' : 'Select serial port...', steps[0]);
-      await protocol.connect({ forcePortSelection: true, ...(transport != null && { transport }) });
+      onProgress?.(5,
+        forcePortSelection
+          ? (transport === 'ble' ? 'Select BLE device...' : 'Select serial port...')
+          : 'Reconnecting to radio...',
+        steps[0]);
+      await protocol.connect({ forcePortSelection, ...(transport != null && { transport }) });
 
       await performRead(protocol);
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : 'Read failed';
-      const errorMessage = withVisibilityContext(rawMessage, tabWentHiddenDuringOperation);
+      // A hidden tab no longer explains a failed read on a radio whose reads were
+      // measured at full speed there (readsSurviveBackgroundTab).
+      const hiddenTabMatters =
+        tabWentHiddenDuringOperation && !getCapabilitiesForModel(effectiveModel)?.readsSurviveBackgroundTab;
+      const errorMessage = withVisibilityContext(rawMessage, hiddenTabMatters);
       const isPortSelectionCancelled = rawMessage.includes('cancelled') || rawMessage.includes('Port selection cancelled');
 
       if (!isPortSelectionCancelled && protocol) {
@@ -261,11 +644,12 @@ export function useRadioConnection() {
           return;
         } catch (retryErr) {
           const retryRawMessage = retryErr instanceof Error ? retryErr.message : 'Read failed';
-          const retryErrorMessage = withVisibilityContext(retryRawMessage, tabWentHiddenDuringOperation);
+          const retryErrorMessage = withVisibilityContext(retryRawMessage, hiddenTabMatters);
           setError(retryErrorMessage);
           setConnectionError(retryErrorMessage);
           onProgress?.(0, `Error: ${retryErrorMessage}`, 'Error');
           setIsConnecting(false);
+      setRadioBusy(false);
           try { await protocol?.disconnect(); } catch { /* ignore */ }
           throw retryErr;
         }
@@ -276,19 +660,38 @@ export function useRadioConnection() {
       onProgress?.(0, `Error: ${errorMessage}`, 'Error');
       console.error('Radio read error:', err);
       setIsConnecting(false);
+      setRadioBusy(false);
       try { await protocol?.disconnect(); } catch { /* ignore */ }
       throw err;
     } finally {
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      if (!error) setIsConnecting(false);
+      setIsConnecting(false);
+      setRadioBusy(false);
     }
-  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setConnectionError]);
+  }, [selectedRadioModel, preferredTransport, setConnected, setRadioInfo, setRawRadioSettingsData, setChannels, setZones, setScanLists, setContacts, setContactsLoaded, setRawChannelData, setRawZoneData, setRawScanListData, setBlockMetadata, setBlockData, setCachedMemoryImage, setRadioSettings, setDigitalEmergencies, setDigitalEmergencyConfig, setAnalogEmergencies, setMessages, setRawMessageData, setMessagesLoaded, setQuickContacts, setQuickContactsLoaded, setRadioIds, setRawRadioIdData, setRadioIdsLoaded, setCalibration, setCalibrationLoaded, setRXGroups, setRawGroupData, setGroupsLoaded, setEncryptionKeys, setTable, clearTables, setConnectionError]);
+
+  /**
+   * Mirror a long operation's progress into the store so it survives the
+   * starting component unmounting, and can be shown in the header.
+   *
+   * Only for jobs measured in minutes. Wrapping a two-second read would put a
+   * bar in the header that flickers and says nothing.
+   */
+  const publish = useCallback((
+    label: string,
+    onProgress?: (progress: number, message: string) => void
+  ) => (percent: number, message: string) => {
+    setRadioProgress({ label, percent, message });
+    onProgress?.(percent, message);
+  }, [setRadioProgress]);
 
   const readContacts = useCallback(async (
     onProgress?: (progress: number, message: string) => void
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
     setError(null);
+    const report = publish('Reading contacts', onProgress);
     
     let protocol: RadioProtocol | null = null;
 
@@ -298,40 +701,57 @@ export function useRadioConnection() {
       
       // Set up progress callback
       protocol.onProgress = (progress, message) => {
-        onProgress?.(progress, message);
+        report(progress, message);
       };
       
       // Connect to radio (reuse existing connection if available)
-      onProgress?.(0, 'Connecting to radio...');
+      report(0, 'Connecting to radio...');
       await protocol.connect();
       
       // Get radio info if not already available
       if (!radioInfo) {
-        onProgress?.(5, 'Reading radio information...');
+        report(5, 'Reading radio information...');
         const info = await protocol.getRadioInfo();
         setRadioInfo(info);
         setConnected(true);
       }
       
-      // Read contacts (this is slow - reads many 4KB blocks)
-      onProgress?.(10, 'Reading contacts from radio (this may take a while)...');
-      const contacts = await protocol.readContacts();
+      // Report 0, not a made-up milestone. This used to claim 10% before a
+      // single contact byte had moved, so the bar jumped to 10 and then fell
+      // back to 1 as soon as real per-bank progress arrived.
+      report(0, 'Reading contacts from radio (this may take a while)...');
+
+      // The D890 family keeps TWO different things called "contacts": talkgroups
+      // (what readContacts returns, already loaded with the codeplug) and the
+      // DMR contact database. This button means the database.
+      const d890 = protocol instanceof D890UVProtocol ? protocol : null;
+      const contacts = d890
+        ? (await d890.readDigitalContacts(report)).map((c, i) => ({
+            id: i + 1,
+            name: c.name,
+            dmrId: c.dmrId,
+            callSign: c.callSign,
+            city: c.city,
+            province: c.province,
+            country: c.country,
+            isFriend: c.isFriend,
+          }))
+        : await protocol.readContacts();
       setContacts(contacts);
       
-      // Store first contact block for debugging
-      if ((protocol as any).rawContactBlockData) {
-        setRawContactBlockData((protocol as any).rawContactBlockData, (protocol as any).rawContactBlockAddress || null);
+      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+      if (dm32?.rawContactBlockData) {
+        setRawContactBlockData(dm32.rawContactBlockData, dm32.rawContactBlockAddress);
       }
-      // Store all contact blocks for diagnostics
-      if ((protocol as any).rawContactBlocks) {
-        setRawContactBlocks((protocol as any).rawContactBlocks);
+      if (dm32?.rawContactBlocks) {
+        setRawContactBlocks(dm32.rawContactBlocks);
       }
       
-      onProgress?.(100, `Successfully read ${contacts.length} contacts`);
+      report(100, `Successfully read ${contacts.length} contacts`);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMsg);
-      onProgress?.(0, `Error: ${errorMsg}`);
+      report(0, `Error: ${errorMsg}`);
       throw err;
     } finally {
       if (protocol) {
@@ -342,38 +762,152 @@ export function useRadioConnection() {
         }
       }
       setIsConnecting(false);
+      setRadioBusy(false);
     }
   }, [setContacts, setRadioInfo, setConnected, radioInfo]);
+
+  /**
+   * Read the DA-7X2's three pictures on demand.
+   *
+   * Deliberately separate from the codeplug read: 3 x 40 KB dwarfs everything
+   * else this radio holds, and the pictures are cosmetic. Anyone who wants to
+   * look at them can wait; nobody should wait for them by default.
+   */
+  /**
+   * A read that is NOT part of a codeplug read: the user asked for this one
+   * thing, so connect, fetch it, disconnect.
+   *
+   * Kept separate from the codeplug because of what it costs. The link is
+   * byte-limited at ~10 KB/s, so a table nobody is looking at is dead weight on
+   * every read — the three picture regions are 40 KB each, and the satellite
+   * table is 12.8 KB. The vendor CPS draws the same line: satellites are behind
+   * its Tools menu, not part of reading a codeplug.
+   */
+  const runOnDemandRead = useCallback(async (
+    label: string,
+    onProgress: ((progress: number, message: string) => void) | undefined,
+    run: (
+      proto: RadioProtocol & Partial<OptionalDigitalReads>,
+      report: (percent: number, message: string) => void
+    ) => Promise<void>
+  ) => {
+    setIsConnecting(true);
+    setRadioBusy(true);
+    const report = publish(label, onProgress);
+    setError(null);
+    let protocol: RadioProtocol | null = null;
+    try {
+      protocol = createProtocolForModel(selectedRadioModel ?? radioInfo?.model ?? '');
+      if (!protocol) throw new Error('No driver for this radio.');
+      report(0, 'Connecting to radio...');
+      await protocol.connect();
+      await run(protocol as RadioProtocol & Partial<OptionalDigitalReads>, report);
+      report(100, `${label} complete.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setError(msg);
+      report(0, `Error: ${msg}`);
+      throw err;
+    } finally {
+      // Disconnect on success as well as failure: leaving the port open and
+      // locked makes the NEXT port.open() throw.
+      if (protocol) {
+        try { await protocol.disconnect(); } catch (e) { console.warn(`Error disconnecting after ${label}:`, e); }
+      }
+      setIsConnecting(false);
+      setRadioBusy(false);
+    }
+  }, [selectedRadioModel, radioInfo, publish]);
+
+  const readPictures = useCallback((
+    onProgress?: (progress: number, message: string) => void
+  ) => runOnDemandRead('Reading images', onProgress, async (proto, report) => {
+    if (!proto.readImages) throw new Error('This radio has no boot or standby pictures.');
+    report(2, 'Reading pictures...');
+    // Connecting is a couple of percent; the transfer is the rest.
+    setTable('pictures', await proto.readImages((percent, label) => {
+      report(2 + percent * 0.98, label);
+    }));
+  }), [runOnDemandRead, setTable]);
+
+  /**
+   * Send ONE picture to the radio.
+   *
+   * Its own operation rather than part of the codeplug write: 2,560 frames is
+   * about 28 s on this link, four times any codeplug write, and a picture that
+   * fails part way must not leave a codeplug half-sent.
+   *
+   * Reuses `runOnDemandRead` because the lifecycle is identical — connect, run,
+   * report, and disconnect on success as well as failure so the next
+   * `port.open()` does not throw. Only the verb differs.
+   */
+  const writePicture = useCallback((
+    kind: 'boot' | 'bk1' | 'bk2',
+    image: Uint8Array,
+    onProgress?: (progress: number, message: string) => void
+  ) => runOnDemandRead('Writing image', onProgress, async (proto, report) => {
+    const writer = proto as typeof proto & {
+      writeImage?: (
+        k: 'boot' | 'bk1' | 'bk2',
+        img: Uint8Array,
+        cb?: (percent: number, message: string) => void
+      ) => Promise<void>;
+    };
+    if (!writer.writeImage) throw new Error('This radio cannot write pictures.');
+    report(2, 'Sending picture...');
+    await writer.writeImage(kind, image, (percent, label) => {
+      report(2 + percent * 0.98, label);
+    });
+  }), [runOnDemandRead]);
+
+  /**
+   * The satellite table, on demand.
+   *
+   * It used to be read with the codeplug, costing 12,800 bytes — about 1.3 s of
+   * a ~10 s read — on every single read, for a table most users never open. The
+   * vendor CPS does not read it with a codeplug either; it is behind Tools.
+   */
+  const readSatellites = useCallback((
+    onProgress?: (progress: number, message: string) => void
+  ) => runOnDemandRead('Reading satellites', onProgress, async (proto, report) => {
+    if (!proto.readSatellites) throw new Error('This radio has no satellite table.');
+    report(2, 'Reading satellite table...');
+    setTable('satellites', await proto.readSatellites());
+  }), [runOnDemandRead, setTable]);
 
   const readBootImage = useCallback(async (
     onProgress?: (progress: number, message: string) => void
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
+    const report = publish('Reading boot image', onProgress);
     setError(null);
     let protocol: RadioProtocol | null = null;
     try {
       protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       protocol.onProgress = (progress, message) => {
-        onProgress?.(progress, message);
+        report(progress, message);
       };
-      onProgress?.(0, 'Connecting to radio...');
+      report(0, 'Connecting to radio...');
       await protocol.connect();
       if (!radioInfo) {
-        onProgress?.(5, 'Reading radio information...');
+        report(5, 'Reading radio information...');
         const info = await protocol.getRadioInfo();
         setRadioInfo(info);
         setConnected(true);
       }
-      onProgress?.(10, 'Reading boot image from radio...');
-      const raw = await (protocol as any).readBootImage();
+      report(10, 'Reading boot image from radio...');
+      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+      if (!dm32) throw new Error('Boot image is only supported on DM-32UV');
+      const raw = await dm32.readBootImage();
       setBootImageRaw(raw);
       const parsed = parseBootImageHeader(raw);
       setBootImageDescription(parsed.description || null);
-      onProgress?.(100, 'Boot image read complete');
+      report(100, 'Boot image read complete');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMsg);
-      onProgress?.(0, `Error: ${errorMsg}`);
+      report(0, `Error: ${errorMsg}`);
       throw err;
     } finally {
       if (protocol) {
@@ -384,6 +918,7 @@ export function useRadioConnection() {
         }
       }
       setIsConnecting(false);
+      setRadioBusy(false);
     }
   }, [setBootImageRaw, setBootImageDescription, setRadioInfo, setConnected, radioInfo]);
 
@@ -392,31 +927,35 @@ export function useRadioConnection() {
     onProgress?: (progress: number, message: string) => void
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
+    const report = publish('Writing boot image', onProgress);
     setError(null);
     let protocol: RadioProtocol | null = null;
     try {
       protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       protocol.onProgress = (progress, message) => {
-        onProgress?.(progress, message);
+        report(progress, message);
       };
-      onProgress?.(0, 'Connecting to radio...');
+      report(0, 'Connecting to radio...');
       await protocol.connect();
       if (!radioInfo) {
-        onProgress?.(5, 'Reading radio information...');
+        report(5, 'Reading radio information...');
         const info = await protocol.getRadioInfo();
         setRadioInfo(info);
         setConnected(true);
       }
-      onProgress?.(10, 'Writing boot image to radio...');
-      await (protocol as any).writeBootImage(data);
+      report(10, 'Writing boot image to radio...');
+      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+      if (!dm32) throw new Error('Boot image is only supported on DM-32UV');
+      await dm32.writeBootImage(data);
       setBootImageRaw(data);
       const parsed = parseBootImageHeader(data);
       setBootImageDescription(parsed.description || null);
-      onProgress?.(100, 'Boot image write complete');
+      report(100, 'Boot image write complete');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMsg);
-      onProgress?.(0, `Error: ${errorMsg}`);
+      report(0, `Error: ${errorMsg}`);
       throw err;
     } finally {
       if (protocol) {
@@ -427,14 +966,22 @@ export function useRadioConnection() {
         }
       }
       setIsConnecting(false);
+      setRadioBusy(false);
     }
   }, [setBootImageRaw, setBootImageDescription, setRadioInfo, setConnected, radioInfo]);
 
   const writeContacts = useCallback(async (
     contacts: Contact[],
-    onProgress?: (progress: number, message: string) => void
+    onProgress?: (progress: number, message: string) => void,
+    /**
+     * Polled between frames. The DMR contact database is minutes of writing, so
+     * it needs a way out — but stopping leaves it INCOMPLETE, and the protocol
+     * throws saying so rather than pretending a partial write succeeded.
+     */
+    shouldCancel?: () => boolean
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
     setError(null);
     
     let protocol: RadioProtocol | null = null;
@@ -460,9 +1007,11 @@ export function useRadioConnection() {
         setConnected(true);
       }
       
-      // Write contacts (this is slow - writes many 4KB blocks)
-      onProgress?.(10, `Writing ${contacts.length} contacts to radio (this may take a while)...`);
-      await protocol.writeContacts(contacts);
+      // Report 0, not a made-up milestone — the same lesson the contact READ
+      // learned: claiming 10% before a byte moves makes the bar jump forward
+      // and then fall back as real progress arrives.
+      onProgress?.(0, `Writing ${contacts.length} contacts to radio (this may take a while)...`);
+      await protocol.writeContacts(contacts, onProgress, shouldCancel);
       
       // Update store with written contacts
       setContacts(contacts);
@@ -482,8 +1031,125 @@ export function useRadioConnection() {
         }
       }
       setIsConnecting(false);
+      setRadioBusy(false);
     }
   }, [setContacts, setRadioInfo, setConnected, radioInfo]);
+
+  /**
+   * What a channel write WOULD send, without opening a port.
+   *
+   * Built from the same inputs as the write itself, so what the user is shown
+   * is what is sent. Returns null for radios that do not plan their writes this
+   * way, and a `refusal` when the plan will not build at all — a refusal is a
+   * result to show, not an error to swallow.
+   */
+  const previewChannelWrite = useCallback((
+    channelsToWrite: Channel[]
+  ): D890WritePreview | null => {
+    const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
+    const staged = buildD890WriteOriginals(effectiveModel);
+    if (!staged) return null;
+
+    try {
+      // Plan the SAME write the button sends.
+      //
+      // This called `planChannelWrite` until 2026-09-02, while the write itself
+      // had moved to `writeCodeplug` — so the confirmation dialog understated
+      // what would be sent by 8.7x (992 frames against 8,635) and named only
+      // channels for a write that touches zones, tones, roaming and 6,943
+      // frames of preserved regions. A confirmation gate that describes a
+      // different operation from the one it authorises is worse than none.
+      const proto = new D890UVProtocol();
+      proto.setWriteOriginals(staged);
+
+      // Stage settings the way the write does, from the same two store reads it
+      // uses (see the settings block in `writeToRadio`). Without this the panel
+      // planned a codeplug with no settings in it and offered a smaller write
+      // than the one the button would send — 41 bytes against 43 on
+      // 2026-09-11 — and the guard that compares them aborted the write.
+      const settingsStore = useRadioSettingsStore.getState();
+      const pendingSettings = settingsStore.settings;
+      const changedSettingFields = settingsStore.getChangedFields();
+      if (pendingSettings && changedSettingFields.length > 0) {
+        proto.stageSettings(pendingSettings, changedSettingFields);
+      }
+      const wholeCodeplug = !!staged.readLog && staged.readLog.size > 0;
+
+      const zones = d890Zones();
+      const zoneSlots = d890ZoneSlots(zones);
+      const plan = wholeCodeplug
+        ? proto.planCodeplug(
+            d890RenumberedChannels(channelsToWrite), zones, zoneSlots,
+            buildD890CodeplugTables(zones, zoneSlots)
+          )
+        : planChannelWrite({
+            channels: channelsToWrite,
+            originals: staged.channelRecords,
+            originalMask: staged.channelMask,
+            counts: staged.counts,
+            referencingTables: staged.referencingTables,
+            txBandLimits: staged.txBandLimits,
+          });
+
+      const summary = dryRunWrite(plan.frames);
+      const recordFrames = plan.frames.filter((f) => /^channel \d+$/.test(f.what));
+
+      // What ACTUALLY changes, by comparing against the bytes we read.
+      //
+      // `changedChannels` used to be every channel with a frame in the plan —
+      // but this radio writes what it read, so that is all of them, and the
+      // dialog reported "120 channels changing" for a write that changed
+      // nothing. Diffing against the read log is the same source of truth the
+      // dry-run panel uses, so the two can no longer disagree.
+      const diff = staged.readLog
+        ? diffPlanAgainstRead(plan.frames, staged.readLog)
+        : null;
+      const changedChannels = diff
+        ? [...new Set(
+            diff.diffs
+              .filter((d) => /^channel \d+$/.test(d.what))
+              .map((d) => Number(d.what.split(' ')[1]))
+          )].sort((a, b) => a - b)
+        : [...new Set(recordFrames.map((f) => Number(f.what.split(' ')[1])))];
+
+      return {
+        recordFrames: recordFrames.length,
+        maskFrames: plan.frames.length - recordFrames.length,
+        totalFrames: plan.frames.length,
+        bytesOnWire: summary.wireBytes,
+        estimatedSeconds: summary.estimatedSeconds,
+        changedChannels,
+        clearedChannels: plan.clearedChannelNumbers,
+        clearedZoneSlots: 'clearedZoneSlots' in plan ? plan.clearedZoneSlots : [],
+        skipped: plan.skipped.map((sk) =>
+          'channelNumber' in sk
+            ? `Ch ${sk.channelNumber} — ${sk.reason}`
+            : `${sk.region} @ 0x${sk.address.toString(16)} — ${sk.reason}`
+        ),
+        wholeCodeplug,
+        bytesChanged: diff?.bytesChanged,
+        changedRegions: diff
+          ? diff.regions
+              .filter((r) => r.differing > 0)
+              .map((r) => ({ what: r.what, frames: r.differing, bytes: r.bytesChanged }))
+          : undefined,
+        bytesNew: diff?.bytesUnread,
+        newRegions: diff
+          ? diff.regions
+              .filter((r) => r.unread > 0)
+              .sort((a, b) => b.bytesUnread - a.bytesUnread)
+              .map((r) => ({ what: r.what, frames: r.unread, bytes: r.bytesUnread }))
+          : undefined,
+      };
+    } catch (err) {
+      return {
+        recordFrames: 0, maskFrames: 0, totalFrames: 0, bytesOnWire: 0,
+        estimatedSeconds: 0, changedChannels: [], clearedChannels: [],
+        clearedZoneSlots: [], skipped: [],
+        refusal: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }, [radioInfo, selectedRadioModel]);
 
   const writeChannelsToRadio = useCallback(async (
     channels: Channel[],
@@ -492,6 +1158,7 @@ export function useRadioConnection() {
     onProgress?: (progress: number, message: string, step?: string) => void
   ) => {
     setIsConnecting(true);
+    setRadioBusy(true);
     setError(null);
     setConnectionError(null);
     
@@ -506,10 +1173,27 @@ export function useRadioConnection() {
     try {
       // Filter channels to only include those with valid frequencies (use effective model for capabilities)
       const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
-      const bandLimits = getCapabilitiesForModel(effectiveModel)?.bandLimits;
-      const validChannels = channels.filter(ch => isValidChannelFrequency(ch, bandLimits));
+      const writeCaps = getCapabilitiesForModel(effectiveModel);
+      const bandLimits = writeCaps?.bandLimits;
+      //
+      // ⚠️ NOT applied to the DA-7X2.
+      //
+      // On that radio the presence mask is computed from the channels this
+      // write plans, so a channel filtered out here is a channel DELETED from
+      // the radio — silently, behind a console.warn. And the filter fires on
+      // exactly the channels a real DA-7X2 carries: one was read from hardware
+      // with an airband entry at 118 MHz and an FM broadcast entry at 98.5 MHz
+      // sitting in the main list. Filtering them would have wiped both.
+      //
+      // `planChannelWrite` does this check properly instead: it refuses loudly,
+      // and only for a channel whose TX frequency was CHANGED to something out
+      // of band. One already on the radio is left alone.
+      const isD890 = protocolIsD890(radioInfo?.model ?? selectedRadioModel ?? null);
+      const validChannels = isD890
+        ? channels
+        : channels.filter(ch => isValidChannelFrequency(ch, bandLimits, { blankTxAnyBand: writeCaps?.blankTxAnyBand }));
       const filteredCount = channels.length - validChannels.length;
-      
+
       if (filteredCount > 0) {
         console.warn(`Filtered out ${filteredCount} channel(s) with frequencies outside supported ranges`);
       }
@@ -537,20 +1221,38 @@ export function useRadioConnection() {
       
       // Use protocol for connected radio (write path)
       protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
-      
+      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+
       // Restore cache from store if available (DM-32 bulk read path)
-      const storeState = useRadioStore.getState();
-      const storeBlockData = storeState.blockData;
-      const storeBlockMetadata = storeState.blockMetadata;
-      if (typeof (protocol as any).restoreCacheFromStore === 'function') {
+      if (dm32) {
+        const storeState = useRadioStore.getState();
+        const storeBlockData = storeState.blockData;
+        const storeBlockMetadata = storeState.blockMetadata;
         if (storeBlockData && storeBlockData.size > 0 && storeBlockMetadata && storeBlockMetadata.size > 0) {
-          const dataCopy = new Map<number, Uint8Array>(storeBlockData);
-          const metadataCopy = new Map<number, { metadata: number; type: string }>(storeBlockMetadata);
-          (protocol as any).restoreCacheFromStore(dataCopy, metadataCopy);
+          dm32.restoreCacheFromStore(new Map(storeBlockData), new Map(storeBlockMetadata));
         } else {
           console.warn('[Connection] Store cache is empty - will need to read all blocks from radio');
         }
+      } else if (protocol.setMemoryImage) {
+        // Clone radios (FT-65 family): restore the memory image from the last read
+        // so the full-image write preserves non-channel regions. Only restore an
+        // image that came from the same model — never write one radio's image to another.
+        const { cachedMemoryImage } = useRadioStore.getState();
+        if (cachedMemoryImage && cachedMemoryImage.model === effectiveModel) {
+          protocol.setMemoryImage(cachedMemoryImage.image);
+        }
       }
+
+      // DA-7X2: restore the raw records and presence mask the read staged.
+      //
+      // Same rule as the two branches above, different shape. This radio is not
+      // a clone image and has no block cache — its writes patch individual
+      // records, so what has to survive the read is the records themselves. A
+      // fresh protocol instance has none of them, and `writeChannels` refuses
+      // rather than building records from zeros.
+      const d890Write = protocol instanceof D890UVProtocol ? protocol : null;
+      const stagedD890 = d890Write ? buildD890WriteOriginals(effectiveModel) : null;
+      if (d890Write && stagedD890) d890Write.setWriteOriginals(stagedD890);
       
       // Set up progress callback that forwards to our callback
       protocol.onProgress = (progress, message) => {
@@ -571,102 +1273,145 @@ export function useRadioConnection() {
       setRadioInfo(connectedRadioInfo);
       setConnected(true);
       
-      // Step 4: Write channels (and zones/scan lists for DM-32; UV5R-Mini uses writeChannels only)
-      if (typeof (protocol as any).writeAllData === 'function') {
-        onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
-        await (protocol as any).writeAllData(validChannels, filteredZones, filteredScanLists);
-      } else if (typeof protocol.writeChannels === 'function') {
-        onProgress?.(20, 'Writing channels to radio...', steps[4]);
-        await protocol.writeChannels(validChannels);
-      } else {
-        throw new Error('Protocol does not support writing channels');
-      }
-
-      // Step 5: Write Talk Groups if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeQuickContacts === 'function') {
-        const quickContactsStore = useQuickContactsStore.getState();
-        const quickContacts = quickContactsStore.contacts;
-        if (quickContacts && quickContacts.length > 0) {
-          onProgress?.(90, `Writing ${quickContacts.length} talk group(s) to radio...`, steps[4]);
-          await (protocol as any).writeQuickContacts(quickContacts);
-        }
-      }
-
-      // Step 5.5: Write Quick Messages if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeQuickMessages === 'function') {
-        const quickMessagesStore = useQuickMessagesStore.getState();
-        const quickMessages = quickMessagesStore.messages;
-        if (quickMessages && quickMessages.length > 0) {
-          onProgress?.(92, `Writing ${quickMessages.length} quick message(s) to radio...`, steps[4]);
-          await (protocol as any).writeQuickMessages(quickMessages);
-        }
-      }
-
-      // Step 5.6: Write RX Groups if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeRXGroups === 'function') {
-        const rxGroupsStore = useRXGroupsStore.getState();
-        const rxGroups = rxGroupsStore.groups;
-        if (rxGroups && rxGroups.length > 0 && rxGroupsStore.groupsLoaded) {
-          onProgress?.(93, `Writing ${rxGroups.length} RX group(s) to radio...`, steps[4]);
-          await (protocol as any).writeRXGroups(rxGroups);
-        }
-      }
-
-      // Step 5.7: Write DMR Radio IDs if they have been loaded (DM-32 only)
-      const dmrRadioIDsStore = useDMRRadioIDsStore.getState();
-      const dmrRadioIds = dmrRadioIDsStore.radioIds;
-      if (dmrRadioIds && dmrRadioIds.length > 0) {
-        onProgress?.(94, `Writing ${dmrRadioIds.length} DMR Radio ID(s) to radio...`, steps[4]);
-        await protocol.writeDMRRadioIDs(dmrRadioIds);
-      }
-
-      // Step 5.8: Write Encryption Keys if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeEncryptionKeys === 'function') {
-        const encryptionKeysStore = useEncryptionKeysStore.getState();
-        const encryptionKeys = encryptionKeysStore.keys;
-        if (encryptionKeys && encryptionKeys.length > 0 && encryptionKeysStore.keysLoaded) {
-          onProgress?.(94, `Writing ${encryptionKeys.length} encryption key(s) to radio...`, steps[4]);
-          await (protocol as any).writeEncryptionKeys(encryptionKeys);
-        }
-      }
-
-      // Step 5.9: Write Digital Emergency Systems if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeDigitalEmergencies === 'function') {
-        const digitalEmergencyStore = useDigitalEmergencyStore.getState();
-        const digitalEmergencySystems = digitalEmergencyStore.systems;
-        const digitalEmergencyConfig = digitalEmergencyStore.config;
-        if (digitalEmergencySystems.length > 0 && digitalEmergencyConfig) {
-          onProgress?.(94, `Writing ${digitalEmergencySystems.length} digital emergency system(s) to radio...`, steps[4]);
-          await (protocol as any).writeDigitalEmergencies(digitalEmergencySystems, digitalEmergencyConfig);
-        }
-      }
-
-      // Step 5.10: Write Analog Emergency Systems if they have been loaded (DM-32 only)
-      if (typeof (protocol as any).writeAnalogEmergencies === 'function') {
-        const analogEmergencyStore = useAnalogEmergencyStore.getState();
-        const analogEmergencySystems = analogEmergencyStore.systems;
-        if (analogEmergencySystems.length > 0) {
-          onProgress?.(94, `Writing ${analogEmergencySystems.length} analog emergency system(s) to radio...`, steps[4]);
-          await (protocol as any).writeAnalogEmergencies(analogEmergencySystems);
-        }
-      }
-
-      // Step 6: Write radio settings only if they have been modified (UV5R-Mini and DM-32)
+      // Settings state is needed before the channel write: buffered-settings
+      // protocols (Yaesu clone) flush settings into the memory image that
+      // writeChannels uploads, so they must be staged first or they are never sent.
       const radioSettingsStore = useRadioSettingsStore.getState();
       const radioSettings = radioSettingsStore.settings;
       const changedFields = radioSettingsStore.getChangedFields();
-      const hasSettingsToWrite = radioSettings && changedFields.length > 0;
+      const hasSettingsToWrite = radioSettings != null && changedFields.length > 0;
 
-      if (hasSettingsToWrite) {
+      // Refuse BEFORE the channel write, not after it. Protocols that cannot
+      // write settings used to inherit a no-op base, so this ran to completion
+      // and then called clearChanges() — the edits vanished and the UI reported
+      // success. Failing here leaves the pending changes intact, so nothing is
+      // lost and the user can decide what to do with them.
+      if (hasSettingsToWrite && protocol.settingsWriteUnsupported) {
+        throw new Error(
+          `This radio cannot write settings yet, so nothing was written. Revert the ` +
+          `${formatPlural(changedFields.length, 'changed setting')} ` +
+          `(${changedFields.join(', ')}) to write channels.`
+        );
+      }
+
+      // Step 4: Write channels (and zones/scan lists for DM-32; analog radios use writeChannels only)
+      if (dm32) {
+        // A talk group list the radio can't hold is refused here, before the
+        // channels that reference it are written, not after.
+        const talkGroupsToWrite = useQuickContactsStore.getState().contacts;
+        if (talkGroupsToWrite.length > 0) {
+          await dm32.assertTalkGroupWriteFits(talkGroupsToWrite.length);
+        }
+        onProgress?.(20, 'Writing channels, zones, and scan lists to radio...', steps[4]);
+        await dm32.writeAllData(validChannels, filteredZones, filteredScanLists);
+      } else {
+        if (hasSettingsToWrite && protocol.bufferedSettingsWrite) {
+          onProgress?.(15, `Staging ${changedFields.length} changed setting(s)...`, steps[4]);
+          await protocol.writeRadioSettings(radioSettings, { changedFields });
+        }
+        if (d890Write) {
+          // The WHOLE codeplug, not the changes. Regions this driver can encode
+          // are patched from the read's own bytes; everything else it read is
+          // written back verbatim. A change-only write would leave the rest to
+          // whatever the last writer put there.
+          //
+          // Tables absent here are not lost — they fall to the verbatim pass,
+          // so the radio keeps exactly what it had. What is passed explicitly is
+          // what the UI can actually edit.
+          // Resolved from the zones being written, not from the staged array —
+          // an add or a delete makes position and slot disagree.
+          const zoneSlots = d890ZoneSlots(filteredZones);
+          onProgress?.(20, 'Writing codeplug to radio...', steps[4]);
+          await d890Write.writeCodeplug(
+            d890RenumberedChannels(validChannels),
+            filteredZones,
+            zoneSlots,
+            buildD890CodeplugTables(filteredZones, zoneSlots),
+            (percent, message) => onProgress?.(20 + percent * 0.7, message, steps[4])
+          );
+        } else {
+          onProgress?.(20, 'Writing channels to radio...', steps[4]);
+          await protocol.writeChannels(validChannels);
+        }
+        if (hasSettingsToWrite && protocol.bufferedSettingsWrite) {
+          // The channel write uploaded the image containing the staged settings.
+          radioSettingsStore.clearChanges();
+        }
+      }
+
+      if (dm32) {
+        // Step 5: Talk Groups
+        const quickContacts = useQuickContactsStore.getState().contacts;
+        if (quickContacts && quickContacts.length > 0) {
+          onProgress?.(90, `Writing ${quickContacts.length} talk group(s) to radio...`, steps[4]);
+          await dm32.writeQuickContacts(quickContacts);
+        }
+
+        // Step 5.5: Quick Messages
+        const quickMessages = useQuickMessagesStore.getState().messages;
+        if (quickMessages && quickMessages.length > 0) {
+          onProgress?.(92, `Writing ${quickMessages.length} quick message(s) to radio...`, steps[4]);
+          await dm32.writeQuickMessages(quickMessages);
+        }
+
+        // Step 5.6: RX Groups
+        const rxGroupsStore = useRXGroupsStore.getState();
+        if (rxGroupsStore.groups.length > 0 && rxGroupsStore.groupsLoaded) {
+          onProgress?.(93, `Writing ${rxGroupsStore.groups.length} RX group(s) to radio...`, steps[4]);
+          await dm32.writeRXGroups(rxGroupsStore.groups);
+        }
+
+        // Step 5.7: DMR Radio IDs
+        const dmrRadioIDsStore = useDMRRadioIDsStore.getState();
+        if (dmrRadioIDsStore.radioIds.length > 0) {
+          onProgress?.(94, `Writing ${dmrRadioIDsStore.radioIds.length} DMR Radio ID(s) to radio...`, steps[4]);
+          await dm32.writeDMRRadioIDs(dmrRadioIDsStore.radioIds);
+        }
+
+        // Step 5.8: Encryption Keys
+        const encryptionKeysStore = useEncryptionKeysStore.getState();
+        if (encryptionKeysStore.keys.length > 0 && encryptionKeysStore.keysLoaded) {
+          onProgress?.(94, `Writing ${encryptionKeysStore.keys.length} encryption key(s) to radio...`, steps[4]);
+          await dm32.writeEncryptionKeys(encryptionKeysStore.keys);
+        }
+
+        // Step 5.9: Digital Emergency Systems
+        const digitalEmergencyStore = useDigitalEmergencyStore.getState();
+        if (digitalEmergencyStore.systems.length > 0 && digitalEmergencyStore.config) {
+          onProgress?.(94, `Writing ${digitalEmergencyStore.systems.length} digital emergency system(s) to radio...`, steps[4]);
+          await dm32.writeDigitalEmergencies(digitalEmergencyStore.systems, digitalEmergencyStore.config);
+        }
+
+        // Step 5.10: Analog Emergency Systems
+        const analogEmergencyStore = useAnalogEmergencyStore.getState();
+        if (analogEmergencyStore.systems.length > 0) {
+          onProgress?.(94, `Writing ${analogEmergencyStore.systems.length} analog emergency system(s) to radio...`, steps[4]);
+          await dm32.writeAnalogEmergencies(analogEmergencyStore.systems);
+        }
+      }
+
+      // Step 6: Write radio settings if modified — direct-write protocols only
+      // (DM-32, UV5R-Mini); buffered-settings protocols were handled with the
+      // channel write above.
+      if (hasSettingsToWrite && !protocol.bufferedSettingsWrite) {
         onProgress?.(95, `Writing ${changedFields.length} changed setting(s) to radio...`, steps[4]);
         await protocol.writeRadioSettings(radioSettings, { changedFields });
         // Clear changes after successful write
         radioSettingsStore.clearChanges();
       }
-      
+
       // Store write block data and zone comparison data for debug export (DM-32 only)
-      if ((protocol as any).writeBlockData != null) setWriteBlockData((protocol as any).writeBlockData);
-      if ((protocol as any).zoneComparisonData != null) setZoneComparisonData((protocol as any).zoneComparisonData);
+      if (dm32) {
+        setWriteBlockData(dm32.writeBlockData);
+        setZoneComparisonData(dm32.zoneComparisonData);
+      } else {
+        // Persist the just-written image as the new baseline for this session
+        // (the write may have flushed settings changes into it).
+        const writtenImage = protocol.getMemoryImage?.();
+        if (writtenImage) {
+          setCachedMemoryImage({ model: connectedRadioInfo.model, image: writtenImage });
+        }
+      }
       
       // Step 6: Disconnect
       await protocol.disconnect();
@@ -704,6 +1449,7 @@ export function useRadioConnection() {
 
       // Set connecting to false so modal can show error state
       setIsConnecting(false);
+      setRadioBusy(false);
 
       // Try to disconnect on error (if connection exists)
       if (protocol) {
@@ -719,13 +1465,10 @@ export function useRadioConnection() {
       throw err;
     } finally {
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      // Only set connecting to false if we didn't already (success case)
-      // On error, we set it in the catch block so modal stays open to show error
-      if (!error) {
-        setIsConnecting(false);
-      }
+      setIsConnecting(false);
+      setRadioBusy(false);
     }
-  }, [radioInfo, setConnected, setRadioInfo, setWriteBlockData, setZoneComparisonData, setConnectionError]);
+  }, [radioInfo, selectedRadioModel, setConnected, setRadioInfo, setCachedMemoryImage, setWriteBlockData, setZoneComparisonData, setConnectionError]);
 
   return {
     isConnecting,
@@ -733,11 +1476,23 @@ export function useRadioConnection() {
     readFromRadio,
     readContacts,
     readBootImage,
+    readPictures,
+    writePicture,
+    readSatellites,
     writeBootImage,
     writeContacts,
     writeChannelsToRadio,
+    previewChannelWrite,
     readSteps: READ_STEPS,
     writeChannelsSteps: WRITE_CHANNELS_STEPS,
+    /** Model the next/current read is attempted as — for display, see modelForRead. */
+    readModel: selectedRadioModel ?? radioInfo?.model ?? null,
+    /**
+     * Model a write is performed as. Deliberately NOT the same as readModel:
+     * the write path builds its protocol from `radioInfo.model` alone, so a
+     * write only ever targets a radio that was actually read.
+     */
+    writeModel: radioInfo?.model ?? null,
   };
 }
 

@@ -98,6 +98,17 @@ describe('isValidChannelFrequency', () => {
     // TX sentinel but forbidTx not set — not a valid no-TX channel
     expect(isValidChannelFrequency(ch(120.0, NO_TX_FREQUENCY, false))).toBe(false);
   });
+
+  it('rejects a blank TX outside 87-136 MHz on a radio that cannot hold one', () => {
+    expect(isValidChannelFrequency(ch(152.48, NO_TX_FREQUENCY, true))).toBe(false);
+  });
+
+  it('keeps a blank TX in any band, Forbid TX or not, on a radio that holds one', () => {
+    const anyBand = { blankTxAnyBand: true };
+    expect(isValidChannelFrequency(ch(152.48, NO_TX_FREQUENCY, false), null, anyBand)).toBe(true);
+    expect(isValidChannelFrequency(ch(446.0, NO_TX_FREQUENCY, true), null, anyBand)).toBe(true);
+    expect(isValidChannelFrequency(ch(300.0, NO_TX_FREQUENCY, true), null, anyBand)).toBe(false); // RX must still be in band
+  });
 });
 
 describe('isValidFrequency', () => {

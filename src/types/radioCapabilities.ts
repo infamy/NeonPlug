@@ -1,3 +1,4 @@
+import type { PowerLevel } from '../models/Channel';
 /**
  * Per-radio capabilities for diagnostics, digital tab, and limits.
  * Resolved by getCapabilitiesForModel(model); UI uses these instead of importing from a specific radio.
@@ -6,6 +7,18 @@ import type { RadioSettings } from '../models/RadioSettings';
 import type { DigitalEmergency, DigitalEmergencyConfig } from '../models/DigitalEmergency';
 import type { EncryptionKey } from '../models/EncryptionKey';
 
+/**
+ * A scan-list detail field the settings panel can offer. See
+ * `RadioCapabilities.scanListFields`.
+ */
+export type ScanListField =
+  | 'ctcScanMode'
+  | 'scanTxMode'
+  | 'hangTime'
+  | 'designatedTxChannel'
+  | 'priority1'
+  | 'priority2';
+
 /** Result shape for CTCSS/DCS decode (radio-agnostic). */
 export interface CTCSSDCSResultLike {
   type: 'CTCSS' | 'DCS' | 'None';
@@ -13,16 +26,115 @@ export interface CTCSSDCSResultLike {
   polarity?: 'N' | 'P';
 }
 
+/**
+ * One annotated field/region inside a raw memory block. Display-only —
+ * drives Diagnostics hex overlays, tooltips, offset lookup, and legends.
+ */
+export interface BlockFieldSpec {
+  /** Byte offset of the (first) occurrence within the block. */
+  at: number;
+  /** Length in bytes per occurrence. Default 1. */
+  len?: number;
+  name: string;
+  /** Bit range [hi, lo] within a single-byte field. */
+  bits?: [number, number];
+  /** Repeating record array: occurrences at `at + i * stride` for i < count. */
+  repeat?: { count: number; stride: number };
+  /** Optional human-readable decode of one occurrence's bytes. */
+  decode?: (bytes: Uint8Array, index: number) => string;
+  /** Free-form note shown in the layout legend. */
+  notes?: string;
+}
+
+/** Declarative annotation of one memory block. Earlier fields win on overlap. */
+export interface BlockLayoutSpec {
+  label: string;
+  fields: BlockFieldSpec[];
+}
+
+/**
+ * One named span of a clone radio's memory image, for the Diagnostics image
+ * viewer. Deliberately top-level on RadioCapabilities rather than under
+ * `diagnostics`, which requires three DM-32-shaped parsers the simpler radios
+ * have no use for.
+ */
+export interface MemoryRegionSpec {
+  label: string;
+  /** Byte offset into the memory image. */
+  start: number;
+  /** Length in bytes. */
+  length: number;
+  /** Optional note shown beside the region. */
+  notes?: string;
+}
+
+/**
+ * Optional channel column groups.
+ *
+ * The channel grid has three tiers. A common core every radio gets, a DMR block
+ * shown when `analogOnly` is false, and these — features one radio family has
+ * and others simply do not.
+ *
+ * A radio shows a group only if it declares it. The default is to hide, because
+ * rendering an unchecked box for a field the driver never decodes tells the user
+ * the radio has that feature switched off, which is a stronger and more wrong
+ * claim than saying nothing.
+ */
+export type ChannelColumnGroup =
+  | 'loneWorker'
+  | 'freeToAir'
+  | 'emergency'
+  | 'aprs'
+  | 'vox'
+  | 'audioProcessing'
+  | 'squelch'
+  | 'pttId'
+  | 'stepFrequency'
+  | 'signalType'
+  // These three sit inside the DMR block but are not universal to DMR - they
+  // are DM-32 features. A radio that speaks DMR does not necessarily have them.
+  | 'encryption'
+  | 'tdma'
+  | 'confirmations'
+  // Groups below are rendered from EXTRA_CHANNEL_COLUMNS rather than written
+  // out longhand in the table, so a header can no longer drift from its cell.
+  // They are deliberately fine-grained: a group is the unit a radio opts into,
+  // so bundling unrelated fields would force a radio to take columns it has no
+  // equivalent for.
+  | 'customCtcss'
+  | 'toneSignalling'
+  | 'reverse'
+  | 'busyLock'
+  | 'frequencyCorrection'
+  | 'txColorCode'
+  | 'slotSuit'
+  | 'dmrAdvanced'
+  | 'scanRoaming'
+  | 'ranging'
+  | 'callConfirmation'
+  | 'messaging'
+  | 'aprsAdvanced'
+  | 'emergencyCodes';
+
 export interface RadioCapabilitiesDiagnostics {
   parseRadioSettings: (data: Uint8Array) => RadioSettings;
   decodeBCDFrequency: (data: Uint8Array) => number;
   decodeCTCSSDCS: (data: Uint8Array) => CTCSSDCSResultLike;
+  /** Per-block hex annotations, keyed by metadata id (e.g. 0x04, 0x41). */
+  blockLayouts?: Record<number, BlockLayoutSpec>;
 }
 
 export interface RadioCapabilitiesDigitalLimits {
   TALK_GROUPS_MAX: number;
   DMR_RADIO_IDS_MAX: number;
   QUICK_MESSAGES_MAX?: number;
+  /**
+   * Longest message the radio accepts, in characters.
+   *
+   * Optional because the editor hardcoded the DM-32's 128 before any second
+   * radio had quick messages; radios that omit it keep that behaviour.
+   */
+  QUICK_MESSAGE_CHARS_MAX?: number;
   RX_GROUPS_MAX?: number;
   SCAN_LISTS_MAX?: number;
 }
@@ -36,8 +148,9 @@ export interface RadioCapabilitiesDigital {
 export interface RadioBandLimits {
   vhfMin: number;
   vhfMax: number;
-  uhfMin: number;
-  uhfMax: number;
+  /** Absent on VHF-only radios (e.g. FT-25R, FT-4VR): the radio has no UHF band. */
+  uhfMin?: number;
+  uhfMax?: number;
 }
 
 /** Fallback band limits when no radio/model is known (VHF 87–174, UHF 400–470 MHz). */
@@ -59,11 +172,42 @@ export interface RadioCapabilities {
   digital?: RadioCapabilitiesDigital;
   /** Band limits for frequency validation (e.g. VHF 87-174, UHF 400-470 MHz). */
   bandLimits?: RadioBandLimits;
+  /**
+   * The radio holds a blank TX frequency on a channel in any band, Forbid TX or
+   * not, the way its vendor CPS writes one (the DM-32: 0xFF). NeonPlug keeps that
+   * TX as NO_TX_FREQUENCY. Without this, only an 87–136 MHz channel with Forbid
+   * TX may have a blank TX, and a write leaves any other out.
+   */
+  blankTxAnyBand?: boolean;
   /** Returns true if firmware is 049 or newer (or radio-specific threshold). */
   isFirmware049OrNewer?: (firmware: string) => boolean;
+  /**
+   * Firmware string this radio is known-good on. When set, the status bar warns
+   * if the connected radio reports anything else (unless isFirmware049OrNewer
+   * says it is newer). When ABSENT, no firmware warning is ever shown.
+   *
+   * Was hardcoded to the DM-32's 'DM32.01.L01.048' in the shared StatusBar, so
+   * every other radio warned permanently — the D890UV reports 'V100' and got a
+   * warning for not being a DM-32.
+   */
+  expectedFirmware?: string;
   /** Validations to run before writing codeplug to this radio. Only run when model is known. */
   writeValidations?: WriteValidations;
   /** Max channel count (e.g. 999 for UV5R-Mini, 4000 for DM32). */
+  /**
+   * Transmit power levels this radio offers, weakest first.
+   *
+   * Defaults to Low/Medium/High. The DA-7X2 adds Turbo, and a UI that assumes
+   * three levels does not merely mislabel it — cycling through a hardcoded list
+   * cannot find "Turbo", so it wraps to the first entry and silently downgrades
+   * the channel to Low. Capability-driven per golden rule #3.
+   */
+  powerLevels?: readonly PowerLevel[];
+  /**
+   * Extra channel columns this radio supports, beyond the common core and the
+   * DMR block. Omitted means none — see ChannelColumnGroup.
+   */
+  channelColumns?: readonly ChannelColumnGroup[];
   maxChannels?: number;
   /** If false, radio has no zones (e.g. UV5R-Mini). */
   supportsZones?: boolean;
@@ -77,16 +221,176 @@ export interface RadioCapabilities {
   supportsBle?: boolean;
   /** When radio supports both serial and BLE, default transport to offer (store can override). */
   preferredTransport?: 'serial' | 'ble';
+  /**
+   * A read runs at full speed with the NeonPlug tab hidden, so the read popup
+   * does not ask the user to keep the tab in front, and a failed read is not
+   * blamed on a hidden tab.
+   *
+   * Chrome throttles timers in a background tab to about one a second, so a read
+   * path that sleeps on a timer crawls or times out there. BaseSerialConnection
+   * stopped sleeping between partial chunks (839d3ee), and a DA-7X2 read then
+   * measured 3.58 s hidden against 3.51 s in front (4cdf9d4). Set it only where
+   * that is measured on hardware: the DM-32 still sleeps 150 ms between blocks,
+   * the UV5R-Mini sleeps between BLE chunks, and no radio's WRITE has been
+   * measured hidden, so writes keep the note everywhere.
+   */
+  readsSurviveBackgroundTab?: boolean;
   /** If true, hook calls bulkReadRequiredBlocks() before parsing channels (e.g. DM-32UV). */
   supportsBulkRead?: boolean;
+  /**
+   * If true, the radio can read arbitrary memory spans by address, and the
+   * Diagnostics tab offers a raw region dump for capturing test fixtures.
+   *
+   * True only for sparse address-addressed radios (D890UV family). The clone
+   * protocols expose whole blocks instead, which the existing block panels
+   * already cover.
+   */
+  supportsRawRegionDump?: boolean;
+  /**
+   * Set false while a driver is being brought up and cannot decode channels yet.
+   *
+   * `readFromRadio` then skips the channel step and records a warning instead of
+   * letting the throw abort the whole read — everything else the radio exposes
+   * (zones, scan lists, talkgroups, RX groups) still lands. Absent means true.
+   *
+   * This is a temporary state, not a radio trait: remove it once the driver's
+   * `readChannels()` works.
+   */
+  supportsChannelRead?: boolean;
+  /**
+   * Named spans of this radio's contiguous memory image. When set, Diagnostics
+   * shows the cached image from the last Read as an annotated hex dump — the
+   * clone-radio counterpart to `supportsRawRegionDump`.
+   *
+   * Only meaningful for radios whose protocol implements `getMemoryImage()`,
+   * since that is what populates `radioStore.cachedMemoryImage`.
+   */
+  memoryRegions?: MemoryRegionSpec[];
   /** If true, channel list includes VFO A/B as channels 4001/4002 (e.g. DM-32UV). Analog-only radios typically do not. */
   supportsVfoChannels?: boolean;
+  /**
+   * AM airband lives in its OWN table, not in the main channel list.
+   *
+   * On the AnyTone D890 family the airband memories are a separate region with
+   * their own numbering, and the main channel record has no way to express an
+   * AM receive-only channel. Writing a 108-137 MHz entry into the main list
+   * would therefore corrupt the codeplug, so any generator that produces
+   * airband frequencies must route them here instead.
+   *
+   * Radios without this flag keep airband in the ordinary channel list, which
+   * is correct for them — the DM-32 and the analog radios all do.
+   */
+  separateAirbandTable?: boolean;
+  /**
+   * How many airband zones the radio has, when `separateAirbandTable` is set.
+   *
+   * The airband table has its own zone system, separate from the main zones and
+   * with its own (much smaller) slot count. Any generator that creates airband
+   * zones must stop at this many; the channel wizard used to read the DA-7X2's
+   * own `D890_AM_ZONES.SLOTS` constant directly, which meant a shared import
+   * source reached into one radio's driver for a limit.
+   *
+   * Absent means the radio has no airband zones, so none should be created.
+   */
+  maxAirbandZones?: number;
   /** Max zone count when supportsZones is true (e.g. 250 for DM32). */
   maxZones?: number;
+  /**
+   * Max channels per zone. 64 on the DM-32, 160 on the D890UV family. Absent
+   * falls back to 64 — the value the store and UI hardcoded before this existed,
+   * which silently truncated a D890 zone at 64 of its 160 channels.
+   */
+  maxZoneChannels?: number;
+  /** Max talkgroups per RX group. 32 on the DM-32, 64 on the D890UV family. */
+  maxRxGroupMembers?: number;
+  /**
+   * Max channels per scan list. 15 on the DM-32 (its list is a 30-byte array),
+   * 50 on the D890UV family. Absent falls back to the DM-32's 15, which is what
+   * the UI and store hardcoded before this existed.
+   */
+  maxScanListChannels?: number;
   /** Max scan list count when supportsScanLists is true (e.g. 32 for DM32). */
   maxScanLists?: number;
+  /** Max DMR radio IDs. 250 on the DM-32, 64 on the D890UV family. */
+  maxRadioIds?: number;
+  /** Max talkgroups. 800 on the DM-32, 10,000 on the D890UV family. */
+  maxTalkGroups?: number;
+  /**
+   * Max CSV contacts — the DMR user database. 500,000 on the D890UV family.
+   * 50,000 on the DM-32, which is what every DM-32 holds: L01 firmware holds
+   * 150,000 and only a read can tell, so a capacity the read reports in
+   * `RadioInfo.maxContacts` wins (utils/contactCapacity.ts). Absent when
+   * supportsContacts is false.
+   */
+  maxContacts?: number;
+  /**
+   * Which scan-list detail fields this radio actually STORES AND WRITES BACK.
+   *
+   * The scan-list settings panel was shaped around the DM-32's record, so it
+   * offered all of these to every radio. On the D890UV every one of them was
+   * editable and silently discarded on write — and `hangTime` was the worst of
+   * them, because it displayed a real value read off the radio, accepted an
+   * edit, and reverted.
+   *
+   * Undefined means "all of them", which is the DM-32's behaviour and keeps
+   * every existing radio unchanged. A radio that lists a subset gets editors
+   * only for what it can honour.
+   */
+  scanListFields?: readonly ScanListField[];
+  /**
+   * Longest scan list name the radio stores. 11 on the DM-32, an 11-byte field
+   * null-terminated only when shorter; 16 on the D890UV family. Absent falls
+   * back to 16, what the editor allowed before this existed.
+   */
+  maxScanListNameLength?: number;
+  /**
+   * The units `ScanList.hangTime` is in, straight from the radio's record. The
+   * DM-32 stores 0.5 s steps in one byte (6 = 3.0 s); the D890UV family stores its
+   * dwell time in tenths of a second. `max` and `default` are in the same units.
+   * Absent falls back to tenths of a second, up to 25.5 s.
+   */
+  scanListHangTime?: { stepMs: number; max: number; default: number };
+  /**
+   * Priority channels must be members of the list. True on the DM-32, whose
+   * radio discards a priority channel that is not a member (hardware 2026-08-07),
+   * so the editor picks priorities from the member rows. Otherwise any channel
+   * can be chosen.
+   */
+  scanListPriorityMembersOnly?: boolean;
+  /**
+   * Channels reference a scan list by its hardware slot (a channel stores
+   * slot + 1), not by its position in the list. True on the D890UV family, whose
+   * table keeps holes where lists were deleted. The editor assigns
+   * `ScanList.slot` on every radio, so without this a slot is not a reference:
+   * the DM-32 writes its lists in order and never reads it.
+   */
+  scanListsBySlot?: boolean;
+  /**
+   * RX group members are talk group slots (0-based positions in the talk group
+   * list), not DMR IDs. The DA-7X2 stores slots; the DM-32 stores DMR IDs. The
+   * CSV carries DMR IDs for both and converts on import.
+   */
+  rxGroupMembersBySlot?: boolean;
+  /**
+   * The write moves channel TX contacts and slot-based RX group members to follow
+   * their talk groups, by `QuickContact.readSlot` (d890uv/talkgroupRenumber.ts).
+   * A talk group CSV import then only keeps each match's `readSlot`; on a radio
+   * without this, the import moves the references itself.
+   */
+  renumbersTalkGroupRefsOnWrite?: boolean;
   /** If true, protocol supports readBootImage / writeBootImage. */
   supportsBootImage?: boolean;
   /** If true, protocol supports readQuickMessages. */
   supportsQuickMessages?: boolean;
+  /** If true, radio has Analog Emergency Systems (DM-32UV only). */
+  supportsAnalogEmergency?: boolean;
+  /**
+   * Digital emergency systems, as the DM-32 models them (metadata block 0x10).
+   *
+   * The DA-7X2 has emergency/alarm features but NOT this: its alarm data lives
+   * in two 0x30 regions at 0x3482e00 and 0x3483000 with an entirely different
+   * shape, and it has no block 0x10 at all. Showing the DM-32's section for it
+   * offers an editor backed by nothing.
+   */
+  supportsDigitalEmergency?: boolean;
 }

@@ -16,6 +16,35 @@ function removeDistance(airport: AirportData & { distance?: number }): AirportDa
 }
 
 /**
+ * Common / itinerant aircraft VHF frequencies (nationwide, not airport-specific).
+ * Source: RadioReference "Aircraft" wiki – Common Civilian Frequencies.
+ * These are receive-only airband channels useful alongside airport channels.
+ */
+export interface CommonAircraftFrequency {
+  freq: number;
+  name: string;
+}
+
+export const COMMON_AIRCRAFT_FREQUENCIES: CommonAircraftFrequency[] = [
+  { freq: 121.5, name: 'Guard 121.5' },
+  { freq: 122.7, name: 'Unicom 122.7' },
+  { freq: 122.725, name: 'Unicom 122.725' },
+  { freq: 122.75, name: 'Air-Air 122.75' },
+  { freq: 122.8, name: 'Unicom 122.8' },
+  { freq: 122.85, name: 'Multicom 122.85' },
+  { freq: 122.9, name: 'Multicom 122.9' },
+  { freq: 122.925, name: 'Multicom 122.92' },
+  { freq: 122.95, name: 'Unicom 122.95' },
+  { freq: 122.975, name: 'Unicom 122.975' },
+  { freq: 123.0, name: 'Unicom 123.0' },
+  { freq: 123.025, name: 'Helo A-A 123.02' },
+  { freq: 123.05, name: 'Unicom 123.05' },
+  { freq: 123.075, name: 'Unicom 123.075' },
+  { freq: 123.1, name: 'SAR 123.1' },
+  { freq: 123.45, name: 'Air-Air 123.45' },
+];
+
+/**
  * Get airport code (ICAO) from airport data
  */
 function getAirportCode(airport: AirportData): string {
@@ -28,11 +57,14 @@ function getAirportCode(airport: AirportData): string {
  * @param startChannelNumber - Starting channel number
  * @param selectedAirports - Array of airports to generate channels for (required)
  * @param singleZone - If true, creates one zone with all airports. If false, creates one zone per airport.
+ * @param commonFrequencies - Common/itinerant aircraft frequencies to also add. In single-zone mode they are
+ *   appended to the "Airports" zone; in individual-zone mode they are placed in a separate "Aircraft" zone.
  */
 export function generateAirportChannels(
   startChannelNumber: number = 1,
   selectedAirports: AirportData[], // Required: airports to generate channels for
-  singleZone: boolean = false // If true, group all airports in one zone
+  singleZone: boolean = false, // If true, group all airports in one zone
+  commonFrequencies: CommonAircraftFrequency[] = [] // Common aircraft frequencies to also add
 ): {
   channels: Channel[];
   zones: Zone[];
@@ -158,10 +190,52 @@ export function generateAirportChannels(
   
   // Create single zone with all airports (if single zone mode)
   if (singleZone && allZoneChannels.length > 0) {
+    // Optionally append common / itinerant aircraft frequencies to the zone
+    for (const common of commonFrequencies) {
+      const channel = createDefaultChannel({
+        number: channelNumber++,
+        name: common.name,
+        rxFrequency: common.freq,
+        txFrequency: NO_TX_FREQUENCY, // Receive-only: TX stored as 0xFF on radio
+        forbidTx: true,
+        mode: 'Analog',
+        bandwidth: '25kHz', // Aviation uses 25kHz spacing
+        power: 'High',
+        scanAdd: true,
+      });
+      channels.push(channel);
+      allZoneChannels.push(channel.number);
+    }
+
     zones.push({
       id: generateZoneId(),
       name: 'Airports',
       channels: allZoneChannels,
+    });
+  }
+
+  // In individual-zone mode, add common frequencies as their own "Aircraft" zone
+  if (!singleZone && commonFrequencies.length > 0) {
+    const commonZoneChannels: number[] = [];
+    for (const common of commonFrequencies) {
+      const channel = createDefaultChannel({
+        number: channelNumber++,
+        name: common.name,
+        rxFrequency: common.freq,
+        txFrequency: NO_TX_FREQUENCY, // Receive-only: TX stored as 0xFF on radio
+        forbidTx: true,
+        mode: 'Analog',
+        bandwidth: '25kHz', // Aviation uses 25kHz spacing
+        power: 'High',
+        scanAdd: true,
+      });
+      channels.push(channel);
+      commonZoneChannels.push(channel.number);
+    }
+    zones.push({
+      id: generateZoneId(),
+      name: 'Aircraft',
+      channels: commonZoneChannels,
     });
   }
   
@@ -177,3 +251,70 @@ export function generateAirportChannels(
   };
 }
 
+
+/**
+ * Airband edges, in MHz. The civil VHF air band, which is AM and receive-only
+ * on these radios.
+ */
+export const AIRBAND_MIN_MHZ = 108;
+export const AIRBAND_MAX_MHZ = 137;
+
+/** True when a frequency belongs in a separate AM airband table. */
+export function isAirbandFrequency(mhz: number): boolean {
+  return mhz >= AIRBAND_MIN_MHZ && mhz < AIRBAND_MAX_MHZ;
+}
+
+/**
+ * Split generated channels by where the radio actually stores them.
+ *
+ * On a radio with `separateAirbandTable`, an AM airband frequency CANNOT go in
+ * the main channel list: that record has no way to express AM receive-only, and
+ * writing one there corrupts the codeplug. The airband entries are returned
+ * separately so the caller can put them in the AM table instead.
+ *
+ * Zones are rebuilt to reference only the channels that stayed behind. A zone
+ * pointing at a channel number that was diverted would dangle, and on this
+ * family a dangling zone member is exactly the kind of thing that gets written
+ * to the radio and then cannot be explained.
+ */
+export function splitAirbandChannels(
+  channels: Channel[],
+  zones: Zone[]
+): {
+  channels: Channel[];
+  zones: Zone[];
+  airband: Channel[];
+  /**
+   * The airband members of each generated zone, by ORIGINAL channel number.
+   *
+   * Returned rather than resolved because AM zones index into the AM table's
+   * own numbering, and only the caller knows where these channels will land in
+   * that table — it depends on what is already there.
+   */
+  airbandZones: { name: string; channelNumbers: number[] }[];
+} {
+  const airband = channels.filter((c) => isAirbandFrequency(c.rxFrequency));
+  if (airband.length === 0) return { channels, zones, airband: [], airbandZones: [] };
+
+  const diverted = new Set(airband.map((c) => c.number));
+  const kept = channels.filter((c) => !diverted.has(c.number));
+  const keptNumbers = new Set(kept.map((c) => c.number));
+
+  // A generated zone can hold both kinds. Its airband half becomes an AM zone;
+  // whatever is left stays a normal zone. Dropping the airband half — as this
+  // did until the AM zone table was mapped — silently discarded the grouping
+  // the wizard had just built.
+  const airbandZones: { name: string; channelNumbers: number[] }[] = [];
+  const rebuiltZones: Zone[] = [];
+
+  for (const zone of zones) {
+    const airbandMembers = zone.channels.filter((n) => diverted.has(n));
+    const remaining = zone.channels.filter((n) => keptNumbers.has(n));
+    if (airbandMembers.length > 0) {
+      airbandZones.push({ name: zone.name, channelNumbers: airbandMembers });
+    }
+    if (remaining.length > 0) rebuiltZones.push({ ...zone, channels: remaining });
+  }
+
+  return { channels: kept, zones: rebuiltZones, airband, airbandZones };
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeOverlappingChannels, getChannelFrequencyKey, getChannelFullKey } from '../../src/services/channelMerger';
+import { mergeOverlappingChannels, mergeChannelSetsWithExisting, getChannelFrequencyKey, getChannelFullKey } from '../../src/services/channelMerger';
 import { createDefaultChannel } from '../../src/utils/channelHelpers';
 
 function ch(number: number, rx: number, tx: number, name = `CH${number}`) {
@@ -53,6 +53,50 @@ describe('mergeOverlappingChannels', () => {
   });
 });
 
+describe('mergeOverlappingChannels on digital channels sharing a repeater pair', () => {
+  // The DMR Repeaters wizard builds a TS1 and a TS2 channel on the same RX/TX pair.
+  // Keyed on frequency alone, the two collapsed into one channel named "CALL-1/CALL-2"
+  // style, and the TS2 channel was lost.
+  function dmr(number: number, name: string, opts: { cc?: number; slot?: number; tg?: number } = {}) {
+    return createDefaultChannel({
+      number,
+      name,
+      rxFrequency: 442.1,
+      txFrequency: 447.1,
+      mode: 'Digital',
+      colorCode: opts.cc ?? 1,
+      slotOperation: opts.slot ?? 0,
+      contactId: opts.tg ?? 0,
+    });
+  }
+
+  it('keeps TS1 and TS2 on the same pair as two channels', () => {
+    const { mergedChannels } = mergeOverlappingChannels([[dmr(1, 'W1ABC-1', { slot: 0 }), dmr(2, 'W1ABC-2', { slot: 1 })]]);
+    expect(mergedChannels.map((c) => c.name)).toEqual(['W1ABC-1', 'W1ABC-2']);
+  });
+
+  it('keeps different color codes and talk groups on the same pair apart', () => {
+    const { mergedChannels } = mergeOverlappingChannels([[dmr(1, 'CC1', { cc: 1 }), dmr(2, 'CC2', { cc: 2 }), dmr(3, 'TG9', { tg: 9 })]]);
+    expect(mergedChannels).toHaveLength(3);
+  });
+
+  it('still merges a true duplicate digital channel', () => {
+    const { mergedChannels, channelMapping } = mergeOverlappingChannels([[dmr(1, 'A')], [dmr(2, 'B')]]);
+    expect(mergedChannels).toHaveLength(1);
+    expect(channelMapping.get(2)).toBe(1);
+  });
+
+  it('adds both timeslots when merging against an existing list', () => {
+    const existing = [ch(1, 146.52, 146.52)];
+    const { channelsToAdd } = mergeChannelSetsWithExisting(
+      existing,
+      [[dmr(10, 'W1ABC-1', { slot: 0 }), dmr(11, 'W1ABC-2', { slot: 1 })]],
+      2
+    );
+    expect(channelsToAdd.map((c) => c.name)).toEqual(['W1ABC-1', 'W1ABC-2']);
+  });
+});
+
 describe('getChannelFrequencyKey', () => {
   it('formats rx and tx with 4 decimal places', () => {
     const key = getChannelFrequencyKey(ch(1, 146.52, 146.52));
@@ -71,5 +115,60 @@ describe('getChannelFullKey', () => {
     const key = getChannelFullKey(ch(1, 146.52, 146.52, 'TestCh'));
     expect(key).toContain('146.5200');
     expect(key).toContain('TestCh');
+  });
+});
+
+describe('mergeChannelSetsWithExisting', () => {
+  it('keeps per-set mappings intact when sets use distinct number ranges (zone-scramble regression)', () => {
+    // Two sets, distinct temp ranges (as FixedChannelsSource now numbers them).
+    const setA = [ch(1, 146.52, 146.52, 'A1'), ch(2, 147.0, 147.0, 'A2')];
+    const setB = [ch(3, 462.5625, 462.5625, 'B1'), ch(4, 462.5875, 462.5875, 'B2')];
+
+    const { channelsToAdd, channelMapping } = mergeChannelSetsWithExisting([], [setA, setB], 10);
+
+    // Set A's zone lookups must resolve to set A's channels, not set B's.
+    expect(setA.map(c => channelMapping.get(c.number))).toEqual([10, 11]);
+    expect(setB.map(c => channelMapping.get(c.number))).toEqual([12, 13]);
+    expect(channelsToAdd).toHaveLength(4);
+  });
+
+  it('maps a full-key match to the existing channel instead of adding it', () => {
+    const existing = [ch(7, 146.52, 146.52, 'SAME')];
+    const incoming = [ch(1, 146.52, 146.52, 'SAME')];
+
+    const { channelsToAdd, channelMapping } = mergeChannelSetsWithExisting(existing, [incoming], 100);
+
+    expect(channelsToAdd).toHaveLength(0);
+    expect(channelMapping.get(1)).toBe(7);
+  });
+
+  it('adds a channel that shares frequency but differs in settings from an existing one', () => {
+    const existing = [ch(7, 146.52, 146.52, 'OLD NAME')];
+    const incoming = [ch(1, 146.52, 146.52, 'NEW NAME')];
+
+    const { channelsToAdd, channelMapping } = mergeChannelSetsWithExisting(existing, [incoming], 100);
+
+    expect(channelsToAdd).toHaveLength(1);
+    expect(channelMapping.get(1)).toBe(100);
+  });
+
+  it('collapses same-frequency channels across new sets and maps both to one final number', () => {
+    const setA = [ch(1, 462.5625, 462.5625, 'FRS 1')];
+    const setB = [ch(2, 462.5625, 462.5625, 'GMRS 1')];
+
+    const { channelsToAdd, channelMapping } = mergeChannelSetsWithExisting([], [setA, setB], 50);
+
+    expect(channelsToAdd).toHaveLength(1);
+    expect(channelMapping.get(1)).toBe(50);
+    expect(channelMapping.get(2)).toBe(50);
+  });
+
+  it('never touches existing channels', () => {
+    const existing = [ch(3, 146.52, 146.52, 'KEEP'), ch(9, 147.0, 147.0, 'KEEP2')];
+    const before = JSON.stringify(existing);
+
+    mergeChannelSetsWithExisting(existing, [[ch(1, 450.0, 450.0, 'NEW')]], 10);
+
+    expect(JSON.stringify(existing)).toBe(before);
   });
 });

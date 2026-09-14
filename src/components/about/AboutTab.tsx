@@ -1,17 +1,23 @@
 import React, { useState } from 'react';
 import { useDebugStore } from '../../store/debugStore';
+import { RADIO_DESCRIPTORS } from '../../radios';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { Button } from '../ui/Button';
 import { ConfirmModal } from '../ui/ConfirmModal';
-import { downloadOfflineAsZip } from '../../utils/offlineDownload';
+import { downloadOfflineAsZip, OFFLINE_RELEASE_URL } from '../../utils/offlineDownload';
+import { PageHeader } from '../ui/PageHeader';
+import { VERSION_LABEL, COMMIT_HASH, BUILD_TIME, IS_RELEASE_BUILD, RELEASE_NOTES_URL } from '../../utils/version';
+import { latestEntry, whatsNewItems } from '../../utils/changelog';
+import changelogSource from '../../../CHANGELOG.md?raw';
 
 const OFFLINE_FALLBACK_MESSAGE =
-  'The offline version is available on GitHub Pages.\n\n' +
-  'Click OK to open it, then use your browser\'s "Save Page As" to save as neonplug.html.\n\n' +
+  'The latest tagged release is published as a single downloadable HTML file.\n\n' +
+  'Click Download to save neonplug-latest.html from GitHub Releases.\n\n' +
   'Or build it locally using the instructions below.';
 
-const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
+const LATEST_RELEASE = latestEntry(changelogSource);
+const WHATS_NEW = LATEST_RELEASE ? whatsNewItems(LATEST_RELEASE) : [];
 
 export const AboutTab: React.FC = () => {
   const { debugMode, setDebugMode } = useDebugStore();
@@ -19,15 +25,51 @@ export const AboutTab: React.FC = () => {
 
   return (
     <>
-    <div className="h-full overflow-y-auto">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-neon-cyan mb-2">About NeonPlug</h2>
-        <p className="text-cool-gray">
-          Channel programming software. Supports: DM-32UV, DP570UV.
-        </p>
-      </div>
+    <div>
+      <PageHeader
+        title="About NeonPlug"
+        description="Online Digital CPS — program your radio directly from your browser."
+      />
 
       <div className="space-y-6">
+        {/* What's new — parsed from the bundled CHANGELOG.md so it works offline */}
+        {LATEST_RELEASE && (
+          <Card>
+            <div className="flex items-baseline justify-between gap-3 flex-wrap">
+              <SectionTitle>What's New</SectionTitle>
+              <span className="text-xs font-mono text-muted">
+                {VERSION_LABEL}
+                {LATEST_RELEASE.date && ` · ${LATEST_RELEASE.date}`}
+              </span>
+            </div>
+            {!IS_RELEASE_BUILD && (
+              <p className="text-xs text-muted mb-3">
+                You're on a development build, which is ahead of the notes below.
+              </p>
+            )}
+            <ul className="list-disc list-inside text-cool-gray text-sm space-y-1 ml-4">
+              {WHATS_NEW.slice(0, 12).map((item, i) => (
+                <li key={i}>{item}</li>
+              ))}
+            </ul>
+            {WHATS_NEW.length > 12 && (
+              <p className="text-xs text-muted mt-2">
+                …and {WHATS_NEW.length - 12} more.
+              </p>
+            )}
+            <p className="text-xs text-muted mt-3">
+              <a
+                href={RELEASE_NOTES_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="link-accent"
+              >
+                Full release notes and previous versions
+              </a>
+            </p>
+          </Card>
+        )}
+
         {/* Offline Version */}
         <Card>
           <SectionTitle>Offline Version</SectionTitle>
@@ -52,6 +94,7 @@ export const AboutTab: React.FC = () => {
                   }
                 }}
                 variant="primary"
+                size="none"
                 className="inline-flex items-center justify-center px-6 py-3"
               >
                 📥 Download Offline Version (ZIP)
@@ -62,9 +105,9 @@ export const AboutTab: React.FC = () => {
                 {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
                   <> From the dev server the downloaded file is the dev build (not standalone). For a single-file offline build, use the live site or run <code className="text-neon-cyan">npm run build:single</code>.</>
                 )}
-                {' '}If the button doesn't work, visit the{' '}
-                <a href="https://infamy.github.io/NeonPlug/" target="_blank" rel="noopener noreferrer" className="link-accent">live version</a>{' '}
-                and use your browser's "Save Page As" feature.
+                {' '}If the button doesn't work,{' '}
+                <a href={OFFLINE_RELEASE_URL} target="_blank" rel="noopener noreferrer" className="link-accent">download the latest release</a>{' '}
+                instead.
               </p>
             </div>
 
@@ -74,10 +117,10 @@ export const AboutTab: React.FC = () => {
                 To build your own offline version from source:
               </p>
               <pre className="bg-black rounded p-3 text-xs text-neon-cyan overflow-x-auto">
-                <code>git clone https://github.com/infamy/NeonPlug.git
-cd NeonPlug
-npm install
-npm run build:single</code>
+                {/* A string, not JSX text: JSX folds line breaks in text into
+                    single spaces, so these four commands rendered as one line
+                    that fails when pasted. */}
+                <code>{'git clone https://github.com/infamy/NeonPlug.git\ncd NeonPlug\nnpm install\nnpm run build:single'}</code>
               </pre>
               <p className="text-cool-gray text-xs mt-2">
                 The single-file HTML will be in the <code className="text-neon-cyan">dist/index.html</code> file.
@@ -101,11 +144,40 @@ npm run build:single</code>
           <SectionTitle>Project Information</SectionTitle>
           <div className="space-y-3 text-cool-gray">
             <p>
-              <span className="text-neon-cyan font-semibold">NeonPlug</span> is a next-generation, web-based Channel Programming Software (CPS) for supported radios, including DM-32UV / DP570UV and UV5R-Mini. Built with a modern cyberpunk neon-themed UI, it provides an intuitive interface for managing channels, zones, scan lists, contacts, and radio settings.
+              <span className="text-neon-cyan font-semibold">NeonPlug</span> is a next-generation, web-based Channel Programming Software (CPS). Built with a cyberpunk neon-themed UI, it provides an intuitive interface for managing channels, zones, scan lists, contacts, and radio settings — all from your browser, with no drivers or software to install.
             </p>
             <p>
-              This software implements protocol support for each radio, enabling full read and write operations directly from your web browser via the Web Serial API and—where supported—Bluetooth Low Energy (BLE).
+              Each radio's full protocol is implemented natively, enabling read and write operations via the Web Serial API and — where supported — Bluetooth Low Energy (BLE).
             </p>
+          </div>
+        </Card>
+
+        {/* Supported Radios */}
+        <Card>
+          <SectionTitle>Supported Radios</SectionTitle>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neon-cyan border-opacity-30">
+                  <th className="text-left py-2 pr-4 text-neon-cyan font-semibold">Radio</th>
+                  <th className="text-left py-2 pr-4 text-neon-cyan font-semibold">Manufacturer</th>
+                  <th className="text-left py-2 text-neon-cyan font-semibold">Connection</th>
+                </tr>
+              </thead>
+              <tbody>
+                {RADIO_DESCRIPTORS.map((d) => (
+                  <tr key={d.modelIds[0]} className="border-b border-neon-cyan border-opacity-10">
+                    <td className="py-2 pr-4 text-white font-medium">
+                      {d.icon} {d.modelIds.join(' / ')}
+                    </td>
+                    <td className="py-2 pr-4 text-cool-gray">{d.group ?? '—'}</td>
+                    <td className="py-2 text-cool-gray">
+                      {d.supportsBle ? 'USB or BLE' : 'USB'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </Card>
 
@@ -162,8 +234,9 @@ npm run build:single</code>
               </a>
             </p>
             <p>
-              This project implements the DM-32UV protocol specification, which was reverse-engineered 
-              through analysis of serial port captures and the official CPS software.
+              Radio protocols were implemented through reverse engineering — serial port captures,
+              analysis of official CPS software, and reference to open-source projects including
+              CHIRP. The DM-32UV protocol specification is documented separately.
             </p>
             <div className="mt-4 space-y-2">
               <p className="text-sm text-cool-gray">
@@ -172,15 +245,20 @@ npm run build:single</code>
               <div className="text-xs text-cool-gray font-mono">
                 <div>
                   <span className="text-cool-gray">Version: </span>
-                  <span className="text-neon-cyan">
-                    {typeof __COMMIT_HASH__ !== 'undefined' ? __COMMIT_HASH__ : 'dev'}
-                  </span>
+                  <span className="text-neon-cyan">{VERSION_LABEL}</span>
+                  {!IS_RELEASE_BUILD && (
+                    <span className="text-muted"> (development build)</span>
+                  )}
                 </div>
-                {typeof __BUILD_TIME__ !== 'undefined' && (
+                <div className="mt-1">
+                  <span className="text-cool-gray">Commit: </span>
+                  <span className="text-neon-cyan">{COMMIT_HASH}</span>
+                </div>
+                {BUILD_TIME && (
                   <div className="mt-1">
                     <span className="text-cool-gray">Built: </span>
                     <span className="text-neon-cyan">
-                      {new Date(__BUILD_TIME__).toLocaleString()}
+                      {new Date(BUILD_TIME).toLocaleString()}
                     </span>
                   </div>
                 )}
@@ -304,11 +382,12 @@ npm run build:single</code>
     <ConfirmModal
       isOpen={offlineFallbackOpen}
       onClose={() => setOfflineFallbackOpen(false)}
-      onConfirm={() => window.open(OFFLINE_VERSION_URL, '_blank')}
+      onConfirm={() => window.open(OFFLINE_RELEASE_URL, '_blank')}
       title="Download offline version"
       message={OFFLINE_FALLBACK_MESSAGE}
-      confirmLabel="OK"
-      variant="alert"
+      confirmLabel="Download"
+      cancelLabel="Close"
+      variant="default"
     />
     </>
   );

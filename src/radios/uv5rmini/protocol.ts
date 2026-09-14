@@ -2,8 +2,10 @@
  * UV5R-Mini protocol: implements RadioProtocol (Serial and BLE).
  */
 
-import type { RadioProtocol, RadioInfo } from '../../types/radio';
-import type { Channel, Zone, Contact, RadioSettings, ScanList, DMRRadioID } from '../../models';
+import type { RadioInfo } from '../../types/radio';
+import type { Channel, RadioSettings } from '../../models';
+import type { Uv5rMiniSettings } from '../../types/uv5rMiniSettings';
+import { BaseAnalogProtocol } from '../shared/BaseProtocols';
 import { UV5RMiniSerialConnection, openUV5RMiniPort } from './serialConnection';
 import { UV5RMiniBleConnection, requestUV5RMiniBleDevice } from './bleConnection';
 import {
@@ -28,11 +30,27 @@ type ConnectionLike = {
   disconnect(): Promise<void>;
 };
 
-export class UV5RMiniProtocol implements RadioProtocol {
+export class UV5RMiniProtocol extends BaseAnalogProtocol {
   private connection: ConnectionLike | null = null;
   private port: import('./serialConnection').UV5RMiniSerialPort | null = null;
   /** Cached image from last readChannels (used by readRadioSettings and getFirmwareFromCache). */
   private cachedImage: Uint8Array | null = null;
+
+  /**
+   * Expose the cached clone image so `useRadioConnection` can persist it into
+   * `radioStore.cachedMemoryImage` after a read, which is what the Diagnostics
+   * memory-image viewer renders.
+   *
+   * Getter only, deliberately: `setMemoryImage` is NOT implemented, because the
+   * restore path exists to let a whole-image upload preserve untouched regions —
+   * and this radio doesn't do that. `writeChannels` builds a fresh image but
+   * only writes blocks inside the channel region, so everything else on the
+   * radio is preserved by scoping rather than by seeding. Adding a setter would
+   * change what `readRadioSettings` sees without making any write safer.
+   */
+  getMemoryImage(): Uint8Array | null {
+    return this.cachedImage;
+  }
 
   /** Parse firmware string from cached clone image (call after readChannels). Used to enrich radioInfo. */
   getFirmwareFromCache(): string {
@@ -48,7 +66,6 @@ export class UV5RMiniProtocol implements RadioProtocol {
     }
     return String.fromCharCode(...slice.subarray(0, end)).trim();
   }
-  public onProgress?: (progress: number, message: string) => void;
 
   async connect(portOrOptions?: string | { forcePortSelection?: boolean; transport?: 'serial' | 'ble' }): Promise<void> {
     const options =
@@ -154,14 +171,25 @@ export class UV5RMiniProtocol implements RadioProtocol {
   /** Write channels: build image from channels, then write blocks (upload handshake first). */
   async writeChannels(channels: Channel[]): Promise<void> {
     if (!this.connection) throw new Error('Not connected');
-    await this.connection.handshakeUpload();
 
-    const image = new Uint8Array(0x8240);
-    image.fill(0xff);
     const rawList: Uv5rMiniChannelRaw[] = channels
       .filter((c) => c.number >= 1 && c.number <= BAOFENG_CHANNEL_COUNT)
       .slice(0, BAOFENG_CHANNEL_COUNT)
       .map((c) => channelToUv5rMiniRaw(c));
+    // Every channel not in the list is written as 0xff (the radio's empty
+    // marker), so a write with no valid channels would erase every channel.
+    // The app UI guards this; direct callers (libneonplug) reach this method
+    // without that guard, so refuse before touching the radio.
+    if (rawList.length === 0) {
+      throw new Error(
+        'Refusing to write: no valid channels in list — this would erase every channel on the radio.'
+      );
+    }
+
+    await this.connection.handshakeUpload();
+
+    const image = new Uint8Array(0x8240);
+    image.fill(0xff);
     for (let i = 0; i < rawList.length; i++) {
       const raw = rawList[i];
       const idx = raw.num - 1;
@@ -182,54 +210,23 @@ export class UV5RMiniProtocol implements RadioProtocol {
     }
   }
 
-  async readZones(): Promise<Zone[]> {
-    return [];
-  }
-
-  async writeZones(_zones: Zone[]): Promise<void> {
-    // no-op
-  }
-
-  async readScanLists(): Promise<ScanList[]> {
-    return [];
-  }
-
-  async readDMRRadioIDs(): Promise<DMRRadioID[]> {
-    return [];
-  }
-
-  async writeDMRRadioIDs(_ids: DMRRadioID[]): Promise<void> {
-    // no-op
-  }
-
-  async readContacts(): Promise<Contact[]> {
-    return [];
-  }
-
-  async writeContacts(_contacts: Contact[]): Promise<void> {
-    // no-op
-  }
-
-  async readRadioSettings(): Promise<RadioSettings | null> {
+  override async readRadioSettings(): Promise<RadioSettings | null> {
     const image = this.cachedImage;
     if (!image || image.length < 0x8080) return null;
-
-    const uv5rMiniSettings = parseUv5rMiniSettings(image);
-    if (!uv5rMiniSettings) return null;
-
-    return { uv5rMiniSettings } as RadioSettings;
+    const radioSpecific = parseUv5rMiniSettings(image);
+    if (!radioSpecific) return null;
+    return { radioSpecific } as unknown as RadioSettings;
   }
 
-  async writeRadioSettings(settings: RadioSettings, _options?: { changedFields?: string[] }): Promise<void> {
-    const uv5rMiniSettings = settings.uv5rMiniSettings;
-    if (!uv5rMiniSettings || !this.connection) return;
-
+  override async writeRadioSettings(settings: RadioSettings, _options?: { changedFields?: string[] }): Promise<void> {
+    const radioSpecific = settings.radioSpecific as Uv5rMiniSettings | undefined;
+    if (!radioSpecific || !this.connection) return;
     // Read current settings block from radio, merge our changes, write back
     const block = await this.connection.readBlock(UV5RMINI_SETTINGS_OFFSET);
     const image = new Uint8Array(UV5RMINI_SETTINGS_OFFSET + 64);
     image.fill(0xff);
     image.set(block, UV5RMINI_SETTINGS_OFFSET);
-    writeUv5rMiniSettings(image, uv5rMiniSettings);
+    writeUv5rMiniSettings(image, radioSpecific);
     await this.connection.writeBlock(UV5RMINI_SETTINGS_OFFSET, image.subarray(UV5RMINI_SETTINGS_OFFSET));
   }
 }

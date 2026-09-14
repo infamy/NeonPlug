@@ -1,16 +1,155 @@
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import React, { useState } from 'react';
 import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
 import { useZonesStore } from '../../store/zonesStore';
 import { useChannelsStore } from '../../store/channelsStore';
+import { useRadioStore } from '../../store/radioStore';
 import type { Zone } from '../../models/Zone';
 import { ListDetailLayout } from '../ui/ListDetailLayout';
+import { OrderedItemPicker } from '../ui/OrderedItemPicker';
+import { channelPickerItem } from '../ui/pickerItems';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { BUTTON, FIELD } from '../ui/controlStyles';
+
+/** One of the two per-zone VFO channel pickers. Hoisted, not nested in its
+ *  parent's render: a component defined inside a render is a new type on every
+ *  pass, so React unmounts and remounts the <select> and the dropdown closes
+ *  the moment the store updates. */
+const ZoneChannelSelect: React.FC<{
+  title: string;
+  position: number;
+  zone: Zone;
+  label: (number: number) => string;
+  onChange: (position: number) => void;
+}> = ({ title, position, zone, label, onChange }) => (
+  <div>
+    <label className="block text-cool-gray text-xs mb-1">{title}</label>
+    <select
+      value={position}
+      onChange={(e) => onChange(parseInt(e.target.value, 10))}
+      className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
+    >
+      {position >= zone.channels.length && <option value={position}>Not set</option>}
+      {zone.channels.map((number, index) => (
+        <option key={`${number}-${index}`} value={index}>
+          {label(number)}
+        </option>
+      ))}
+    </select>
+  </div>
+);
+
+/**
+ * The zone's current A and B channel — what the radio has tuned on each VFO
+ * when this zone is selected.
+ *
+ * Stored per zone as a POSITION within that zone's own member list, not as a
+ * channel number, so it must be resolved through `zone.channels` and is
+ * meaningless against any other zone. Editing therefore writes a position back,
+ * not a channel number, and reordering the zone's channels moves what A and B
+ * point at — which is how the radio itself behaves.
+ *
+ * A position past the end of the member list renders as "Not set" rather than
+ * being clamped to a real channel: the radio can hold one (a zone shrunk since
+ * the value was written), and quietly showing channel 1 instead would be a
+ * claim about the radio that is not true.
+ */
+const ZoneCurrentChannels: React.FC<{ zone: Zone }> = ({ zone }) => {
+  const { tables, setTable } = useRadioStore();
+  const { channels } = useChannelsStore();
+  const { zones, updateZone } = useZonesStore();
+
+  // Index against the store's own array: the list pane filters out unnamed
+  // zones, so a render position from there would be the wrong zone.
+  const zoneIndex = zones.findIndex((z) => z.id === zone.id);
+  const showHidden = zone.hidden !== undefined;
+  const showChannels = !!tables.zoneCurrentChannels && zoneIndex >= 0;
+  if (!showHidden && !showChannels) return null;
+
+  const label = (number: number): string => {
+    const channel = channels.find((c) => c.number === number);
+    return channel ? `${number} · ${channel.name}` : `${number}`;
+  };
+
+  const update = (which: 'a' | 'b', position: number) => {
+    // Only reachable from the A/B selects, which render only when this is set.
+    if (!tables.zoneCurrentChannels) return;
+    const next = {
+      a: [...tables.zoneCurrentChannels.a],
+      b: [...tables.zoneCurrentChannels.b],
+    };
+    next[which][zoneIndex] = position;
+    setTable('zoneCurrentChannels', next);
+    // The array above is what this panel RENDERS, and it is indexed by
+    // position. The write path cannot use position — a zone added or deleted
+    // since the read makes it point at the wrong zone — so the edit is also
+    // recorded against the zone's id, which is what reaches the radio.
+    setTable('zoneCurrentEdits', {
+      ...tables.zoneCurrentEdits,
+      [zone.id]: { ...tables.zoneCurrentEdits?.[zone.id], [which]: position },
+    });
+  };
+
+  return (
+    // shrink-0: this sits in a flex column beside a fillHeight picker, which
+    // otherwise compresses it below its own content and the overflow-hidden
+    // above clips the last row — the hide checkbox.
+    <div className="m-4 mb-0 shrink-0 bg-neon-cyan bg-opacity-5 border border-neon-cyan border-opacity-30 rounded-lg overflow-hidden">
+      <div className="p-3 pb-2">
+        <h4 className="text-neon-cyan font-medium">Zone Settings</h4>
+        <p className="text-cool-gray text-xs mt-0.5">
+          The channel each VFO tunes to when this zone is selected, and whether the zone
+          appears on the radio at all.
+        </p>
+      </div>
+      {showChannels && tables.zoneCurrentChannels && (
+      <div className="p-4 pt-0 grid grid-cols-2 gap-4">
+        <ZoneChannelSelect
+          title="Current Channel A"
+          position={tables.zoneCurrentChannels.a[zoneIndex] ?? 0}
+          zone={zone}
+          label={label}
+          onChange={(p) => update('a', p)}
+        />
+        <ZoneChannelSelect
+          title="Current Channel B"
+          position={tables.zoneCurrentChannels.b[zoneIndex] ?? 0}
+          zone={zone}
+          label={label}
+          onChange={(p) => update('b', p)}
+        />
+      </div>
+      )}
+      {/* Buried several levels down in the vendor CPS's zone editor. Surfaced
+          plainly here — it changes whether the zone appears on the radio at
+          all, which is not a thing to make people hunt for. */}
+      {showHidden && (
+        <div className="px-4 pb-3 pt-1 flex items-center gap-2">
+          <input
+            id={`zone-hidden-${zone.id}`}
+            type="checkbox"
+            checked={zone.hidden === true}
+            onChange={(e) => updateZone(zone.id, { hidden: e.target.checked })}
+            className="checkbox-theme"
+          />
+          <label htmlFor={`zone-hidden-${zone.id}`} className="text-cool-gray text-xs">
+            Hide this zone from the radio&apos;s zone menu
+          </label>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const ZonesList: React.FC = () => {
+  const { caps } = useRadioCapabilities();
+  // From the radio's limits, like every other list editor; this printed and
+  // enforced a literal 250.
+  const maxZones = caps?.maxZones ?? 250;
   const { zones, selectedZoneId, setSelectedZoneId, addZone, deleteZone, renameZone } = useZonesStore();
   const [newZoneName, setNewZoneName] = useState('');
   const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
@@ -98,26 +237,40 @@ export const ZonesList: React.FC = () => {
                             }
                           }}
                       onClick={(e) => e.stopPropagation()}
-                      className="flex-1 bg-transparent border border-neon-cyan rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                      className={`${FIELD} flex-1 border rounded px-2 py-1 text-sm`}
                       maxLength={10}
                       autoFocus
                     />
                     <button
                       onClick={(e) => handleSaveEdit(zone.id, e)}
-                      className="px-2 py-1 bg-neon-cyan text-dark-charcoal rounded text-xs hover:bg-opacity-90"
+                      className={`${BUTTON.primary} px-2 py-1 rounded text-xs`}
                     >
                       Save
                     </button>
                     <button
                       onClick={handleCancelEdit}
-                      className="px-2 py-1 bg-cool-gray bg-opacity-30 text-cool-gray rounded text-xs hover:bg-opacity-50"
+                      className={`${BUTTON.neutral} px-2 py-1 rounded text-xs`}
                     >
                       Cancel
                     </button>
                   </div>
                 ) : (
                   <>
-                    <span className="text-white font-medium">{zone.name}</span>
+                    <span className={`font-medium ${zone.hidden ? 'text-cool-gray italic' : 'text-white'}`}>
+                      {zone.name}
+                    </span>
+                    {/* Hidden zones still exist and still hold their channels —
+                        they are simply absent from the radio's zone menu. Dimmed
+                        and badged rather than removed, so the list still matches
+                        the codeplug. */}
+                    {zone.hidden && (
+                      <span
+                        className="text-[10px] uppercase tracking-wide text-amber-400 border border-amber-400 border-opacity-40 rounded px-1 py-px"
+                        title="Hidden from the radio's zone menu — the zone and its channels still exist"
+                      >
+                        hidden
+                      </span>
+                    )}
                     <span className="text-cool-gray text-xs">
                       {zone.channels.length} {formatPlural(zone.channels.length, 'channel')}
                     </span>
@@ -135,7 +288,7 @@ export const ZonesList: React.FC = () => {
                   <div className="flex gap-2 justify-end">
                     <button
                       onClick={(e) => handleStartEdit(zone.id, zone.name, e)}
-                      className="px-2 py-0.5 bg-neon-cyan bg-opacity-50 text-neon-cyan rounded text-xs hover:bg-opacity-70 border border-neon-cyan border-opacity-50"
+                      className={`${BUTTON.outline} px-2 py-0.5 rounded text-xs border`}
                     >
                       Rename
                     </button>
@@ -144,7 +297,7 @@ export const ZonesList: React.FC = () => {
                         e.stopPropagation();
                         setZoneToDelete({ id: zone.id, name: zone.name });
                       }}
-                      className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                      className={`${BUTTON.danger} px-2 py-0.5 rounded text-xs border`}
                     >
                       Delete
                     </button>
@@ -180,12 +333,12 @@ export const ZonesList: React.FC = () => {
     <>
       <ListDetailLayout
         listTitle="Zones"
-        listSubtitle={`${zones.length}/250 zones`}
+        listSubtitle={`${zones.length}/${maxZones} zones`}
         addInputPlaceholder="Zone name..."
         addInputValue={newZoneName}
         onAddInputChange={setNewZoneName}
         onAdd={handleAddZone}
-        addDisabled={zones.length >= 250}
+        addDisabled={zones.length >= maxZones}
         addInputMaxLength={10}
         listContent={listContent}
         detailContent={detailContent}
@@ -226,180 +379,33 @@ interface ZoneEditorProps {
 }
 
 const ZoneEditor: React.FC<ZoneEditorProps> = ({ zone, onAlert }) => {
+  // Per-radio limit, not a hardcoded DM-32 value.
+  const { caps } = useRadioCapabilities();
   const { updateZone } = useZonesStore();
   const { channels } = useChannelsStore();
-  const [searchQuery, setSearchQuery] = useState('');
 
-  const handleAddChannel = (channelNumber: number) => {
-    if (zone.channels.length >= 64) {
-      onAlert('Maximum of 64 channels per zone allowed.');
-      return;
-    }
-    if (!zone.channels.includes(channelNumber)) {
-      updateZone(zone.id, {
-        channels: [...zone.channels, channelNumber].sort((a, b) => a - b),
-      });
-    }
-  };
-
-  const handleRemoveChannel = (channelNumber: number) => {
-    updateZone(zone.id, {
-      channels: zone.channels.filter(ch => ch !== channelNumber),
-    });
-  };
-
-  const handleReorderChannel = (fromIndex: number, toIndex: number) => {
-    const newChannels = [...zone.channels];
-    const [removed] = newChannels.splice(fromIndex, 1);
-    newChannels.splice(toIndex, 0, removed);
-    updateZone(zone.id, { channels: newChannels });
-  };
-
-  const availableChannels = channels
+  const availableItems = channels
     .filter(ch => !zone.channels.includes(ch.number))
-    .map(ch => ch.number)
-    .sort((a, b) => a - b);
-
-  const filteredAvailableChannels = searchQuery.trim()
-    ? availableChannels.filter((chNum) => {
-        const channel = channels.find(ch => ch.number === chNum);
-        if (!channel) return false;
-        
-        const query = searchQuery.toLowerCase().trim();
-        
-        // Search in name
-        if (channel.name.toLowerCase().includes(query)) return true;
-        
-        // Search in channel number
-        if (channel.number.toString().includes(query)) return true;
-        
-        // Search in frequencies
-        const rxFreq = channel.rxFrequency.toFixed(4);
-        const txFreq = channel.txFrequency.toFixed(4);
-        if (rxFreq.includes(query) || txFreq.includes(query)) return true;
-        
-        // Search in mode
-        if (channel.mode.toLowerCase().includes(query)) return true;
-        
-        // Search in bandwidth
-        if (channel.bandwidth.toLowerCase().includes(query)) return true;
-        
-        // Search in power
-        if (channel.power.toLowerCase().includes(query)) return true;
-        
-        return false;
-      })
-    : availableChannels;
-
-  const zoneChannels = zone.channels
-    .map(chNum => channels.find(ch => ch.number === chNum))
-    .filter(ch => ch !== undefined);
+    .sort((a, b) => a.number - b.number)
+    .map(channelPickerItem);
 
   return (
-    <div className="p-4 space-y-4 flex flex-col h-full">
-      <div className="flex-shrink-0">
-        <h4 className="text-white font-medium mb-2">Channels in Zone ({zone.channels.length}/64)</h4>
-        {zone.channels.length === 0 ? (
-          <p className="text-cool-gray text-sm">No channels in this zone</p>
-        ) : (
-          <div className="space-y-1 max-h-96 overflow-y-auto">
-            {zoneChannels.map((channel, index) => (
-              <div
-                key={channel!.number}
-                className="px-3 py-2 bg-neon-cyan bg-opacity-10 border border-neon-cyan border-opacity-30 rounded flex items-center justify-between hover:bg-opacity-20"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-cool-gray text-xs w-8">{index + 1}.</span>
-                  <span className="text-white text-xs">
-                    {channel!.number}: {channel!.name}
-                  </span>
-                </div>
-                <div className="flex gap-1">
-                  {index > 0 && (
-                    <button
-                      onClick={() => handleReorderChannel(index, index - 1)}
-                      className="px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-neon-cyan text-xs hover:bg-opacity-50"
-                      title="Move up"
-                    >
-                      ↑
-                    </button>
-                  )}
-                  {index < zoneChannels.length - 1 && (
-                    <button
-                      onClick={() => handleReorderChannel(index, index + 1)}
-                      className="px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-neon-cyan text-xs hover:bg-opacity-50"
-                      title="Move down"
-                    >
-                      ↓
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleRemoveChannel(channel!.number)}
-                    className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="flex-1 flex flex-col min-h-0">
-        <h4 className="text-white font-medium mb-2 flex-shrink-0">
-          Available Channels ({filteredAvailableChannels.length} of {availableChannels.length})
-        </h4>
-        {availableChannels.length === 0 ? (
-          <p className="text-cool-gray text-sm">All channels are in this zone</p>
-        ) : zone.channels.length >= 64 ? (
-          <p className="text-cool-gray text-sm">Zone is full (64 channels maximum)</p>
-        ) : (
-          <>
-            <div className="mb-3 flex-shrink-0">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search channels..."
-                  className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-3 py-1.5 pl-9 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                />
-                <span className="absolute left-2.5 top-1/2 transform -translate-y-1/2 text-cool-gray text-xs">
-                  🔍
-                </span>
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-cool-gray hover:text-white text-sm"
-                    title="Clear search"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            </div>
-            {filteredAvailableChannels.length === 0 ? (
-              <p className="text-cool-gray text-sm">No channels match your search</p>
-            ) : (
-              <div className="flex flex-wrap gap-2 overflow-y-auto flex-1 min-h-0">
-                {filteredAvailableChannels.map((chNum) => {
-                  const channel = channels.find(ch => ch.number === chNum);
-                  return (
-                    <button
-                      key={chNum}
-                      onClick={() => handleAddChannel(chNum)}
-                      className="px-3 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-xs hover:bg-opacity-50 hover:border-neon-cyan transition-colors"
-                    >
-                      {chNum}: {channel?.name || 'Unknown'}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+    <div className="flex flex-col h-full">
+      <ZoneCurrentChannels zone={zone} />
+      <OrderedItemPicker
+      selectedIds={zone.channels}
+      availableItems={availableItems}
+      resolveItem={(num) => {
+        const ch = channels.find(c => c.number === num);
+        return ch ? channelPickerItem(ch) : undefined;
+      }}
+      onChange={(ids) => updateZone(zone.id, { channels: ids })}
+      maxItems={caps?.maxZoneChannels ?? 64}
+      itemNoun="channel"
+      containerNoun="zone"
+      onAlert={onAlert}
+      fillHeight
+      />
     </div>
   );
 };

@@ -1,3 +1,5 @@
+import { getCapabilitiesForModel } from '../radios/capabilities';
+import { useRadioStore } from './radioStore';
 import { create } from 'zustand';
 import type { Zone } from '../models/Zone';
 
@@ -38,12 +40,14 @@ export const useZonesStore = create<ZonesState>((set, get) => ({
   },
   setRawZoneData: (rawData) => set({ rawZoneData: rawData }),
   addZone: (zone) => set((state) => {
-    if (state.zones.length >= 250) {
+    if (state.zones.length >= (getCapabilitiesForModel(useRadioStore.getState().selectedRadioModel ?? '')?.maxZones ?? 250)) {
       console.warn('Maximum of 250 zones allowed');
       return state;
     }
     // Enforce limit: max 64 channels per zone
-    const channels = zone.channels ? zone.channels.slice(0, 64) : [];
+    // Per-radio: 64 on the DM-32, 160 on the D890UV family.
+    const maxZoneChannels = getCapabilitiesForModel(useRadioStore.getState().selectedRadioModel ?? '')?.maxZoneChannels ?? 64;
+    const channels = zone.channels ? zone.channels.slice(0, maxZoneChannels) : [];
     const newZone: Zone = {
       ...zone,
       channels,
@@ -58,7 +62,7 @@ export const useZonesStore = create<ZonesState>((set, get) => ({
       if (z.id === id) {
         // Enforce limit: max 64 channels per zone
         if (updates.channels && updates.channels.length > 64) {
-          updates.channels = updates.channels.slice(0, 64);
+          updates.channels = updates.channels.slice(0, getCapabilitiesForModel(useRadioStore.getState().selectedRadioModel ?? '')?.maxZoneChannels ?? 64);
         }
         return { ...z, ...updates };
       }

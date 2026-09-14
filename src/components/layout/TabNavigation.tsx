@@ -51,12 +51,17 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
+              // Every tab carries its 2px bottom border ALL the time — transparent
+              // when inactive — and only colours and the glow animate. The border
+              // used to appear on the active tab only, under transition-all, so
+              // its WIDTH animated: the tab bar changed height mid-transition and
+              // everything below it jumped a pixel about 200ms after each click.
               className={`
-                px-6 py-3 font-medium transition-all duration-200
+                px-6 py-3 font-medium border-b-2 transition-[color,border-color,box-shadow] duration-200
                 ${
                   activeTab === tab.id
-                    ? 'text-neon-magenta border-b-2 border-neon-magenta shadow-glow-magenta'
-                    : 'text-cool-gray hover:text-white'
+                    ? 'text-neon-magenta border-neon-magenta shadow-glow-magenta'
+                    : 'text-cool-gray border-transparent hover:text-white'
                 }
               `}
               title={tab.title}

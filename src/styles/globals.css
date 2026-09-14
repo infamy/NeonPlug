@@ -87,3 +87,36 @@ select {
   appearance: none;
 }
 
+/* Themed scrollbars. The app is Chromium-only (WebSerial), so the
+   ::-webkit-scrollbar pseudo-elements cover every user. Deliberately NOT
+   setting the standard scrollbar-color / scrollbar-width properties —
+   in Chromium 121+ either one disables ::-webkit-scrollbar styling. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #121212; /* dark-charcoal */
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 247, 0.75); /* neon-cyan */
+  border-radius: 5px;
+  /* Track-colored border insets the thumb into a floating pill */
+  border: 2px solid #121212;
+  box-shadow: inset 0 0 6px rgba(0, 255, 247, 0.9);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 255, 247, 0.95);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: #00fff7;
+}
+
+::-webkit-scrollbar-corner {
+  background: #121212;
+}
+

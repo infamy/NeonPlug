@@ -102,14 +102,8 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
 
   return (
     <>
-      <div className="mb-6">
-        <SectionTitle as="h2" size="xl" bold className="text-2xl">Smart Import/Export</SectionTitle>
-        <p className="text-cool-gray">
-          Import channels from CHIRP CSV format or export your channels to CHIRP CSV format
-        </p>
-      </div>
-
-      {/* Chirp CSV Import/Export Section */}
+      {/* Chirp CSV Import/Export Section. No page-level heading of its own: the
+          tab has one PageHeader, and this card's title names the section. */}
       <Card padding="tight" className="mb-4">
         <SectionTitle as="h3" size="lg" className="mb-4">Analog CHIRP CSV Import/Export</SectionTitle>
         <p className="text-sm text-cool-gray mb-4">
@@ -133,7 +127,7 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
             <Button
               onClick={() => fileInputRef.current?.click()}
               disabled={isImportingChirp}
-              className="w-full bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright"
+              className="w-full"
             >
               {isImportingChirp ? 'Importing...' : 'Import CHIRP CSV'}
             </Button>
@@ -146,7 +140,8 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
             <Button
               onClick={handleChirpCSVExport}
               disabled={channels.filter(ch => ch.mode === 'Analog' || ch.mode === 'Fixed Analog').length === 0}
-              className="w-full bg-neon-magenta text-white hover:bg-neon-magenta-bright"
+              variant="accent"
+              className="w-full"
             >
               Export to CHIRP CSV ({channels.filter(ch => ch.mode === 'Analog' || ch.mode === 'Fixed Analog').length} analog)
             </Button>

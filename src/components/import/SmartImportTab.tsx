@@ -7,12 +7,15 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { formatPlural } from '../../utils/formatPlural';
 import { ChirpSource } from './sources/ChirpSource';
 import { AirportSource } from './sources/AirportSource';
 import { TaflSource } from './sources/TaflSource';
 import { RptrsSource } from './sources/RptrsSource';
 import { MmdvmSource } from './sources/MmdvmSource';
 import { FixedChannelsSource } from './sources/FixedChannelsSource';
+import { PageHeader } from '../ui/PageHeader';
+import { FIELD } from '../ui/controlStyles';
 
 export const SmartImportTab: React.FC = () => {
   const { caps } = useRadioCapabilities();
@@ -35,7 +38,7 @@ export const SmartImportTab: React.FC = () => {
   const [isSearchingAll, setIsSearchingAll] = useState(false);
 
   // Generation result
-  const [generationResult, setGenerationResult] = useState<{ channels: number; zones: number } | null>(null);
+  const [generationResult, setGenerationResult] = useState<{ channels: number; zones: number; airband?: number; amZones?: number; amZonesSkipped?: number } | null>(null);
 
   // Airport search results
   const [airports, setAirports] = useState<(AirportData & { distance?: number })[]>([]);
@@ -164,17 +167,18 @@ export const SmartImportTab: React.FC = () => {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div>
+      {/* One title for the tab, named what the tab is called. This page used to
+          carry TWO page-level headings — "Smart Import/Export" at the top and
+          "Channel Wizard" halfway down — inside a p-6 that doubled <main>'s own
+          padding. Every card below already names its section. */}
+      <PageHeader
+        title="Channel Wizard"
+        description="Import channels from a CHIRP CSV, or find nearby repeaters and generate channels and zones for your location."
+      />
+
       {/* 1. ChirpSource */}
       <ChirpSource onError={handleSetError} />
-
-      {/* 2. Channel Wizard heading */}
-      <div className="mb-6">
-        <SectionTitle as="h2" size="xl" bold className="text-2xl">Channel Wizard</SectionTitle>
-        <p className="text-cool-gray">
-          Find nearby repeaters and automatically generate channels and zones based on your location
-        </p>
-      </div>
 
       {/* 3. Location controls card */}
       <Card padding="tight" className="mb-4">
@@ -231,7 +235,7 @@ export const SmartImportTab: React.FC = () => {
                 onChange={(e) => setLatitude(e.target.value)}
                 placeholder="42.3601"
                 step="any"
-                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+                className={`${FIELD} w-full border rounded px-3 py-2`}
               />
             </div>
             <div>
@@ -242,7 +246,7 @@ export const SmartImportTab: React.FC = () => {
                 onChange={(e) => setLongitude(e.target.value)}
                 placeholder="-71.0589"
                 step="any"
-                className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+                className={`${FIELD} w-full border rounded px-3 py-2`}
               />
             </div>
           </div>
@@ -258,7 +262,7 @@ export const SmartImportTab: React.FC = () => {
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
                   placeholder="Boston"
-                  className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+                  className={`${FIELD} w-full border rounded px-3 py-2`}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && city.trim() && !isSearchingAll) {
                       handleSearchAll();
@@ -273,7 +277,7 @@ export const SmartImportTab: React.FC = () => {
                   value={state}
                   onChange={(e) => setState(e.target.value)}
                   placeholder="MA"
-                  className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+                  className={`${FIELD} w-full border rounded px-3 py-2`}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && city.trim() && !isSearchingAll) {
                       handleSearchAll();
@@ -293,7 +297,7 @@ export const SmartImportTab: React.FC = () => {
             onChange={(e) => setSearchRadius(e.target.value)}
             min="1"
             max="200"
-            className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+            className={`${FIELD} w-full border rounded px-3 py-2`}
           />
         </div>
 
@@ -335,7 +339,7 @@ export const SmartImportTab: React.FC = () => {
         <Button
           onClick={handleSearchAll}
           disabled={isSearchingAll || (supportsDigital ? (!searchAirports && !searchTafl && !searchDmrRepeaters) : (!searchAirports && !searchTafl))}
-          className="bg-neon-cyan text-dark-charcoal hover:bg-neon-cyan-bright w-full"
+          className="w-full"
         >
           {isSearchingAll
             ? (locationType === 'current'
@@ -388,7 +392,7 @@ export const SmartImportTab: React.FC = () => {
 
       {/* 4. Error display */}
       {error && (
-        <div className="bg-red-900 border border-red-500 rounded p-3 mb-4 text-red-200">
+        <div className="bg-red-900 border border-red-500 rounded p-3 mb-4 text-red-200 whitespace-pre-line">
           {error}
         </div>
       )}
@@ -421,11 +425,52 @@ export const SmartImportTab: React.FC = () => {
       />
 
       {/* 8. Generation result success banner */}
-      {generationResult && (
-        <div className="bg-deep-gray border border-neon-cyan rounded p-3 mb-4 text-neon-cyan">
-          Successfully generated {generationResult.channels} channels and {generationResult.zones} zones!
-        </div>
-      )}
+      {generationResult && (() => {
+        // Built from what actually happened, rather than a fixed sentence.
+        //
+        // It used to read "Successfully generated 0 channels and 0 zones!"
+        // followed by news of 29 airband frequencies — technically true, since
+        // airband is neither an ordinary channel nor an ordinary zone on this
+        // radio, but it leads with two zeros and an exclamation mark for an
+        // import that worked. List what was added; explain the routing after.
+        const r = generationResult;
+        const added: string[] = [];
+        if (r.channels) added.push(`${r.channels} ${formatPlural(r.channels, 'channel')}`);
+        if (r.zones) added.push(`${r.zones} ${formatPlural(r.zones, 'zone')}`);
+        if (r.airband) {
+          added.push(
+            `${r.airband} AM airband ${formatPlural(r.airband, 'frequency', 'frequencies')}`
+          );
+        }
+        if (r.amZones) added.push(`${r.amZones} AM ${formatPlural(r.amZones, 'zone')}`);
+        const list =
+          added.length === 0
+            ? null
+            : added.length === 1
+              ? added[0]
+              : `${added.slice(0, -1).join(', ')} and ${added[added.length - 1]}`;
+
+        return (
+          <div className="bg-deep-gray border border-neon-cyan rounded p-3 mb-4">
+            <div className="text-neon-cyan">
+              {list ? `Added ${list}.` : 'Nothing was added — those frequencies are already in the codeplug.'}
+            </div>
+            {r.airband ? (
+              <div className="text-muted text-sm mt-1">
+                Airband lives in its own table on this radio, so those entries appear
+                under AM Airband rather than with your channels.
+              </div>
+            ) : null}
+            {r.amZonesSkipped ? (
+              <div className="text-yellow-400 text-sm mt-1">
+                {r.amZonesSkipped} more {formatPlural(r.amZonesSkipped, 'group')} could not
+                be grouped — this radio has only {caps?.maxAirbandZones ?? 16} AM zone slots.
+                Those frequencies were still added, just not grouped into a zone.
+              </div>
+            ) : null}
+          </div>
+        );
+      })()}
 
       {/* 9. MmdvmSource (only if supportsDigital) */}
       {supportsDigital && (

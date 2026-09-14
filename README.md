@@ -6,9 +6,26 @@
 
 **A next-generation, web-based Channel Programming Software (CPS) for supported radios.**
 
-NeonPlug supports the Baofeng DM-32UV / DP570UV and UV5R-Mini, with more radios on the way. Program your radio directly from your browser—no software installation required. Connect via Web Serial (USB) or, where supported, Bluetooth Low Energy (BLE). A sleek, cyberpunk neon-themed UI puts channels, zones, scan lists, contacts, and settings at your fingertips.
+NeonPlug lets you program your radio directly from your browser—no software installation required. Connect via Web Serial (USB) or, where supported, Bluetooth Low Energy (BLE). A sleek, cyberpunk neon-themed UI puts channels, zones, scan lists, contacts, and settings at your fingertips.
 
-**🚀 Try it live:** [https://neonplug.app](https://neonplug.app) · **📥 [Download offline version](https://neonplug.app)** (single-file, no install)
+**Supported radios:**
+| Radio | Manufacturer | Bands | Connection |
+|---|---|---|---|
+| DM-32UV / DP570UV | Baofeng | VHF + UHF (DMR/Analog) | USB |
+| UV5R-Mini | Baofeng | VHF + UHF (Analog) | USB or BLE |
+| FT-65 / FT-65R / FT-65E | Yaesu | VHF + UHF (Analog) | USB (SCU-35) |
+| FT-4 / FT-4XR / FT-4XE / FT-4VR | Yaesu | VHF + UHF (Analog) | USB (SCU-35) |
+| FT-25R | Yaesu | VHF (Analog) | USB (SCU-35) |
+
+**🚀 Try it live:** [https://neonplug.app](https://neonplug.app) · **📥 [Download offline version](https://github.com/infamy/NeonPlug/releases/latest/download/neonplug-latest.html)** (single-file, no install)
+
+[![Latest release](https://img.shields.io/github/v/release/infamy/NeonPlug?label=release&color=00e5ff)](https://github.com/infamy/NeonPlug/releases/latest)
+
+| Build | URL | What it is |
+|---|---|---|
+| **Release** | [neonplug.app](https://neonplug.app) | Latest tagged version — what you want |
+| **Development** | [neonplug.app/dev](https://neonplug.app/dev/) | Latest `main`, unreleased and untagged |
+| **PR preview** | `neonplug.app/test/<branch>/` | A specific open pull request |
 
 **💬 Join us:** [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/j59TBHVD22)
 
@@ -41,9 +58,9 @@ NeonPlug supports the Baofeng DM-32UV / DP570UV and UV5R-Mini, with more radios 
 The `.neonplug` file is a zipped JSON archive. You can unzip it to inspect the contents in a semi-human-readable way (e.g. `codeplug.json` inside the zip). Editing the JSON directly is not recommended—use NeonPlug’s import/export and in-app editing instead to avoid invalid data or corruption.
 
 ### 👥 Contact & Group Management
-- **Digital Contacts** - Manage DMR contacts with full talk group support
-- **RX Groups** - Create and organize receive groups
-- **Scan Lists** - Configure scan lists across zones
+- **Digital Contacts** - Manage DMR contacts with full talk group support (DM-32UV)
+- **RX Groups** - Create and organize receive groups (DM-32UV)
+- **Scan Lists** - Configure scan lists across zones (DM-32UV)
 
 ### 🎨 Modern Interface
 - **Cyberpunk Theme** - Eye-catching neon UI that's both beautiful and functional
@@ -58,17 +75,18 @@ Just visit **[neonplug.app](https://neonplug.app)** in a Chrome-based browser (C
 
 **Requirements:**
 - Chrome, Edge, Opera, or Brave browser (for Web Serial API support)
-- A supported radio (e.g. DM-32UV / DP570UV or UV5R-Mini) with USB cable—or BLE for radios that support it
+- A supported radio (see table above) with the appropriate USB cable—or BLE for the UV5R-Mini
 
 ### 📥 Offline mode
 
-You can use NeonPlug without an internet connection. From the live app:
+You can use NeonPlug without an internet connection. Either:
 
-1. On the startup screen, click **Download offline version (ZIP)**  
-   — or open **Settings → About** and click **Download Offline Version (ZIP)**.
-2. Save the ZIP, unzip it, and open **neonplug.html** in your browser.
+- **Download a released build directly:** [neonplug-latest.html](https://github.com/infamy/NeonPlug/releases/latest/download/neonplug-latest.html) — or pick a specific version from [Releases](https://github.com/infamy/NeonPlug/releases). This is the same file the live site serves, so it is a known, citable version.
+- **Or export from the running app:** on the startup screen click **Download offline version (ZIP)** — or open **Settings → About** and click **Download Offline Version (ZIP)** — then unzip and open **neonplug.html**.
 
-The file is a single, self-contained HTML (all assets inlined). No server or network required; Web Serial for the radio still works when the file is opened locally.
+Either way the result is a single, self-contained HTML file (all assets inlined). No server or network required; Web Serial for the radio still works when the file is opened locally.
+
+Releases are numbered by date, `YEAR.MONTH.N`: `2026.9.0` is the first release of September 2026, and the next one that month is `2026.9.1`. The version you are running is shown in **Settings → About**. A tagged release reads `v2026.9.0`; anything built from `main` or a PR reads `v2026.9.0-dev+abc1234` so bug reports can be traced to an exact commit.
 
 ---
 
