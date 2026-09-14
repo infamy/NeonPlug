@@ -179,6 +179,12 @@ export interface RadioCapabilities {
    * TX may have a blank TX, and a write leaves any other out.
    */
   blankTxAnyBand?: boolean;
+  /**
+   * The hidden out-of-band switch (About, once debug mode is on) applies to this radio:
+   * while it is on, channels aren't checked against bandLimits in the editor or on write.
+   * For radios with modified firmware. The DM-32 only, for now.
+   */
+  supportsOutOfBandFrequencies?: boolean;
   /** Returns true if firmware is 049 or newer (or radio-specific threshold). */
   isFirmware049OrNewer?: (firmware: string) => boolean;
   /**

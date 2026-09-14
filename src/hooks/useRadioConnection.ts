@@ -34,7 +34,8 @@ import { useEncryptionKeysStore } from '../store/encryptionKeysStore';
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
-import { isValidChannelFrequency } from '../services/validation/frequencyValidator';
+import { isWritableChannelFrequency } from '../services/validation/frequencyValidator';
+import { useOutOfBandStore } from '../store/outOfBandStore';
 import { parseBootImageHeader } from '../utils/bootImage';
 import { formatPlural } from '../utils/formatPlural';
 import {
@@ -1175,6 +1176,9 @@ export function useRadioConnection() {
       const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
       const writeCaps = getCapabilitiesForModel(effectiveModel);
       const bandLimits = writeCaps?.bandLimits;
+      // The hidden out-of-band switch in About, on a radio that allows it (the DM-32 for now).
+      const outOfBand =
+        writeCaps?.supportsOutOfBandFrequencies === true && useOutOfBandStore.getState().allowOutOfBandFrequencies;
       //
       // ⚠️ NOT applied to the DA-7X2.
       //
@@ -1191,7 +1195,9 @@ export function useRadioConnection() {
       const isD890 = protocolIsD890(radioInfo?.model ?? selectedRadioModel ?? null);
       const validChannels = isD890
         ? channels
-        : channels.filter(ch => isValidChannelFrequency(ch, bandLimits, { blankTxAnyBand: writeCaps?.blankTxAnyBand }));
+        : channels.filter(ch =>
+            isWritableChannelFrequency(ch, bandLimits, { blankTxAnyBand: writeCaps?.blankTxAnyBand, outOfBand })
+          );
       const filteredCount = channels.length - validChannels.length;
 
       if (filteredCount > 0) {

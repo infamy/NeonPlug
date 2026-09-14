@@ -63,6 +63,22 @@ export function isValidChannelFrequency(
          isValidFrequencyRange(channel.txFrequency, limits);
 }
 
+/**
+ * Whether a write keeps a channel. Normally that is isValidChannelFrequency. With out-of-band
+ * frequencies on (the hidden switch in About, for radios with modified firmware), the band
+ * check is skipped and only what the channel encoding can hold is kept: above 0 and below
+ * 1000 MHz, the most the DM-32's eight BCD digits store. A blank TX stays blank.
+ */
+export function isWritableChannelFrequency(
+  channel: Channel,
+  limits: RadioBandLimits | null | undefined,
+  options: { blankTxAnyBand?: boolean; outOfBand?: boolean }
+): boolean {
+  if (!options.outOfBand) return isValidChannelFrequency(channel, limits, options);
+  const storable = (mhz: number) => mhz > 0 && mhz < 1000;
+  return storable(channel.rxFrequency) && (isNoTxFrequency(channel.txFrequency) || storable(channel.txFrequency));
+}
+
 /** Band limits from radio capabilities (e.g. getCapabilitiesForModel(radioInfo?.model)?.bandLimits). */
 export function isValidFrequency(frequency: number, bandLimits?: RadioBandLimits | null): boolean {
   if (frequency <= 0) return false;

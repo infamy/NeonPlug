@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useDebugStore } from '../../store/debugStore';
+import { useOutOfBandStore } from '../../store/outOfBandStore';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { RADIO_DESCRIPTORS } from '../../radios';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
@@ -21,6 +23,9 @@ const WHATS_NEW = LATEST_RELEASE ? whatsNewItems(LATEST_RELEASE) : [];
 
 export const AboutTab: React.FC = () => {
   const { debugMode, setDebugMode } = useDebugStore();
+  const { allowOutOfBandFrequencies, setAllowOutOfBandFrequencies } = useOutOfBandStore();
+  const { caps } = useRadioCapabilities();
+  const [outOfBandConfirmOpen, setOutOfBandConfirmOpen] = useState(false);
   const [offlineFallbackOpen, setOfflineFallbackOpen] = useState(false);
 
   return (
@@ -377,6 +382,39 @@ export const AboutTab: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* Out-of-band frequencies. Hidden until debug mode is on, and shown whenever the
+            switch is on, so it can always be turned off. DM-32 only for now. */}
+        {caps?.supportsOutOfBandFrequencies && (debugMode || allowOutOfBandFrequencies) && (
+          <div className="bg-deep-gray rounded-lg border-2 border-red-500 p-6">
+            <h3 className="text-2xl font-bold text-red-400 mb-3">⚠ Out-of-band frequencies</h3>
+            <div className="space-y-3">
+              <p className="text-base font-semibold text-red-300">
+                For radios with modified firmware only. Writing frequencies outside a stock radio's bands
+                can make the write fail or leave the radio misbehaving, and transmitting outside the bands
+                a radio was built for can damage it and may be illegal.
+              </p>
+              <p className="text-cool-gray text-sm">
+                While this is on, NeonPlug stops checking channels against the radio's bands: the channel
+                editor shows no band errors, and a write keeps every channel below 1000 MHz as it is. It
+                stays on until you turn it off here.
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  allowOutOfBandFrequencies ? setAllowOutOfBandFrequencies(false) : setOutOfBandConfirmOpen(true)
+                }
+                className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
+                  allowOutOfBandFrequencies
+                    ? 'bg-red-900/40 text-red-300 border border-red-500 hover:bg-red-900/60'
+                    : 'bg-red-900/20 text-red-400 border border-red-600/40 hover:bg-red-900/30'
+                }`}
+              >
+                {allowOutOfBandFrequencies ? '⚠ Out-of-band frequencies ON: turn off' : 'Turn on out-of-band frequencies'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
     <ConfirmModal
@@ -388,6 +426,21 @@ export const AboutTab: React.FC = () => {
       confirmLabel="Download"
       cancelLabel="Close"
       variant="default"
+    />
+    <ConfirmModal
+      isOpen={outOfBandConfirmOpen}
+      onClose={() => setOutOfBandConfirmOpen(false)}
+      onConfirm={() => setAllowOutOfBandFrequencies(true)}
+      title="Turn on out-of-band frequencies?"
+      message={
+        'Only do this for a radio with modified firmware.\n\n' +
+        "NeonPlug will stop checking channels against the radio's bands, and will write them as they are. " +
+        'On a stock radio that can make the write fail or leave the radio misbehaving, and transmitting ' +
+        'outside its bands can damage it and may be illegal.\n\n' +
+        'It stays on until you turn it off in About.'
+      }
+      confirmLabel="Turn on"
+      variant="danger"
     />
     </>
   );
