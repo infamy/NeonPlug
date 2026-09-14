@@ -30,6 +30,7 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
     },
   },
   bandLimits: DEFAULT_BAND_LIMITS,
+  blankTxAnyBand: true,
   isFirmware049OrNewer,
   expectedFirmware: 'DM32.01.L01.048',
   writeValidations: {

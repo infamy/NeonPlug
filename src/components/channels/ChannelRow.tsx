@@ -8,7 +8,7 @@ import type { EncryptionKey } from '../../models/EncryptionKey';
 import type { QuickContact } from '../../models/QuickContact';
 import type { DMRRadioID } from '../../models/DMRRadioID';
 import { CTCSS_FREQUENCIES, DCS_CODES, formatCTCSSFrequency, formatDCSCode } from '../../utils/ctcssConstants';
-import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
+import { hasBlankTx, isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
 import type { ChannelColumnGroup } from '../../types/radioCapabilities';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { powerLevelsFor, powerAbbrev, nextPowerLevel } from '../../utils/powerLevels';
@@ -294,7 +294,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         </button>
       </td>
       <td className="px-2 py-2">
-        {isRxInNoTxBand(channel.rxFrequency) && isNoTxFrequency(channel.txFrequency) ? (
+        {hasBlankTx(channel, caps?.blankTxAnyBand) ? (
           <input
             type="text"
             readOnly

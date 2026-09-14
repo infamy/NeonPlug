@@ -172,6 +172,13 @@ export interface RadioCapabilities {
   digital?: RadioCapabilitiesDigital;
   /** Band limits for frequency validation (e.g. VHF 87-174, UHF 400-470 MHz). */
   bandLimits?: RadioBandLimits;
+  /**
+   * The radio holds a blank TX frequency on a channel in any band, Forbid TX or
+   * not, the way its vendor CPS writes one (the DM-32: 0xFF). NeonPlug keeps that
+   * TX as NO_TX_FREQUENCY. Without this, only an 87–136 MHz channel with Forbid
+   * TX may have a blank TX, and a write leaves any other out.
+   */
+  blankTxAnyBand?: boolean;
   /** Returns true if firmware is 049 or newer (or radio-specific threshold). */
   isFirmware049OrNewer?: (firmware: string) => boolean;
   /**

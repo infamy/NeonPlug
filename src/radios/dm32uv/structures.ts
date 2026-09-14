@@ -8,7 +8,7 @@ import { generateZoneId } from '../../utils/zoneHelpers';
 import { OFFSET, BLOCK_SIZE, LIMITS } from './constants';
 import { createDefaultChannel } from '../../utils/channelHelpers';
 import { log } from '../../utils/protocolLogger';
-import { NO_TX_FREQUENCY, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
+import { NO_TX_FREQUENCY, isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
 
 // --- BCD frequency and CTCSS/DCS encoding (inlined from encoding.ts) ---
 
@@ -207,7 +207,8 @@ export function parseChannel(data: Uint8Array, channelNumber: number): Channel {
     rxFreq = 0;
   }
 
-  // TX Frequency (0x14-0x17, 4 bytes BCD). All 0xFF = no TX (aviation 87–136 MHz band).
+  // TX Frequency (0x14-0x17, 4 bytes BCD). All 0xFF = a blank TX, which the vendor CPS writes in
+  // any band, Forbid TX or not.
   let txFreq: number;
   const txBytes = data.slice(0x14, 0x18);
   if (txBytes.every(b => b === 0xFF)) {
@@ -575,8 +576,9 @@ export function encodeChannel(channel: Channel): Uint8Array {
   const rxFreqBytes = encodeBCDFrequency(channel.rxFrequency);
   data.set(rxFreqBytes, 0x10);
 
-  // TX Frequency (0x14-0x17). Use 0xFF only for RX in 87–136 MHz with Forbid TX; else encode actual TX.
-  if (isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx) {
+  // TX Frequency (0x14-0x17). 0xFF is a blank TX: written for a channel whose TX is blank, in any
+  // band and Forbid TX or not, as the vendor CPS writes it, and for RX in 87–136 MHz with Forbid TX.
+  if (isNoTxFrequency(channel.txFrequency) || (isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx)) {
     data[0x14] = data[0x15] = data[0x16] = data[0x17] = 0xFF;
   } else {
     const txFreqBytes = encodeBCDFrequency(channel.txFrequency);
