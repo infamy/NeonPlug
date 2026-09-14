@@ -236,7 +236,7 @@ Extend `BaseAnalogProtocol` or `BaseDigitalProtocol` from `radios/shared/BasePro
 1. **Cache restore before write.** DM-32 → `restoreCacheFromStore(blockData, blockMetadata)` from `radioStore`. Clone radios (Yaesu/Baofeng) → `protocol.setMemoryImage(cachedMemoryImage.image)`. The cached image is **model-tagged**; never restore one radio's image into another.
 2. **Buffered settings must be staged *before* `writeChannels`.** Protocols with `bufferedSettingsWrite === true` don't send settings themselves — they fold them into the memory image that `writeChannels` uploads. Calling `writeRadioSettings` after `writeChannels` silently discards them (and `clearChanges()` then lies about it).
 3. **Disconnect on success, not just on error.** Leaving the port open+locked makes the *next* `port.open()` throw.
-4. Channels outside the model's `bandLimits` are filtered before write, and zone/scan-list references to filtered-out channels are stripped — never write a reference to a non-existent channel.
+4. Channels outside the model's `bandLimits` are filtered before write, and zone/scan-list references to filtered-out channels are stripped — never write a reference to a non-existent channel. The one exception is the hidden out-of-band switch (About, shown once debug mode is on) on a radio with `supportsOutOfBandFrequencies`, the DM-32 only: it skips the band check but still drops anything the channel encoding can't hold. Nothing turns it on but the user, not a read and not a codeplug file.
 
 ## Patterns to follow
 

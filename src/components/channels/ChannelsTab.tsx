@@ -3,6 +3,7 @@ import { formatPlural } from '../../utils/formatPlural';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { useOutOfBandActive } from '../../hooks/useOutOfBandActive';
 import { ChannelsTable } from './ChannelsTable';
 import { createDefaultChannel } from '../../utils/channelHelpers';
 import { ConfirmModal } from '../ui/ConfirmModal';
@@ -28,6 +29,7 @@ export const ChannelsTab: React.FC = () => {
   const { channels, addChannel, deleteChannels, setChannels } = useChannelsStore();
   const { settings: radioSettings } = useRadioSettingsStore();
   const { caps } = useRadioCapabilities();
+  const outOfBand = useOutOfBandActive();
   const supportsVfoChannels = caps?.supportsVfoChannels === true;
   const [searchQuery, setSearchQuery] = useState('');
   const [scrollToChannel, setScrollToChannel] = useState<number | null>(null);
@@ -246,6 +248,15 @@ export const ChannelsTab: React.FC = () => {
           )}
         </>}
       />
+      {outOfBand && (
+        <div
+          role="alert"
+          className="mb-3 shrink-0 rounded border-2 border-red-500 bg-red-900/30 px-4 py-2 text-sm font-semibold text-red-300"
+        >
+          ⚠ Out-of-band frequencies are ON. Channels aren't checked against the radio's bands, and a write keeps
+          them as they are. Turn it off in About.
+        </div>
+      )}
       <div className="mb-3 flex items-center gap-3 shrink-0">
         <div className="relative flex-1 min-w-0">
           <input

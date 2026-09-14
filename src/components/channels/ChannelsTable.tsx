@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { ChannelColumnGroup } from '../../types/radioCapabilities';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { useOutOfBandActive } from '../../hooks/useOutOfBandActive';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useScanListsStore } from '../../store/scanListsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
@@ -36,7 +37,9 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const { channels: channelsFromStore, updateChannel, deleteChannel, addChannel } = useChannelsStore();
   const { caps } = useRadioCapabilities();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
-  const bandLimits = caps?.bandLimits ?? null;
+  // No band errors while the hidden out-of-band switch is on for this radio.
+  const outOfBand = useOutOfBandActive();
+  const bandLimits = outOfBand ? null : (caps?.bandLimits ?? null);
   const maxChannels = caps?.maxChannels ?? 4000;
   const analogOnly = caps?.analogOnly === true;
   // Optional column groups: a radio shows one only if it declares it.
