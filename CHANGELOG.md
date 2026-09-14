@@ -19,6 +19,11 @@ version says how old a build is, not how big its changes are. Whether a saved
 
 ## [Unreleased]
 
+- MMDVM hotspot channels can be duplex, use either timeslot, and pick existing talk groups.
+- Every list exports to CSV and imports back, adding to what's there or replacing it.
+- DM-32 talk groups past 170 now read and write.
+- Most of these fixes come from Will (@Will-83). Thank you, Will.
+
 ## [2026.9.0] — 2026-09-13
 
 - First tagged release. neonplug.app now serves the latest release, and
