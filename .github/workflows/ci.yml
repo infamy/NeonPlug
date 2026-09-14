@@ -7,9 +7,6 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - 'src/data/radioid-users.csv'
-      - 'src/data/rptrs.json'
 
 jobs:
   build:
