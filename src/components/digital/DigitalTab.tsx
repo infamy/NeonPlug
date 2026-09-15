@@ -36,6 +36,7 @@ import { checkRadioIdLimits, checkRxGroupLimits, checkTalkGroupLimits } from '..
 import { rxGroupsWithDmrIdMembers, rxGroupsWithRadioMembers } from '../../services/csv/rxGroupMembers';
 import { planTalkGroupDelete, describeTalkGroupDelete } from '../../services/csv/talkGroupImport';
 import { describeTalkGroupUsage, talkGroupMatchesSearch, talkGroupUsage } from '../../services/talkGroupUsage';
+import { nothingImportedMessage } from '../../services/csv/importProblems';
 import { useCsvImport } from '../../hooks/useCsvImport';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
@@ -193,8 +194,10 @@ export const DigitalTab: React.FC = () => {
   const handleImportRadioIdsFile = (file: File) => {
     file.text().then(content => {
       const result = importDMRRadioIDsFromCSV(content);
-      if (!result.success || !result.dmrRadioIds) {
-        showAlert(result.errors?.join('\n') || 'Failed to import DMR Radio IDs CSV', 'Import failed');
+      // Rows that can't be read are left out and named; only a file with
+      // nothing readable stops here.
+      if (!result.dmrRadioIds || result.dmrRadioIds.length === 0) {
+        showAlert(nothingImportedMessage(result.errors), 'Import failed');
         return;
       }
       const imported = result.dmrRadioIds;
@@ -202,6 +205,7 @@ export const DigitalTab: React.FC = () => {
         noun: 'DMR radio ID',
         existing: radioIds,
         imported,
+        problems: result.errors,
         add: () => addRadioIds(radioIds, imported, caps?.maxRadioIds),
         check: (list) => checkRadioIdLimits(list, caps),
         apply: (list) => setRadioIds(list),
@@ -223,8 +227,10 @@ export const DigitalTab: React.FC = () => {
   const handleImportRXGroupsFile = (file: File) => {
     file.text().then(content => {
       const result = importRXGroupsFromCSV(content);
-      if (!result.success || !result.rxGroups) {
-        showAlert(result.errors?.join('\n') || 'Failed to import RX Groups CSV', 'Import failed');
+      // Rows that can't be read are left out and named; only a file with
+      // nothing readable stops here.
+      if (!result.rxGroups || result.rxGroups.length === 0) {
+        showAlert(nothingImportedMessage(result.errors), 'Import failed');
         return;
       }
       const members = rxGroupsWithRadioMembers(result.rxGroups, quickContacts, membersBySlot, countAtRead());
@@ -233,6 +239,7 @@ export const DigitalTab: React.FC = () => {
         noun: 'RX group',
         existing: rxGroups,
         imported,
+        problems: result.errors,
         add: () => addRxGroups(rxGroups, imported, caps?.digital?.limits?.RX_GROUPS_MAX),
         // A member the talk group list doesn't have can only be dropped, so it is asked about like a limit.
         check: (list) => {
@@ -250,8 +257,10 @@ export const DigitalTab: React.FC = () => {
   const handleImportTalkGroupsFile = (file: File) => {
     file.text().then(content => {
       const result = importQuickContactsFromCSV(content);
-      if (!result.success || !result.quickContacts) {
-        showAlert(result.errors?.join('\n') || 'Failed to import Talk Groups CSV', 'Import failed');
+      // Rows that can't be read are left out and named; only a file with
+      // nothing readable stops here.
+      if (!result.quickContacts || result.quickContacts.length === 0) {
+        showAlert(nothingImportedMessage(result.errors), 'Import failed');
         return;
       }
       const imported = result.quickContacts;
@@ -261,6 +270,7 @@ export const DigitalTab: React.FC = () => {
         noun: 'talk group',
         existing: quickContacts,
         imported,
+        problems: result.errors,
         add: () => addTalkGroups(quickContacts, imported),
         replace: () => plan.talkGroups,
         replaceNote: describeTalkGroupImportLosses(plan) || undefined,

@@ -13,6 +13,7 @@ import { useCsvImport } from '../../hooks/useCsvImport';
 import { exportChannelsToCSV, importChannelsFromCSV, downloadCSV } from '../../services/csv';
 import { addChannels } from '../../services/csv/importModes';
 import { checkChannelLimits } from '../../services/csv/importLimits';
+import { nothingImportedMessage } from '../../services/csv/importProblems';
 import type { Channel } from '../../models/Channel';
 
 import { isVFOChannel } from '../../utils/vfoChannels';
@@ -134,8 +135,10 @@ export const ChannelsTab: React.FC = () => {
   const handleImportChannelsFile = useCallback((file: File) => {
     file.text().then(content => {
       const result = importChannelsFromCSV(content);
-      if (!result.success || !result.channels) {
-        showAlert(result.errors?.join('\n') || 'Failed to import channels CSV', 'Import failed');
+      // Rows that can't be read are left out and named; only a file with
+      // nothing readable stops here.
+      if (!result.channels || result.channels.length === 0) {
+        showAlert(nothingImportedMessage(result.errors), 'Import failed');
         return;
       }
       const imported = result.channels;
@@ -143,6 +146,7 @@ export const ChannelsTab: React.FC = () => {
         noun: 'channel',
         existing: channels,
         imported,
+        problems: result.errors,
         add: () => addChannels(channels, imported),
         check: (list) => checkChannelLimits(list, caps),
         apply: (list, mode) => {

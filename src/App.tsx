@@ -23,6 +23,8 @@ import { useAlert } from './hooks/useAlert';
 import { useConfirmDialog } from './hooks/useConfirmDialog';
 import { confirmNewerFormat } from './utils/codeplugFormatPrompt';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
+import { nothingImportedMessage, unreadableRowsNote } from './services/csv/importProblems';
+import { formatPlural } from './utils/formatPlural';
 import type { CodeplugData } from './services/codeplugExport';
 import { applyCodeplugToStores } from './services/applyCodeplug';
 import { backupUnsavedEdits, hasUnsavedEdits, trackUnsavedEdits } from './services/unsavedEdits';
@@ -185,23 +187,32 @@ function App() {
       // Legacy CSV import support
       const text = await file.text();
 
+      // Rows that can't be read are left out and named; only a file with nothing
+      // readable is refused. Either list replaces the current one, so unsaved
+      // edits are snapshotted first, as they are for a codeplug file.
       if (fileName.includes('channel')) {
         const result = importChannelsFromCSV(text);
-        if (result.success && result.channels) {
-          setChannels(result.channels);
+        const read = result.channels ?? [];
+        if (read.length > 0) {
+          await backupUnsavedEdits(`opening ${file.name}`);
+          setChannels(read);
           setShowStartupModal(false);
-          showAlert(`Successfully imported ${result.channels.length} channels`);
+          const skipped = unreadableRowsNote(result.errors);
+          showAlert(`Imported ${read.length} ${formatPlural(read.length, 'channel')}.${skipped ? `\n\n${skipped}` : ''}`);
         } else {
-          showAlert(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
+          showAlert(nothingImportedMessage(result.errors));
         }
       } else if (fileName.includes('contact')) {
         const result = importContactsFromCSV(text);
-        if (result.success && result.contacts) {
-          setContacts(result.contacts);
+        const read = result.contacts ?? [];
+        if (read.length > 0) {
+          await backupUnsavedEdits(`opening ${file.name}`);
+          setContacts(read);
           setShowStartupModal(false);
-          showAlert(`Successfully imported ${result.contacts.length} contacts`);
+          const skipped = unreadableRowsNote(result.errors);
+          showAlert(`Imported ${read.length} ${formatPlural(read.length, 'contact')}.${skipped ? `\n\n${skipped}` : ''}`);
         } else {
-          showAlert(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
+          showAlert(nothingImportedMessage(result.errors));
         }
       } else {
         showAlert('File must be a codeplug (.neonplug) or CSV file containing "channel" or "contact" in the filename');
