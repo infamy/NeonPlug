@@ -7,6 +7,9 @@ describe('classifyRadioError', () => {
     ['No port selected by the user.', 'NotFoundError', 'cancelled'],
     ['User cancelled the requestDevice() chooser.', 'NotFoundError', 'cancelled'],
     ['Port selection cancelled. Please select a port to continue.', undefined, 'cancelled'],
+    // Web Bluetooth's real failures share the name, and are not cancels
+    ['Bluetooth adapter not available.', 'NotFoundError', 'unknown'],
+    ['No Services matching UUID 0000ffe0-0000-1000-8000-00805f9b34fb found in Device.', 'NotFoundError', 'unknown'],
     // Another tab, or the vendor CPS, holds the port
     ['Failed to open serial port.', 'NetworkError', 'portBusy'],
     ['Port is in use by another connection. Please wait for the previous operation to complete.', undefined, 'portBusy'],

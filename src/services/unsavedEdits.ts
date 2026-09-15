@@ -64,7 +64,8 @@ export function codeplugHasData(): boolean {
 }
 
 export function hasUnsavedEdits(): boolean {
-  return useUnsavedChangesStore.getState().dirty && codeplugHasData();
+  const { dirty, contactsDirty } = useUnsavedChangesStore.getState();
+  return (dirty || contactsDirty) && codeplugHasData();
 }
 
 /**
@@ -83,11 +84,15 @@ export function backupUnsavedEdits(before: string): Promise<void> {
 
 type Watchable<S> = { subscribe: (listener: (state: S, prev: S) => void) => () => void };
 
-function watch<S>(store: Watchable<S>, pick: (state: S) => readonly unknown[]): () => void {
+function watch<S>(
+  store: Watchable<S>,
+  pick: (state: S) => readonly unknown[],
+  mark: () => void = () => useUnsavedChangesStore.getState().markDirty()
+): () => void {
   return store.subscribe((state, prev) => {
     const now = pick(state);
     const before = pick(prev);
-    if (now.some((value, i) => value !== before[i])) useUnsavedChangesStore.getState().markDirty();
+    if (now.some((value, i) => value !== before[i])) mark();
   });
 }
 
@@ -101,7 +106,8 @@ export function trackUnsavedEdits(): () => void {
     watch(useChannelsStore, (s) => [s.channels]),
     watch(useZonesStore, (s) => [s.zones]),
     watch(useScanListsStore, (s) => [s.scanLists]),
-    watch(useContactsStore, (s) => [s.contacts]),
+    // The contact list goes to the radio on its own, not with a codeplug write.
+    watch(useContactsStore, (s) => [s.contacts], () => useUnsavedChangesStore.getState().markContactsDirty()),
     watch(useRadioSettingsStore, (s) => [s.settings]),
     watch(useDigitalEmergencyStore, (s) => [s.systems, s.config]),
     watch(useAnalogEmergencyStore, (s) => [s.systems]),

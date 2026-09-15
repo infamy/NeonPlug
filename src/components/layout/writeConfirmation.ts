@@ -62,6 +62,12 @@ export interface WriteConfirmation {
   headline: string | null;
   /** The settings the write changes, or that it writes all of them. */
   settingsLine: string | null;
+  /**
+   * The write sends no channels, which leaves the radio with none. It used to
+   * read "Writes nothing", while the channels were listed as left out, as if the
+   * radio kept them: an FT-25R given only UHF channels had every channel erased.
+   */
+  erasesChannels: boolean;
   /** Destructive consequences. Shown first, because they are what cannot be undone. */
   removals: { count: number; unit: 'channel' | 'zone'; list: Capped<number> }[];
   /** What the write leaves out because the radio cannot hold it. */
@@ -130,7 +136,9 @@ function listCounts(summary: WriteSummaryInput): string {
 
 function buildHeadline(summary: WriteSummaryInput | undefined): string | null {
   if (!summary) return null;
-  return `Writes ${listCounts(summary)} to ${summary.model ? `the ${summary.model}` : 'the radio'}.`;
+  const radio = summary.model ? `the ${summary.model}` : 'the radio';
+  if (summary.channels === 0) return `Writes no channels to ${radio}.`;
+  return `Writes ${listCounts(summary)} to ${radio}.`;
 }
 
 function buildSettingsLine(summary: WriteSummaryInput | undefined): string | null {
@@ -166,6 +174,7 @@ export function buildWriteConfirmation({ preview, integrity, warnings, summary }
   const headline = buildHeadline(summary);
   const leftOut = buildLeftOut(summary);
   const settingsLine = buildSettingsLine(summary);
+  const erasesChannels = summary?.channels === 0;
 
   const removals: WriteConfirmation['removals'] = [];
   if (preview && preview.clearedChannels.length > 0) {
@@ -192,7 +201,7 @@ export function buildWriteConfirmation({ preview, integrity, warnings, summary }
     consequence: f.consequence,
   }));
 
-  if (!preview) return { headline, settingsLine, removals, leftOut, checks, readWarnings, plan: null };
+  if (!preview) return { headline, settingsLine, erasesChannels, removals, leftOut, checks, readWarnings, plan: null };
 
   const bytesChanged = preview.bytesChanged;
   const bytesNew = preview.bytesNew ?? 0;
@@ -200,6 +209,7 @@ export function buildWriteConfirmation({ preview, integrity, warnings, summary }
   return {
     headline,
     settingsLine,
+    erasesChannels,
     removals,
     leftOut,
     checks,

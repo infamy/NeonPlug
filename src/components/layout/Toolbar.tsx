@@ -89,7 +89,7 @@ export const Toolbar: React.FC = () => {
   const lastProgressMessage = useRef('');
   const webSerialSupported = isWebSerialSupported();
   // Edits since the last read, write, import or export (services/unsavedEdits.ts).
-  const unsavedChanges = useUnsavedChangesStore((s) => s.dirty);
+  const unsavedChanges = useUnsavedChangesStore((s) => s.dirty || s.contactsDirty);
   const hasUnsavedEdits =
     unsavedChanges &&
     (channels.length > 0 || zones.length > 0 || scanLists.length > 0 || contacts.length > 0 || quickContacts.length > 0);
@@ -223,7 +223,8 @@ export const Toolbar: React.FC = () => {
   const handleExport = async () => {
     const { exportCodeplug } = await import('../../services/codeplugExport');
     await exportCodeplug(buildCodeplugData());
-    useUnsavedChangesStore.getState().markClean();
+    // Not marked saved: the download is a link click, and a save dialog the user
+    // cancels would still have cleared the unsaved mark.
   };
 
   const handleCloseModal = () => {
@@ -324,7 +325,8 @@ export const Toolbar: React.FC = () => {
 
       setConnectionError(null);
       setLastOperationMode(null);
-      useUnsavedChangesStore.getState().markClean();
+      // Everything but the contact list, which a codeplug write doesn't send.
+      useUnsavedChangesStore.getState().markWritten();
       setIsWriting(false);
       setProgress(0);
       setProgressMessage('');
@@ -379,7 +381,8 @@ export const Toolbar: React.FC = () => {
       getSettingsProfileForModel(effectiveModel),
       settingsState.settings,
       settingsState.originalSettings,
-      settingsState.changedFields
+      settingsState.changedFields,
+      settingsState.allChanged
     );
     const summary = {
       model: writeModel,
@@ -539,7 +542,7 @@ export const Toolbar: React.FC = () => {
               <span
                 role="img"
                 aria-label="Unsaved changes"
-                title="Unsaved changes: edits since the last read, write, import or export. Write them to the radio or export a file to keep them."
+                title="Unsaved changes: edits since the last read, write or import. Exporting a file keeps a copy; the dot stays until they are written to the radio."
                 className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-neon-magenta shadow-glow-magenta ring-2 ring-deep-gray"
               />
             )}

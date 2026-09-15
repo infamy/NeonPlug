@@ -5,6 +5,7 @@ import type { CodeplugData } from '../../src/services/codeplugExport';
 import { useUnsavedChangesStore } from '../../src/store/unsavedChangesStore';
 import { useChannelsStore } from '../../src/store/channelsStore';
 import { useRXGroupsStore } from '../../src/store/rxGroupsStore';
+import { useContactsStore } from '../../src/store/contactsStore';
 import { createDefaultChannel } from '../../src/utils/channelHelpers';
 
 const codeplug = (channelNames: string[]) =>
@@ -44,6 +45,15 @@ describe('unsaved edits', () => {
   it('is clean again once another codeplug is opened', () => {
     useChannelsStore.getState().updateChannel(1, { name: 'Edited' });
     applyCodeplugToStores(codeplug(['Opened']), 'import');
+    expect(hasUnsavedEdits()).toBe(false);
+  });
+
+  it('keeps an edited contact list unsaved after a codeplug write, which does not send it', () => {
+    useChannelsStore.getState().updateChannel(1, { name: 'Edited' });
+    useContactsStore.getState().setContacts([]);
+    useUnsavedChangesStore.getState().markWritten();
+    expect(hasUnsavedEdits()).toBe(true);
+    useUnsavedChangesStore.getState().markClean();
     expect(hasUnsavedEdits()).toBe(false);
   });
 

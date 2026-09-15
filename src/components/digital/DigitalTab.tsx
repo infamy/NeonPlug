@@ -346,17 +346,27 @@ export const DigitalTab: React.FC = () => {
     setDeleteConfirm({ type: 'radioId', index });
   };
 
-  // Channels reference talk groups by slot, so deleting one moves the channels
-  // that use the talk groups after it.
-  const referenceRules = { renumbersTalkGroupRefsOnWrite: caps?.renumbersTalkGroupRefsOnWrite };
+  // Channels, and the DA-7X2's RX group members, reference talk groups by slot,
+  // so deleting one moves what uses the talk groups after it.
+  const referenceRules = {
+    renumbersTalkGroupRefsOnWrite: caps?.renumbersTalkGroupRefsOnWrite,
+    rxGroupMembersBySlot: caps?.rxGroupMembersBySlot,
+  };
   const talkGroupToDelete =
     deleteConfirm?.type === 'contact' ? quickContacts.find((tg) => tg.index === deleteConfirm.index) : undefined;
-  const talkGroupDelete = talkGroupToDelete ? planTalkGroupDelete(channels, talkGroupToDelete, referenceRules) : undefined;
+  const talkGroupDelete = talkGroupToDelete
+    ? planTalkGroupDelete(channels, talkGroupToDelete, referenceRules, {
+        talkGroups: quickContacts,
+        rxGroups,
+        countAtRead: useRadioStore.getState().tables.writeOriginals?.talkgroupCountAtRead,
+      })
+    : undefined;
 
   const handleDeleteConfirmModalConfirm = () => {
     if (!deleteConfirm) return;
     if (deleteConfirm.type === 'contact') {
       if (talkGroupDelete?.channels.some((ch, i) => ch !== channels[i])) setChannels(talkGroupDelete.channels);
+      if (talkGroupDelete?.rxGroups?.some((group, i) => group !== rxGroups[i])) setRXGroups(talkGroupDelete.rxGroups);
       deleteContact(deleteConfirm.index);
     } else if (deleteConfirm.type === 'message') deleteMessage(deleteConfirm.index);
     else if (deleteConfirm.type === 'radioId') deleteRadioId(deleteConfirm.index);
@@ -373,7 +383,7 @@ export const DigitalTab: React.FC = () => {
           : '';
   const deleteConfirmMessage =
     deleteConfirm?.type === 'contact'
-      ? ['Are you sure you want to delete this contact?', talkGroupDelete && describeTalkGroupDelete(talkGroupDelete, referenceRules)]
+      ? ['Are you sure you want to delete this contact?', talkGroupDelete && describeTalkGroupDelete(talkGroupDelete)]
           .filter(Boolean)
           .join(' ')
       : deleteConfirm?.type === 'message'

@@ -70,17 +70,21 @@ export function fieldMatches(field: SettingsFieldDescriptor, query: string, sect
  *
  * A write sends every top-level key in `changedFields`. A field is named when
  * its own value differs from the original; a changed key no profile field
- * covers is named by its key. An imported codeplug marks every key changed
- * without any value differing, and is reported as `all`.
+ * covers is named by its key. An opened codeplug marks every key changed
+ * without any value differing; the store says so (`allChanged`), and it is
+ * reported as `all`. Telling that from the keys was wrong both ways: a radio
+ * whose settings are one `radioSpecific` object had every key "changed" after
+ * a single edit.
  */
 export function changedSettingLabels(
   profile: SettingsProfile | null | undefined,
   settings: RadioSettings | null,
   original: RadioSettings | null,
-  changedFields: ReadonlySet<string>
+  changedFields: ReadonlySet<string>,
+  allChanged = false
 ): { labels: string[]; all: boolean } {
   if (!settings || changedFields.size === 0) return { labels: [], all: false };
-  if (Object.keys(settings).every((key) => changedFields.has(key))) return { labels: [], all: true };
+  if (allChanged) return { labels: [], all: true };
   const labels: string[] = [];
   const covered = new Set<string>();
   for (const field of profile?.sections.flatMap((s) => s.fields) ?? []) {

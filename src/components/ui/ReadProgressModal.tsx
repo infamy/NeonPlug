@@ -159,10 +159,14 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
       ],
     },
   };
-  const { title, heading } = help[errorKind];
-  const tips = help[errorKind].tips.filter(Boolean);
-  const canRetry = errorKind !== 'refused';
-  const canChangePort = errorKind !== 'refused' && errorKind !== 'readIncomplete';
+  // "Refused" comes from the error's wording, but a write is several steps. One
+  // that failed after sending had not refused before anything was sent, so it
+  // mustn't say "Nothing was written".
+  const kind: RadioErrorKind = errorKind === 'refused' && isWriting && progress > 0 ? 'unknown' : errorKind;
+  const { title, heading } = help[kind];
+  const tips = help[kind].tips.filter(Boolean);
+  const canRetry = kind !== 'refused';
+  const canChangePort = kind !== 'refused' && kind !== 'readIncomplete';
 
   return (
     <div

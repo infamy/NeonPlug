@@ -60,6 +60,12 @@ export const WriteConfirmBody: React.FC<WriteConfirmInput> = (input) => {
       {c.headline && <p className="text-white">{c.headline}</p>}
       {c.settingsLine && <p className="text-cool-gray -mt-3">{c.settingsLine}</p>}
 
+      {c.erasesChannels && (
+        <Callout tone="danger" title="Erases every channel on the radio">
+          This write sends no channels, so the radio is left with none. Cancel unless that is what you want.
+        </Callout>
+      )}
+
       {/* What cannot be undone leads — it used to sit mid-paragraph. */}
       {c.removals.map((r) => (
         <Callout

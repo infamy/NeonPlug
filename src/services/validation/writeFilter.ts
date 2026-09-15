@@ -16,7 +16,10 @@ import type { RadioBandLimits } from '../../types/radioCapabilities';
 import { isWritableChannelFrequency } from './frequencyValidator';
 
 export interface WriteFilterOptions {
-  /** False on the DA-7X2, whose write planner checks channel frequencies itself. */
+  /**
+   * False on the DA-7X2, whose write planner checks channel frequencies itself
+   * and which sends every scan list by its slot, empty ones included.
+   */
   filterBand: boolean;
   bandLimits?: RadioBandLimits | null;
   blankTxAnyBand?: boolean;
@@ -61,12 +64,18 @@ export function planWritableCodeplug(
     channels: list.channels.filter((n) => keptNumbers.has(n)),
   }));
 
+  // The DA-7X2's write takes its scan lists from the store by slot (d890ScanLists),
+  // not from this plan, so they are all kept here and the confirmation matches.
+  const everyScanList = !options.filterBand;
+
   return {
     channels: kept,
     zones: trimmedZones.filter((zone) => zone.channels.length > 0),
-    scanLists: trimmedScanLists.filter((list) => list.channels.length > 0),
+    scanLists: everyScanList ? [...scanLists] : trimmedScanLists.filter((list) => list.channels.length > 0),
     droppedChannels: kept === channels ? [] : channels.filter((ch) => !keptNumbers.has(ch.number)),
     droppedZones: trimmedZones.filter((zone) => zone.channels.length === 0).map((zone) => zone.name),
-    droppedScanLists: trimmedScanLists.filter((list) => list.channels.length === 0).map((list) => list.name),
+    droppedScanLists: everyScanList
+      ? []
+      : trimmedScanLists.filter((list) => list.channels.length === 0).map((list) => list.name),
   };
 }

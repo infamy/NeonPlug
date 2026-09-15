@@ -66,8 +66,19 @@ describe('settings fields', () => {
     ]);
   });
 
-  it('reports an imported codeplug, whose every setting is marked changed, as all of them', () => {
+  it('reports an opened codeplug, which the store marks all changed, as all of them', () => {
     const s = settings();
-    expect(changedSettingLabels(profile, s, s, new Set(Object.keys(s)))).toEqual({ labels: [], all: true });
+    expect(changedSettingLabels(profile, s, s, new Set(Object.keys(s)), true)).toEqual({ labels: [], all: true });
+  });
+
+  it('names the one setting changed on a radio whose settings are a single object', () => {
+    const beep: SettingsFieldDescriptor = { key: 'radioSpecific.beep', label: 'Beep', type: 'checkbox' };
+    const oneObject = { radioType: 'test', sections: [{ id: 'a', title: 'Audio', fields: [beep] }] } as SettingsProfile;
+    const original = { radioSpecific: { beep: 1 } } as unknown as RadioSettings;
+    const edited = { radioSpecific: { beep: 0 } } as unknown as RadioSettings;
+    expect(changedSettingLabels(oneObject, edited, original, new Set(['radioSpecific']))).toEqual({
+      labels: ['Beep'],
+      all: false,
+    });
   });
 });

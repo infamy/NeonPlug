@@ -5,6 +5,8 @@ interface RadioSettingsState {
   settings: RadioSettings | null;
   originalSettings: RadioSettings | null; // Store original settings from radio
   changedFields: Set<string>; // Track which fields have been modified
+  /** Every key was marked changed by opening a codeplug, so a write sends them all. */
+  allChanged: boolean;
   // markAllChanged: when true (used by the codeplug IMPORT path), every
   // settings key is flagged as changed so a subsequent Write pushes the full
   // imported block. Without it, imported settings never reach the radio
@@ -54,7 +56,9 @@ export const useRadioSettingsStore = create<RadioSettingsState>((set, get) => ({
   settings: null,
   originalSettings: null,
   changedFields: new Set<string>(),
+  allChanged: false,
   setSettings: (settings, opts) => set({
+    allChanged: !!(settings && opts?.markAllChanged),
     settings,
     originalSettings: settings ? JSON.parse(JSON.stringify(settings)) : null, // Deep clone
     // Default (read-from-radio): no fields dirty. Import path passes
@@ -100,6 +104,7 @@ export const useRadioSettingsStore = create<RadioSettingsState>((set, get) => ({
   },
   clearChanges: () => set((state) => ({
     changedFields: new Set<string>(),
+    allChanged: false,
     originalSettings: state.settings ? JSON.parse(JSON.stringify(state.settings)) : null,
   })),
 }));

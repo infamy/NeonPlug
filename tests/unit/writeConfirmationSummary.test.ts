@@ -39,6 +39,14 @@ describe('the write confirmation summary', () => {
     expect(confirm(summary()).settingsLine).toBeNull();
   });
 
+  it('warns that a write with no channels leaves the radio with none', () => {
+    const c = confirm(summary({ channels: 0, zones: 0, scanLists: 0, droppedChannels: [{ number: 1, name: 'UHF' }] }));
+    expect(c.headline).toBe('Writes no channels to the DM-32UV.');
+    expect(c.erasesChannels).toBe(true);
+    expect(confirm(summary()).erasesChannels).toBe(false);
+    expect(confirm().erasesChannels).toBe(false);
+  });
+
   it('has no headline where no summary was given', () => {
     expect(confirm().headline).toBeNull();
   });

@@ -10,12 +10,14 @@
 export type RadioErrorKind = 'cancelled' | 'portBusy' | 'noAnswer' | 'readIncomplete' | 'refused' | 'unknown';
 
 /**
- * `name` is the DOMException name when there is one: Chrome's port and device
- * pickers throw NotFoundError when the user closes them.
+ * `name` is the DOMException name when there is one. Chrome's port and device
+ * pickers throw NotFoundError when the user closes them, but Web Bluetooth also
+ * throws it for real failures ("Bluetooth adapter not available."), which were
+ * closed without a word. So the name alone isn't a cancel: the message must say so.
  */
 export function classifyRadioError(message: string, name?: string): RadioErrorKind {
   const m = message.toLowerCase();
-  if (name === 'NotFoundError' || /cancel|no port selected/.test(m)) return 'cancelled';
+  if (/cancel|no port selected/.test(m) || (name === 'NotFoundError' && m.trim() === '')) return 'cancelled';
   if (m.includes('nothing was loaded')) return 'readIncomplete';
   if (/in use|already open|busy|locked streams|failed to open serial port/.test(m)) return 'portBusy';
   if (/refus|nothing was written|read the radio first|cannot write|no (channels|zones) to write|too many channels|would exceed/.test(m)) {
