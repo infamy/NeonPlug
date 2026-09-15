@@ -34,6 +34,8 @@ import { ChannelUndoNotice } from './ChannelUndoNotice';
 import { useChannelWriteRule } from '../../hooks/useChannelWriteRule';
 import { isChannelWritable } from '../../services/validation/writeFilter';
 import { MOD_KEY } from '../../utils/keyboardTargets';
+import { useZonesStore } from '../../store/zonesStore';
+import { CHANNEL_SEARCH_HELP, matchesChannelSearch, parseChannelSearch } from './channelSearch';
 
 /** Which channel table the tab is showing. */
 type ChannelView = 'main' | 'am' | 'fm';
@@ -44,6 +46,7 @@ export const ChannelsTab: React.FC = () => {
   const { caps } = useRadioCapabilities();
   const outOfBand = useOutOfBandActive();
   const supportsVfoChannels = caps?.supportsVfoChannels === true;
+  const zones = useZonesStore((s) => s.zones);
   const [searchQuery, setSearchQuery] = useState('');
   const [scrollToChannel, setScrollToChannel] = useState<number | null>(null);
   const [selectedChannelNumbers, setSelectedChannelNumbers] = useState<Set<number>>(new Set());
@@ -172,48 +175,29 @@ export const ChannelsTab: React.FC = () => {
     return vfos;
   }, [supportsVfoChannels, radioSettings?.vfoA, radioSettings?.vfoB]);
 
+  const search = useMemo(() => parseChannelSearch(searchQuery), [searchQuery]);
+  const zonesByChannel = useMemo(() => {
+    const byChannel = new Map<number, string[]>();
+    for (const zone of zones) {
+      for (const n of zone.channels) {
+        const names = byChannel.get(n);
+        if (names) names.push(zone.name);
+        else byChannel.set(n, [zone.name]);
+      }
+    }
+    return byChannel;
+  }, [zones]);
+
   const filteredChannels = useMemo(() => {
     // Exclude empty channels (rxFrequency 0 = unprogrammed slot)
     const nonEmptyChannels = channels.filter(ch => ch.rxFrequency > 0);
     const allChannels = showingUnwritable
       ? nonEmptyChannels.filter(ch => unwritable.has(ch.number))
       : [...vfoChannels, ...nonEmptyChannels];
-
-    if (!searchQuery.trim()) {
-      return allChannels;
-    }
-
-    const query = searchQuery.toLowerCase().trim();
-    return allChannels.filter(channel => {
-      // Search in name
-      if (channel.name.toLowerCase().includes(query)) return true;
-      
-      // Search in frequencies
-      const rxFreq = channel.rxFrequency.toFixed(4);
-      const txFreq = channel.txFrequency.toFixed(4);
-      if (rxFreq.includes(query) || txFreq.includes(query)) return true;
-      
-      // Search in mode
-      if (channel.mode.toLowerCase().includes(query)) return true;
-      
-      // Search in channel number
-      if (channel.number.toString().includes(query)) return true;
-      
-      // Search in bandwidth
-      if (channel.bandwidth.toLowerCase().includes(query)) return true;
-      
-      // Search in power
-      if (channel.power.toLowerCase().includes(query)) return true;
-      
-      // Search in CTCSS/DCS
-      if (channel.rxCtcssDcs.type.toLowerCase().includes(query)) return true;
-      if (channel.txCtcssDcs.type.toLowerCase().includes(query)) return true;
-      if (channel.rxCtcssDcs.value?.toString().includes(query)) return true;
-      if (channel.txCtcssDcs.value?.toString().includes(query)) return true;
-      
-      return false;
-    });
-  }, [channels, vfoChannels, searchQuery, showingUnwritable, unwritable]);
+    if (search.terms.length === 0) return allChannels;
+    const context = { zonesByChannel, bandLimits: caps?.bandLimits };
+    return allChannels.filter(channel => matchesChannelSearch(channel, search, context));
+  }, [channels, vfoChannels, search, zonesByChannel, caps, showingUnwritable, unwritable]);
 
   const handleDeleteSelectedClick = () => {
     const toDelete = Array.from(selectedChannelNumbers).filter(n => !isVFOChannel(n));
@@ -340,8 +324,21 @@ export const ChannelsTab: React.FC = () => {
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={isBroadcast ? 'Search by name, frequency, number...' : 'Search channels by name, frequency, mode, number...'}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              // A lone "#12" scrolls to channel 12 rather than filtering.
+              const { jumpTo } = parseChannelSearch(e.target.value);
+              if (!isBroadcast && jumpTo !== null && channels.some(ch => ch.number === jumpTo)) {
+                setScrollToChannel(jumpTo);
+              }
+            }}
+            placeholder={
+              isBroadcast
+                ? 'Search by name, frequency, number...'
+                : 'Search name, number or frequency · #12 jumps · mode:dig zone:none'
+            }
+            title={isBroadcast ? undefined : CHANNEL_SEARCH_HELP}
+            aria-label="Search channels"
             className={`${FIELD} w-full border rounded px-4 py-2 pl-10 text-sm`}
           />
           <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-cool-gray text-sm">
@@ -396,7 +393,7 @@ export const ChannelsTab: React.FC = () => {
               className="text-cool-gray text-xs shrink-0 whitespace-nowrap"
               title={`Click a row to select it, Shift+click for a range, ${MOD_KEY}+click to add or remove one, ${MOD_KEY}+A for every channel shown. Then Delete to delete, Enter to edit one, Esc to clear.`}
             >
-              Click = one · Shift = range · {MOD_KEY}+click = add/remove · {MOD_KEY}+A = all
+              Shift or {MOD_KEY}+click to select more
             </p>
           )
         )}

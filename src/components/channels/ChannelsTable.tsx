@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { ChannelColumnGroup } from '../../types/radioCapabilities';
@@ -20,6 +20,29 @@ import { Card } from '../ui/Card';
 import { channelsLabel, recordChannelEdit } from '../../services/channelHistory';
 import { describeChannelDelete } from '../../services/channelDelete';
 import { selectByClick, type SelectionClick } from './channelSelection';
+import { sortChannelsForView, type ChannelSort, type ChannelSortKey } from './channelSearch';
+
+type SortState = 'ascending' | 'descending' | 'none';
+
+/** A column heading that sorts the view. */
+const SortButton: React.FC<{ label: string; state: SortState; onClick: () => void; title: string }> = ({
+  label,
+  state,
+  onClick,
+  title,
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="font-bold text-neon-cyan hover:text-neon-cyan-bright whitespace-nowrap"
+    title={title}
+  >
+    {label}
+    <span aria-hidden="true" className="ml-0.5">
+      {state === 'ascending' ? '▲' : state === 'descending' ? '▼' : ''}
+    </span>
+  </button>
+);
 import { isDialogOpen, isInteractive, isTextEntry, MOD_KEY } from '../../utils/keyboardTargets';
 import { EmptyState } from '../ui/EmptyState';
 
@@ -60,7 +83,18 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const { contacts: talkGroups } = useQuickContactsStore();
   const { systems: analogEmergencySystems } = useAnalogEmergencyStore();
   const { radioIds: dmrRadioIds } = useDMRRadioIDsStore();
-  const channels = channelsProp ?? channelsFromStore;
+  // Clicking a column heading sorts by it: up, down, then back to channel order.
+  // Only the view changes; no channel is renumbered, so the radio's order stays.
+  const [sort, setSort] = useState<ChannelSort | null>(null);
+  const listed = channelsProp ?? channelsFromStore;
+  const channels = useMemo(() => sortChannelsForView(listed, sort, isVFOChannel), [listed, sort]);
+  const toggleSort = (key: ChannelSortKey) =>
+    setSort((current) =>
+      current?.key !== key ? { key, descending: false } : current.descending ? null : { key, descending: true }
+    );
+  const sortState = (key: ChannelSortKey): SortState =>
+    sort?.key === key ? (sort.descending ? 'descending' : 'ascending') : 'none';
+  const sortTitle = (what: string) => `${what}. Click to sort the view; channel numbers don't change.`;
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [channelToDelete, setChannelToDelete] = useState<Channel | null>(null);
   const [clonedChannelNumber, setClonedChannelNumber] = useState<number | null>(null);
@@ -289,13 +323,23 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                 aria-label={allSelectableSelected ? 'Clear selection' : 'Select every channel shown'}
               />
             </th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[28px] bg-dark-charcoal z-30 min-w-[40px]" title="Channel number">#</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[68px] bg-dark-charcoal z-30 min-w-[120px]" title="Channel name">Name</th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[90px]" title="Receive frequency (MHz)">RX Freq</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[28px] bg-dark-charcoal z-30 min-w-[40px]" aria-sort={sortState('number')}>
+              <SortButton label="#" state={sortState('number')} onClick={() => toggleSort('number')} title={sortTitle('Channel number')} />
+            </th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[68px] bg-dark-charcoal z-30 min-w-[120px]" aria-sort={sortState('name')}>
+              <SortButton label="Name" state={sortState('name')} onClick={() => toggleSort('name')} title={sortTitle('Channel name')} />
+            </th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[90px]" aria-sort={sortState('rxFrequency')}>
+              <SortButton label="RX Freq" state={sortState('rxFrequency')} onClick={() => toggleSort('rxFrequency')} title={sortTitle('Receive frequency (MHz)')} />
+            </th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold w-0 min-w-0" title="Copy RX to TX"><span className="sr-only">Copy</span></th>
-            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[90px]" title="Transmit frequency (MHz)">TX Freq</th>
+            <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[90px]" aria-sort={sortState('txFrequency')}>
+              <SortButton label="TX Freq" state={sortState('txFrequency')} onClick={() => toggleSort('txFrequency')} title={sortTitle('Transmit frequency (MHz)')} />
+            </th>
             {!analogOnly && (
-              <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[50px]" title="Channel mode (Analog/Digital)">Mode</th>
+              <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[50px]" aria-sort={sortState('mode')}>
+                <SortButton label="Mode" state={sortState('mode')} onClick={() => toggleSort('mode')} title={sortTitle('Channel mode (Analog/Digital)')} />
+              </th>
             )}
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[40px]" title="Power level">PWR</th>
             <th className="px-2 py-2 text-center text-neon-cyan font-bold min-w-[40px]" title="Bandwidth (12.5 kHz / 25 kHz)">BW</th>
