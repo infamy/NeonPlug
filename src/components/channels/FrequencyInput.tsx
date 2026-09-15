@@ -44,6 +44,12 @@ export const FrequencyInput: React.FC<FrequencyInputProps> = ({
 
   const commit = () => {
     if (draft === null) return;
+    // Text put back the way it was is no edit, whatever it would parse to.
+    if (draft.trim() === format(value)) {
+      setDraft(null);
+      setValidity(null);
+      return;
+    }
     const parsed = parseFrequencyInput(draft);
     if (!parsed.ok) {
       setValidity(parsed.error);

@@ -31,5 +31,8 @@ describe('reading a typed frequency', () => {
     expect(read('0')).toBe('error: A frequency must be above 0.');
     expect(parseFrequencyInput('-146.52').ok).toBe(false);
     expect(parseFrequencyInput('1296 MHz').ok).toBe(false);
+    // A decimal number that large is mistyped MHz, not kHz: the no-TX value shows as 1666.6660.
+    expect(parseFrequencyInput('1296.5').ok).toBe(false);
+    expect(parseFrequencyInput('1666.6660').ok).toBe(false);
   });
 });

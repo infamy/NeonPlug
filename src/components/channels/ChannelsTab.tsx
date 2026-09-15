@@ -68,7 +68,10 @@ export const ChannelsTab: React.FC = () => {
   const isBroadcast = view !== 'main';
   const undoLabel = useChannelHistoryStore((s) => s.past[s.past.length - 1]?.label);
   const redoLabel = useChannelHistoryStore((s) => s.future[s.future.length - 1]?.label);
-  useChannelUndoShortcuts(!isBroadcast);
+  // Undo and redo can renumber channels, and a selection is by number, so it would
+  // afterwards name other channels. They clear it.
+  const clearSelection = useCallback(() => setSelectedChannelNumbers(new Set()), []);
+  useChannelUndoShortcuts(!isBroadcast, clearSelection);
 
   // Channels a write leaves out, by the rule this radio's write uses.
   const writeRule = useChannelWriteRule();
@@ -120,7 +123,6 @@ export const ChannelsTab: React.FC = () => {
   const selectedCount = selectedChannelNumbers.size;
   const [pendingDelete, setPendingDelete] = useState<{ numbers: number[]; message: string } | null>(null);
 
-  const handleClearSelection = useCallback(() => setSelectedChannelNumbers(new Set()), []);
 
   // Full-fidelity CSV export/import (all channel modes and fields) — distinct from the
   // Smart Import wizard's CHIRP export (analog-only): this round-trips the whole channel
@@ -269,7 +271,9 @@ export const ChannelsTab: React.FC = () => {
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => undoChannelEdit()}
+                onClick={() => {
+                  if (undoChannelEdit() !== null) clearSelection();
+                }}
                 disabled={!undoLabel}
                 className={`${BUTTON.subtle} px-2 py-1 text-xs border rounded`}
                 title={undoLabel ? `Undo ${undoLabel} (${UNDO_SHORTCUT})` : 'Nothing to undo'}
@@ -279,7 +283,9 @@ export const ChannelsTab: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => redoChannelEdit()}
+                onClick={() => {
+                  if (redoChannelEdit() !== null) clearSelection();
+                }}
                 disabled={!redoLabel}
                 className={`${BUTTON.subtle} px-2 py-1 text-xs border rounded`}
                 title={redoLabel ? `Redo ${redoLabel} (${REDO_SHORTCUT})` : 'Nothing to redo'}
@@ -380,7 +386,7 @@ export const ChannelsTab: React.FC = () => {
               Delete ({selectedCount})
             </button>
             <button
-              onClick={handleClearSelection}
+              onClick={clearSelection}
               className={`${BUTTON.subtle} px-2 py-1.5 text-xs border rounded whitespace-nowrap`}
               title="Clear selection"
             >
@@ -431,7 +437,7 @@ export const ChannelsTab: React.FC = () => {
         confirmLabel="Delete"
         variant="danger"
       />
-      <ChannelUndoNotice />
+      <ChannelUndoNotice onUndo={clearSelection} />
       {csvImportDialog}
       <ConfirmModal
         isOpen={alertOpen}

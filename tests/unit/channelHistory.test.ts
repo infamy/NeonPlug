@@ -14,6 +14,7 @@ import { useChannelsStore } from '../../src/store/channelsStore';
 import { useZonesStore } from '../../src/store/zonesStore';
 import { useScanListsStore } from '../../src/store/scanListsStore';
 import { useRadioSettingsStore } from '../../src/store/radioSettingsStore';
+import { useQuickContactsStore } from '../../src/store/quickContactsStore';
 import type { RadioSettings } from '../../src/models/RadioSettings';
 import type { ScanList } from '../../src/models/ScanList';
 import type { Zone } from '../../src/models/Zone';
@@ -115,6 +116,13 @@ describe('channel undo', () => {
     useZonesStore.getState().renameZone('z1', 'Renamed');
     expect(undoChannelEdit()).toBeNull();
     expect(useZonesStore.getState().zones[0].name).toBe('Renamed');
+  });
+
+  it('clears it when the talk groups change, which channels point at by slot', () => {
+    recordChannelEdit('edit channel 1', () => store().updateChannel(1, { contactId: 3 }));
+    useQuickContactsStore.getState().setContacts([]);
+    expect(undoChannelEdit()).toBeNull();
+    expect(store().channels[0].contactId).toBe(3);
   });
 
   it('puts the VFO rows back too, which live in the settings', () => {

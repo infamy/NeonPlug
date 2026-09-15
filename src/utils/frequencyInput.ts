@@ -30,7 +30,11 @@ export function parseFrequencyInput(text: string): FrequencyParse {
 
   if (!/^\d+(\.\d+)?$/.test(s)) return { ok: false, error: `"${typed}" is not a frequency.` };
   const value = Number(s);
-  // No unit: MHz as typed, or kHz or Hz when the number is too big to be MHz.
+  // No unit: MHz as typed, or a whole number too big to be MHz read as kHz or Hz.
+  // Not one with decimals: "1666.6660" is 1666.666 MHz mistyped, not 1.67 MHz.
+  if (scale === null && value >= 1_000 && s.includes('.')) {
+    return { ok: false, error: `${typed} is 1000 MHz or more, which no radio here stores.` };
+  }
   scale ??= value < 1_000 ? 1 : value < 1_000_000 ? 1e-3 : 1e-6;
 
   const mhz = Math.round(value * scale * 1e6) / 1e6;

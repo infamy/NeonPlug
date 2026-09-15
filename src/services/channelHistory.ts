@@ -19,6 +19,10 @@ import type { RadioSettings } from '../models/RadioSettings';
 import type { ScanList } from '../models/ScanList';
 import type { Zone } from '../models/Zone';
 import { useChannelsStore, type RawChannelData } from '../store/channelsStore';
+import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
+import { useEncryptionKeysStore } from '../store/encryptionKeysStore';
+import { useQuickContactsStore } from '../store/quickContactsStore';
+import { useRXGroupsStore } from '../store/rxGroupsStore';
 import { useRadioSettingsStore } from '../store/radioSettingsStore';
 import { useScanListsStore } from '../store/scanListsStore';
 import { useZonesStore } from '../store/zonesStore';
@@ -235,6 +239,22 @@ export function watchChannelHistory(): () => void {
     }),
     useRadioSettingsStore.subscribe((s, prev) => {
       if (s.settings?.vfoA !== prev.settings?.vfoA || s.settings?.vfoB !== prev.settings?.vfoB) changedElsewhere();
+    }),
+    // Channels name talk groups, RX groups, radio IDs and keys by slot or index,
+    // so a change to one of those lists can change what an older copy of the
+    // channels points at. A talk group delete that moved no current channel left
+    // Undo able to put back a TX contact past the end of the list.
+    useQuickContactsStore.subscribe((s, prev) => {
+      if (s.contacts !== prev.contacts) changedElsewhere();
+    }),
+    useRXGroupsStore.subscribe((s, prev) => {
+      if (s.groups !== prev.groups) changedElsewhere();
+    }),
+    useDMRRadioIDsStore.subscribe((s, prev) => {
+      if (s.radioIds !== prev.radioIds) changedElsewhere();
+    }),
+    useEncryptionKeysStore.subscribe((s, prev) => {
+      if (s.keys !== prev.keys) changedElsewhere();
     }),
   ];
   return () => stops.forEach((stop) => stop());

@@ -27,15 +27,20 @@ export function getFieldValue(settings: RadioSettings | null, key: string): unkn
 export function fieldUpdate(settings: RadioSettings | null, key: string, value: unknown): Partial<RadioSettings> | null {
   if (!settings) return null;
   if (key === 'lockKey') return { lockKey: value === 1 ? 'Auto' : 'Manual' } as Partial<RadioSettings>;
+  // A checkbox sends true or false, but some radios read these fields as 1 or 0.
+  // Keeping the type that was read means ticking a box back matches the radio
+  // again, rather than staying "Changed" because true is not 1.
+  const current = getFieldValue(settings, key);
+  const typed = typeof value === 'boolean' && typeof current === 'number' ? (value ? 1 : 0) : value;
   if (key.includes('.')) {
     const [parent, ...rest] = key.split('.');
     const leaf = rest.join('.');
     const parentObj = (settings as unknown as Record<string, unknown>)[parent];
     const spread = typeof parentObj === 'object' && parentObj !== null ? { ...(parentObj as Record<string, unknown>) } : {};
-    (spread as Record<string, unknown>)[leaf] = value;
+    (spread as Record<string, unknown>)[leaf] = typed;
     return { [parent]: spread } as Partial<RadioSettings>;
   }
-  return { [key]: value } as Partial<RadioSettings>;
+  return { [key]: typed } as Partial<RadioSettings>;
 }
 
 /** True when a field's value differs from what was last read, written or opened. */

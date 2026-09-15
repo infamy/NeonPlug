@@ -10,9 +10,9 @@ export const REDO_SHORTCUT = IS_MAC ? '⇧⌘Z' : 'Ctrl+Y';
  * Undo and redo from the keyboard on the Channels tab. Typing in a field keeps
  * the browser's own undo, and an open dialog turns them off: a delete waiting
  * for confirmation names channels by number, and an undo underneath it would
- * renumber them.
+ * renumber them. `onApplied` runs after an undo or redo changes the channels.
  */
-export function useChannelUndoShortcuts(enabled: boolean): void {
+export function useChannelUndoShortcuts(enabled: boolean, onApplied?: () => void): void {
   useEffect(() => {
     if (!enabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -22,10 +22,10 @@ export function useChannelUndoShortcuts(enabled: boolean): void {
       if (key !== 'z' && !redo) return;
       if (isTextEntry(e.target) || isDialogOpen()) return;
       e.preventDefault();
-      if (redo) redoChannelEdit();
-      else undoChannelEdit();
+      const applied = redo ? redoChannelEdit() : undoChannelEdit();
+      if (applied !== null) onApplied?.();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [enabled]);
+  }, [enabled, onApplied]);
 }

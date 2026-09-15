@@ -19,6 +19,7 @@ import { ConfirmModal } from '../ui/ConfirmModal';
 import { Card } from '../ui/Card';
 import { channelsLabel, recordChannelEdit } from '../../services/channelHistory';
 import { describeChannelDelete } from '../../services/channelDelete';
+import { isNoTxFrequency, isRxInNoTxBand } from '../../services/validation/frequencyValidator';
 import { selectByClick, type SelectionClick } from './channelSelection';
 import { sortChannelsForView, type ChannelSort, type ChannelSortKey } from './channelSearch';
 
@@ -87,7 +88,20 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   // Only the view changes; no channel is renumbered, so the radio's order stays.
   const [sort, setSort] = useState<ChannelSort | null>(null);
   const listed = channelsProp ?? channelsFromStore;
-  const channels = useMemo(() => sortChannelsForView(listed, sort, isVFOChannel), [listed, sort]);
+  // The order is worked out when a sort is chosen or channels come and go, not on
+  // every edit: sorted by name, each keystroke used to move the row being typed
+  // in, often out of view, taking the input and its focus with it.
+  const membership = listed.map((ch) => ch.number).join(',');
+  const order = useMemo(
+    () => (sort ? sortChannelsForView(listed, sort, isVFOChannel).map((ch) => ch.number) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sort, membership]
+  );
+  const channels = useMemo(() => {
+    if (!order) return listed;
+    const byNumber = new Map(listed.map((ch) => [ch.number, ch]));
+    return order.map((n) => byNumber.get(n)).filter((ch): ch is Channel => ch !== undefined);
+  }, [listed, order]);
   const toggleSort = (key: ChannelSortKey) =>
     setSort((current) =>
       current?.key !== key ? { key, descending: false } : current.descending ? null : { key, descending: true }
@@ -176,17 +190,27 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
 
   const handleCellChange: CellChangeHandler = useCallback((channelNumber, field, value) => {
     const selected = selectionRef.current;
-    // An edit to a selected row applies to the whole selection, except a name,
-    // which belongs to one channel.
+    const shown = channelsRef.current;
+    const shownNumbers = new Set(shown.map((ch) => ch.number));
+    // An edit to a selected row applies to the rest of the selection that is
+    // shown, except a name, which belongs to one channel. Rows a search or a
+    // filter is hiding are left alone.
     const applyToNumbers = field !== 'name' && selected.size > 0 && selected.has(channelNumber)
-      ? Array.from(selected)
+      ? Array.from(selected).filter((n) => shownNumbers.has(n))
       : [channelNumber];
+    // A TX put onto other selected rows (Copy RX to TX, or typing one) skips a
+    // receive-only row: its blank TX is what keeps the radio from transmitting.
+    const byNumber = field === 'txFrequency' ? new Map(shown.map((ch) => [ch.number, ch])) : null;
+    const targets = applyToNumbers.filter((n) => {
+      const ch = n === channelNumber ? undefined : byNumber?.get(n);
+      return !(ch && isRxInNoTxBand(ch.rxFrequency) && isNoTxFrequency(ch.txFrequency));
+    });
 
     const settings = radioSettingsRef.current;
     recordChannelEdit(
-      `edit ${channelsLabel(applyToNumbers)}`,
+      `edit ${channelsLabel(targets)}`,
       () => {
-        for (const num of applyToNumbers) {
+        for (const num of targets) {
           if (num === 4001 && settings?.vfoA) {
             updateSettings({ vfoA: { ...settings.vfoA, [field]: value } });
             continue;
@@ -199,7 +223,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
         }
       },
       // Typing into a cell is one step, not one per keystroke.
-      { mergeKey: `${applyToNumbers.join(',')}:${field}` }
+      { mergeKey: `${targets.join(',')}:${field}` }
     );
   }, [updateChannel, updateSettings]);
 
@@ -475,6 +499,8 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             recordChannelEdit(`delete ${label}`, () => deleteChannel(channelToDelete.number), {
               announce: `Deleted ${label}${channelToDelete.name ? ` (${channelToDelete.name})` : ''}.`,
             });
+            // Later channels were renumbered, so a selection by number would now name other channels.
+            setSelectedChannelNumbers(new Set());
             setChannelToDelete(null);
           }
         }}
