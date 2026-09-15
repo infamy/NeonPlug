@@ -38,6 +38,15 @@ describe('what a channel delete says it does', () => {
     );
   });
 
+  it('says the other channels keep their numbers on a radio that deletes in place', () => {
+    expect(describeChannelDelete(list(10), [5], 0, { keepNumbers: true, lists: true })).toBe(
+      'Every other channel keeps its number. It is taken out of zones and scan lists.'
+    );
+    expect(describeChannelDelete(list(10), [5, 6], 1, { keepNumbers: true })).toBe(
+      'Every other channel keeps its number. 1 of them is hidden by the search.'
+    );
+  });
+
   it('says how many of them the search is hiding', () => {
     expect(describeChannelDelete(list(10), [9, 10], 1)).toBe('1 of them is hidden by the search.');
     expect(describeChannelDelete(list(10), [2, 3], 2)).toBe(

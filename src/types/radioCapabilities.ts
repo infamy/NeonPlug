@@ -222,6 +222,15 @@ export interface RadioCapabilities {
    * to 16, what the editors allowed before this existed.
    */
   maxChannelNameLength?: number;
+  /**
+   * A channel's number is its memory slot, and deleting one leaves that slot
+   * empty while every other channel keeps its number, as the radio's own
+   * software does: the DA-7X2's vendor CPS, and CHIRP and the radios' menus for
+   * the FT-65 family and UV5R-Mini. Absent packs the table on delete instead,
+   * which the DM-32 needs: its channel table never has a hole, and zones and
+   * scan lists point at positions.
+   */
+  channelDeleteKeepsNumbers?: boolean;
   /** If false, radio has no zones (e.g. UV5R-Mini). */
   supportsZones?: boolean;
   /** If false, radio has no scan lists. */

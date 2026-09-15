@@ -75,6 +75,11 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const bandLimits = writeRule.outOfBand ? null : (caps?.bandLimits ?? null);
   const maxChannels = caps?.maxChannels ?? 4000;
   const analogOnly = caps?.analogOnly === true;
+  // Whether a delete leaves a hole or packs the table, as the radio's own software does.
+  const deleteRules = {
+    keepNumbers: caps?.channelDeleteKeepsNumbers === true,
+    lists: caps?.supportsZones !== false || caps?.supportsScanLists !== false,
+  };
   // Optional column groups: a radio shows one only if it declares it.
   const declared = new Set(caps?.channelColumns ?? []);
   const hasColumn = (g: ChannelColumnGroup) => declared.has(g);
@@ -496,7 +501,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
         onConfirm={() => {
           if (channelToDelete) {
             const label = channelsLabel([channelToDelete.number]);
-            recordChannelEdit(`delete ${label}`, () => deleteChannel(channelToDelete.number), {
+            recordChannelEdit(`delete ${label}`, () => deleteChannel(channelToDelete.number, deleteRules), {
               announce: `Deleted ${label}${channelToDelete.name ? ` (${channelToDelete.name})` : ''}.`,
             });
             // Later channels were renumbered, so a selection by number would now name other channels.
@@ -509,7 +514,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
           channelToDelete
             ? [
                 `Delete channel ${channelToDelete.number}: "${channelToDelete.name}"?`,
-                describeChannelDelete(channelsFromStore, [channelToDelete.number]),
+                describeChannelDelete(channelsFromStore, [channelToDelete.number], 0, deleteRules),
               ]
                 .filter(Boolean)
                 .join('\n\n')
