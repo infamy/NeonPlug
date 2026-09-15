@@ -1,8 +1,18 @@
 import React, { useState, useRef } from 'react';
 import { formatPlural } from '../../../utils/formatPlural';
 import { useChannelsStore } from '../../../store/channelsStore';
-import { getNextChannelNumber } from '../../../utils/importHelpers';
-import { importChannelsFromChirpCSV, exportChannelsToChirpCSV, downloadCSV } from '../../../services/csv';
+import {
+  importChannelsFromChirpCSV,
+  importChannelsFromCSV,
+  exportChannelsToChirpCSV,
+  downloadCSV,
+} from '../../../services/csv';
+import { detectChannelCsvFormat } from '../../../services/csv/channelCsvFormat';
+import { addChannels } from '../../../services/csv/importModes';
+import { checkChannelLimits } from '../../../services/csv/importLimits';
+import { nothingImportedMessage } from '../../../services/csv/importProblems';
+import { useCsvImport, type CsvImportMode } from '../../../hooks/useCsvImport';
+import { useRadioCapabilities } from '../../../hooks/useRadioCapabilities';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { SectionTitle } from '../../ui/SectionTitle';
@@ -13,15 +23,22 @@ interface ChirpSourceProps {
 
 export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
   const { channels, setChannels } = useChannelsStore();
+  const { caps } = useRadioCapabilities();
+  const { startImport, csvImportDialog } = useCsvImport();
 
   const [isImportingChirp, setIsImportingChirp] = useState(false);
   const [chirpImportResult, setChirpImportResult] = useState<{
     operation: 'import' | 'export';
     channels: number;
+    mode?: CsvImportMode;
     errors?: string[];
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // CHIRP rows used to be appended straight onto the channel list: no Add or
+  // Replace choice, no check for channels already there, no radio limit, so the
+  // same file imported twice doubled every channel. They now go through the same
+  // steps as the Channels tab's CSV import.
   const handleChirpCSVImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -32,29 +49,38 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
 
     try {
       const content = await file.text();
-
-      const nextChannelNumber = getNextChannelNumber(channels);
-
-      const result = importChannelsFromChirpCSV(content, nextChannelNumber);
-
-      if (result.success && result.channels) {
-        // Add imported channels
-        const newChannels = [...channels, ...result.channels];
-        setChannels(newChannels);
-
-        setChirpImportResult({
-          operation: 'import',
-          channels: result.channels.length,
-          errors: result.errors,
-        });
-      } else {
-        onError(result.errors?.join('\n') || 'Failed to import CHIRP CSV');
-        setChirpImportResult({
-          operation: 'import',
-          channels: 0,
-          errors: result.errors,
-        });
+      // A NeonPlug channels CSV is read by its own importer, rather than failing
+      // every row as a CHIRP file.
+      const format = detectChannelCsvFormat(content);
+      if (!format) {
+        onError(`${file.name} isn't a CHIRP or NeonPlug channels CSV: it has no Frequency or RX Frequency column.`);
+        return;
       }
+      // Numbered from 1: Replace keeps these numbers, and Add renumbers after the last channel.
+      const result = format === 'neonplug' ? importChannelsFromCSV(content) : importChannelsFromChirpCSV(content, 1);
+      const imported = result.channels ?? [];
+      if (imported.length === 0) {
+        onError(nothingImportedMessage(result.errors));
+        return;
+      }
+      startImport({
+        noun: 'channel',
+        existing: channels,
+        imported,
+        problems: result.errors,
+        add: () => addChannels(channels, imported),
+        check: (list) => checkChannelLimits(list, caps),
+        replaceNote: "zones and scan lists keep their channel numbers, so they will point at the file's channels.",
+        apply: (list, mode) => {
+          setChannels(list);
+          setChirpImportResult({
+            operation: 'import',
+            channels: mode === 'replace' ? list.length : list.length - channels.length,
+            mode,
+            errors: result.errors,
+          });
+        },
+      });
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Failed to import CHIRP CSV file');
     } finally {
@@ -100,6 +126,9 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
     }
   };
 
+  const result = chirpImportResult;
+  const hasErrors = !!result?.errors && result.errors.length > 0;
+
   return (
     <>
       {/* Chirp CSV Import/Export Section. No page-level heading of its own: the
@@ -114,7 +143,7 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
           <div>
             <label className="block text-sm text-cool-gray mb-2">Import from CHIRP CSV</label>
             <p className="text-xs text-cool-gray mb-2">
-              Any digital channels in the CSV will be imported as analog.
+              Any digital channels in the CSV will be imported as analog. A NeonPlug channels CSV works here too.
             </p>
             <input
               type="file"
@@ -148,35 +177,37 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
           </div>
         </div>
 
-        {chirpImportResult && (
+        {result && (
           <div className={`rounded p-3 mb-4 ${
-            chirpImportResult.errors && chirpImportResult.errors.length > 0
+            hasErrors
               ? 'bg-yellow-900 border border-yellow-500 text-yellow-200'
               : 'bg-deep-gray border border-neon-cyan text-neon-cyan'
           }`}>
             <div className="font-semibold mb-1">
-              {chirpImportResult.operation === 'import'
-                ? (chirpImportResult.errors && chirpImportResult.errors.length > 0
-                    ? 'Import completed with warnings'
-                    : 'Import successful')
-                : (chirpImportResult.errors && chirpImportResult.errors.length > 0
-                    ? 'Export completed with warnings'
-                    : 'Export successful')}
+              {result.operation === 'import'
+                ? (hasErrors ? 'Imported, with rows left out' : 'Import successful')
+                : (hasErrors ? 'Export completed with warnings' : 'Export successful')}
             </div>
             <div className="text-sm">
-              {chirpImportResult.operation === 'import'
-                ? `Imported ${chirpImportResult.channels} ${formatPlural(chirpImportResult.channels, 'channel')}`
-                : `Exported ${chirpImportResult.channels} ${formatPlural(chirpImportResult.channels, 'channel')}`}
+              {result.operation === 'import'
+                ? result.mode === 'replace'
+                  ? `Replaced the channels with the file's ${result.channels}`
+                  : `Added ${result.channels} ${formatPlural(result.channels, 'channel')}`
+                : `Exported ${result.channels} ${formatPlural(result.channels, 'channel')}`}
             </div>
-            {chirpImportResult.errors && chirpImportResult.errors.length > 0 && (
+            {hasErrors && result.errors && (
               <div className="text-sm mt-2">
-                <div className="font-semibold">Warnings:</div>
+                <div className="font-semibold">
+                  {result.operation === 'import'
+                    ? `${result.errors.length} ${formatPlural(result.errors.length, 'row')} couldn't be read:`
+                    : 'Warnings:'}
+                </div>
                 <ul className="list-disc list-inside mt-1">
-                  {chirpImportResult.errors.slice(0, 5).map((err, idx) => (
+                  {result.errors.slice(0, 5).map((err, idx) => (
                     <li key={idx}>{err}</li>
                   ))}
-                  {chirpImportResult.errors.length > 5 && (
-                    <li>... and {chirpImportResult.errors.length - 5} more</li>
+                  {result.errors.length > 5 && (
+                    <li>... and {result.errors.length - 5} more</li>
                   )}
                 </ul>
               </div>
@@ -184,6 +215,7 @@ export const ChirpSource: React.FC<ChirpSourceProps> = ({ onError }) => {
           </div>
         )}
       </Card>
+      {csvImportDialog}
     </>
   );
 };

@@ -11,6 +11,7 @@ import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { exportScanListsToCSV, importScanListsFromCSV, downloadCSV } from '../../services/csv';
 import { addScanLists } from '../../services/csv/importModes';
 import { checkScanListLimits } from '../../services/csv/importLimits';
+import { nothingImportedMessage } from '../../services/csv/importProblems';
 
 export const ScanListsTab: React.FC = () => {
   const { scanLists, setScanLists } = useScanListsStore();
@@ -25,8 +26,10 @@ export const ScanListsTab: React.FC = () => {
   const handleImportScanListsFile = useCallback((file: File) => {
     file.text().then(content => {
       const result = importScanListsFromCSV(content);
-      if (!result.success || !result.scanLists) {
-        showAlert(result.errors?.join('\n') || 'Failed to import scan lists CSV', 'Import failed');
+      // Rows that can't be read are left out and named; only a file with
+      // nothing readable stops here.
+      if (!result.scanLists || result.scanLists.length === 0) {
+        showAlert(nothingImportedMessage(result.errors), 'Import failed');
         return;
       }
       const imported = result.scanLists;
@@ -34,6 +37,7 @@ export const ScanListsTab: React.FC = () => {
         noun: 'scan list',
         existing: scanLists,
         imported,
+        problems: result.errors,
         add: () => addScanLists(scanLists, imported, caps),
         check: (list) => checkScanListLimits(list, caps),
         apply: (list) => setScanLists(list),

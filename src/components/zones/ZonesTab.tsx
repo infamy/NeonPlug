@@ -13,6 +13,7 @@ import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { exportZonesToCSV, importZonesFromCSV, downloadCSV } from '../../services/csv';
 import { addZones } from '../../services/csv/importModes';
 import { checkZoneLimits } from '../../services/csv/importLimits';
+import { nothingImportedMessage } from '../../services/csv/importProblems';
 
 export const ZonesTab: React.FC = () => {
   const { zones, updateZone, setZones } = useZonesStore();
@@ -29,8 +30,10 @@ export const ZonesTab: React.FC = () => {
   const handleImportZonesFile = useCallback((file: File) => {
     file.text().then(content => {
       const result = importZonesFromCSV(content);
-      if (!result.success || !result.zones) {
-        showAlert(result.errors?.join('\n') || 'Failed to import zones CSV', 'Import failed');
+      // Rows that can't be read are left out and named; only a file with
+      // nothing readable stops here.
+      if (!result.zones || result.zones.length === 0) {
+        showAlert(nothingImportedMessage(result.errors), 'Import failed');
         return;
       }
       const imported = result.zones;
@@ -38,6 +41,7 @@ export const ZonesTab: React.FC = () => {
         noun: 'zone',
         existing: zones,
         imported,
+        problems: result.errors,
         add: () => addZones(zones, imported),
         check: (list) => checkZoneLimits(list, caps),
         apply: (list) => setZones(list),
