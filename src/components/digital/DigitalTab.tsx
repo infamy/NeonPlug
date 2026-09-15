@@ -35,6 +35,7 @@ import { addRadioIds, addRxGroups, addTalkGroups } from '../../services/csv/impo
 import { checkRadioIdLimits, checkRxGroupLimits, checkTalkGroupLimits } from '../../services/csv/importLimits';
 import { rxGroupsWithDmrIdMembers, rxGroupsWithRadioMembers } from '../../services/csv/rxGroupMembers';
 import { planTalkGroupDelete, describeTalkGroupDelete } from '../../services/csv/talkGroupImport';
+import { describeTalkGroupUsage, talkGroupMatchesSearch, talkGroupUsage } from '../../services/talkGroupUsage';
 import { useCsvImport } from '../../hooks/useCsvImport';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
@@ -176,6 +177,8 @@ export const DigitalTab: React.FC = () => {
       callType: 0x04, // Default to Group Call
       flag: 0,
     });
+    // The new row goes at the bottom, where a search could be hiding it.
+    setTalkGroupQuery('');
   };
 
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
@@ -184,6 +187,7 @@ export const DigitalTab: React.FC = () => {
   >(null);
 
   const { startImport, csvImportDialog } = useCsvImport();
+  const [talkGroupQuery, setTalkGroupQuery] = useState('');
 
   const handleExportRadioIdsCsv = () => downloadCSV(exportDMRRadioIDsToCSV(radioIds), 'dmr_radio_ids.csv');
   const handleImportRadioIdsFile = (file: File) => {
@@ -361,6 +365,27 @@ export const DigitalTab: React.FC = () => {
         countAtRead: useRadioStore.getState().tables.writeOriginals?.talkgroupCountAtRead,
       })
     : undefined;
+
+  // Where each talk group is used, and the talk groups the search shows.
+  const talkgroupCountAtRead = useRadioStore((s) => s.tables.writeOriginals?.talkgroupCountAtRead);
+  const talkGroupUses = useMemo(
+    () =>
+      talkGroupUsage(
+        quickContacts,
+        channels,
+        rxGroups,
+        {
+          renumbersTalkGroupRefsOnWrite: caps?.renumbersTalkGroupRefsOnWrite,
+          rxGroupMembersBySlot: caps?.rxGroupMembersBySlot,
+        },
+        talkgroupCountAtRead
+      ),
+    [quickContacts, channels, rxGroups, caps, talkgroupCountAtRead]
+  );
+  const shownTalkGroups = useMemo(() => {
+    const query = talkGroupQuery.trim().toLowerCase();
+    return query ? quickContacts.filter((tg) => talkGroupMatchesSearch(tg, query)) : quickContacts;
+  }, [quickContacts, talkGroupQuery]);
 
   const handleDeleteConfirmModalConfirm = () => {
     if (!deleteConfirm) return;
@@ -557,6 +582,23 @@ export const DigitalTab: React.FC = () => {
           </div>
         </div>
 
+        {quickContactsLoaded && quickContacts.length > 0 && (
+          <div className="mb-3 flex items-center gap-3">
+            <input
+              type="search"
+              value={talkGroupQuery}
+              onChange={(e) => setTalkGroupQuery(e.target.value)}
+              placeholder="Search talk groups by name, ID or call type"
+              aria-label="Search talk groups"
+              className={`${FIELD} flex-1 min-w-0 border rounded px-3 py-1.5 text-sm`}
+            />
+            {talkGroupQuery.trim() && (
+              <span className="text-cool-gray text-sm whitespace-nowrap">
+                {shownTalkGroups.length} of {quickContacts.length}
+              </span>
+            )}
+          </div>
+        )}
         {!quickContactsLoaded ? (
           <Card variant="subdued">
             <EmptyState message="Talk groups will be loaded when you read from the radio." />
@@ -575,12 +617,19 @@ export const DigitalTab: React.FC = () => {
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">ID</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Call Type</th>
+                      <th
+                        className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]"
+                        title="Channels that transmit on the talk group, and RX groups that list it"
+                      >
+                        Used by
+                      </th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {quickContacts.map((contact) => {
+                    {shownTalkGroups.map((contact) => {
                       const isAllCall = contact.callType === 0x05;
+                      const use = describeTalkGroupUsage(talkGroupUses.get(contact));
                       return (
                         <tr
                           key={contact.index}
@@ -618,6 +667,9 @@ export const DigitalTab: React.FC = () => {
                               <option value={0x04}>Group Call</option>
                               <option value={0x05}>All Call</option>
                             </select>
+                          </td>
+                          <td className="px-2 py-2 text-cool-gray whitespace-nowrap" title={use.detail}>
+                            {use.text}
                           </td>
                           <td className="px-2 py-2">
                             <button

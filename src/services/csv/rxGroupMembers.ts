@@ -31,10 +31,11 @@ const GROUP_CALL = 0x04;
 export function memberSlotFor(
   talkGroups: readonly QuickContact[],
   talkGroup: QuickContact,
-  countAtRead?: number
+  countAtRead?: number,
+  /** The talk group's position, when the caller already knows it (a loop over 10,000 talk groups does). */
+  position: number = talkGroups.indexOf(talkGroup)
 ): number | undefined {
   if (countAtRead !== undefined && talkGroup.readSlot !== undefined) return talkGroup.readSlot;
-  const position = talkGroups.indexOf(talkGroup);
   if (position < 0) return undefined;
   return countAtRead === undefined || position >= countAtRead ? position : undefined;
 }
