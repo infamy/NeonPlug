@@ -1,19 +1,23 @@
 /**
  * The write filter's options for the radio a write runs as, read from the stores
  * the way the write reads them. The write and its confirmation both come here,
- * so the confirmation lists exactly what the write leaves out.
+ * so the confirmation lists exactly what the write leaves out, and the channel
+ * grid marks channels by the same rule (hooks/useChannelWriteRule.ts).
  */
 
 import { getCapabilitiesForModel } from '../radios/capabilities';
 import { D890_MODEL_IDS } from '../radios/d890uv/constants';
 import { useOutOfBandStore } from '../store/outOfBandStore';
 import { useRadioStore } from '../store/radioStore';
+import type { RadioCapabilities } from '../types/radioCapabilities';
 import type { WriteFilterOptions } from './validation/writeFilter';
 
-export function currentWriteFilterOptions(): WriteFilterOptions {
-  const { radioInfo, selectedRadioModel } = useRadioStore.getState();
-  const model = radioInfo?.model ?? selectedRadioModel ?? null;
-  const caps = getCapabilitiesForModel(model);
+/** The options for one radio, given whether the hidden out-of-band switch is on for it. */
+export function writeFilterOptionsFor(
+  model: string | null,
+  caps: RadioCapabilities | null | undefined,
+  outOfBand: boolean
+): WriteFilterOptions {
   return {
     // ⚠️ NOT applied to the DA-7X2.
     //
@@ -30,7 +34,16 @@ export function currentWriteFilterOptions(): WriteFilterOptions {
     filterBand: !(model != null && (D890_MODEL_IDS as readonly string[]).includes(model)),
     bandLimits: caps?.bandLimits,
     blankTxAnyBand: caps?.blankTxAnyBand,
-    // The hidden out-of-band switch in About, on a radio that allows it (the DM-32 for now).
-    outOfBand: caps?.supportsOutOfBandFrequencies === true && useOutOfBandStore.getState().allowOutOfBandFrequencies,
+    outOfBand,
   };
+}
+
+export function currentWriteFilterOptions(): WriteFilterOptions {
+  const { radioInfo, selectedRadioModel } = useRadioStore.getState();
+  const model = radioInfo?.model ?? selectedRadioModel ?? null;
+  const caps = getCapabilitiesForModel(model);
+  // The hidden out-of-band switch in About, on a radio that allows it (the DM-32 for now).
+  const outOfBand =
+    caps?.supportsOutOfBandFrequencies === true && useOutOfBandStore.getState().allowOutOfBandFrequencies;
+  return writeFilterOptionsFor(model, caps, outOfBand);
 }

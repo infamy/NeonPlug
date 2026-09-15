@@ -28,6 +28,8 @@ interface ChannelEditModalProps {
   onSave: (channel: Channel) => void;
   /** Band limits from radio capabilities (getCapabilitiesForModel(radioInfo?.model)?.bandLimits). */
   bandLimits?: RadioBandLimits | null;
+  /** False where a write keeps a channel whatever its RX; the DA-7X2's write planner checks TX only. */
+  checkRxBand?: boolean;
   /** Max channel number from capabilities (e.g. 999 for UV5R-Mini, 4000 for DM-32UV). */
   maxChannels?: number;
   /** When true, hide Digital/Fixed Digital mode options (e.g. UV5R-Mini). */
@@ -44,6 +46,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   channel,
   onSave,
   bandLimits = null,
+  checkRxBand = true,
   maxChannels = 4000,
   analogOnly = false,
   rxGroups = [],
@@ -95,6 +98,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
       ...validateChannel(editedChannel, bandLimits, maxChannels, {
         maxNameLength,
         blankTxAnyBand: caps?.blankTxAnyBand,
+        checkRxBand,
       }),
     ];
     if (errors.length > 0) {

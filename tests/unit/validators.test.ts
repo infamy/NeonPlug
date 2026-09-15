@@ -240,6 +240,11 @@ describe('validateChannel', () => {
     ]);
   });
 
+  it('can leave RX out of the band check, for a radio whose write keeps any RX', () => {
+    const airband = validChannel({ rxFrequency: 118.1, txFrequency: 146.52 });
+    expect(validateChannel(airband, DEFAULT_BAND_LIMITS, 4000, { checkRxBand: false })).toHaveLength(0);
+  });
+
   it('validates color code for digital channels', () => {
     const ch = validChannel({ mode: 'Digital', colorCode: 16 }); // 16 is out of 0-15
     const errors = validateChannel(ch);

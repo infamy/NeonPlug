@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { ChannelColumnGroup } from '../../types/radioCapabilities';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
-import { useOutOfBandActive } from '../../hooks/useOutOfBandActive';
+import { useChannelWriteRule } from '../../hooks/useChannelWriteRule';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
 import { useScanListsStore } from '../../store/scanListsStore';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
@@ -39,9 +39,11 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   const { channels: channelsFromStore, updateChannel, deleteChannel, addChannel } = useChannelsStore();
   const { caps } = useRadioCapabilities();
   const { settings: radioSettings, updateSettings } = useRadioSettingsStore();
-  // No band errors while the hidden out-of-band switch is on for this radio.
-  const outOfBand = useOutOfBandActive();
-  const bandLimits = outOfBand ? null : (caps?.bandLimits ?? null);
+  // The rule this radio's write applies to channels. The grid marks cells by it
+  // and the editor checks by it: no band errors while the hidden out-of-band
+  // switch is on, and no RX band errors where the write keeps every channel.
+  const writeRule = useChannelWriteRule();
+  const bandLimits = writeRule.outOfBand ? null : (caps?.bandLimits ?? null);
   const maxChannels = caps?.maxChannels ?? 4000;
   const analogOnly = caps?.analogOnly === true;
   // Optional column groups: a radio shows one only if it declares it.
@@ -347,6 +349,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                 encryptionKeys={encryptionKeys}
                 talkGroups={talkGroups}
                 dmrRadioIds={dmrRadioIds}
+                writeRule={writeRule}
                 dataIndex={virtualItem.index}
                 onCellChange={handleCellChange}
                 onRowClick={handleRowClick}
@@ -379,6 +382,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             setEditingChannel(null);
           }}
           bandLimits={bandLimits}
+          checkRxBand={writeRule.filterBand}
           maxChannels={maxChannels}
           analogOnly={analogOnly}
           rxGroups={rxGroups}

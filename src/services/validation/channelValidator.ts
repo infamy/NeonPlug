@@ -19,6 +19,8 @@ export interface ChannelValidationOptions {
   maxNameLength?: number;
   /** capabilities.blankTxAnyBand: a blank TX is allowed whatever the RX. */
   blankTxAnyBand?: boolean;
+  /** False where a write keeps a channel whatever its RX (the DA-7X2's planner checks TX only). */
+  checkRxBand?: boolean;
 }
 
 /**
@@ -60,7 +62,7 @@ export function validateChannel(
     const ranges = bandLimits.uhfMin != null && bandLimits.uhfMax != null
       ? `VHF: ${bandLimits.vhfMin}-${bandLimits.vhfMax} MHz, UHF: ${bandLimits.uhfMin}-${bandLimits.uhfMax} MHz`
       : `VHF: ${bandLimits.vhfMin}-${bandLimits.vhfMax} MHz`;
-    if (!isValidFrequencyRange(channel.rxFrequency, bandLimits)) {
+    if (options.checkRxBand !== false && !isValidFrequencyRange(channel.rxFrequency, bandLimits)) {
       errors.push({
         field: 'rxFrequency',
         message: `RX frequency must be within radio band limits (${ranges})`,

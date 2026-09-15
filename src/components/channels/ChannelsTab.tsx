@@ -31,6 +31,8 @@ import {
 import { describeChannelDelete } from '../../services/channelDelete';
 import { REDO_SHORTCUT, UNDO_SHORTCUT, useChannelUndoShortcuts } from '../../hooks/useChannelUndoShortcuts';
 import { ChannelUndoNotice } from './ChannelUndoNotice';
+import { useChannelWriteRule } from '../../hooks/useChannelWriteRule';
+import { isChannelWritable } from '../../services/validation/writeFilter';
 
 /** Which channel table the tab is showing. */
 type ChannelView = 'main' | 'am' | 'fm';
@@ -45,6 +47,7 @@ export const ChannelsTab: React.FC = () => {
   const [scrollToChannel, setScrollToChannel] = useState<number | null>(null);
   const [selectedChannelNumbers, setSelectedChannelNumbers] = useState<Set<number>>(new Set());
   const [view, setView] = useState<ChannelView>('main');
+  const [onlyUnwritable, setOnlyUnwritable] = useState(false);
 
   // AM airband and FM broadcast are separate tables on the radio, not rows in
   // the main list — shown as sibling views so they keep channel-list room
@@ -62,6 +65,14 @@ export const ChannelsTab: React.FC = () => {
   const undoLabel = useChannelHistoryStore((s) => s.past[s.past.length - 1]?.label);
   const redoLabel = useChannelHistoryStore((s) => s.future[s.future.length - 1]?.label);
   useChannelUndoShortcuts(!isBroadcast);
+
+  // Channels a write leaves out, by the rule this radio's write uses.
+  const writeRule = useChannelWriteRule();
+  const unwritable = useMemo(
+    () => new Set(channels.filter((ch) => ch.rxFrequency > 0 && !isChannelWritable(ch, writeRule)).map((ch) => ch.number)),
+    [channels, writeRule]
+  );
+  const showingUnwritable = onlyUnwritable && unwritable.size > 0;
 
   const filteredBroadcast = useMemo(() => {
     if (!broadcast) return [];
@@ -163,7 +174,9 @@ export const ChannelsTab: React.FC = () => {
   const filteredChannels = useMemo(() => {
     // Exclude empty channels (rxFrequency 0 = unprogrammed slot)
     const nonEmptyChannels = channels.filter(ch => ch.rxFrequency > 0);
-    const allChannels = [...vfoChannels, ...nonEmptyChannels];
+    const allChannels = showingUnwritable
+      ? nonEmptyChannels.filter(ch => unwritable.has(ch.number))
+      : [...vfoChannels, ...nonEmptyChannels];
 
     if (!searchQuery.trim()) {
       return allChannels;
@@ -199,7 +212,7 @@ export const ChannelsTab: React.FC = () => {
       
       return false;
     });
-  }, [channels, vfoChannels, searchQuery]);
+  }, [channels, vfoChannels, searchQuery, showingUnwritable, unwritable]);
 
   const handleDeleteSelectedClick = () => {
     const toDelete = Array.from(selectedChannelNumbers).filter(n => !isVFOChannel(n));
@@ -225,6 +238,16 @@ export const ChannelsTab: React.FC = () => {
     });
     setSelectedChannelNumbers(new Set());
   };
+
+  // "12 of 312 channels" while a search or the won't-be-written filter hides some.
+  const totalChannels = channels.filter(ch => ch.rxFrequency > 0).length;
+  const shownChannels = filteredChannels.filter(ch => !isVFOChannel(ch.number)).length;
+  const shownVfos = filteredChannels.length - shownChannels;
+  const channelCountLabel =
+    (shownChannels === totalChannels
+      ? `${totalChannels} ${formatPlural(totalChannels, 'channel')}`
+      : `${shownChannels} of ${totalChannels} ${formatPlural(totalChannels, 'channel')}`) +
+    (shownVfos > 0 ? ` (${shownVfos} ${formatPlural(shownVfos, 'VFO')})` : '');
 
   return (
     <div className="h-full flex flex-col min-h-0">
@@ -255,7 +278,7 @@ export const ChannelsTab: React.FC = () => {
           <div>
             {isBroadcast
               ? `${filteredBroadcast.length} ${formatPlural(filteredBroadcast.length, 'channel')}`
-              : `${filteredChannels.length - vfoChannels.length} ${formatPlural(filteredChannels.length - vfoChannels.length, 'channel')}${vfoChannels.length > 0 ? ` (${vfoChannels.length} ${formatPlural(vfoChannels.length, 'VFO')})` : ''}`}
+              : channelCountLabel}
           </div>
           {!isBroadcast && (
             <div className="flex items-center gap-1">
@@ -333,6 +356,21 @@ export const ChannelsTab: React.FC = () => {
             </button>
           )}
         </div>
+        {!isBroadcast && unwritable.size > 0 && (
+          <button
+            type="button"
+            onClick={() => setOnlyUnwritable(!showingUnwritable)}
+            aria-pressed={showingUnwritable}
+            className={`${BUTTON.danger} px-2 py-1.5 text-xs border rounded whitespace-nowrap shrink-0`}
+            title={
+              showingUnwritable
+                ? 'Show every channel again'
+                : "Show only the channels a write leaves out, because this radio can't hold them"
+            }
+          >
+            {showingUnwritable ? 'Show all channels' : `⚠ ${unwritable.size} won't be written`}
+          </button>
+        )}
         {selectedCount > 0 && !isBroadcast ? (
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-cool-gray text-sm whitespace-nowrap">{selectedCount} selected</span>

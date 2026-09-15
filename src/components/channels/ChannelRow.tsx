@@ -17,8 +17,15 @@ import {
   extraColumnTitle,
   type ExtraChannelColumn,
 } from './extraChannelColumns';
-import { BUTTON, FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD, FIELD_INVALID } from '../ui/controlStyles';
 import { FrequencyInput } from './FrequencyInput';
+import {
+  channelProblems,
+  type ChannelProblems,
+  type ChannelWriteRule,
+} from '../../services/validation/channelProblems';
+
+const NO_PROBLEMS: ChannelProblems = {};
 
 // Re-exported so existing importers keep working; the numbers now derive from
 // the radio's channel count rather than being hardcoded in three places.
@@ -42,6 +49,8 @@ interface ChannelRowProps {
   encryptionKeys: EncryptionKey[];
   talkGroups: QuickContact[];
   dmrRadioIds: DMRRadioID[];
+  /** The rule this radio's write applies to channels, to mark cells by. Keep it stable: rows are memoized. */
+  writeRule: ChannelWriteRule;
   /** Virtualizer item index; stamped as data-index for dynamic row measurement. */
   dataIndex: number;
   onCellChange: CellChangeHandler;
@@ -175,6 +184,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
   encryptionKeys,
   talkGroups,
   dmrRadioIds,
+  writeRule,
   dataIndex,
   onCellChange,
   onRowClick,
@@ -195,6 +205,9 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
   const hasColumn = (g: ChannelColumnGroup) => declaredColumns.has(g);
   // Whether this radio's channels name a scan list by slot or by position: see utils/scanListReference.ts.
   const scanListsBySlot = caps?.scanListsBySlot === true;
+  // What this radio's write would do with the channel, marked on the cells it
+  // concerns. VFO rows are settings, which the channel write never filters.
+  const problems = isVFOChannel(channel.number) ? NO_PROBLEMS : channelProblems(channel, writeRule);
 
   return (
     <tr
@@ -225,10 +238,13 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           value={isVFOChannel(channel.number) ? '' : channel.name}
           onChange={(e) => handleCellChange(channel.number, 'name', e.target.value)}
           disabled={isVFOChannel(channel.number)}
-          className={`${FIELD} border rounded px-2 py-1 w-full text-xs ${
+          className={`${problems.name ? FIELD_INVALID : FIELD} border rounded px-2 py-1 w-full text-xs ${
             isVFOChannel(channel.number) ? 'text-cool-gray cursor-not-allowed' : ''
           }`}
-          maxLength={caps?.maxChannelNameLength ?? 16}
+          title={problems.name}
+          aria-invalid={problems.name ? true : undefined}
+          aria-label={`Channel ${channel.number} name`}
+          maxLength={writeRule.maxNameLength}
           placeholder={isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : ''}
         />
       </td>
@@ -238,6 +254,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           onChange={(val) => handleCellChange(channel.number, 'rxFrequency', val)}
           className="border rounded px-2 py-1 w-full text-xs"
           aria-label={`Channel ${channel.number} RX frequency`}
+          problem={problems.rx}
         />
       </td>
       <td className="px-1 py-2 align-middle">
@@ -275,6 +292,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
             onChange={(val) => handleCellChange(channel.number, 'txFrequency', val)}
             className="border rounded px-2 py-1 w-full text-xs"
             aria-label={`Channel ${channel.number} TX frequency`}
+            problem={problems.tx}
           />
         )}
       </td>

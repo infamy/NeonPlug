@@ -35,20 +35,24 @@ export interface WritableCodeplug {
   droppedScanLists: string[];
 }
 
+/** Whether a write keeps this channel: every channel, where the radio's write planner checks them itself. */
+export function isChannelWritable(channel: Channel, options: WriteFilterOptions): boolean {
+  return (
+    !options.filterBand ||
+    isWritableChannelFrequency(channel, options.bandLimits, {
+      blankTxAnyBand: options.blankTxAnyBand,
+      outOfBand: options.outOfBand,
+    })
+  );
+}
+
 export function planWritableCodeplug(
   channels: Channel[],
   zones: Zone[],
   scanLists: ScanList[],
   options: WriteFilterOptions
 ): WritableCodeplug {
-  const kept = options.filterBand
-    ? channels.filter((ch) =>
-        isWritableChannelFrequency(ch, options.bandLimits, {
-          blankTxAnyBand: options.blankTxAnyBand,
-          outOfBand: options.outOfBand,
-        })
-      )
-    : channels;
+  const kept = options.filterBand ? channels.filter((ch) => isChannelWritable(ch, options)) : channels;
   const keptNumbers = new Set(kept.map((ch) => ch.number));
 
   const trimmedZones = zones.map((zone) => ({ ...zone, channels: zone.channels.filter((n) => keptNumbers.has(n)) }));
