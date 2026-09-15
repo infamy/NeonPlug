@@ -10,6 +10,23 @@ export interface PickerItem {
   searchText?: string;
 }
 
+/**
+ * A zone's or scan list's channels for its row in the list, by name:
+ * "1 Local Rptr, 2 Simplex, 3 Airport +61 more". The rows showed bare numbers.
+ */
+export function channelListPreview(
+  numbers: readonly number[],
+  names: ReadonlyMap<number, string>,
+  shown = 3
+): string {
+  const label = (n: number) => {
+    const name = names.get(n);
+    return name ? `${n} ${name}` : `${n}`;
+  };
+  const more = numbers.length - shown;
+  return numbers.slice(0, shown).map(label).join(', ') + (more > 0 ? ` +${more} more` : '');
+}
+
 /** Build a PickerItem for a channel (shared by zone and scan list editors). */
 export function channelPickerItem(ch: Channel): PickerItem {
   return {

@@ -25,7 +25,7 @@ export const FT65_DESCRIPTOR: RadioDescriptor = {
   group: 'Yaesu',
   supportsBle: false,
   protocolFactory: () => new FT65Protocol('FT-65', [ID_PREFIX_FT65], OFFSET_FACTOR_FT65, MAX_NAME_LEN_FT65),
-  capabilities: FT65_CAPS_DUAL,
+  capabilities: { ...FT65_CAPS_DUAL, maxChannelNameLength: MAX_NAME_LEN_FT65 },
   settingsProfile: FT65_SETTINGS_PROFILE,
 };
 
@@ -37,7 +37,7 @@ export const FT4_DESCRIPTOR: RadioDescriptor = {
   group: 'Yaesu',
   supportsBle: false,
   protocolFactory: () => new FT65Protocol('FT-4', [ID_PREFIX_FT4X], OFFSET_FACTOR_FT4, MAX_NAME_LEN_FT4),
-  capabilities: FT65_CAPS_DUAL,
+  capabilities: { ...FT65_CAPS_DUAL, maxChannelNameLength: MAX_NAME_LEN_FT4 },
   settingsProfile: FT4_SETTINGS_PROFILE,
 };
 
@@ -49,7 +49,7 @@ export const FT4VR_DESCRIPTOR: RadioDescriptor = {
   group: 'Yaesu',
   supportsBle: false,
   protocolFactory: () => new FT65Protocol('FT-4VR', [ID_PREFIX_FT4V], OFFSET_FACTOR_FT4, MAX_NAME_LEN_FT4),
-  capabilities: FT_CAPS_VHF,
+  capabilities: { ...FT_CAPS_VHF, maxChannelNameLength: MAX_NAME_LEN_FT4 },
   settingsProfile: FT4_SETTINGS_PROFILE,
 };
 
@@ -61,6 +61,6 @@ export const FT25R_DESCRIPTOR: RadioDescriptor = {
   group: 'Yaesu',
   supportsBle: false,
   protocolFactory: () => new FT65Protocol('FT-25R', [ID_PREFIX_FT25], OFFSET_FACTOR_FT65, MAX_NAME_LEN_FT65),
-  capabilities: FT_CAPS_VHF,
+  capabilities: { ...FT_CAPS_VHF, maxChannelNameLength: MAX_NAME_LEN_FT65 },
   settingsProfile: FT25R_SETTINGS_PROFILE,
 };

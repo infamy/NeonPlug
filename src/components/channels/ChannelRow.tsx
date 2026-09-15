@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { isVFOChannel, getVFOIdentifier } from '../../utils/vfoChannels';
 import type { Channel } from '../../models/Channel';
 import type { ScanList } from '../../models/ScanList';
@@ -17,7 +17,15 @@ import {
   extraColumnTitle,
   type ExtraChannelColumn,
 } from './extraChannelColumns';
-import { BUTTON, FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD, FIELD_INVALID } from '../ui/controlStyles';
+import { FrequencyInput } from './FrequencyInput';
+import {
+  channelProblems,
+  type ChannelProblems,
+  type ChannelWriteRule,
+} from '../../services/validation/channelProblems';
+
+const NO_PROBLEMS: ChannelProblems = {};
 
 // Re-exported so existing importers keep working; the numbers now derive from
 // the radio's channel count rather than being hardcoded in three places.
@@ -25,44 +33,6 @@ export { isVFOChannel, getVFOIdentifier };
 
 export const isDigitalMode = (mode: Channel['mode']): boolean =>
   mode === 'Digital' || mode === 'Fixed Digital';
-
-// Frequency input component that only updates parent on blur (prevents cursor jumping)
-interface FrequencyInputProps {
-  value: number;
-  onChange: (value: number) => void;
-  className?: string;
-}
-
-const FrequencyInput: React.FC<FrequencyInputProps> = ({ value, onChange, className }) => {
-  const [localValue, setLocalValue] = useState(value.toFixed(4));
-
-  // Sync local value when prop changes (e.g., when channel changes)
-  useEffect(() => {
-    setLocalValue(value.toFixed(4));
-  }, [value]);
-
-  const handleBlur = () => {
-    const parsed = parseFloat(localValue);
-    if (!isNaN(parsed) && parsed > 0) {
-      onChange(parsed);
-      setLocalValue(parsed.toFixed(4));
-    } else {
-      // Reset to original value if invalid
-      setLocalValue(value.toFixed(4));
-    }
-  };
-
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      value={localValue}
-      onChange={(e) => setLocalValue(e.target.value)}
-      onBlur={handleBlur}
-      className={className}
-    />
-  );
-};
 
 export type CellChangeHandler = (
   channelNumber: number,
@@ -79,10 +49,14 @@ interface ChannelRowProps {
   encryptionKeys: EncryptionKey[];
   talkGroups: QuickContact[];
   dmrRadioIds: DMRRadioID[];
+  /** The rule this radio's write applies to channels, to mark cells by. Keep it stable: rows are memoized. */
+  writeRule: ChannelWriteRule;
   /** Virtualizer item index; stamped as data-index for dynamic row measurement. */
   dataIndex: number;
   onCellChange: CellChangeHandler;
   onRowClick: (channelNumber: number, e: React.MouseEvent) => void;
+  /** The row's checkbox: add or remove this row, or with Shift select a range. */
+  onToggleSelect: (channelNumber: number, e: React.MouseEvent) => void;
   onEdit: (channel: Channel) => void;
   onClone: (channel: Channel) => void;
   onDelete: (channel: Channel) => void;
@@ -212,9 +186,11 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
   encryptionKeys,
   talkGroups,
   dmrRadioIds,
+  writeRule,
   dataIndex,
   onCellChange,
   onRowClick,
+  onToggleSelect,
   onEdit,
   onClone,
   onDelete,
@@ -232,6 +208,9 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
   const hasColumn = (g: ChannelColumnGroup) => declaredColumns.has(g);
   // Whether this radio's channels name a scan list by slot or by position: see utils/scanListReference.ts.
   const scanListsBySlot = caps?.scanListsBySlot === true;
+  // What this radio's write would do with the channel, marked on the cells it
+  // concerns. VFO rows are settings, which the channel write never filters.
+  const problems = isVFOChannel(channel.number) ? NO_PROBLEMS : channelProblems(channel, writeRule);
 
   return (
     <tr
@@ -252,7 +231,18 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           : 'hover:bg-deep-gray hover:bg-opacity-50'
       }`}
     >
-      <td className={`px-2 py-2 sticky left-0 z-10 min-w-[28px] w-[28px] ${isSelected ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`} title={isVFOChannel(channel.number) ? 'VFO' : 'Click = one; Shift+click = range; Alt+click = add/remove'} />
+      <td className={`px-2 py-2 sticky left-0 z-10 min-w-[28px] w-[28px] ${isSelected ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`} title={isVFOChannel(channel.number) ? 'VFO' : undefined}>
+        {!isVFOChannel(channel.number) && (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            readOnly
+            onClick={(e) => onToggleSelect(channel.number, e)}
+            className="checkbox-theme"
+            aria-label={`Select channel ${channel.number}`}
+          />
+        )}
+      </td>
       <td className={`px-2 py-2 text-white sticky left-[28px] z-10 text-sm font-medium ${isSelected ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`}>
         {isVFOChannel(channel.number) ? getVFOIdentifier(channel.number) : channel.number}
       </td>
@@ -262,10 +252,13 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           value={isVFOChannel(channel.number) ? '' : channel.name}
           onChange={(e) => handleCellChange(channel.number, 'name', e.target.value)}
           disabled={isVFOChannel(channel.number)}
-          className={`${FIELD} border rounded px-2 py-1 w-full text-xs ${
+          className={`${problems.name ? FIELD_INVALID : FIELD} border rounded px-2 py-1 w-full text-xs ${
             isVFOChannel(channel.number) ? 'text-cool-gray cursor-not-allowed' : ''
           }`}
-          maxLength={16}
+          title={problems.name}
+          aria-invalid={problems.name ? true : undefined}
+          aria-label={`Channel ${channel.number} name`}
+          maxLength={writeRule.maxNameLength}
           placeholder={isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : ''}
         />
       </td>
@@ -273,7 +266,9 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         <FrequencyInput
           value={channel.rxFrequency}
           onChange={(val) => handleCellChange(channel.number, 'rxFrequency', val)}
-          className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
+          className="border rounded px-2 py-1 w-full text-xs"
+          aria-label={`Channel ${channel.number} RX frequency`}
+          problem={problems.rx}
         />
       </td>
       <td className="px-1 py-2 align-middle">
@@ -309,7 +304,9 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           <FrequencyInput
             value={channel.txFrequency}
             onChange={(val) => handleCellChange(channel.number, 'txFrequency', val)}
-            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
+            className="border rounded px-2 py-1 w-full text-xs"
+            aria-label={`Channel ${channel.number} TX frequency`}
+            problem={problems.tx}
           />
         )}
       </td>

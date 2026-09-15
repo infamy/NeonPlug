@@ -17,10 +17,16 @@ import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { getRadioPickerOptions, getMigrationTargetModels } from '../../radios';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
+import { planWritableCodeplug } from '../../services/validation/writeFilter';
+import { currentWriteFilterOptions } from '../../services/writeFilterOptions';
+import { getSettingsProfileForModel } from '../../data/settingsProfiles';
+import { changedSettingLabels } from '../settings/settingsFields';
 import { migrateCodeplug } from '../../services/codeplugMigration';
 import { exportableTables } from '../../services/codeplugExport';
 import { applyCodeplugToStores } from '../../services/applyCodeplug';
 import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
+import { backupUnsavedEdits, codeplugFromStores } from '../../services/unsavedEdits';
+import { useUnsavedChangesStore } from '../../store/unsavedChangesStore';
 // Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { useAlert } from '../../hooks/useAlert';
@@ -38,6 +44,7 @@ import { CodeplugSummaryBody } from './CodeplugSummaryBody';
 import { ConvertLossList } from './ConvertLossList';
 import type { WriteConfirmInput } from './writeConfirmation';
 import { isWebSerialSupported } from '../../utils/browserSupport';
+import { classifyRadioError, type RadioErrorKind } from '../../utils/radioErrors';
 import { BUTTON, FIELD } from '../ui/controlStyles';
 
 export const Toolbar: React.FC = () => {
@@ -56,7 +63,7 @@ export const Toolbar: React.FC = () => {
   const { groups: rxGroups, setGroups: setRXGroups } = useRXGroupsStore();
   const { keys: encryptionKeys, setKeys: setEncryptionKeys } = useEncryptionKeysStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { readFromRadio, writeChannelsToRadio, previewChannelWrite, isConnecting, error, readSteps, writeChannelsSteps, readModel, writeModel } = useRadioConnection();
+  const { readFromRadio, writeChannelsToRadio, previewChannelWrite, isConnecting, readSteps, writeChannelsSteps, readModel, writeModel } = useRadioConnection();
   // Any operation anywhere owns the port; a second port.open() throws AND
   // leaves it locked for the next attempt.
   const { radioBusy } = useRadioStore();
@@ -64,6 +71,7 @@ export const Toolbar: React.FC = () => {
   const [progressMessage, setProgressMessage] = useState('');
   const [currentStep, setCurrentStep] = useState('');
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [connectionErrorKind, setConnectionErrorKind] = useState<RadioErrorKind>('unknown');
   const [isWriting, setIsWriting] = useState(false);
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
@@ -78,6 +86,11 @@ export const Toolbar: React.FC = () => {
   const [snapshotsClearConfirmOpen, setSnapshotsClearConfirmOpen] = useState(false);
   const readDropdownRef = useRef<HTMLDivElement>(null);
   const webSerialSupported = isWebSerialSupported();
+  // Edits since the last read, write, import or export (services/unsavedEdits.ts).
+  const unsavedChanges = useUnsavedChangesStore((s) => s.dirty || s.contactsDirty);
+  const hasUnsavedEdits =
+    unsavedChanges &&
+    (channels.length > 0 || zones.length > 0 || scanLists.length > 0 || contacts.length > 0 || quickContacts.length > 0);
 
   const formatEventType = (eventType?: SnapshotEventType): string => {
     if (!eventType) return '';
@@ -129,41 +142,9 @@ export const Toolbar: React.FC = () => {
     exportDate: new Date().toISOString(),
   });
 
-  const buildCodeplugDataFromStores = () => {
-    const cs = useChannelsStore.getState();
-    const zs = useZonesStore.getState();
-    const sls = useScanListsStore.getState();
-    const cts = useContactsStore.getState();
-    const des = useDigitalEmergencyStore.getState();
-    const aes = useAnalogEmergencyStore.getState();
-    const rss = useRadioSettingsStore.getState();
-    const rs = useRadioStore.getState();
-    const qms = useQuickMessagesStore.getState();
-    const drs = useDMRRadioIDsStore.getState();
-    const qcs = useQuickContactsStore.getState();
-    const rgs = useRXGroupsStore.getState();
-    const eks = useEncryptionKeysStore.getState();
-    return {
-      channels: cs.channels,
-      zones: zs.zones,
-      scanLists: sls.scanLists,
-      contacts: cts.contacts,
-      digitalEmergencies: des.systems,
-      digitalEmergencyConfig: des.config,
-      analogEmergencies: aes.systems,
-      radioSettings: rss.settings,
-      radioInfo: rs.radioInfo,
-      messages: qms.messages,
-      radioIds: drs.radioIds,
-      quickContacts: qcs.contacts,
-      rxGroups: rgs.groups,
-      encryptionKeys: eks.keys,
-      tables: exportableTables(rs.tables),
-      exportDate: new Date().toISOString(),
-    };
-  };
-
   const handleConvertReplace = async () => {
+    const targetLabel = getRadioPickerOptions().find((o) => o.modelId === convertTargetModel)?.label ?? convertTargetModel;
+    await backupUnsavedEdits(`converting for ${targetLabel}`);
     const data = buildCodeplugData();
     const { migrated, loss } = migrateCodeplug(data, convertTargetModel);
     setChannels(migrated.channels);
@@ -182,7 +163,6 @@ export const Toolbar: React.FC = () => {
     setEncryptionKeys(migrated.encryptionKeys);
     setSelectedRadioModel(convertTargetModel);
     setConvertModalOpen(false);
-    const targetLabel = getRadioPickerOptions().find((o) => o.modelId === convertTargetModel)?.label ?? convertTargetModel;
     showAlertBody(
       <div className="space-y-3 text-sm pb-1">
         <p className="text-white">Converted for {targetLabel}.</p>
@@ -207,7 +187,7 @@ export const Toolbar: React.FC = () => {
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    
+
     try {
       // Lazy load codeplug import when needed
       const { importCodeplug } = await import('../../services/codeplugExport');
@@ -218,10 +198,11 @@ export const Toolbar: React.FC = () => {
       // null = user declined the newer-format warning; not an error.
       if (!codeplugData) return;
 
+      await backupUnsavedEdits(`opening ${file.name}`);
       // An import marks the radio settings changed so a write sends them
       // (issue #2); applyCodeplugToStores is the one place that decides it.
       applyCodeplugToStores(codeplugData, 'import');
-      
+
       showAlertBody(
         <CodeplugSummaryBody data={codeplugData} lead="Codeplug imported" fileName={file.name} />,
         'Import'
@@ -230,7 +211,7 @@ export const Toolbar: React.FC = () => {
     } catch (error) {
       showAlert(error instanceof Error ? error.message : 'Failed to import codeplug', 'Import');
     }
-    
+
     // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -240,6 +221,34 @@ export const Toolbar: React.FC = () => {
   const handleExport = async () => {
     const { exportCodeplug } = await import('../../services/codeplugExport');
     await exportCodeplug(buildCodeplugData());
+    // Not marked saved: the download is a link click, and a save dialog the user
+    // cancels would still have cleared the unsaved mark.
+  };
+
+  const handleCloseModal = () => {
+    setConnectionError(null);
+    setConnectionErrorKind('unknown');
+    setLastOperationMode(null);
+    setProgress(0);
+    setProgressMessage('');
+    setCurrentStep('');
+  };
+
+  /**
+   * Show what went wrong, or nothing: a closed port picker is the user's own
+   * answer, not an error to explain.
+   */
+  const showOperationError = (err: unknown, progressLabel: string) => {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    const kind = classifyRadioError(message, err instanceof Error ? err.name : undefined);
+    if (kind === 'cancelled') {
+      handleCloseModal();
+      return;
+    }
+    setConnectionErrorKind(kind);
+    setConnectionError(message);
+    setProgress(0);
+    setProgressMessage(progressLabel);
   };
 
   const handleRead = async (forcePortSelection = true) => {
@@ -251,6 +260,10 @@ export const Toolbar: React.FC = () => {
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
 
+      // A read clears the codeplug before it connects, so unsaved edits are
+      // snapshotted first. Not awaited: the port picker needs this click's user
+      // activation, and the codeplug is captured before this line returns.
+      void backupUnsavedEdits('reading the radio');
       await readFromRadio((progress, message, step) => {
         setProgress(progress);
         setProgressMessage(message);
@@ -261,18 +274,18 @@ export const Toolbar: React.FC = () => {
 
       setConnectionError(null);
       setLastOperationMode(null);
+      useUnsavedChangesStore.getState().markClean();
       const modelLabel = useRadioStore.getState().radioInfo?.model ?? effectiveModel ?? undefined;
-      await saveSnapshot(buildCodeplugDataFromStores(), { eventType: 'read', radioModel: modelLabel });
+      await saveSnapshot(codeplugFromStores(), { eventType: 'read', radioModel: modelLabel });
+      // No summary to dismiss: the progress dialog shows the finished read for
+      // two seconds and closes.
       setTimeout(() => {
         setProgress(0);
         setProgressMessage('');
         setCurrentStep('');
       }, 2000);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      setConnectionError(errorMessage);
-      setProgress(0);
-      setProgressMessage('Connection failed');
+      showOperationError(err, 'Connection failed');
     }
   };
 
@@ -288,14 +301,6 @@ export const Toolbar: React.FC = () => {
     handleRead(true);
   };
 
-  const handleCloseModal = () => {
-    setConnectionError(null);
-    setLastOperationMode(null);
-    setProgress(0);
-    setProgressMessage('');
-    setCurrentStep('');
-  };
-
   const startWriteOperation = async () => {
     window.focus();
     setIsWriting(true);
@@ -305,7 +310,7 @@ export const Toolbar: React.FC = () => {
       setProgress(0);
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
-      
+
       await writeChannelsToRadio(channels, zones, scanLists, (progress, message, step) => {
         setProgress(progress);
         setProgressMessage(message);
@@ -313,11 +318,15 @@ export const Toolbar: React.FC = () => {
           setCurrentStep(step);
         }
       });
-      
+
       setConnectionError(null);
       setLastOperationMode(null);
+      // Everything but the contact list, which a codeplug write doesn't send.
+      useUnsavedChangesStore.getState().markWritten();
       const modelLabel = useRadioStore.getState().radioInfo?.model ?? effectiveModel ?? undefined;
-      await saveSnapshot(buildCodeplugDataFromStores(), { eventType: 'write', radioModel: modelLabel });
+      await saveSnapshot(codeplugFromStores(), { eventType: 'write', radioModel: modelLabel });
+      // As with a read: the finished write stays in the progress dialog for two
+      // seconds, with nothing to dismiss.
       setTimeout(() => {
         setIsWriting(false);
         setProgress(0);
@@ -325,11 +334,7 @@ export const Toolbar: React.FC = () => {
         setCurrentStep('');
       }, 2000);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      const displayError = errorMessage;
-      setConnectionError(displayError);
-      setProgress(0);
-      setProgressMessage('Write failed');
+      showOperationError(err, 'Write failed');
       setIsWriting(false);
     }
   };
@@ -366,7 +371,27 @@ export const Toolbar: React.FC = () => {
     }
     // Handed over as data, not assembled into a string. What it says and in
     // what order lives in writeConfirmation.ts; how it looks in WriteConfirmBody.
-    setWriteConfirm({ preview, integrity, warnings });
+    // Which radio, what the write sends, and what it leaves out: the filter the write runs.
+    const writable = planWritableCodeplug(channels, zones, scanLists, currentWriteFilterOptions());
+    const settingsState = useRadioSettingsStore.getState();
+    const settingsChanges = changedSettingLabels(
+      getSettingsProfileForModel(effectiveModel),
+      settingsState.settings,
+      settingsState.originalSettings,
+      settingsState.changedFields,
+      settingsState.allChanged
+    );
+    const summary = {
+      model: writeModel,
+      channels: writable.channels.length,
+      zones: writable.zones.length,
+      scanLists: writable.scanLists.length,
+      droppedChannels: writable.droppedChannels.map(({ number, name }) => ({ number, name })),
+      droppedZones: writable.droppedZones,
+      droppedScanLists: writable.droppedScanLists,
+      settings: settingsChanges,
+    };
+    setWriteConfirm({ preview, integrity, warnings, summary });
     setWriteWarningOpen(true);
   };
 
@@ -396,6 +421,7 @@ export const Toolbar: React.FC = () => {
       return;
     }
     if (!data) return;
+    await backupUnsavedEdits('restoring a snapshot');
     applyCodeplugToStores(data, 'restore');
     setSnapshotsModalOpen(false);
     showAlertBody(<CodeplugSummaryBody data={data} lead="Codeplug restored" />, 'Restore');
@@ -491,19 +517,33 @@ export const Toolbar: React.FC = () => {
               </div>
             )}
           </div>
-          <Button
-            variant="primary"
-            onClick={handleWrite}
-            disabled={isConnecting || isWriting || radioBusy || (channels.length === 0 && zones.length === 0 && scanLists.length === 0) || !webSerialSupported || !!connectionError}
-            className={!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}
-            title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Write codeplug to connected radio'}
-            glow={webSerialSupported}
-          >
-            {isWriting ? 'Writing...' : 'Write to Radio'}
-          </Button>
-          {error && !error.includes('Please click the button directly') && (
-            <span className="text-red-400 text-xs ml-2">{error}</span>
-          )}
+          {/* Unsaved edits show as a dot on Write, with the words in its tooltip. */}
+          <span className="relative inline-flex">
+            <Button
+              variant="primary"
+              onClick={handleWrite}
+              disabled={isConnecting || isWriting || radioBusy || (channels.length === 0 && zones.length === 0 && scanLists.length === 0) || !webSerialSupported || !!connectionError}
+              className={!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}
+              title={
+                !webSerialSupported
+                  ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.'
+                  : hasUnsavedEdits
+                    ? 'Write codeplug to connected radio (unsaved changes)'
+                    : 'Write codeplug to connected radio'
+              }
+              glow={webSerialSupported}
+            >
+              {isWriting ? 'Writing...' : 'Write to Radio'}
+            </Button>
+            {hasUnsavedEdits && (
+              <span
+                role="img"
+                aria-label="Unsaved changes"
+                title="Unsaved changes: edits since the last read, write or import. Exporting a file keeps a copy; the dot stays until they are written to the radio."
+                className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-neon-magenta shadow-glow-magenta ring-2 ring-deep-gray"
+              />
+            )}
+          </span>
         </div>
       </div>
       <ReadProgressModal
@@ -513,8 +553,11 @@ export const Toolbar: React.FC = () => {
         currentStep={currentStep || (isWriting ? writeChannelsSteps[0] : readSteps[0])}
         steps={isWriting ? writeChannelsSteps : readSteps}
         error={connectionError}
+        errorKind={connectionErrorKind}
         onRetry={handleRetry}
-        onChangePort={!isWriting ? handleChangePort : undefined}
+        // Change Port starts a read, and a read replaces the codeplug. After a failed
+        // write that would throw away the edits that never reached the radio.
+        onChangePort={!isWriting && lastOperationMode !== 'write' ? handleChangePort : undefined}
         onClose={handleCloseModal}
         // lastOperationMode, not just isWriting: once a write fails isWriting is
         // false, and the error popup would say "Reading as" for a write.
@@ -525,10 +568,10 @@ export const Toolbar: React.FC = () => {
         isOpen={writeWarningOpen}
         onClose={() => setWriteWarningOpen(false)}
         onConfirm={handleWriteWarningConfirm}
-        title="Write to radio"
+        title={writeModel ? `Write to ${writeModel}` : 'Write to radio'}
         body={writeConfirm ? <WriteConfirmBody {...writeConfirm} /> : undefined}
         size="lg"
-        confirmLabel="Continue"
+        confirmLabel={writeModel ? `Write to ${writeModel}` : 'Write to radio'}
         cancelLabel="Cancel"
         variant="default"
       />

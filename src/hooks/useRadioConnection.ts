@@ -11,11 +11,6 @@ import { planChannelWrite } from '../radios/d890uv/writePlan';
 import { dryRunWrite } from '../radios/d890uv/writeDryRun';
 import type { CodeplugReadSinks } from '../radios/codeplugReads';
 import { getCapabilitiesForModel } from '../radios/capabilities';
-import { D890_MODEL_IDS } from '../radios/d890uv/constants';
-
-/** True for the DA-7X2 family, which plans its own band check. */
-const protocolIsD890 = (model: string | null) =>
-  model != null && (D890_MODEL_IDS as readonly string[]).includes(model);
 import type { Contact } from '../models/Contact';
 import { useRadioStore } from '../store/radioStore';
 import { useChannelsStore } from '../store/channelsStore';
@@ -34,10 +29,11 @@ import { useEncryptionKeysStore } from '../store/encryptionKeysStore';
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
-import { isWritableChannelFrequency } from '../services/validation/frequencyValidator';
-import { useOutOfBandStore } from '../store/outOfBandStore';
+import { planWritableCodeplug } from '../services/validation/writeFilter';
+import { currentWriteFilterOptions } from '../services/writeFilterOptions';
 import { parseBootImageHeader } from '../utils/bootImage';
 import { formatPlural } from '../utils/formatPlural';
+import { classifyRadioError } from '../utils/radioErrors';
 import {
   buildD890CodeplugTables,
   d890RenumberedChannels,
@@ -168,44 +164,48 @@ export function useRadioConnection() {
     setError(null);
     setConnectionError(null);
 
-    // Clear all codeplug data so each read starts from a clean slate
-    setChannels([]);
-    setRawChannelData(new Map());
-    setZones([]);
-    setRawZoneData(new Map());
-    setScanLists([]);
-    setRawScanListData(new Map());
-    setContacts([]);
-    setContactsLoaded(false);
-    setMessages([]);
-    setRawMessageData(new Map());
-    setMessagesLoaded(false);
-    setQuickContacts([]);
-    setQuickContactsLoaded(false);
-    setRadioIds([]);
-    setRawRadioIdData(new Map());
-    setRadioIdsLoaded(false);
-    setCalibration(null);
-    setCalibrationLoaded(false);
-    setRXGroups([]);
-    setRawGroupData(new Map());
-    setGroupsLoaded(false);
-    clearEncryptionKeys();
-    setRadioSettings(null);
-    setDigitalEmergencies([]);
-    setDigitalEmergencyConfig(null);
-    setAnalogEmergencies([]);
-    setBlockMetadata(new Map());
-    setBlockData(new Map());
-    setCachedMemoryImage(null);
-    setRawRadioSettingsData(null);
-    // The optional tables were NOT cleared here before the keyed-store change,
-    // because each was a separately named slot and the ten of them were simply
-    // missed. Reading a DM-32 after a DA-7X2 therefore left the DA-7X2's AM/FM
-    // tables and tone lists in the store, and ChannelsTab shows its AM/FM pills
-    // whenever `tables.broadcast` is present — so the previous radio's channels
-    // stayed on screen.
-    clearTables();
+    // Clear all codeplug data so each read starts from a clean slate. A read that
+    // fails part-way clears it again, so nothing half-read stays loaded.
+    const clearCodeplugStores = () => {
+      setChannels([]);
+      setRawChannelData(new Map());
+      setZones([]);
+      setRawZoneData(new Map());
+      setScanLists([]);
+      setRawScanListData(new Map());
+      setContacts([]);
+      setContactsLoaded(false);
+      setMessages([]);
+      setRawMessageData(new Map());
+      setMessagesLoaded(false);
+      setQuickContacts([]);
+      setQuickContactsLoaded(false);
+      setRadioIds([]);
+      setRawRadioIdData(new Map());
+      setRadioIdsLoaded(false);
+      setCalibration(null);
+      setCalibrationLoaded(false);
+      setRXGroups([]);
+      setRawGroupData(new Map());
+      setGroupsLoaded(false);
+      clearEncryptionKeys();
+      setRadioSettings(null);
+      setDigitalEmergencies([]);
+      setDigitalEmergencyConfig(null);
+      setAnalogEmergencies([]);
+      setBlockMetadata(new Map());
+      setBlockData(new Map());
+      setCachedMemoryImage(null);
+      setRawRadioSettingsData(null);
+      // The optional tables were NOT cleared here before the keyed-store change,
+      // because each was a separately named slot and the ten of them were simply
+      // missed. Reading a DM-32 after a DA-7X2 therefore left the DA-7X2's AM/FM
+      // tables and tone lists in the store, and ChannelsTab shows its AM/FM pills
+      // whenever `tables.broadcast` is present — so the previous radio's channels
+      // stayed on screen.
+      clearTables();
+    };
+    clearCodeplugStores();
 
     let protocol: RadioProtocol | null = null;
     let tabWentHiddenDuringOperation = false;
@@ -260,14 +260,13 @@ export function useRadioConnection() {
         await dm32.bulkReadRequiredBlocks();
       }
 
-      // Sections that fail to read are collected here and surfaced in the
-      // completion message — a silent failure would leave the UI showing an
-      // empty section while the radio still holds data.
+      // Sections that fail to read are collected here, and any failure fails the
+      // whole read (see the end of performRead). An empty section looks like the
+      // radio holds nothing there, and the next write would erase what it does hold.
       const sectionReadWarnings: string[] = [];
 
-      // Every section below is independent: a section that fails must not cost
-      // the user the sections that already read. Warn, record the name for the
-      // completion message, and carry on.
+      // Every section below still runs when one fails, so the error can name
+      // every section that did not read, not just the first.
       const readSection = async (label: string, read: () => Promise<void>) => {
         try {
           await read();
@@ -594,15 +593,14 @@ export function useRadioConnection() {
       try { await proto.disconnect(); } catch { /* already closed */ }
 
       if (sectionReadWarnings.length > 0) {
-        onProgress?.(
-          100,
-          `Read complete — warning: could not read ${sectionReadWarnings.join(', ')}. ` +
-            'These sections show as empty; re-read before editing them.',
-          steps[5]
+        // Nothing half-read stays loaded: a section left empty would be written
+        // back empty, erasing what the radio holds there.
+        clearCodeplugStores();
+        throw new Error(
+          `Could not read ${sectionReadWarnings.join(', ')}, so nothing was loaded. Read the radio again.`
         );
-      } else {
-        onProgress?.(100, 'Read complete!', steps[5]);
       }
+      onProgress?.(100, 'Read complete!', steps[5]);
     };
 
     try {
@@ -630,7 +628,10 @@ export function useRadioConnection() {
       const hiddenTabMatters =
         tabWentHiddenDuringOperation && !getCapabilitiesForModel(effectiveModel)?.readsSurviveBackgroundTab;
       const errorMessage = withVisibilityContext(rawMessage, hiddenTabMatters);
-      const isPortSelectionCancelled = rawMessage.includes('cancelled') || rawMessage.includes('Port selection cancelled');
+      // A closed port picker is the user's answer, not a failure to retry. Chrome
+      // says so with a NotFoundError, whose message never mentions cancelling.
+      const isPortSelectionCancelled =
+        classifyRadioError(rawMessage, err instanceof Error ? err.name : undefined) === 'cancelled';
 
       if (!isPortSelectionCancelled && protocol) {
         console.warn('Read failed, will retry:', errorMessage);
@@ -1172,59 +1173,20 @@ export function useRadioConnection() {
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     try {
-      // Filter channels to only include those with valid frequencies (use effective model for capabilities)
       const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
-      const writeCaps = getCapabilitiesForModel(effectiveModel);
-      const bandLimits = writeCaps?.bandLimits;
-      // The hidden out-of-band switch in About, on a radio that allows it (the DM-32 for now).
-      const outOfBand =
-        writeCaps?.supportsOutOfBandFrequencies === true && useOutOfBandStore.getState().allowOutOfBandFrequencies;
-      //
-      // ⚠️ NOT applied to the DA-7X2.
-      //
-      // On that radio the presence mask is computed from the channels this
-      // write plans, so a channel filtered out here is a channel DELETED from
-      // the radio — silently, behind a console.warn. And the filter fires on
-      // exactly the channels a real DA-7X2 carries: one was read from hardware
-      // with an airband entry at 118 MHz and an FM broadcast entry at 98.5 MHz
-      // sitting in the main list. Filtering them would have wiped both.
-      //
-      // `planChannelWrite` does this check properly instead: it refuses loudly,
-      // and only for a channel whose TX frequency was CHANGED to something out
-      // of band. One already on the radio is left alone.
-      const isD890 = protocolIsD890(radioInfo?.model ?? selectedRadioModel ?? null);
-      const validChannels = isD890
-        ? channels
-        : channels.filter(ch =>
-            isWritableChannelFrequency(ch, bandLimits, { blankTxAnyBand: writeCaps?.blankTxAnyBand, outOfBand })
-          );
-      const filteredCount = channels.length - validChannels.length;
-
+      // What this write sends once what the radio cannot hold is left out:
+      // channels outside its bands, and zones and scan lists left empty. The
+      // confirmation lists exactly this; writeFilterOptions.ts says what is
+      // filtered on which radio, and why the DA-7X2's channels are not.
+      const writable = planWritableCodeplug(channels, zones, scanLists, currentWriteFilterOptions());
+      const validChannels = writable.channels;
+      const filteredZones = writable.zones;
+      const filteredScanLists = writable.scanLists;
+      const filteredCount = writable.droppedChannels.length;
       if (filteredCount > 0) {
         console.warn(`Filtered out ${filteredCount} channel(s) with frequencies outside supported ranges`);
       }
-      
-      // Update zones to only include channel numbers that exist (never write zone refs to non-existent channels)
-      const validChannelNumbers = new Set(validChannels.map(ch => ch.number));
-      const filteredZones = zones.map(zone => {
-        const invalidRefs = zone.channels.filter(chNum => !validChannelNumbers.has(chNum));
-        if (invalidRefs.length > 0) {
-          console.warn(
-            `[Zones] Zone "${zone.name}" referenced non-existent channel(s): ${invalidRefs.join(', ')}. Removed before write to prevent radio errors.`
-          );
-        }
-        return {
-          ...zone,
-          channels: zone.channels.filter(chNum => validChannelNumbers.has(chNum))
-        };
-      }).filter(zone => zone.channels.length > 0); // Remove empty zones
-      
-      // Update scan lists to only include valid channel numbers
-      const filteredScanLists = scanLists.map(scanList => ({
-        ...scanList,
-        channels: scanList.channels.filter(chNum => validChannelNumbers.has(chNum))
-      })).filter(scanList => scanList.channels.length > 0); // Remove empty scan lists
-      
+
       // Use protocol for connected radio (write path)
       protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;

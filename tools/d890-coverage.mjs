@@ -12,7 +12,11 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const SRC = new URL('../src/radios/d890uv/recordLayout.ts', import.meta.url);
-const text = readFileSync(SRC, 'utf8');
+// Comments go first: the research behind each entry is a comment above it, and
+// prose mentioning a flag by name must not be mistaken for the flag itself.
+const text = readFileSync(SRC, 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '');
 
 // Split on the start of each region literal. Frame formats are not memory.
 const NOT_MEMORY = new Set(['Read request', 'Read reply', 'Write request']);
@@ -22,18 +26,15 @@ const regions = text
   .slice(1)
   .map((chunk) => {
     const name = chunk.slice(0, chunk.indexOf("'"));
-    // Only look at the flags before the note, so prose mentioning a flag by
-    // name cannot be mistaken for the flag itself.
-    const head = chunk.split('note:')[0];
     return {
       name,
-      read: /\bread: true\b/.test(head),
-      write: /\bwrite: true\b/.test(head),
-      optional: /\boptional: true\b/.test(head),
-      neverWrite: /\bneverWrite: true\b/.test(head),
-      hardwareRoundTrip: /\bhardwareRoundTrip: true\b/.test(head),
+      read: /\bread: true\b/.test(chunk),
+      write: /\bwrite: true\b/.test(chunk),
+      optional: /\boptional: true\b/.test(chunk),
+      neverWrite: /\bneverWrite: true\b/.test(chunk),
+      hardwareRoundTrip: /\bhardwareRoundTrip: true\b/.test(chunk),
       address: (() => {
-        const m = head.match(/address:\s*(0x[0-9a-f]+)/i);
+        const m = chunk.match(/address:\s*(0x[0-9a-f]+)/i);
         return m ? parseInt(m[1], 16) : null;
       })(),
     };

@@ -127,11 +127,14 @@ export const StartupModal: React.FC<StartupModalProps> = ({
   };
 
   return (
+    // The overlay scrolls, and the panel centres itself only when it fits (my-auto).
+    // Centred in a fixed box instead, a panel taller than the window lost its top
+    // and bottom with no way to reach them: a 1366×768 laptop on first run.
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90"
+      className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-black bg-opacity-90 p-4"
     >
       <div
-        className="bg-deep-gray rounded-lg p-8 max-w-md w-full mx-4 border border-neon-cyan shadow-glow-cyan"
+        className="my-auto bg-deep-gray rounded-lg p-6 sm:p-8 max-w-md w-full border border-neon-cyan shadow-glow-cyan"
       >
         <div className="text-center mb-6">
           <h1 className="text-4xl font-bold text-neon-cyan mb-2">NEONPLUG</h1>

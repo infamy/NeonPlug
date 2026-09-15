@@ -1,5 +1,5 @@
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
 import { useZonesStore } from '../../store/zonesStore';
@@ -8,7 +8,7 @@ import { useRadioStore } from '../../store/radioStore';
 import type { Zone } from '../../models/Zone';
 import { ListDetailLayout } from '../ui/ListDetailLayout';
 import { OrderedItemPicker } from '../ui/OrderedItemPicker';
-import { channelPickerItem } from '../ui/pickerItems';
+import { channelListPreview, channelPickerItem } from '../ui/pickerItems';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
@@ -156,6 +156,8 @@ export const ZonesList: React.FC = () => {
   const [editZoneName, setEditZoneName] = useState('');
   const [zoneToDelete, setZoneToDelete] = useState<{ id: string; name: string } | null>(null);
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
+  const channels = useChannelsStore((s) => s.channels);
+  const channelNames = useMemo(() => new Map(channels.map((ch) => [ch.number, ch.name])), [channels]);
 
   const handleAddZone = () => {
     if (newZoneName.trim()) {
@@ -280,9 +282,11 @@ export const ZonesList: React.FC = () => {
               {editingZoneId !== zone.id && (
                 <>
                   {zone.channels.length > 0 && (
-                    <div className="text-cool-gray text-xs mb-2">
-                      Channels: {zone.channels.slice(0, 5).join(', ')}
-                      {zone.channels.length > 5 && ` +${zone.channels.length - 5} more`}
+                    <div
+                      className="text-cool-gray text-xs mb-2 truncate"
+                      title={channelListPreview(zone.channels, channelNames, 20)}
+                    >
+                      {channelListPreview(zone.channels, channelNames)}
                     </div>
                   )}
                   <div className="flex gap-2 justify-end">

@@ -50,9 +50,11 @@ function renderRow(channel: Channel, analogOnly: boolean) {
           encryptionKeys={[]}
           talkGroups={[]}
           dmrRadioIds={[]}
+          writeRule={{ filterBand: true, maxNameLength: 16 }}
           dataIndex={0}
           onCellChange={noop}
           onRowClick={noop}
+          onToggleSelect={noop}
           onEdit={noop}
           onClone={noop}
           onDelete={noop}

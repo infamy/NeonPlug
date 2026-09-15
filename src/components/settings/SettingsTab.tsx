@@ -25,49 +25,13 @@ import {
 import { formatAddress } from '../../utils/formatHelpers';
 import { getSettingsProfileForModel } from '../../data/settingsProfiles';
 import { SettingsFieldRenderer } from './fields';
+import { fieldMatches, fieldUpdate, getFieldValue, isFieldChanged } from './settingsFields';
 import type { RadioSettings } from '../../models/RadioSettings';
 import type { SettingsFieldDescriptor, SettingsFeature } from '../../types/settingsProfile';
 import { FEATURE_AREAS } from './featureAreas';
 import { PageHeader } from '../ui/PageHeader';
 import { resolveContactCapacity } from '../../utils/contactCapacity';
 import { BUTTON, FIELD } from '../ui/controlStyles';
-
-/** Get value from settings by key; supports nested path (e.g. menuEnableFlags.zoneList) and lockKey mapping */
-function getFieldValue(settings: RadioSettings | null, key: string): unknown {
-  if (!settings) return undefined;
-  if (key === 'lockKey') return settings.lockKey === 'Auto' ? 1 : 0;
-  if (key.includes('.')) {
-    const parts = key.split('.');
-    let v: unknown = settings;
-    for (const p of parts) v = (v as unknown as Record<string, unknown>)?.[p];
-    return v;
-  }
-  return (settings as unknown as Record<string, unknown>)[key];
-}
-
-/** Build partial update for a field key; supports nested path and lockKey mapping */
-function handleFieldChange(
-  settings: RadioSettings | null,
-  key: string,
-  value: unknown,
-  updateRadioSettings: (u: Partial<RadioSettings>) => void
-): void {
-  if (!settings) return;
-  if (key === 'lockKey') {
-    updateRadioSettings({ lockKey: value === 1 ? 'Auto' : 'Manual' });
-    return;
-  }
-  if (key.includes('.')) {
-    const [parent, ...rest] = key.split('.');
-    const leaf = rest.join('.');
-    const parentObj = (settings as unknown as Record<string, unknown>)[parent];
-    const spread = typeof parentObj === 'object' && parentObj !== null ? { ...(parentObj as Record<string, unknown>) } : {};
-    (spread as Record<string, unknown>)[leaf] = value;
-    updateRadioSettings({ [parent]: spread } as Partial<RadioSettings>);
-    return;
-  }
-  updateRadioSettings({ [key]: value } as Partial<RadioSettings>);
-}
 
 export const SettingsTab: React.FC = () => {
   const { radioInfo, bootImageRaw } = useRadioStore();
@@ -100,7 +64,13 @@ export const SettingsTab: React.FC = () => {
   const { channels } = useChannelsStore();
   const { zones } = useZonesStore();
   const { contacts, contactsLoaded } = useContactsStore();
-  const { settings: radioSettings, updateSettings: updateRadioSettings } = useRadioSettingsStore();
+  const { settings: radioSettings, originalSettings, updateSettings: updateRadioSettings } = useRadioSettingsStore();
+  const [onlyChanged, setOnlyChanged] = useState(false);
+  /** Set one settings field by key, nested paths and the lock key included. */
+  const setField = (key: string, value: unknown) => {
+    const update = fieldUpdate(radioSettings, key, value);
+    if (update) updateRadioSettings(update);
+  };
   const { calibration, calibrationLoaded } = useCalibrationStore();
   const [showCalibration, setShowCalibration] = useState(false);
   const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
@@ -699,11 +669,21 @@ export const SettingsTab: React.FC = () => {
             // it. So the chips below jump to a section rather than swapping it in,
             // and the filter narrows what is on screen without hiding a section
             // the user has not thought to click.
-            const visible = query
+            const changedCount = profile.sections.reduce(
+              (n, sec) => n + sec.fields.filter((f) => isFieldChanged(radioSettings, originalSettings, f.key)).length,
+              0
+            );
+            const showOnlyChanged = onlyChanged && changedCount > 0;
+            // A field is found by its label, hint, section title, or a bit or option label.
+            const visible = query || showOnlyChanged
               ? profile.sections
                   .map((sec) => ({
                     ...sec,
-                    fields: sec.fields.filter((f) => f.label.toLowerCase().includes(query)),
+                    fields: sec.fields.filter(
+                      (f) =>
+                        fieldMatches(f, query, sec.title) &&
+                        (!showOnlyChanged || isFieldChanged(radioSettings, originalSettings, f.key))
+                    ),
                   }))
                   .filter((sec) => sec.fields.length > 0)
               : profile.sections;
@@ -715,17 +695,26 @@ export const SettingsTab: React.FC = () => {
                 <SectionTitle underline>Radio Configuration</SectionTitle>
 
                 <div className="mt-3 mb-4 space-y-3">
-                  <input
-                    type="text"
-                    value={settingsFilter}
-                    onChange={(e) => setSettingsFilter(e.target.value)}
-                    placeholder={`Search ${total} settings by name…`}
-                    className={`${FIELD} w-full max-w-md border rounded px-3 py-1.5 text-sm`}
-                  />
-                  {query ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      type="text"
+                      value={settingsFilter}
+                      onChange={(e) => setSettingsFilter(e.target.value)}
+                      placeholder={`Search ${total} settings…`}
+                      className={`${FIELD} w-full max-w-md border rounded px-3 py-1.5 text-sm`}
+                    />
+                    {changedCount > 0 && (
+                      <label className="flex items-center gap-1.5 text-xs text-cool-gray">
+                        <input type="checkbox" checked={onlyChanged} onChange={(e) => setOnlyChanged(e.target.checked)} />
+                        Show only changed ({changedCount})
+                      </label>
+                    )}
+                  </div>
+                  {query || showOnlyChanged ? (
                     <p className="text-xs text-cool-gray">
-                      {matchCount} of {total} settings match “{settingsFilter.trim()}”
-                      {matchCount === 0 && ' — try part of the label the vendor CPS uses'}
+                      {matchCount} of {total} settings {query ? `match “${settingsFilter.trim()}”` : 'changed'}
+                      {query && showOnlyChanged && ', changed only'}
+                      {matchCount === 0 && query && ' — try part of the label the vendor CPS uses'}
                     </p>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
@@ -774,7 +763,9 @@ export const SettingsTab: React.FC = () => {
                             key={field.key}
                             field={field as SettingsFieldDescriptor}
                             value={getFieldValue(radioSettings, field.key)}
-                            onChange={(v) => handleFieldChange(radioSettings, field.key, v, updateRadioSettings)}
+                            onChange={(v) => setField(field.key, v)}
+                            changed={isFieldChanged(radioSettings, originalSettings, field.key)}
+                            onRevert={() => setField(field.key, getFieldValue(originalSettings, field.key))}
                           />
                         ))}
                       </div>
@@ -1098,7 +1089,9 @@ export const SettingsTab: React.FC = () => {
                         key={field.key}
                         field={field}
                         value={getFieldValue(radioSettings, field.key)}
-                        onChange={(v) => handleFieldChange(radioSettings, field.key, v, updateRadioSettings)}
+                        onChange={(v) => setField(field.key, v)}
+                        changed={isFieldChanged(radioSettings, originalSettings, field.key)}
+                        onRevert={() => setField(field.key, getFieldValue(originalSettings, field.key))}
                       />
                     ))}
                   </div>
@@ -1115,7 +1108,9 @@ export const SettingsTab: React.FC = () => {
                         key={field.key}
                         field={field}
                         value={getFieldValue(radioSettings, field.key)}
-                        onChange={(v) => handleFieldChange(radioSettings, field.key, v, updateRadioSettings)}
+                        onChange={(v) => setField(field.key, v)}
+                        changed={isFieldChanged(radioSettings, originalSettings, field.key)}
+                        onRevert={() => setField(field.key, getFieldValue(originalSettings, field.key))}
                       />
                     ))}
                   </div>
@@ -1135,7 +1130,9 @@ export const SettingsTab: React.FC = () => {
                         key={field.key}
                         field={field}
                         value={getFieldValue(radioSettings, field.key)}
-                        onChange={(v) => handleFieldChange(radioSettings, field.key, v, updateRadioSettings)}
+                        onChange={(v) => setField(field.key, v)}
+                        changed={isFieldChanged(radioSettings, originalSettings, field.key)}
+                        onRevert={() => setField(field.key, getFieldValue(originalSettings, field.key))}
                       />
                     ))}
 

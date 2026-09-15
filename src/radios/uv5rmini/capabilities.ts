@@ -49,6 +49,8 @@ export const UV5RMINI_CAPABILITIES: RadioCapabilities = {
     channelsMustBeInZones: false,
   },
   maxChannels: 999,
+  // A write keeps 12 characters of a name (channelMapping.ts).
+  maxChannelNameLength: 12,
   supportsZones: false,
   supportsScanLists: false,
   supportsContacts: false,

@@ -54,10 +54,9 @@ export const SmartImportTab: React.FC = () => {
   const [rptrsLoadProgress, setRptrsLoadProgress] = useState<{ percent: number; loaded: number; total: number } | null>(null);
   const [isSearchingRptrs, setIsSearchingRptrs] = useState(false);
 
-  // These are kept here for the search handler to use (not passed to children)
-  const [airportRadius] = useState('50');
-  const [taflRadius] = useState('10');
-  const [rptrsRadius] = useState('50');
+  // What the last search found none of, one line per type, so an empty search
+  // says so instead of just ending.
+  const [noResults, setNoResults] = useState<string[]>([]);
 
   const handleSetError = (msg: string) => {
     setError(msg || null);
@@ -80,6 +79,7 @@ export const SmartImportTab: React.FC = () => {
     setIsSearchingTafl(searchTafl);
     setIsSearchingRptrs(supportsDigital && searchDmrRepeaters);
     setError(null);
+    setNoResults([]);
 
     // Clear previous results
     if (searchAirports) {
@@ -95,28 +95,29 @@ export const SmartImportTab: React.FC = () => {
     try {
       const { lat, lon, radius } = await resolveCoordinates();
 
-      // Search all selected types in parallel
-      const searchPromises: Promise<void>[] = [];
+      // Search all selected types in parallel, each at the radius the user gave.
+      // Airports and DMR repeaters used to be searched at a fixed 50 mi and TAFL
+      // at 10 mi, whatever the Search Radius field said.
+      const searchPromises: Promise<[string, number]>[] = [];
 
       if (searchAirports) {
         searchPromises.push(
-          (async () => {
-            const airportRadiusValue = parseFloat(airportRadius) || radius;
-            const nearbyAirports = await findNearbyAirports(lat, lon, airportRadiusValue);
+          (async (): Promise<[string, number]> => {
+            const nearbyAirports = await findNearbyAirports(lat, lon, radius);
             setAirports(nearbyAirports);
             setIsSearchingAirports(false);
+            return ['airports', nearbyAirports.length];
           })()
         );
       }
 
       if (searchTafl) {
         searchPromises.push(
-          (async () => {
-            const taflRadiusValue = parseFloat(taflRadius) || 10;
+          (async (): Promise<[string, number]> => {
             const nearbyTafl = await findNearbyTaflEntries(
               lat,
               lon,
-              taflRadiusValue,
+              radius,
               (progress) => {
                 setTaflLoadProgress({
                   percent: progress.percent,
@@ -127,18 +128,18 @@ export const SmartImportTab: React.FC = () => {
             );
             setTaflEntries(nearbyTafl);
             setIsSearchingTafl(false);
+            return ['TAFL entries', nearbyTafl.length];
           })()
         );
       }
 
       if (searchDmrRepeaters) {
         searchPromises.push(
-          (async () => {
-            const rptrsRadiusValue = parseFloat(rptrsRadius) || radius;
+          (async (): Promise<[string, number]> => {
             const nearbyRptrs = await findNearbyRptrs(
               lat,
               lon,
-              rptrsRadiusValue,
+              radius,
               (progress) => {
                 setRptrsLoadProgress({
                   percent: progress.percent,
@@ -149,11 +150,17 @@ export const SmartImportTab: React.FC = () => {
             );
             setRptrs(nearbyRptrs);
             setIsSearchingRptrs(false);
+            return ['DMR repeaters', nearbyRptrs.length];
           })()
         );
       }
 
-      await Promise.all(searchPromises);
+      const found = await Promise.all(searchPromises);
+      setNoResults(
+        found
+          .filter(([, count]) => count === 0)
+          .map(([what]) => `No ${what} within ${radius} mi of ${lat.toFixed(4)}, ${lon.toFixed(4)}.`)
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to search');
       setIsSearchingAirports(false);
@@ -386,6 +393,13 @@ export const SmartImportTab: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        )}
+        {noResults.length > 0 && (
+          <div className="mt-4 space-y-1" role="status">
+            {noResults.map((line) => (
+              <p key={line} className="text-sm text-cool-gray">{line}</p>
+            ))}
           </div>
         )}
       </Card>

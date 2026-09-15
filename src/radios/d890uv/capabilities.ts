@@ -120,6 +120,8 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   // 16 characters of a 34-byte UTF-16 name. Hang time is the record's dwell
   // time, u16 tenths of a second; the editor keeps the 25.5 s ceiling it had.
   maxScanListNameLength: 16,
+  // Channel names are 16 wide characters too, and a write refuses a longer one.
+  maxChannelNameLength: D890_LIMITS.NAME_MAX_CHARS,
   scanListHangTime: { stepMs: 100, max: 255, default: 30 },
   // A channel stores its scan list's SLOT + 1, and deleted lists leave holes.
   scanListsBySlot: true,

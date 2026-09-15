@@ -34,6 +34,9 @@ import { planTalkGroupImport, describeTalkGroupImportLosses } from '../../servic
 import { addRadioIds, addRxGroups, addTalkGroups } from '../../services/csv/importModes';
 import { checkRadioIdLimits, checkRxGroupLimits, checkTalkGroupLimits } from '../../services/csv/importLimits';
 import { rxGroupsWithDmrIdMembers, rxGroupsWithRadioMembers } from '../../services/csv/rxGroupMembers';
+import { planTalkGroupDelete, describeTalkGroupDelete } from '../../services/csv/talkGroupImport';
+import { describeTalkGroupUsage, talkGroupMatchesSearch, talkGroupUsage } from '../../services/talkGroupUsage';
+import { nothingImportedMessage } from '../../services/csv/importProblems';
 import { useCsvImport } from '../../hooks/useCsvImport';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
@@ -175,6 +178,8 @@ export const DigitalTab: React.FC = () => {
       callType: 0x04, // Default to Group Call
       flag: 0,
     });
+    // The new row goes at the bottom, where a search could be hiding it.
+    setTalkGroupQuery('');
   };
 
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
@@ -183,13 +188,16 @@ export const DigitalTab: React.FC = () => {
   >(null);
 
   const { startImport, csvImportDialog } = useCsvImport();
+  const [talkGroupQuery, setTalkGroupQuery] = useState('');
 
   const handleExportRadioIdsCsv = () => downloadCSV(exportDMRRadioIDsToCSV(radioIds), 'dmr_radio_ids.csv');
   const handleImportRadioIdsFile = (file: File) => {
     file.text().then(content => {
       const result = importDMRRadioIDsFromCSV(content);
-      if (!result.success || !result.dmrRadioIds) {
-        showAlert(result.errors?.join('\n') || 'Failed to import DMR Radio IDs CSV', 'Import failed');
+      // Rows that can't be read are left out and named; only a file with
+      // nothing readable stops here.
+      if (!result.dmrRadioIds || result.dmrRadioIds.length === 0) {
+        showAlert(nothingImportedMessage(result.errors), 'Import failed');
         return;
       }
       const imported = result.dmrRadioIds;
@@ -197,6 +205,7 @@ export const DigitalTab: React.FC = () => {
         noun: 'DMR radio ID',
         existing: radioIds,
         imported,
+        problems: result.errors,
         add: () => addRadioIds(radioIds, imported, caps?.maxRadioIds),
         check: (list) => checkRadioIdLimits(list, caps),
         apply: (list) => setRadioIds(list),
@@ -208,21 +217,29 @@ export const DigitalTab: React.FC = () => {
 
   // RX group members travel as talk group DMR IDs, whichever form the radio stores them in.
   const membersBySlot = !!caps?.rxGroupMembersBySlot;
+  // How many talk groups the last read found, which decides what a slot names (see rxGroupMembers.ts).
+  const countAtRead = () => useRadioStore.getState().tables.writeOriginals?.talkgroupCountAtRead;
   const handleExportRXGroupsCsv = () =>
-    downloadCSV(exportRXGroupsToCSV(rxGroupsWithDmrIdMembers(rxGroups, quickContacts, membersBySlot)), 'rx_groups.csv');
+    downloadCSV(
+      exportRXGroupsToCSV(rxGroupsWithDmrIdMembers(rxGroups, quickContacts, membersBySlot, countAtRead())),
+      'rx_groups.csv'
+    );
   const handleImportRXGroupsFile = (file: File) => {
     file.text().then(content => {
       const result = importRXGroupsFromCSV(content);
-      if (!result.success || !result.rxGroups) {
-        showAlert(result.errors?.join('\n') || 'Failed to import RX Groups CSV', 'Import failed');
+      // Rows that can't be read are left out and named; only a file with
+      // nothing readable stops here.
+      if (!result.rxGroups || result.rxGroups.length === 0) {
+        showAlert(nothingImportedMessage(result.errors), 'Import failed');
         return;
       }
-      const members = rxGroupsWithRadioMembers(result.rxGroups, quickContacts, membersBySlot);
+      const members = rxGroupsWithRadioMembers(result.rxGroups, quickContacts, membersBySlot, countAtRead());
       const imported = members.trimmed;
       startImport({
         noun: 'RX group',
         existing: rxGroups,
         imported,
+        problems: result.errors,
         add: () => addRxGroups(rxGroups, imported, caps?.digital?.limits?.RX_GROUPS_MAX),
         // A member the talk group list doesn't have can only be dropped, so it is asked about like a limit.
         check: (list) => {
@@ -240,8 +257,10 @@ export const DigitalTab: React.FC = () => {
   const handleImportTalkGroupsFile = (file: File) => {
     file.text().then(content => {
       const result = importQuickContactsFromCSV(content);
-      if (!result.success || !result.quickContacts) {
-        showAlert(result.errors?.join('\n') || 'Failed to import Talk Groups CSV', 'Import failed');
+      // Rows that can't be read are left out and named; only a file with
+      // nothing readable stops here.
+      if (!result.quickContacts || result.quickContacts.length === 0) {
+        showAlert(nothingImportedMessage(result.errors), 'Import failed');
         return;
       }
       const imported = result.quickContacts;
@@ -251,6 +270,7 @@ export const DigitalTab: React.FC = () => {
         noun: 'talk group',
         existing: quickContacts,
         imported,
+        problems: result.errors,
         add: () => addTalkGroups(quickContacts, imported),
         replace: () => plan.talkGroups,
         replaceNote: describeTalkGroupImportLosses(plan) || undefined,
@@ -340,10 +360,50 @@ export const DigitalTab: React.FC = () => {
     setDeleteConfirm({ type: 'radioId', index });
   };
 
+  // Channels, and the DA-7X2's RX group members, reference talk groups by slot,
+  // so deleting one moves what uses the talk groups after it.
+  const referenceRules = {
+    renumbersTalkGroupRefsOnWrite: caps?.renumbersTalkGroupRefsOnWrite,
+    rxGroupMembersBySlot: caps?.rxGroupMembersBySlot,
+  };
+  const talkGroupToDelete =
+    deleteConfirm?.type === 'contact' ? quickContacts.find((tg) => tg.index === deleteConfirm.index) : undefined;
+  const talkGroupDelete = talkGroupToDelete
+    ? planTalkGroupDelete(channels, talkGroupToDelete, referenceRules, {
+        talkGroups: quickContacts,
+        rxGroups,
+        countAtRead: useRadioStore.getState().tables.writeOriginals?.talkgroupCountAtRead,
+      })
+    : undefined;
+
+  // Where each talk group is used, and the talk groups the search shows.
+  const talkgroupCountAtRead = useRadioStore((s) => s.tables.writeOriginals?.talkgroupCountAtRead);
+  const talkGroupUses = useMemo(
+    () =>
+      talkGroupUsage(
+        quickContacts,
+        channels,
+        rxGroups,
+        {
+          renumbersTalkGroupRefsOnWrite: caps?.renumbersTalkGroupRefsOnWrite,
+          rxGroupMembersBySlot: caps?.rxGroupMembersBySlot,
+        },
+        talkgroupCountAtRead
+      ),
+    [quickContacts, channels, rxGroups, caps, talkgroupCountAtRead]
+  );
+  const shownTalkGroups = useMemo(() => {
+    const query = talkGroupQuery.trim().toLowerCase();
+    return query ? quickContacts.filter((tg) => talkGroupMatchesSearch(tg, query)) : quickContacts;
+  }, [quickContacts, talkGroupQuery]);
+
   const handleDeleteConfirmModalConfirm = () => {
     if (!deleteConfirm) return;
-    if (deleteConfirm.type === 'contact') deleteContact(deleteConfirm.index);
-    else if (deleteConfirm.type === 'message') deleteMessage(deleteConfirm.index);
+    if (deleteConfirm.type === 'contact') {
+      if (talkGroupDelete?.channels.some((ch, i) => ch !== channels[i])) setChannels(talkGroupDelete.channels);
+      if (talkGroupDelete?.rxGroups?.some((group, i) => group !== rxGroups[i])) setRXGroups(talkGroupDelete.rxGroups);
+      deleteContact(deleteConfirm.index);
+    } else if (deleteConfirm.type === 'message') deleteMessage(deleteConfirm.index);
     else if (deleteConfirm.type === 'radioId') deleteRadioId(deleteConfirm.index);
     setDeleteConfirm(null);
   };
@@ -358,7 +418,9 @@ export const DigitalTab: React.FC = () => {
           : '';
   const deleteConfirmMessage =
     deleteConfirm?.type === 'contact'
-      ? 'Are you sure you want to delete this contact?'
+      ? ['Are you sure you want to delete this contact?', talkGroupDelete && describeTalkGroupDelete(talkGroupDelete)]
+          .filter(Boolean)
+          .join(' ')
       : deleteConfirm?.type === 'message'
         ? 'Are you sure you want to delete this message?'
         : deleteConfirm?.type === 'radioId'
@@ -530,6 +592,23 @@ export const DigitalTab: React.FC = () => {
           </div>
         </div>
 
+        {quickContactsLoaded && quickContacts.length > 0 && (
+          <div className="mb-3 flex items-center gap-3">
+            <input
+              type="search"
+              value={talkGroupQuery}
+              onChange={(e) => setTalkGroupQuery(e.target.value)}
+              placeholder="Search talk groups by name, ID or call type"
+              aria-label="Search talk groups"
+              className={`${FIELD} flex-1 min-w-0 border rounded px-3 py-1.5 text-sm`}
+            />
+            {talkGroupQuery.trim() && (
+              <span className="text-cool-gray text-sm whitespace-nowrap">
+                {shownTalkGroups.length} of {quickContacts.length}
+              </span>
+            )}
+          </div>
+        )}
         {!quickContactsLoaded ? (
           <Card variant="subdued">
             <EmptyState message="Talk groups will be loaded when you read from the radio." />
@@ -548,12 +627,19 @@ export const DigitalTab: React.FC = () => {
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Name</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">ID</th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[120px]">Call Type</th>
+                      <th
+                        className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[100px]"
+                        title="Channels that transmit on the talk group, and RX groups that list it"
+                      >
+                        Used by
+                      </th>
                       <th className="px-2 py-2 text-left text-neon-cyan font-bold min-w-[80px]">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {quickContacts.map((contact) => {
+                    {shownTalkGroups.map((contact) => {
                       const isAllCall = contact.callType === 0x05;
+                      const use = describeTalkGroupUsage(talkGroupUses.get(contact));
                       return (
                         <tr
                           key={contact.index}
@@ -591,6 +677,9 @@ export const DigitalTab: React.FC = () => {
                               <option value={0x04}>Group Call</option>
                               <option value={0x05}>All Call</option>
                             </select>
+                          </td>
+                          <td className="px-2 py-2 text-cool-gray whitespace-nowrap" title={use.detail}>
+                            {use.text}
                           </td>
                           <td className="px-2 py-2">
                             <button

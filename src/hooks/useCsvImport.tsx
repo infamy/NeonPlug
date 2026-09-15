@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import type { LimitCheck } from '../services/csv/importLimits';
 import { formatPlural } from '../utils/formatPlural';
+import { unreadableRowsNote } from '../services/csv/importProblems';
 
 export type CsvImportMode = 'add' | 'replace';
 
@@ -12,6 +13,8 @@ export interface CsvImportRequest<T> {
   plural?: string;
   existing: readonly T[];
   imported: readonly T[];
+  /** Rows the file had that couldn't be read. The import goes ahead without them, and says so. */
+  problems?: readonly string[];
   /** The list after Add. */
   add: () => T[];
   /** The list after Replace. The file's own list unless given. */
@@ -55,6 +58,8 @@ export function useCsvImport() {
         : `Add keeps your ${count(have)} and puts in the ${fresh} from the file that ${formatPlural(fresh, "isn't", "aren't")} here yet. ` +
           `Replace swaps your ${count(have)} for the file's.`,
     ];
+    const unreadable = unreadableRowsNote(request.problems);
+    if (unreadable) lines.splice(1, 0, unreadable);
     if (request.replaceNote) lines.push(`If you replace: ${request.replaceNote}`);
 
     setChoice({

@@ -15,6 +15,7 @@ import { useCsvImport } from '../../hooks/useCsvImport';
 import { exportContactsToCSV, importContactsFromCSV, downloadCSV } from '../../services/csv';
 import { addContacts } from '../../services/csv/importModes';
 import { checkContactLimits } from '../../services/csv/importLimits';
+import { nothingImportedMessage } from '../../services/csv/importProblems';
 import type { Contact } from '../../models/Contact';
 import { PageHeader } from '../ui/PageHeader';
 import { resolveContactCapacity } from '../../utils/contactCapacity';
@@ -256,8 +257,10 @@ export const ContactsTab: React.FC = () => {
   const handleImportContactsFile = useCallback((file: File) => {
     file.text().then(content => {
       const result = importContactsFromCSV(content);
-      if (!result.success || !result.contacts) {
-        showAlert(result.errors?.join('\n') || 'Failed to import contacts CSV', 'Import failed');
+      // Rows that can't be read are left out and named; only a file with
+      // nothing readable stops here.
+      if (!result.contacts || result.contacts.length === 0) {
+        showAlert(nothingImportedMessage(result.errors), 'Import failed');
         return;
       }
       const imported = result.contacts;
@@ -265,6 +268,7 @@ export const ContactsTab: React.FC = () => {
         noun: 'contact',
         existing: contacts,
         imported,
+        problems: result.errors,
         add: () => addContacts(contacts, imported),
         check: (list) => checkContactLimits(list, contactCapacity),
         apply: (list) => setContacts(list),

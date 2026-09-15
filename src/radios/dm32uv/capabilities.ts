@@ -8,7 +8,7 @@ import { parseRadioSettings } from './structures';
 import { decodeBCDFrequency, decodeCTCSSDCS } from './structures';
 import { parseEncryptionKeys, parseDigitalEmergencies } from './structures';
 import { DM32_BLOCK_LAYOUTS } from './blockLayouts';
-import { LIMITS } from './constants';
+import { BLOCK_SIZE, LIMITS } from './constants';
 import { isFirmware049OrNewer, DM32_CONTACTS_STANDARD } from '../../utils/firmware';
 
 export const DM32UV_CAPABILITIES: RadioCapabilities = {
@@ -61,6 +61,7 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   // 30 s), and priority channels the radio honours only when they are list
   // members. Names, steps and membership were verified on hardware 2026-08-07.
   maxScanListNameLength: 11,
+  maxChannelNameLength: BLOCK_SIZE.CHANNEL_NAME,
   scanListHangTime: { stepMs: 500, max: 60, default: 6 },
   scanListPriorityMembersOnly: true,
   maxRadioIds: LIMITS.DMR_RADIO_IDS_MAX,

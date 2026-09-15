@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useId, useMemo } from 'react';
 import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
 import { createPortal } from 'react-dom';
@@ -11,12 +11,12 @@ import type { ScanList } from '../../models/ScanList';
 import type { Channel } from '../../models/Channel';
 import { ListDetailLayout } from '../ui/ListDetailLayout';
 import { OrderedItemPicker } from '../ui/OrderedItemPicker';
-import { channelPickerItem } from '../ui/pickerItems';
+import { channelListPreview, channelPickerItem } from '../ui/pickerItems';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
-import { BUTTON, FIELD } from '../ui/controlStyles';
+import { BUTTON, FIELD, FIELD_INVALID } from '../ui/controlStyles';
 
 export const ScanListsList: React.FC = () => {
   const { caps } = useRadioCapabilities();
@@ -31,6 +31,8 @@ export const ScanListsList: React.FC = () => {
   const [editScanListName, setEditScanListName] = useState('');
   const [scanListToDelete, setScanListToDelete] = useState<string | null>(null);
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
+  const channels = useChannelsStore((s) => s.channels);
+  const channelNames = useMemo(() => new Map(channels.map((ch) => [ch.number, ch.name])), [channels]);
 
   const selectedScanListData = scanLists.find(sl => sl.name === selectedScanList);
 
@@ -178,9 +180,11 @@ export const ScanListsList: React.FC = () => {
             {editingScanList !== scanList.name && (
               <>
                 {scanList.channels.length > 0 && (
-                  <div className="text-cool-gray text-xs mb-2">
-                    Channels: {scanList.channels.slice(0, 5).join(', ')}
-                    {scanList.channels.length > 5 && ` +${scanList.channels.length - 5} more`}
+                  <div
+                    className="text-cool-gray text-xs mb-2 truncate"
+                    title={channelListPreview(scanList.channels, channelNames, 20)}
+                  >
+                    {channelListPreview(scanList.channels, channelNames)}
                   </div>
                 )}
                 <div className="flex gap-2 justify-end mt-2">
@@ -428,6 +432,69 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
   );
 };
 
+/**
+ * The scan list's name, edited in place at the top of its editor. Renaming only
+ * lived behind the small Rename button in the list, which is easy to miss. Saved
+ * on Enter or when the field loses focus; Escape puts the name back.
+ */
+const ScanListNameField: React.FC<{ name: string; maxLength: number }> = ({ name, maxLength }) => {
+  const { scanLists, renameScanList } = useScanListsStore();
+  const id = useId();
+  // What is being typed; null while the field shows the saved name.
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const shown = draft ?? name;
+
+  const commit = () => {
+    if (draft === null) return;
+    const next = draft.trim();
+    if (next === name) {
+      setDraft(null);
+      setError(null);
+    } else if (!next) {
+      setError('A scan list needs a name.');
+    } else if (scanLists.some((sl) => sl.name === next)) {
+      setError(`Another scan list is already called "${next}".`);
+    } else if (renameScanList(name, next)) {
+      setDraft(null);
+      setError(null);
+    } else {
+      setError(`Names are 1 to ${maxLength} characters.`);
+    }
+  };
+
+  return (
+    <div>
+      <label htmlFor={id} className="block text-cool-gray text-xs mb-1">
+        Name
+      </label>
+      <input
+        id={id}
+        type="text"
+        value={shown}
+        maxLength={maxLength}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setError(null);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') {
+            setDraft(null);
+            setError(null);
+          }
+        }}
+        aria-invalid={error ? true : undefined}
+        className={`${error ? FIELD_INVALID : FIELD} w-full border rounded px-2 py-1.5 text-sm`}
+      />
+      <p className={`text-xs mt-0.5 ${error ? 'text-red-300' : 'text-cool-gray'}`}>
+        {error ?? `${shown.length}/${maxLength} characters`}
+      </p>
+    </div>
+  );
+};
+
 interface ScanListEditorProps {
   scanList: ScanList;
   onAlert: (message: string) => void;
@@ -471,6 +538,8 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4">
+      <ScanListNameField key={scanList.name} name={scanList.name} maxLength={caps?.maxScanListNameLength ?? 16} />
+
       {/* Scan List Settings - Collapsible */}
       <div className="bg-neon-cyan bg-opacity-5 border border-neon-cyan border-opacity-30 rounded-lg overflow-hidden">
         <div 

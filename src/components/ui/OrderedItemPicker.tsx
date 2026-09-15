@@ -71,6 +71,17 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
     }
   };
 
+  /** Add several at once, in the order given, as many as still fit. */
+  const handleAddMany = (ids: number[]) => {
+    const room = maxItems - resolvedIds.length;
+    if (room <= 0) {
+      onAlert(`Maximum of ${maxItems} ${itemNounPlural} per ${containerNoun} allowed.`);
+      return;
+    }
+    const fresh = ids.filter(id => !resolvedIds.includes(id)).slice(0, room);
+    if (fresh.length > 0) onChange([...resolvedIds, ...fresh]);
+  };
+
   const handleRemove = (id: number) => {
     onChange(resolvedIds.filter(existing => existing !== id));
   };
@@ -90,6 +101,11 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
           item.searchText?.toLowerCase().includes(query)
       )
     : availableItems;
+
+  // Filling a zone took one click per channel: 64 on a DM-32, 160 on a DA-7X2.
+  const room = Math.max(0, maxItems - resolvedIds.length);
+  const addCount = Math.min(filteredAvailable.length, room);
+  const addsAll = addCount === filteredAvailable.length;
 
   return (
     <div className={`${padded ? 'p-4 ' : ''}space-y-4 ${fillHeight ? 'flex flex-col h-full' : ''}`}>
@@ -151,10 +167,25 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
       </div>
 
       <div className={fillHeight ? 'flex-1 flex flex-col min-h-0' : ''}>
-        <h4 className={`text-white font-medium mb-2 ${fillHeight ? 'flex-shrink-0' : ''}`}>
-          Available {`${itemNounPlural.charAt(0).toUpperCase()}${itemNounPlural.slice(1)}`} (
-          {filteredAvailable.length} of {availableItems.length})
-        </h4>
+        <div className={`flex items-center justify-between gap-2 mb-2 ${fillHeight ? 'flex-shrink-0' : ''}`}>
+          <h4 className="text-white font-medium">
+            Available {`${itemNounPlural.charAt(0).toUpperCase()}${itemNounPlural.slice(1)}`} (
+            {filteredAvailable.length} of {availableItems.length})
+          </h4>
+          {addCount > 1 && (
+            <button
+              onClick={() => handleAddMany(filteredAvailable.map(item => item.id))}
+              className={`${BUTTON.outline} px-2 py-0.5 border rounded text-xs whitespace-nowrap`}
+              title={
+                addsAll
+                  ? `Add the ${addCount} ${itemNounPlural} shown, in this order`
+                  : `Only ${room} more ${formatPlural(room, itemNoun)} fit in this ${containerNoun}: adds the first ${addCount} shown`
+              }
+            >
+              {addsAll ? `Add all ${addCount}` : `Add first ${addCount}`}
+            </button>
+          )}
+        </div>
         {availableItems.length === 0 ? (
           <p className="text-cool-gray text-sm">All {itemNounPlural} are in this {containerNoun}</p>
         ) : selectedIds.length >= maxItems ? (

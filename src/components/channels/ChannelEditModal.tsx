@@ -19,44 +19,7 @@ import {
   extraColumnMarker,
 } from './extraChannelColumns';
 import { BUTTON, FIELD } from '../ui/controlStyles';
-
-// Frequency input component that only updates parent on blur
-interface FrequencyInputProps {
-  value: number;
-  onChange: (value: number) => void;
-  className?: string;
-}
-
-const FrequencyInput: React.FC<FrequencyInputProps> = ({ value, onChange, className }) => {
-  const [localValue, setLocalValue] = React.useState(value.toFixed(4));
-  
-  // Sync local value when prop changes (e.g., when channel changes)
-  React.useEffect(() => {
-    setLocalValue(value.toFixed(4));
-  }, [value]);
-  
-  const handleBlur = () => {
-    const parsed = parseFloat(localValue);
-    if (!isNaN(parsed) && parsed > 0) {
-      onChange(parsed);
-      setLocalValue(parsed.toFixed(4));
-    } else {
-      // Reset to original value if invalid
-      setLocalValue(value.toFixed(4));
-    }
-  };
-  
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      value={localValue}
-      onChange={(e) => setLocalValue(e.target.value)}
-      onBlur={handleBlur}
-      className={className}
-    />
-  );
-};
+import { FrequencyInput } from './FrequencyInput';
 
 interface ChannelEditModalProps {
   isOpen: boolean;
@@ -65,6 +28,8 @@ interface ChannelEditModalProps {
   onSave: (channel: Channel) => void;
   /** Band limits from radio capabilities (getCapabilitiesForModel(radioInfo?.model)?.bandLimits). */
   bandLimits?: RadioBandLimits | null;
+  /** False where a write keeps a channel whatever its RX; the DA-7X2's write planner checks TX only. */
+  checkRxBand?: boolean;
   /** Max channel number from capabilities (e.g. 999 for UV5R-Mini, 4000 for DM-32UV). */
   maxChannels?: number;
   /** When true, hide Digital/Fixed Digital mode options (e.g. UV5R-Mini). */
@@ -81,6 +46,7 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   channel,
   onSave,
   bandLimits = null,
+  checkRxBand = true,
   maxChannels = 4000,
   analogOnly = false,
   rxGroups = [],
@@ -91,6 +57,10 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   const [editedChannel, setEditedChannel] = React.useState<Channel>(channel);
   const { caps } = useRadioCapabilities();
   const powerLevels = powerLevelsFor(caps);
+  const maxNameLength = caps?.maxChannelNameLength ?? 16;
+  // What is wrong with text typed into a frequency field that isn't a frequency
+  // yet. Save refuses while there is any, rather than save the old value.
+  const [frequencyTyping, setFrequencyTyping] = React.useState<{ rx?: string | null; tx?: string | null }>({});
   // Same capability gate the grid uses. The editor showing a field the grid
   // hides is the worse half of the bug: the grid merely omits a column, but the
   // editor writes whatever its control holds back onto the channel, so an
@@ -122,7 +92,15 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
   };
 
   const handleSave = () => {
-    const errors = validateChannel(editedChannel, bandLimits, maxChannels);
+    const errors: ValidationError[] = [
+      ...(frequencyTyping.rx ? [{ field: 'rxFrequency', message: frequencyTyping.rx }] : []),
+      ...(frequencyTyping.tx ? [{ field: 'txFrequency', message: frequencyTyping.tx }] : []),
+      ...validateChannel(editedChannel, bandLimits, maxChannels, {
+        maxNameLength,
+        blankTxAnyBand: caps?.blankTxAnyBand,
+        checkRxBand,
+      }),
+    ];
     if (errors.length > 0) {
       setValidationErrors(errors);
       return;
@@ -195,9 +173,15 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       value={editedChannel.name}
                       onChange={(e) => handleChange('name', e.target.value)}
                       className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
-                      maxLength={16}
+                      maxLength={maxNameLength}
                     />
-                    <p className="text-xs text-cool-gray mt-0.5">Maximum 16 characters</p>
+                    <p
+                      className={`text-xs mt-0.5 ${
+                        editedChannel.name.length > maxNameLength ? 'text-red-300' : 'text-cool-gray'
+                      }`}
+                    >
+                      {editedChannel.name.length}/{maxNameLength} characters
+                    </p>
                   </>
                 )}
               </div>
@@ -210,7 +194,10 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                   <FrequencyInput
                     value={editedChannel.rxFrequency}
                     onChange={(val) => handleChange('rxFrequency', val)}
-                    className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
+                    onValidityChange={(error) => setFrequencyTyping((t) => ({ ...t, rx: error }))}
+                    showMessage
+                    className="w-full border rounded px-2 py-1 text-sm"
+                    aria-label="Receive frequency (MHz)"
                   />
                   <p className="text-xs text-cool-gray mt-0.5">Frequency the radio receives on</p>
                 </div>
@@ -256,7 +243,10 @@ export const ChannelEditModal: React.FC<ChannelEditModalProps> = ({
                       <FrequencyInput
                         value={editedChannel.txFrequency}
                         onChange={(val) => handleChange('txFrequency', val)}
-                        className={`${FIELD} w-full border rounded px-2 py-1 text-sm`}
+                        onValidityChange={(error) => setFrequencyTyping((t) => ({ ...t, tx: error }))}
+                        showMessage
+                        className="w-full border rounded px-2 py-1 text-sm"
+                        aria-label="Transmit frequency (MHz)"
                       />
                       <p className="text-xs text-cool-gray mt-0.5">Frequency the radio transmits on</p>
                     </>

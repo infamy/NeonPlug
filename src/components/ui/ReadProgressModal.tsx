@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { ProgressBar } from './ProgressBar';
 import { getCapabilitiesForModel } from '../../radios/capabilities';
 import { useLogStore, type LogEntry } from '../../store/logStore';
+import type { RadioErrorKind } from '../../utils/radioErrors';
 import { BUTTON } from './controlStyles';
 
 function formatLogError(error: unknown): string {
@@ -27,6 +28,8 @@ interface ReadProgressModalProps {
   currentStep: string;
   steps: string[];
   error?: string | null;
+  /** What kind of failure `error` is (utils/radioErrors.ts), which decides the advice shown. */
+  errorKind?: RadioErrorKind;
   onRetry?: () => void;
   onChangePort?: () => void;
   onClose?: () => void;
@@ -52,6 +55,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
   currentStep,
   steps,
   error,
+  errorKind = 'unknown',
   onRetry,
   onChangePort,
   onClose,
@@ -95,14 +99,83 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
   // which can differ from the app's effective model right after picking a radio.
   const tabMustStayInFront = isWriting || !(model && getCapabilitiesForModel(model)?.readsSurviveBackgroundTab);
 
+  // Each kind of failure gets the advice that fits it. A refusal gets none: its
+  // message is the reason, and a cable checklist would send the user after a
+  // cable that works.
+  const modelTip = model ? (
+    <>
+      Confirm this is a <span className="text-neon-cyan">{model}</span> — a mismatched radio type fails exactly
+      like a bad cable
+    </>
+  ) : null;
+  const frontTip = tabMustStayInFront ? 'Keep this tab in the foreground during read/write' : null;
+  const help: Record<RadioErrorKind, { title: string; heading: string; tips: React.ReactNode[] }> = {
+    portBusy: {
+      title: 'Port in use',
+      heading: 'The serial port is already open',
+      tips: [
+        'Close any other NeonPlug tab or window',
+        "Quit the radio's own programming software",
+        'Unplug and replug the cable, then retry',
+      ],
+    },
+    noAnswer: {
+      title: "Radio didn't answer",
+      heading: 'No reply from the radio',
+      tips: [
+        modelTip,
+        'Push the programming plug fully into the radio',
+        'Make sure the radio is turned on',
+        'Select the correct serial port',
+        frontTip,
+      ],
+    },
+    readIncomplete: {
+      title: 'Read incomplete',
+      heading: 'Part of the radio did not read',
+      tips: [
+        'Read again',
+        'Keep the plug fully seated and this tab in front while it reads',
+        'If the same section fails every time, copy the debug info below and report it',
+      ],
+    },
+    refused: {
+      title: isWriting ? 'Nothing was written' : 'Read stopped',
+      heading: isWriting ? 'Refused before anything was sent' : 'Refused',
+      tips: [],
+    },
+    cancelled: { title: 'Cancelled', heading: 'Cancelled', tips: [] },
+    unknown: {
+      title: 'Connection Error',
+      heading: 'Connection Failed',
+      tips: [
+        modelTip,
+        'Ensure radio is powered on',
+        'Check USB cable connection',
+        'Verify radio is in programming mode',
+        'Try unplugging and replugging USB cable',
+        'Select the correct serial port',
+        frontTip,
+      ],
+    },
+  };
+  // "Refused" comes from the error's wording, but a write is several steps. One
+  // that failed after sending had not refused before anything was sent, so it
+  // mustn't say "Nothing was written".
+  const kind: RadioErrorKind = errorKind === 'refused' && isWriting && progress > 0 ? 'unknown' : errorKind;
+  const { title, heading } = help[kind];
+  const tips = help[kind].tips.filter(Boolean);
+  const canRetry = kind !== 'refused';
+  const canChangePort = kind !== 'refused' && kind !== 'readIncomplete';
+
   return (
     <div
       className={`fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 p-4 ${isError ? 'z-[100]' : 'z-50'}`}
     >
       <div
         className={`bg-deep-gray rounded-lg max-w-md w-full max-h-[90vh] flex flex-col border ${
-          isError 
-            ? 'border-red-500 shadow-glow-red' 
+          isError
+            ? 'border-red-500 shadow-glow-red'
             : 'border-neon-cyan shadow-glow-cyan'
         }`}
       >
@@ -112,7 +185,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
           <h2 className={`text-2xl font-bold mb-4 ${
             isError ? 'text-red-400' : 'text-neon-cyan'
           }`}>
-            {isError ? 'Connection Error' : isWriting ? 'Writing to Radio' : 'Reading from Radio'}
+            {isError ? title : isWriting ? 'Writing to Radio' : 'Reading from Radio'}
           </h2>
 
           {model && (
@@ -130,29 +203,22 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
                 <div className="flex items-start space-x-3">
                   <div className="text-red-400 text-2xl">⚠</div>
                   <div className="flex-1">
-                    <p className="text-red-300 font-medium mb-2">Connection Failed</p>
+                    <p className="text-red-300 font-medium mb-2">{heading}</p>
                     <p className="text-red-200 text-sm whitespace-pre-wrap">{error}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-deep-gray border border-neon-cyan border-opacity-20 rounded-lg p-4 mb-4">
-                <p className="text-white text-sm font-medium mb-2">Troubleshooting:</p>
-                <ul className="text-cool-gray text-xs space-y-1 list-disc list-inside">
-                  {model && (
-                    <li>
-                      Confirm this is a <span className="text-neon-cyan">{model}</span> — a
-                      mismatched radio type fails exactly like a bad cable
-                    </li>
-                  )}
-                  <li>Ensure radio is powered on</li>
-                  <li>Check USB cable connection</li>
-                  <li>Verify radio is in programming mode</li>
-                  <li>Try unplugging and replugging USB cable</li>
-                  <li>Select the correct serial port</li>
-                  {tabMustStayInFront && <li>Keep this tab in the foreground during read/write</li>}
-                </ul>
-              </div>
+              {tips.length > 0 && (
+                <div className="bg-deep-gray border border-neon-cyan border-opacity-20 rounded-lg p-4 mb-4">
+                  <p className="text-white text-sm font-medium mb-2">Troubleshooting:</p>
+                  <ul className="text-cool-gray text-xs space-y-1 list-disc list-inside">
+                    {tips.map((tip, i) => (
+                      <li key={i}>{tip}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div className="border border-neon-cyan border-opacity-20 rounded-lg overflow-hidden">
                 <button
@@ -263,7 +329,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
                 Close
               </button>
             )}
-            {onChangePort && (
+            {onChangePort && canChangePort && (
               <button
                 onClick={onChangePort}
                 className={`${BUTTON.neutral} px-4 py-2 font-semibold rounded border`}
@@ -271,7 +337,7 @@ export const ReadProgressModal: React.FC<ReadProgressModalProps> = ({
                 Change Port
               </button>
             )}
-            {onRetry && (
+            {onRetry && canRetry && (
               <button
                 onClick={onRetry}
                 className={`${BUTTON.primary} px-4 py-2 font-semibold rounded border`}

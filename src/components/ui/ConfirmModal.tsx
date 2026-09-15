@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react';
+import React, { useId, type ReactNode } from 'react';
 import { BUTTON } from './controlStyles';
 
 export type ConfirmModalVariant = 'danger' | 'default' | 'alert';
@@ -46,6 +46,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   variant = 'danger',
   extraAction,
 }) => {
+  const titleId = useId();
   if (!isOpen) return null;
 
   const handleConfirm = () => {
@@ -62,12 +63,15 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className={`bg-deep-gray rounded-lg w-full max-h-[90vh] border shadow-xl flex flex-col ${
           size === 'lg' ? 'max-w-2xl' : 'max-w-md'
         } ${isDanger ? 'border-red-500 border-opacity-50' : 'border-neon-cyan border-opacity-30'}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className={`px-6 pt-6 pb-4 text-xl font-bold ${isDanger ? 'text-red-400' : 'text-neon-cyan'}`}>
+        <h2 id={titleId} className={`px-6 pt-6 pb-4 text-xl font-bold ${isDanger ? 'text-red-400' : 'text-neon-cyan'}`}>
           {title}
         </h2>
         {/* Only the content scrolls. However much a dialog has to say, its
