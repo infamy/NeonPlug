@@ -563,7 +563,8 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         >
           <option value={0}>None</option>
           {scanLists.map((scanList, index) => (
-            <option key={scanList.name} value={scanListReference(scanList, index, scanListsBySlot)}>
+            // Keyed by position: several lists can share a name.
+            <option key={index} value={scanListReference(scanList, index, scanListsBySlot)}>
               {scanListReference(scanList, index, scanListsBySlot)}: {scanList.name}
             </option>
           ))}

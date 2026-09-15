@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useScanListsStore } from '../../store/scanListsStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { lowestFreeSlot } from '../../utils/lowestFreeSlot';
+import { scanListReference } from '../../utils/scanListReference';
 import type { ScanListField } from '../../types/radioCapabilities';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { ScanList } from '../../models/ScanList';
@@ -25,16 +26,22 @@ export const ScanListsList: React.FC = () => {
   const maxScanLists = caps?.maxScanLists ?? 32;
   // The DM-32 stores 11 characters, the D890UV family 16.
   const maxNameLength = caps?.maxScanListNameLength ?? 16;
+  // The number a channel stores for each list, shown beside its name.
+  const scanListsBySlot = caps?.scanListsBySlot === true;
   const { scanLists, selectedScanList, setSelectedScanList, addScanList, deleteScanList, renameScanList } = useScanListsStore();
   const [newScanListName, setNewScanListName] = useState('');
-  const [editingScanList, setEditingScanList] = useState<string | null>(null);
+  // Lists are picked, renamed and deleted by position, since several can share
+  // a name: a DM-32 read held six called "Scan List", and one click took all six.
+  const [editingScanList, setEditingScanList] = useState<number | null>(null);
   const [editScanListName, setEditScanListName] = useState('');
-  const [scanListToDelete, setScanListToDelete] = useState<string | null>(null);
+  const [scanListToDelete, setScanListToDelete] = useState<{ index: number; reference: number; name: string } | null>(null);
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
   const channels = useChannelsStore((s) => s.channels);
   const channelNames = useMemo(() => new Map(channels.map((ch) => [ch.number, ch.name])), [channels]);
 
-  const selectedScanListData = scanLists.find(sl => sl.name === selectedScanList);
+  const selectedScanListData = selectedScanList === null ? undefined : scanLists[selectedScanList];
+  const selected =
+    selectedScanList !== null && selectedScanListData ? { index: selectedScanList, scanList: selectedScanListData } : null;
 
   const handleAddScanList = () => {
     if (scanLists.length >= maxScanLists) {
@@ -76,32 +83,32 @@ export const ScanListsList: React.FC = () => {
       channels: [],
     });
     setNewScanListName('');
-    // Auto-select the newly created scan list so user can immediately add channels
-    setSelectedScanList(scanListName);
+    // Auto-select the newly created scan list so user can immediately add channels.
+    // It goes on the end, at the position that was the list's length.
+    setSelectedScanList(scanLists.length);
   };
 
-  const handleDeleteScanListClick = (name: string) => {
-    setScanListToDelete(name);
+  const handleDeleteScanListClick = (index: number) => {
+    const scanList = scanLists[index];
+    setScanListToDelete({ index, reference: scanListReference(scanList, index, scanListsBySlot), name: scanList.name });
   };
   const handleDeleteScanListConfirm = () => {
     if (scanListToDelete) {
-      deleteScanList(scanListToDelete);
-      if (selectedScanList === scanListToDelete) {
-        setSelectedScanList(null);
-      }
+      // The store clears the selection, or moves it up with the lists below.
+      deleteScanList(scanListToDelete.index);
       setScanListToDelete(null);
     }
   };
 
-  const handleStartEdit = (scanListName: string, e: React.MouseEvent) => {
+  const handleStartEdit = (index: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditingScanList(scanListName);
-    setEditScanListName(scanListName);
+    setEditingScanList(index);
+    setEditScanListName(scanLists[index].name);
   };
 
-  const handleSaveEdit = (oldName: string, e?: React.MouseEvent) => {
+  const handleSaveEdit = (index: number, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    const success = renameScanList(oldName, editScanListName);
+    const success = renameScanList(index, editScanListName);
     if (success) {
       setEditingScanList(null);
       setEditScanListName('');
@@ -127,17 +134,17 @@ export const ScanListsList: React.FC = () => {
         {scanLists.map((scanList, index) => (
           <div
             key={`${scanList.name}-${index}`}
-            onClick={() => editingScanList !== scanList.name && setSelectedScanList(scanList.name)}
+            onClick={() => editingScanList !== index && setSelectedScanList(index)}
             className={`p-3 transition-colors ${
-              editingScanList === scanList.name
+              editingScanList === index
                 ? 'bg-deep-gray-light'
-                : selectedScanList === scanList.name
+                : selectedScanList === index
                   ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan cursor-pointer'
                   : 'hover:bg-deep-gray hover:bg-opacity-50 cursor-pointer'
             }`}
           >
             <div className="flex justify-between items-center mb-1">
-              {editingScanList === scanList.name ? (
+              {editingScanList === index ? (
                 <div className="flex items-center gap-2 flex-1">
                   <input
                     type="text"
@@ -145,7 +152,7 @@ export const ScanListsList: React.FC = () => {
                     onChange={(e) => setEditScanListName(e.target.value)}
                     onKeyPress={(e) => {
                       if (e.key === 'Enter') {
-                        handleSaveEdit(scanList.name);
+                        handleSaveEdit(index);
                       } else if (e.key === 'Escape') {
                         handleCancelEdit();
                       }
@@ -156,7 +163,7 @@ export const ScanListsList: React.FC = () => {
                     autoFocus
                   />
                   <button
-                    onClick={(e) => handleSaveEdit(scanList.name, e)}
+                    onClick={(e) => handleSaveEdit(index, e)}
                     className={`${BUTTON.primary} px-2 py-1 rounded text-xs`}
                   >
                     Save
@@ -170,14 +177,17 @@ export const ScanListsList: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  <span className="text-white font-medium">{scanList.name}</span>
+                  <span className="text-white font-medium">
+                    <span className="text-cool-gray mr-1">{scanListReference(scanList, index, scanListsBySlot)}:</span>
+                    {scanList.name}
+                  </span>
                   <span className="text-cool-gray text-xs">
                     {scanList.channels.length} {formatPlural(scanList.channels.length, 'channel')}
                   </span>
                 </>
               )}
             </div>
-            {editingScanList !== scanList.name && (
+            {editingScanList !== index && (
               <>
                 {scanList.channels.length > 0 && (
                   <div
@@ -189,7 +199,7 @@ export const ScanListsList: React.FC = () => {
                 )}
                 <div className="flex gap-2 justify-end mt-2">
                   <button
-                    onClick={(e) => handleStartEdit(scanList.name, e)}
+                    onClick={(e) => handleStartEdit(index, e)}
                     className={`${BUTTON.outline} px-2 py-0.5 rounded text-xs border`}
                   >
                     Rename
@@ -197,7 +207,7 @@ export const ScanListsList: React.FC = () => {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleDeleteScanListClick(scanList.name);
+                      handleDeleteScanListClick(index);
                     }}
                     className={`${BUTTON.danger} px-2 py-0.5 rounded text-xs border`}
                   >
@@ -215,12 +225,14 @@ export const ScanListsList: React.FC = () => {
     <Card padding="none" className="flex flex-col h-full">
       <div className="p-4 border-b border-neon-cyan border-opacity-30 flex-shrink-0">
         <SectionTitle as="h3" size="md" bold>
-          {selectedScanListData ? `Scan List: ${selectedScanListData.name}` : 'Select a Scan List'}
+          {selected
+            ? `Scan List ${scanListReference(selected.scanList, selected.index, scanListsBySlot)}: ${selected.scanList.name}`
+            : 'Select a Scan List'}
         </SectionTitle>
       </div>
-      {selectedScanListData ? (
+      {selected ? (
         <div className="flex-1 min-h-0">
-          <ScanListEditor scanList={selectedScanListData} onAlert={showAlert} />
+          <ScanListEditor index={selected.index} scanList={selected.scanList} onAlert={showAlert} />
         </div>
       ) : (
         <EmptyState
@@ -251,7 +263,11 @@ export const ScanListsList: React.FC = () => {
         onClose={() => setScanListToDelete(null)}
         onConfirm={handleDeleteScanListConfirm}
         title="Delete scan list"
-        message={scanListToDelete ? `Are you sure you want to delete scan list "${scanListToDelete}"? This cannot be undone.` : ''}
+        message={
+          scanListToDelete
+            ? `Are you sure you want to delete scan list ${scanListToDelete.reference}, "${scanListToDelete.name}"? This cannot be undone.`
+            : ''
+        }
         confirmLabel="Delete"
         variant="danger"
       />
@@ -317,7 +333,7 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        dropdownRef.current && 
+        dropdownRef.current &&
         !dropdownRef.current.contains(event.target as Node) &&
         buttonRef.current &&
         !buttonRef.current.contains(event.target as Node)
@@ -352,7 +368,7 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
   };
 
   const dropdownContent = isOpen && !disabled && (
-    <div 
+    <div
       ref={dropdownRef}
       className="fixed z-[9999] bg-deep-gray border border-neon-cyan border-opacity-50 rounded shadow-2xl overflow-hidden"
       style={{
@@ -437,7 +453,7 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
  * lived behind the small Rename button in the list, which is easy to miss. Saved
  * on Enter or when the field loses focus; Escape puts the name back.
  */
-const ScanListNameField: React.FC<{ name: string; maxLength: number }> = ({ name, maxLength }) => {
+const ScanListNameField: React.FC<{ index: number; name: string; maxLength: number }> = ({ index, name, maxLength }) => {
   const { scanLists, renameScanList } = useScanListsStore();
   const id = useId();
   // What is being typed; null while the field shows the saved name.
@@ -453,9 +469,9 @@ const ScanListNameField: React.FC<{ name: string; maxLength: number }> = ({ name
       setError(null);
     } else if (!next) {
       setError('A scan list needs a name.');
-    } else if (scanLists.some((sl) => sl.name === next)) {
+    } else if (scanLists.some((sl, i) => i !== index && sl.name === next)) {
       setError(`Another scan list is already called "${next}".`);
-    } else if (renameScanList(name, next)) {
+    } else if (renameScanList(index, next)) {
       setDraft(null);
       setError(null);
     } else {
@@ -496,11 +512,13 @@ const ScanListNameField: React.FC<{ name: string; maxLength: number }> = ({ name
 };
 
 interface ScanListEditorProps {
+  /** The list's position in the store, which is how it is changed: names can repeat. */
+  index: number;
   scanList: ScanList;
   onAlert: (message: string) => void;
 }
 
-const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) => {
+const ScanListEditor: React.FC<ScanListEditorProps> = ({ index, scanList, onAlert }) => {
   // Per-radio, never hardcoded: the DM-32 holds 15 channels per scan list, the
   // D890UV family 50. This was `maxItems={15}` and silently truncated the D890.
   const { caps } = useRadioCapabilities();
@@ -538,18 +556,18 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4">
-      <ScanListNameField key={scanList.name} name={scanList.name} maxLength={caps?.maxScanListNameLength ?? 16} />
+      <ScanListNameField key={index} index={index} name={scanList.name} maxLength={caps?.maxScanListNameLength ?? 16} />
 
       {/* Scan List Settings - Collapsible */}
       <div className="bg-neon-cyan bg-opacity-5 border border-neon-cyan border-opacity-30 rounded-lg overflow-hidden">
-        <div 
+        <div
           className="p-3 flex justify-between items-center cursor-pointer hover:bg-neon-cyan hover:bg-opacity-10 transition-colors"
           onClick={() => setShowSettings(!showSettings)}
         >
           <h4 className="text-neon-cyan font-medium">Scan List Settings</h4>
           <span className="text-neon-cyan text-sm">{showSettings ? '▼' : '▶'}</span>
         </div>
-        
+
         {showSettings && (
           <div className="p-4 pt-0 space-y-3 relative">
             {anySettings && (
@@ -559,7 +577,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                 <label className="block text-cool-gray text-xs mb-1">CTC Scan Mode</label>
                 <select
                   value={scanList.ctcScanMode}
-                  onChange={(e) => updateScanList(scanList.name, { ctcScanMode: parseInt(e.target.value) })}
+                  onChange={(e) => updateScanList(index, { ctcScanMode: parseInt(e.target.value) })}
                   className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                 >
                   <option value={0}>Not Detection CTC</option>
@@ -574,7 +592,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                 <label className="block text-cool-gray text-xs mb-1">Scan TX Mode</label>
                 <select
                   value={scanList.scanTxMode}
-                  onChange={(e) => updateScanList(scanList.name, { scanTxMode: parseInt(e.target.value) })}
+                  onChange={(e) => updateScanList(index, { scanTxMode: parseInt(e.target.value) })}
                   className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                 >
                   <option value={0}>Current Channel</option>
@@ -596,7 +614,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   max={hangTime.max}
                   step={1}
                   value={scanList.hangTime || hangTime.default}
-                  onChange={(e) => updateScanList(scanList.name, { hangTime: parseInt(e.target.value) || hangTime.default })}
+                  onChange={(e) => updateScanList(index, { hangTime: parseInt(e.target.value) || hangTime.default })}
                   className="w-full accent-neon-cyan"
                 />
                 <div className="flex justify-between text-cool-gray text-[10px]">
@@ -610,7 +628,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                 <label className="block text-cool-gray text-xs mb-1">Designated TX Channel</label>
                 <SearchableChannelSelect
                   value={scanList.designatedTxChannel}
-                  onChange={(value) => updateScanList(scanList.name, { designatedTxChannel: value || 0 })}
+                  onChange={(value) => updateScanList(index, { designatedTxChannel: value || 0 })}
                   channels={sortedChannels}
                   includeNone={true}
                   includeCurrent={true}
@@ -629,7 +647,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   <label className="block text-cool-gray text-xs mb-1">Priority 1 Type</label>
                   <select
                     value={scanList.priority1Type || 0}
-                    onChange={(e) => updateScanList(scanList.name, { priority1Type: parseInt(e.target.value) })}
+                    onChange={(e) => updateScanList(index, { priority1Type: parseInt(e.target.value) })}
                     className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                   >
                     <option value={0}>None</option>
@@ -644,7 +662,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   <label className="block text-cool-gray text-xs mb-1">Priority Channel 1</label>
                   <SearchableChannelSelect
                     value={scanList.priorityChannel1}
-                    onChange={(value) => updateScanList(scanList.name, { priorityChannel1: value })}
+                    onChange={(value) => updateScanList(index, { priorityChannel1: value })}
                     channels={sortedChannels}
                     disabled={(scanList.priority1Type || 0) !== 2}
                     placeholder="Select channel..."
@@ -657,7 +675,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   <label className="block text-cool-gray text-xs mb-1">Priority 2 Type</label>
                   <select
                     value={scanList.priority2Type || 0}
-                    onChange={(e) => updateScanList(scanList.name, { priority2Type: parseInt(e.target.value) })}
+                    onChange={(e) => updateScanList(index, { priority2Type: parseInt(e.target.value) })}
                     className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                   >
                     <option value={0}>None</option>
@@ -672,7 +690,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                   <label className="block text-cool-gray text-xs mb-1">Priority Channel 2</label>
                   <SearchableChannelSelect
                     value={scanList.priorityChannel2}
-                    onChange={(value) => updateScanList(scanList.name, { priorityChannel2: value })}
+                    onChange={(value) => updateScanList(index, { priorityChannel2: value })}
                     channels={sortedChannels}
                     disabled={(scanList.priority2Type || 0) !== 2}
                     placeholder="Select channel..."
@@ -703,7 +721,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
           const ch = channels.find(c => c.number === num);
           return ch ? channelPickerItem(ch) : undefined;
         }}
-        onChange={(ids) => updateScanList(scanList.name, { channels: ids })}
+        onChange={(ids) => updateScanList(index, { channels: ids })}
         maxItems={caps?.maxScanListChannels ?? 15}
         itemNoun="channel"
         containerNoun="scan list"
@@ -727,7 +745,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                 disabled={!p1Enabled}
                 onClick={() =>
                   p1Enabled &&
-                  updateScanList(scanList.name, { priorityChannel1: isP1 ? undefined : id })
+                  updateScanList(index, { priorityChannel1: isP1 ? undefined : id })
                 }
                 className={chipClass(p1Enabled, isP1)}
                 title={
@@ -744,7 +762,7 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
                 disabled={!p2Enabled}
                 onClick={() =>
                   p2Enabled &&
-                  updateScanList(scanList.name, { priorityChannel2: isP2 ? undefined : id })
+                  updateScanList(index, { priorityChannel2: isP2 ? undefined : id })
                 }
                 className={chipClass(p2Enabled, isP2)}
                 title={
