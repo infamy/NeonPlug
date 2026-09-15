@@ -38,6 +38,7 @@ import { isWritableChannelFrequency } from '../services/validation/frequencyVali
 import { useOutOfBandStore } from '../store/outOfBandStore';
 import { parseBootImageHeader } from '../utils/bootImage';
 import { formatPlural } from '../utils/formatPlural';
+import { classifyRadioError } from '../utils/radioErrors';
 import {
   buildD890CodeplugTables,
   d890RenumberedChannels,
@@ -632,7 +633,10 @@ export function useRadioConnection() {
       const hiddenTabMatters =
         tabWentHiddenDuringOperation && !getCapabilitiesForModel(effectiveModel)?.readsSurviveBackgroundTab;
       const errorMessage = withVisibilityContext(rawMessage, hiddenTabMatters);
-      const isPortSelectionCancelled = rawMessage.includes('cancelled') || rawMessage.includes('Port selection cancelled');
+      // A closed port picker is the user's answer, not a failure to retry. Chrome
+      // says so with a NotFoundError, whose message never mentions cancelling.
+      const isPortSelectionCancelled =
+        classifyRadioError(rawMessage, err instanceof Error ? err.name : undefined) === 'cancelled';
 
       if (!isPortSelectionCancelled && protocol) {
         console.warn('Read failed, will retry:', errorMessage);
