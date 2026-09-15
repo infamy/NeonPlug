@@ -5,7 +5,7 @@
 import type { Channel, CTCSSDCS } from '../../models/Channel';
 import {
   FT65_MAX_CHANNELS, FT65_CHANNEL_SIZE, FT65_ADDR_CHANNELS,
-  FT65_ADDR_ENABLE, FT65_ADDR_NAMES, FT65_ADDR_TXFREQS,
+  FT65_ADDR_ENABLE, FT65_ADDR_SCAN, FT65_ADDR_NAMES, FT65_ADDR_TXFREQS,
   SLOT, SQL, DUPLEX,
   CTCSS_TONES, DCS_CODES,
 } from './constants';
@@ -48,6 +48,26 @@ export function setChannelEnabled(image: Uint8Array, idx: number, enabled: boole
   const byteIdx = FT65_ADDR_ENABLE + (idx >> 3);
   const bit = idx & 7;
   if (enabled) {
+    image[byteIdx] |= (1 << bit);
+  } else {
+    image[byteIdx] &= ~(1 << bit);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scan bitmap, laid out like the enable bitmap: a set bit scans the memory
+// and a clear bit skips it, as CHIRP's ft4.py reads it.
+// ---------------------------------------------------------------------------
+
+export function isScanIncluded(image: Uint8Array, idx: number): boolean {
+  const byte = image[FT65_ADDR_SCAN + (idx >> 3)];
+  return ((byte >> (idx & 7)) & 1) === 1;
+}
+
+export function setScanIncluded(image: Uint8Array, idx: number, included: boolean): void {
+  const byteIdx = FT65_ADDR_SCAN + (idx >> 3);
+  const bit = idx & 7;
+  if (included) {
     image[byteIdx] |= (1 << bit);
   } else {
     image[byteIdx] &= ~(1 << bit);
@@ -266,24 +286,28 @@ export function encodeChannel(image: Uint8Array, ch: Channel, offsetFactor: numb
     image[slotBase + SLOT.RX_DCS] = encodeDCS(ch.rxCtcssDcs);
   }
 
-  // Name and enable bit
+  // Name, scan and enable bit. A memory new to its slot is scanned, as a new
+  // memory is in CHIRP; one the radio already had keeps its own scan setting,
+  // which this app does not edit.
   encodeName(image, idx, ch.name, maxNameLen);
+  if (!isChannelEnabled(image, idx)) setScanIncluded(image, idx, true);
   setChannelEnabled(image, idx, true);
 }
 
 /**
- * Zero out all channel-data regions before re-encoding.
- * Must be called before the encodeChannel loop in writeChannels.
+ * Delete the regular memories a write doesn't hold, the way CHIRP deletes one:
+ * clear its enable bit and nothing else (ft4.py `set_memory` for an empty
+ * memory). Every other memory keeps its slot, and so its number.
+ *
+ * This used to zero whole regions. The scan bitmap sat in the 64 bytes cleared,
+ * and a clear bit there means skip, so every write set every memory to skip in
+ * scan. The name and TX frequency arrays hold 220 entries, the last 20 for the
+ * PMS memories, so every write wiped those as well.
  */
-export function clearChannelRegions(image: Uint8Array): void {
-  // Channel slots
-  image.fill(0x00, FT65_ADDR_CHANNELS, FT65_ADDR_CHANNELS + FT65_MAX_CHANNELS * FT65_CHANNEL_SIZE);
-  // Enable + scan bitmaps
-  image.fill(0x00, FT65_ADDR_ENABLE, FT65_ADDR_ENABLE + 64);
-  // Name slots (8 bytes each × 220 entries)
-  image.fill(0x00, FT65_ADDR_NAMES, FT65_ADDR_NAMES + 220 * 8);
-  // TX freq slots (4 bytes each × 220 entries)
-  image.fill(0x00, FT65_ADDR_TXFREQS, FT65_ADDR_TXFREQS + 220 * 4);
+export function clearUnwrittenMemories(image: Uint8Array, written: ReadonlySet<number>): void {
+  for (let idx = 0; idx < FT65_MAX_CHANNELS; idx++) {
+    if (!written.has(idx)) setChannelEnabled(image, idx, false);
+  }
 }
 
 /** Parse all 200 channel slots from a full memory image. */
