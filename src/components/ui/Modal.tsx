@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { BUTTON } from './controlStyles';
 
 interface ModalProps {
@@ -20,6 +20,7 @@ export const Modal: React.FC<ModalProps> = ({
   children,
   footer,
 }) => {
+  const titleId = useId();
   if (!isOpen) return null;
 
   return (
@@ -28,13 +29,17 @@ export const Modal: React.FC<ModalProps> = ({
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className="bg-deep-gray rounded-lg p-4 max-w-3xl w-full mx-4 max-h-[85vh] border border-electric-purple shadow-glow-purple flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-3 flex-shrink-0">
-          <h2 className="text-xl font-bold text-electric-purple">{title}</h2>
+          <h2 id={titleId} className="text-xl font-bold text-electric-purple">{title}</h2>
           <button
             onClick={onClose}
+            aria-label="Close"
             className={`${BUTTON.ghost} text-2xl`}
           >
             ×

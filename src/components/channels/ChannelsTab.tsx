@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { formatPlural } from '../../utils/formatPlural';
 import { useChannelsStore } from '../../store/channelsStore';
 import { useRadioSettingsStore } from '../../store/radioSettingsStore';
@@ -21,6 +21,16 @@ import { BroadcastChannelsTable } from './BroadcastChannelsTable';
 import { D890_BROADCAST } from '../../radios/d890uv/broadcastChannels';
 import { PageHeader } from '../ui/PageHeader';
 import { BUTTON, FIELD } from '../ui/controlStyles';
+import {
+  channelsLabel,
+  recordChannelEdit,
+  redoChannelEdit,
+  undoChannelEdit,
+  useChannelHistoryStore,
+} from '../../services/channelHistory';
+import { describeChannelDelete } from '../../services/channelDelete';
+import { REDO_SHORTCUT, UNDO_SHORTCUT, useChannelUndoShortcuts } from '../../hooks/useChannelUndoShortcuts';
+import { ChannelUndoNotice } from './ChannelUndoNotice';
 
 /** Which channel table the tab is showing. */
 type ChannelView = 'main' | 'am' | 'fm';
@@ -49,6 +59,9 @@ export const ChannelsTab: React.FC = () => {
         ? tables.broadcast?.fm
         : undefined;
   const isBroadcast = view !== 'main';
+  const undoLabel = useChannelHistoryStore((s) => s.past[s.past.length - 1]?.label);
+  const redoLabel = useChannelHistoryStore((s) => s.future[s.future.length - 1]?.label);
+  useChannelUndoShortcuts(!isBroadcast);
 
   const filteredBroadcast = useMemo(() => {
     if (!broadcast) return [];
@@ -79,7 +92,7 @@ export const ChannelsTab: React.FC = () => {
       name: `Channel ${nextNumber}`,
     });
     
-    addChannel(newChannel);
+    recordChannelEdit(`add ${channelsLabel([nextNumber])}`, () => addChannel(newChannel));
     
     // Scroll to the new channel after adding
     setScrollToChannel(nextNumber);
@@ -90,27 +103,7 @@ export const ChannelsTab: React.FC = () => {
   }, []);
 
   const selectedCount = selectedChannelNumbers.size;
-  const [deleteSelectedOpen, setDeleteSelectedOpen] = useState(false);
-  const [pendingDeleteCount, setPendingDeleteCount] = useState(0);
-  const pendingDeleteNumbers = useRef<number[]>([]);
-  const handleDeleteSelectedClick = useCallback(() => {
-    const toDelete = Array.from(selectedChannelNumbers).filter(n => !isVFOChannel(n));
-    if (toDelete.length === 0) {
-      setSelectedChannelNumbers(new Set());
-      return;
-    }
-    pendingDeleteNumbers.current = toDelete;
-    setPendingDeleteCount(toDelete.length);
-    setDeleteSelectedOpen(true);
-  }, [selectedChannelNumbers]);
-  const handleDeleteSelectedConfirm = useCallback(() => {
-    const toDelete = pendingDeleteNumbers.current;
-    if (toDelete.length > 0) {
-      deleteChannels(toDelete);
-      setSelectedChannelNumbers(new Set());
-    }
-    setDeleteSelectedOpen(false);
-  }, [deleteChannels]);
+  const [pendingDelete, setPendingDelete] = useState<{ numbers: number[]; message: string } | null>(null);
 
   const handleClearSelection = useCallback(() => setSelectedChannelNumbers(new Set()), []);
 
@@ -135,7 +128,19 @@ export const ChannelsTab: React.FC = () => {
         imported,
         add: () => addChannels(channels, imported),
         check: (list) => checkChannelLimits(list, caps),
-        apply: (list) => setChannels(list),
+        apply: (list, mode) => {
+          const added = list.length - channels.length;
+          recordChannelEdit(
+            mode === 'replace' ? 'replace the channels from a CSV file' : 'add channels from a CSV file',
+            () => setChannels(list),
+            {
+              announce:
+                mode === 'replace'
+                  ? `Replaced the channels with the file's ${list.length}.`
+                  : `Added ${added} ${formatPlural(added, 'channel')} from the file.`,
+            }
+          );
+        },
       });
     }).catch(err => {
       showAlert(err instanceof Error ? err.message : 'Failed to read CSV file', 'Import failed');
@@ -196,6 +201,31 @@ export const ChannelsTab: React.FC = () => {
     });
   }, [channels, vfoChannels, searchQuery]);
 
+  const handleDeleteSelectedClick = () => {
+    const toDelete = Array.from(selectedChannelNumbers).filter(n => !isVFOChannel(n));
+    if (toDelete.length === 0) {
+      setSelectedChannelNumbers(new Set());
+      return;
+    }
+    // A selection outlives a search, so it can hold rows the search now hides.
+    const shown = new Set(filteredChannels.map(ch => ch.number));
+    const hidden = toDelete.filter(n => !shown.has(n)).length;
+    const effect = describeChannelDelete(channels, toDelete, hidden);
+    setPendingDelete({
+      numbers: toDelete,
+      message: `Delete ${channelsLabel(toDelete)}?${effect ? `\n\n${effect}` : ''}`,
+    });
+  };
+
+  const handleDeleteSelectedConfirm = () => {
+    if (!pendingDelete) return;
+    const label = channelsLabel(pendingDelete.numbers);
+    recordChannelEdit(`delete ${label}`, () => deleteChannels(pendingDelete.numbers), {
+      announce: `Deleted ${label}.`,
+    });
+    setSelectedChannelNumbers(new Set());
+  };
+
   return (
     <div className="h-full flex flex-col min-h-0">
       <PageHeader
@@ -227,6 +257,30 @@ export const ChannelsTab: React.FC = () => {
               ? `${filteredBroadcast.length} ${formatPlural(filteredBroadcast.length, 'channel')}`
               : `${filteredChannels.length - vfoChannels.length} ${formatPlural(filteredChannels.length - vfoChannels.length, 'channel')}${vfoChannels.length > 0 ? ` (${vfoChannels.length} ${formatPlural(vfoChannels.length, 'VFO')})` : ''}`}
           </div>
+          {!isBroadcast && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => undoChannelEdit()}
+                disabled={!undoLabel}
+                className={`${BUTTON.subtle} px-2 py-1 text-xs border rounded`}
+                title={undoLabel ? `Undo ${undoLabel} (${UNDO_SHORTCUT})` : 'Nothing to undo'}
+                aria-label={undoLabel ? `Undo ${undoLabel}` : 'Undo'}
+              >
+                ↶
+              </button>
+              <button
+                type="button"
+                onClick={() => redoChannelEdit()}
+                disabled={!redoLabel}
+                className={`${BUTTON.subtle} px-2 py-1 text-xs border rounded`}
+                title={redoLabel ? `Redo ${redoLabel} (${REDO_SHORTCUT})` : 'Nothing to redo'}
+                aria-label={redoLabel ? `Redo ${redoLabel}` : 'Redo'}
+              >
+                ↷
+              </button>
+            </div>
+          )}
           {/* Add applies to the main list only: broadcast slots are fixed
               hardware positions, and nothing writes them back yet. */}
           {!isBroadcast && (
@@ -329,14 +383,15 @@ export const ChannelsTab: React.FC = () => {
         )}
       </div>
       <ConfirmModal
-        isOpen={deleteSelectedOpen}
-        onClose={() => setDeleteSelectedOpen(false)}
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
         onConfirm={handleDeleteSelectedConfirm}
-        title="Delete channels"
-        message={`Delete ${pendingDeleteCount} selected ${formatPlural(pendingDeleteCount, 'channel')}?`}
+        title={pendingDelete?.numbers.length === 1 ? 'Delete channel' : 'Delete channels'}
+        message={pendingDelete?.message}
         confirmLabel="Delete"
         variant="danger"
       />
+      <ChannelUndoNotice />
       {csvImportDialog}
       <ConfirmModal
         isOpen={alertOpen}

@@ -17,6 +17,8 @@ import { ChannelRow, isVFOChannel, type CellChangeHandler } from './ChannelRow';
 import { extraColumnsFor, extraColumnTitle, extraColumnMarker } from './extraChannelColumns';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { Card } from '../ui/Card';
+import { channelsLabel, recordChannelEdit } from '../../services/channelHistory';
+import { describeChannelDelete } from '../../services/channelDelete';
 import { EmptyState } from '../ui/EmptyState';
 
 interface ChannelsTableProps {
@@ -138,17 +140,24 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
       : [channelNumber];
 
     const settings = radioSettingsRef.current;
-    for (const num of applyToNumbers) {
-      if (num === 4001 && settings?.vfoA) {
-        updateSettings({ vfoA: { ...settings.vfoA, [field]: value } });
-        continue;
-      }
-      if (num === 4002 && settings?.vfoB) {
-        updateSettings({ vfoB: { ...settings.vfoB, [field]: value } });
-        continue;
-      }
-      updateChannel(num, { [field]: value });
-    }
+    recordChannelEdit(
+      `edit ${channelsLabel(applyToNumbers)}`,
+      () => {
+        for (const num of applyToNumbers) {
+          if (num === 4001 && settings?.vfoA) {
+            updateSettings({ vfoA: { ...settings.vfoA, [field]: value } });
+            continue;
+          }
+          if (num === 4002 && settings?.vfoB) {
+            updateSettings({ vfoB: { ...settings.vfoB, [field]: value } });
+            continue;
+          }
+          updateChannel(num, { [field]: value });
+        }
+      },
+      // Typing into a cell is one step, not one per keystroke.
+      { mergeKey: `${applyToNumbers.join(',')}:${field}` }
+    );
   }, [updateChannel, updateSettings]);
 
   /** Row click: plain = single select; Shift = range (e.g. 4,5,6,7,8); Alt = add/remove (random multi-select). Skip when clicking inputs/buttons. */
@@ -209,7 +218,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
         : channel.name + ' (C)',
     };
 
-    addChannel(clonedChannel);
+    recordChannelEdit(`clone ${channelsLabel([channel.number])}`, () => addChannel(clonedChannel));
     setClonedChannelNumber(nextNumber);
   }, [addChannel]);
 
@@ -364,7 +373,9 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
           onClose={() => setEditingChannel(null)}
           channel={editingChannel}
           onSave={(updatedChannel) => {
-            updateChannel(updatedChannel.number, updatedChannel);
+            recordChannelEdit(`edit ${channelsLabel([updatedChannel.number])}`, () =>
+              updateChannel(updatedChannel.number, updatedChannel)
+            );
             setEditingChannel(null);
           }}
           bandLimits={bandLimits}
@@ -381,12 +392,24 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
         onClose={() => setChannelToDelete(null)}
         onConfirm={() => {
           if (channelToDelete) {
-            deleteChannel(channelToDelete.number);
+            const label = channelsLabel([channelToDelete.number]);
+            recordChannelEdit(`delete ${label}`, () => deleteChannel(channelToDelete.number), {
+              announce: `Deleted ${label}${channelToDelete.name ? ` (${channelToDelete.name})` : ''}.`,
+            });
             setChannelToDelete(null);
           }
         }}
         title="Delete channel"
-        message={channelToDelete ? `Delete channel ${channelToDelete.number}: "${channelToDelete.name}"?` : ''}
+        message={
+          channelToDelete
+            ? [
+                `Delete channel ${channelToDelete.number}: "${channelToDelete.name}"?`,
+                describeChannelDelete(channelsFromStore, [channelToDelete.number]),
+              ]
+                .filter(Boolean)
+                .join('\n\n')
+            : ''
+        }
         confirmLabel="Delete"
         variant="danger"
       />

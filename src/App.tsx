@@ -26,6 +26,7 @@ import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import type { CodeplugData } from './services/codeplugExport';
 import { applyCodeplugToStores } from './services/applyCodeplug';
 import { backupUnsavedEdits, hasUnsavedEdits, trackUnsavedEdits } from './services/unsavedEdits';
+import { watchChannelHistory } from './services/channelHistory';
 import { useUnsavedChangesStore } from './store/unsavedChangesStore';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
 import { setLogStore, logger, LogLevel } from './utils/protocolLogger';
@@ -124,6 +125,10 @@ function App() {
       window.removeEventListener('beforeunload', warnBeforeUnload);
     };
   }, []);
+
+  // Undo on the Channels tab puts back older copies of the channel, zone and
+  // scan list stores, so its history is dropped once anything else changes them.
+  useEffect(() => watchChannelHistory(), []);
 
   const handleReadFromRadio = (transport?: 'serial' | 'ble') => {
     if (transport != null) {
