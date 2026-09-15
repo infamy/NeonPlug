@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useId } from 'react';
+import React, { useState, useRef, useEffect, useId, useMemo } from 'react';
 import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
 import { createPortal } from 'react-dom';
@@ -11,7 +11,7 @@ import type { ScanList } from '../../models/ScanList';
 import type { Channel } from '../../models/Channel';
 import { ListDetailLayout } from '../ui/ListDetailLayout';
 import { OrderedItemPicker } from '../ui/OrderedItemPicker';
-import { channelPickerItem } from '../ui/pickerItems';
+import { channelListPreview, channelPickerItem } from '../ui/pickerItems';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
@@ -31,6 +31,8 @@ export const ScanListsList: React.FC = () => {
   const [editScanListName, setEditScanListName] = useState('');
   const [scanListToDelete, setScanListToDelete] = useState<string | null>(null);
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
+  const channels = useChannelsStore((s) => s.channels);
+  const channelNames = useMemo(() => new Map(channels.map((ch) => [ch.number, ch.name])), [channels]);
 
   const selectedScanListData = scanLists.find(sl => sl.name === selectedScanList);
 
@@ -178,9 +180,11 @@ export const ScanListsList: React.FC = () => {
             {editingScanList !== scanList.name && (
               <>
                 {scanList.channels.length > 0 && (
-                  <div className="text-cool-gray text-xs mb-2">
-                    Channels: {scanList.channels.slice(0, 5).join(', ')}
-                    {scanList.channels.length > 5 && ` +${scanList.channels.length - 5} more`}
+                  <div
+                    className="text-cool-gray text-xs mb-2 truncate"
+                    title={channelListPreview(scanList.channels, channelNames, 20)}
+                  >
+                    {channelListPreview(scanList.channels, channelNames)}
                   </div>
                 )}
                 <div className="flex gap-2 justify-end mt-2">
