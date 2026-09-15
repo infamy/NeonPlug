@@ -46,10 +46,16 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
 
   return (
     <div className="border-b border-deep-gray bg-deep-gray">
-      <div className="flex space-x-1 px-4">
+      {/* Wraps onto a second row rather than running off the edge of a narrow
+          window, and each label stays on one line. */}
+      <div className="flex flex-wrap gap-x-1 px-4" role="tablist" aria-label="Codeplug sections">
         {tabs.map((tab) => (
             <button
               key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              aria-label={tab.title}
               onClick={() => onTabChange(tab.id)}
               // Every tab carries its 2px bottom border ALL the time — transparent
               // when inactive — and only colours and the glow animate. The border
@@ -57,7 +63,7 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
               // its WIDTH animated: the tab bar changed height mid-transition and
               // everything below it jumped a pixel about 200ms after each click.
               className={`
-                px-6 py-3 font-medium border-b-2 transition-[color,border-color,box-shadow] duration-200
+                px-4 xl:px-6 py-3 whitespace-nowrap font-medium border-b-2 transition-[color,border-color,box-shadow] duration-200
                 ${
                   activeTab === tab.id
                     ? 'text-neon-magenta border-neon-magenta shadow-glow-magenta'
