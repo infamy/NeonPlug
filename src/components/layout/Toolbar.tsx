@@ -656,7 +656,7 @@ export const Toolbar: React.FC = () => {
                           {s.eventType && (
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
                               s.eventType === 'read' ? 'bg-neon-cyan bg-opacity-20 text-neon-cyan' :
-                              s.eventType === 'write' ? 'bg-neon-purple bg-opacity-20 text-neon-purple' :
+                              s.eventType === 'write' ? 'bg-neon-magenta bg-opacity-20 text-neon-magenta' :
                               'bg-amber-500 bg-opacity-20 text-amber-400'
                             }`}>
                               {formatEventType(s.eventType)}
