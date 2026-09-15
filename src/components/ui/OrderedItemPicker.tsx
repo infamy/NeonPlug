@@ -135,16 +135,6 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
                 </div>
                 <div className="flex gap-1 items-center">
                   {renderRowExtras?.(item.id)}
-                  {index > 1 && (
-                    <button
-                      onClick={() => handleReorder(index, 0)}
-                      className={`${BUTTON.outline} px-2 py-1 border rounded text-xs`}
-                      title="Move to top"
-                      aria-label={`Move ${item.label} to top`}
-                    >
-                      ⤒
-                    </button>
-                  )}
                   {index > 0 && (
                     <button
                       onClick={() => handleReorder(index, index - 1)}
@@ -161,16 +151,6 @@ export const OrderedItemPicker: React.FC<OrderedItemPickerProps> = ({
                       title="Move down"
                     >
                       ↓
-                    </button>
-                  )}
-                  {index < resolved.length - 2 && (
-                    <button
-                      onClick={() => handleReorder(index, resolved.length - 1)}
-                      className={`${BUTTON.outline} px-2 py-1 border rounded text-xs`}
-                      title="Move to bottom"
-                      aria-label={`Move ${item.label} to bottom`}
-                    >
-                      ⤓
                     </button>
                   )}
                   <button
