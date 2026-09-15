@@ -79,9 +79,9 @@ export const BUTTON = {
   cautionSolid:
     'bg-yellow-600 border-yellow-600 text-dark-charcoal hover:bg-yellow-500 ' +
     'disabled:opacity-50 disabled:cursor-not-allowed transition-colors',
-  /** Import: the purple the toolbar asked for, as an undefined `neon-purple`. */
+  /** Import, on the toolbar and the startup screen: neon magenta, the same look as `accent`. */
   secondary:
-    'bg-electric-purple border-electric-purple text-white hover:bg-opacity-90 ' +
+    'bg-neon-magenta border-neon-magenta text-white hover:bg-neon-magenta-bright ' +
     'disabled:opacity-50 disabled:cursor-not-allowed transition-colors',
   /** The Channel Wizard's add-to-codeplug actions: magenta, the accent that tab uses. */
   accent:
