@@ -131,7 +131,9 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
 
   const handleCellChange: CellChangeHandler = useCallback((channelNumber, field, value) => {
     const selected = selectionRef.current;
-    const applyToNumbers = selected.size > 0 && selected.has(channelNumber)
+    // An edit to a selected row applies to the whole selection, except a name,
+    // which belongs to one channel.
+    const applyToNumbers = field !== 'name' && selected.size > 0 && selected.has(channelNumber)
       ? Array.from(selected)
       : [channelNumber];
 

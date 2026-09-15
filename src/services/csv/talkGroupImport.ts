@@ -91,6 +91,49 @@ export function planTalkGroupImport(
   return { talkGroups, channels: outChannels, rxGroups: outGroups, clearedChannels, removedMembers };
 }
 
+export interface TalkGroupDeletePlan {
+  channels: Channel[];
+  /** Channels whose TX contact is the deleted talk group. */
+  clearedChannels: { number: number; name: string }[];
+}
+
+/**
+ * Deleting one talk group, which moves every talk group after it up one slot.
+ *
+ * As with an import, channels follow their talk group. A radio whose write moves
+ * references itself (the DA-7X2) is left to do that; on any other (the DM-32)
+ * the channels move here. A channel whose TX contact was the deleted talk group
+ * is listed, and on those radios cleared.
+ */
+export function planTalkGroupDelete(
+  channels: readonly Channel[],
+  deleted: QuickContact,
+  rules: Pick<RadioCapabilities, 'renumbersTalkGroupRefsOnWrite'>
+): TalkGroupDeletePlan {
+  const slot = slotBefore(deleted);
+  const clearedChannels = channels
+    .filter((ch) => ch.contactId === slot)
+    .map((ch) => ({ number: ch.number, name: ch.name }));
+  if (rules.renumbersTalkGroupRefsOnWrite) return { channels: [...channels], clearedChannels };
+  const moved = channels.map((ch) =>
+    ch.contactId === slot ? { ...ch, contactId: 0 } : ch.contactId > slot ? { ...ch, contactId: ch.contactId - 1 } : ch
+  );
+  return { channels: moved, clearedChannels };
+}
+
+/** The channels a talk group delete touches, for the confirmation. Empty when none use it. */
+export function describeTalkGroupDelete(
+  plan: TalkGroupDeletePlan,
+  rules: Pick<RadioCapabilities, 'renumbersTalkGroupRefsOnWrite'>
+): string {
+  const n = plan.clearedChannels.length;
+  if (n === 0) return '';
+  const shown = plan.clearedChannels.slice(0, 5).map((c) => `${c.number} ${c.name}`).join(', ');
+  const more = n > 5 ? `, and ${n - 5} more` : '';
+  const cleared = rules.renumbersTalkGroupRefsOnWrite ? '' : ` ${n === 1 ? 'It' : 'They'} will have no TX contact.`;
+  return `${n} ${formatPlural(n, 'channel')} ${formatPlural(n, 'uses', 'use')} it: ${shown}${more}.${cleared}`;
+}
+
 /** What going ahead would clear or remove, for the confirmation. Empty when nothing. */
 export function describeTalkGroupImportLosses(plan: TalkGroupImportPlan): string {
   const some = <T>(items: T[], show: (item: T) => string) =>

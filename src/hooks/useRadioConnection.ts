@@ -168,44 +168,48 @@ export function useRadioConnection() {
     setError(null);
     setConnectionError(null);
 
-    // Clear all codeplug data so each read starts from a clean slate
-    setChannels([]);
-    setRawChannelData(new Map());
-    setZones([]);
-    setRawZoneData(new Map());
-    setScanLists([]);
-    setRawScanListData(new Map());
-    setContacts([]);
-    setContactsLoaded(false);
-    setMessages([]);
-    setRawMessageData(new Map());
-    setMessagesLoaded(false);
-    setQuickContacts([]);
-    setQuickContactsLoaded(false);
-    setRadioIds([]);
-    setRawRadioIdData(new Map());
-    setRadioIdsLoaded(false);
-    setCalibration(null);
-    setCalibrationLoaded(false);
-    setRXGroups([]);
-    setRawGroupData(new Map());
-    setGroupsLoaded(false);
-    clearEncryptionKeys();
-    setRadioSettings(null);
-    setDigitalEmergencies([]);
-    setDigitalEmergencyConfig(null);
-    setAnalogEmergencies([]);
-    setBlockMetadata(new Map());
-    setBlockData(new Map());
-    setCachedMemoryImage(null);
-    setRawRadioSettingsData(null);
-    // The optional tables were NOT cleared here before the keyed-store change,
-    // because each was a separately named slot and the ten of them were simply
-    // missed. Reading a DM-32 after a DA-7X2 therefore left the DA-7X2's AM/FM
-    // tables and tone lists in the store, and ChannelsTab shows its AM/FM pills
-    // whenever `tables.broadcast` is present — so the previous radio's channels
-    // stayed on screen.
-    clearTables();
+    // Clear all codeplug data so each read starts from a clean slate. A read that
+    // fails part-way clears it again, so nothing half-read stays loaded.
+    const clearCodeplugStores = () => {
+      setChannels([]);
+      setRawChannelData(new Map());
+      setZones([]);
+      setRawZoneData(new Map());
+      setScanLists([]);
+      setRawScanListData(new Map());
+      setContacts([]);
+      setContactsLoaded(false);
+      setMessages([]);
+      setRawMessageData(new Map());
+      setMessagesLoaded(false);
+      setQuickContacts([]);
+      setQuickContactsLoaded(false);
+      setRadioIds([]);
+      setRawRadioIdData(new Map());
+      setRadioIdsLoaded(false);
+      setCalibration(null);
+      setCalibrationLoaded(false);
+      setRXGroups([]);
+      setRawGroupData(new Map());
+      setGroupsLoaded(false);
+      clearEncryptionKeys();
+      setRadioSettings(null);
+      setDigitalEmergencies([]);
+      setDigitalEmergencyConfig(null);
+      setAnalogEmergencies([]);
+      setBlockMetadata(new Map());
+      setBlockData(new Map());
+      setCachedMemoryImage(null);
+      setRawRadioSettingsData(null);
+      // The optional tables were NOT cleared here before the keyed-store change,
+      // because each was a separately named slot and the ten of them were simply
+      // missed. Reading a DM-32 after a DA-7X2 therefore left the DA-7X2's AM/FM
+      // tables and tone lists in the store, and ChannelsTab shows its AM/FM pills
+      // whenever `tables.broadcast` is present — so the previous radio's channels
+      // stayed on screen.
+      clearTables();
+    };
+    clearCodeplugStores();
 
     let protocol: RadioProtocol | null = null;
     let tabWentHiddenDuringOperation = false;
@@ -260,14 +264,13 @@ export function useRadioConnection() {
         await dm32.bulkReadRequiredBlocks();
       }
 
-      // Sections that fail to read are collected here and surfaced in the
-      // completion message — a silent failure would leave the UI showing an
-      // empty section while the radio still holds data.
+      // Sections that fail to read are collected here, and any failure fails the
+      // whole read (see the end of performRead). An empty section looks like the
+      // radio holds nothing there, and the next write would erase what it does hold.
       const sectionReadWarnings: string[] = [];
 
-      // Every section below is independent: a section that fails must not cost
-      // the user the sections that already read. Warn, record the name for the
-      // completion message, and carry on.
+      // Every section below still runs when one fails, so the error can name
+      // every section that did not read, not just the first.
       const readSection = async (label: string, read: () => Promise<void>) => {
         try {
           await read();
@@ -594,15 +597,14 @@ export function useRadioConnection() {
       try { await proto.disconnect(); } catch { /* already closed */ }
 
       if (sectionReadWarnings.length > 0) {
-        onProgress?.(
-          100,
-          `Read complete — warning: could not read ${sectionReadWarnings.join(', ')}. ` +
-            'These sections show as empty; re-read before editing them.',
-          steps[5]
+        // Nothing half-read stays loaded: a section left empty would be written
+        // back empty, erasing what the radio holds there.
+        clearCodeplugStores();
+        throw new Error(
+          `Could not read ${sectionReadWarnings.join(', ')}, so nothing was loaded. Read the radio again.`
         );
-      } else {
-        onProgress?.(100, 'Read complete!', steps[5]);
       }
+      onProgress?.(100, 'Read complete!', steps[5]);
     };
 
     try {

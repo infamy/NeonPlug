@@ -514,7 +514,9 @@ export const Toolbar: React.FC = () => {
         steps={isWriting ? writeChannelsSteps : readSteps}
         error={connectionError}
         onRetry={handleRetry}
-        onChangePort={!isWriting ? handleChangePort : undefined}
+        // Change Port starts a read, and a read replaces the codeplug. After a failed
+        // write that would throw away the edits that never reached the radio.
+        onChangePort={!isWriting && lastOperationMode !== 'write' ? handleChangePort : undefined}
         onClose={handleCloseModal}
         // lastOperationMode, not just isWriting: once a write fails isWriting is
         // false, and the error popup would say "Reading as" for a write.

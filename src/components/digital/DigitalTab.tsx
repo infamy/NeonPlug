@@ -34,6 +34,7 @@ import { planTalkGroupImport, describeTalkGroupImportLosses } from '../../servic
 import { addRadioIds, addRxGroups, addTalkGroups } from '../../services/csv/importModes';
 import { checkRadioIdLimits, checkRxGroupLimits, checkTalkGroupLimits } from '../../services/csv/importLimits';
 import { rxGroupsWithDmrIdMembers, rxGroupsWithRadioMembers } from '../../services/csv/rxGroupMembers';
+import { planTalkGroupDelete, describeTalkGroupDelete } from '../../services/csv/talkGroupImport';
 import { useCsvImport } from '../../hooks/useCsvImport';
 
 const DEFAULT_TALK_GROUPS_MAX = 800;
@@ -208,8 +209,13 @@ export const DigitalTab: React.FC = () => {
 
   // RX group members travel as talk group DMR IDs, whichever form the radio stores them in.
   const membersBySlot = !!caps?.rxGroupMembersBySlot;
+  // How many talk groups the last read found, which decides what a slot names (see rxGroupMembers.ts).
+  const countAtRead = () => useRadioStore.getState().tables.writeOriginals?.talkgroupCountAtRead;
   const handleExportRXGroupsCsv = () =>
-    downloadCSV(exportRXGroupsToCSV(rxGroupsWithDmrIdMembers(rxGroups, quickContacts, membersBySlot)), 'rx_groups.csv');
+    downloadCSV(
+      exportRXGroupsToCSV(rxGroupsWithDmrIdMembers(rxGroups, quickContacts, membersBySlot, countAtRead())),
+      'rx_groups.csv'
+    );
   const handleImportRXGroupsFile = (file: File) => {
     file.text().then(content => {
       const result = importRXGroupsFromCSV(content);
@@ -217,7 +223,7 @@ export const DigitalTab: React.FC = () => {
         showAlert(result.errors?.join('\n') || 'Failed to import RX Groups CSV', 'Import failed');
         return;
       }
-      const members = rxGroupsWithRadioMembers(result.rxGroups, quickContacts, membersBySlot);
+      const members = rxGroupsWithRadioMembers(result.rxGroups, quickContacts, membersBySlot, countAtRead());
       const imported = members.trimmed;
       startImport({
         noun: 'RX group',
@@ -340,10 +346,19 @@ export const DigitalTab: React.FC = () => {
     setDeleteConfirm({ type: 'radioId', index });
   };
 
+  // Channels reference talk groups by slot, so deleting one moves the channels
+  // that use the talk groups after it.
+  const referenceRules = { renumbersTalkGroupRefsOnWrite: caps?.renumbersTalkGroupRefsOnWrite };
+  const talkGroupToDelete =
+    deleteConfirm?.type === 'contact' ? quickContacts.find((tg) => tg.index === deleteConfirm.index) : undefined;
+  const talkGroupDelete = talkGroupToDelete ? planTalkGroupDelete(channels, talkGroupToDelete, referenceRules) : undefined;
+
   const handleDeleteConfirmModalConfirm = () => {
     if (!deleteConfirm) return;
-    if (deleteConfirm.type === 'contact') deleteContact(deleteConfirm.index);
-    else if (deleteConfirm.type === 'message') deleteMessage(deleteConfirm.index);
+    if (deleteConfirm.type === 'contact') {
+      if (talkGroupDelete?.channels.some((ch, i) => ch !== channels[i])) setChannels(talkGroupDelete.channels);
+      deleteContact(deleteConfirm.index);
+    } else if (deleteConfirm.type === 'message') deleteMessage(deleteConfirm.index);
     else if (deleteConfirm.type === 'radioId') deleteRadioId(deleteConfirm.index);
     setDeleteConfirm(null);
   };
@@ -358,7 +373,9 @@ export const DigitalTab: React.FC = () => {
           : '';
   const deleteConfirmMessage =
     deleteConfirm?.type === 'contact'
-      ? 'Are you sure you want to delete this contact?'
+      ? ['Are you sure you want to delete this contact?', talkGroupDelete && describeTalkGroupDelete(talkGroupDelete, referenceRules)]
+          .filter(Boolean)
+          .join(' ')
       : deleteConfirm?.type === 'message'
         ? 'Are you sure you want to delete this message?'
         : deleteConfirm?.type === 'radioId'

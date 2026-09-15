@@ -14,6 +14,6 @@ export interface RXGroup {
   statusFlag: number;         // Status flag (1 byte) - not used in new format
   entryFlag: number;          // Entry flag (1 byte) - always 0x01
   validationFlag: number;     // Validation flag - not used in new format
-  talkGroupIndices: number[]; // Array of DMR IDs (contactNumber) from Talk Groups (up to 32, 3 bytes each, little-endian)
+  talkGroupIndices: number[]; // Members: talk group DMR IDs (DM-32, 3 bytes each), or 0-based talk group slots where caps.rxGroupMembersBySlot (DA-7X2; see services/csv/rxGroupMembers.ts)
 }
 
