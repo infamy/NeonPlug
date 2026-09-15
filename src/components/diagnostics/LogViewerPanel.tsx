@@ -148,7 +148,7 @@ export const LogViewerPanel: React.FC = () => {
                       </span>
                       <span className="text-cool-gray min-w-[80px]">{timestamp}</span>
                       {log.context && (
-                        <span className="text-purple-400 min-w-[100px]">[{log.context}]</span>
+                        <span className="text-neon-magenta min-w-[100px]">[{log.context}]</span>
                       )}
                       <span className="text-white flex-1">{log.message}</span>
                     </div>

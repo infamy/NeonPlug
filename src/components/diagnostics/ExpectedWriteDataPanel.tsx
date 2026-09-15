@@ -82,8 +82,8 @@ export const ExpectedWriteDataPanel: React.FC<ExpectedWriteDataPanelProps> = ({ 
     <div className="mb-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h3 className="text-xl font-semibold text-purple-400">Expected Write Data</h3>
-          <span className="px-2 py-1 bg-purple-900/30 text-purple-400 text-xs rounded border border-purple-600/30">
+          <h3 className="text-xl font-semibold text-neon-magenta">Expected Write Data</h3>
+          <span className="px-2 py-1 bg-neon-magenta/10 text-neon-magenta text-xs rounded border border-neon-magenta/30">
             Preview
           </span>
         </div>
@@ -117,12 +117,12 @@ export const ExpectedWriteDataPanel: React.FC<ExpectedWriteDataPanelProps> = ({ 
       </div>
 
       {showExpectedWriteData && (
-        <div className="bg-deep-gray rounded-lg border border-purple-600/30 p-4">
-          <div className="text-sm text-purple-200 mb-4">
+        <div className="bg-deep-gray rounded-lg border border-neon-magenta/30 p-4">
+          <div className="text-sm text-neon-magenta-bright mb-4">
             <p className="mb-2">
               This shows what data would be written to the radio based on current channels and zones.
             </p>
-            <p className="text-purple-300/70">
+            <p className="text-neon-magenta-bright/70">
               Note: Actual write data generation happens during the write process and may include additional blocks.
             </p>
           </div>
@@ -148,23 +148,23 @@ export const ExpectedWriteDataPanel: React.FC<ExpectedWriteDataPanelProps> = ({ 
                               dmrRadioIdBlocks + radioSettingBlocks;
 
             return (
-              <div className="bg-black/30 rounded border border-purple-600/20 p-4">
+              <div className="bg-black/30 rounded border border-neon-magenta/20 p-4">
                 <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
-                  <div className="bg-purple-900/20 rounded p-3 border border-purple-600/30">
-                    <div className="text-purple-400 font-semibold mb-1">Channels</div>
+                  <div className="bg-neon-magenta/10 rounded p-3 border border-neon-magenta/30">
+                    <div className="text-neon-magenta font-semibold mb-1">Channels</div>
                     <div className="text-2xl text-white">{channels.length}</div>
                   </div>
-                  <div className="bg-purple-900/20 rounded p-3 border border-purple-600/30">
-                    <div className="text-purple-400 font-semibold mb-1">Zones</div>
+                  <div className="bg-neon-magenta/10 rounded p-3 border border-neon-magenta/30">
+                    <div className="text-neon-magenta font-semibold mb-1">Zones</div>
                     <div className="text-2xl text-white">{zones.length}</div>
                   </div>
-                  <div className="bg-purple-900/20 rounded p-3 border border-purple-600/30">
-                    <div className="text-purple-400 font-semibold mb-1">Est. Blocks</div>
+                  <div className="bg-neon-magenta/10 rounded p-3 border border-neon-magenta/30">
+                    <div className="text-neon-magenta font-semibold mb-1">Est. Blocks</div>
                     <div className="text-2xl text-white">{totalBlocks}</div>
                   </div>
                 </div>
 
-                <div className="text-xs text-purple-300/70 mt-4 space-y-1">
+                <div className="text-xs text-neon-magenta-bright/70 mt-4 space-y-1">
                   <p>• Channel blocks: {channelBlocks} (125 channels per block)</p>
                   <p>• Zone blocks: {zoneBlocks} (all zones in single block)</p>
                   {scanListBlocks > 0 && <p>• Scan list blocks: {scanListBlocks}</p>}

@@ -265,16 +265,16 @@ export const DebugExportsCard: React.FC<DebugExportsCardProps> = ({ showAlert })
         <button
           onClick={handleWriteBlocksExport}
           disabled={writeBlockData.size === 0}
-          className="px-4 py-3 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-600/40 rounded-lg text-left transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-3 bg-neon-magenta/30 hover:bg-neon-magenta/50 border border-neon-magenta/40 rounded-lg text-left transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-purple-300 font-semibold text-sm">Write Blocks</div>
-              <div className="text-purple-400/70 text-xs mt-0.5">
+              <div className="text-neon-magenta-bright font-semibold text-sm">Write Blocks</div>
+              <div className="text-neon-magenta/70 text-xs mt-0.5">
                 {writeBlockData.size > 0 ? `${writeBlockData.size} blocks` : 'No write data yet'}
               </div>
             </div>
-            <svg className="w-5 h-5 text-purple-400 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-neon-magenta group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
           </div>
