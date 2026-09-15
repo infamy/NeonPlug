@@ -309,7 +309,7 @@ Statement coverage is low (~20%) *by construction* — the two 3.8k-line DM-32 f
 
 | Question | File |
 |---|---|
-| What is the DA-7X2's read/write coverage? | `tools/d890-coverage.mjs` — parses `recordLayout.ts` and splits **core** from **extra** (pictures, satellites, the DMR contact database). Do not hand-count or `grep -c`: prose in a `note:` mentioning a flag gets counted. |
+| What is the DA-7X2's read/write coverage? | `tools/d890-coverage.mjs` — parses `recordLayout.ts` and splits **core** from **extra** (pictures, satellites, the DMR contact database). Do not hand-count or `grep -c`: a comment mentioning a flag gets counted. |
 | How do I read a vendor-CPS serial capture? | `tools/parse-serial-capture.mjs` — turns a CPS log into a memory map. **Use it rather than grep**: these logs run to hundreds of MB and grep treats them as binary, silently finding nothing. |
 | How do I add a radio? | `ADDING_A_RADIO.md` (step-by-step + checklist + gotchas) |
 | What is still unknown about the DA-7X2? | `DA7X2-WHATS-UNKNOWN.md` |

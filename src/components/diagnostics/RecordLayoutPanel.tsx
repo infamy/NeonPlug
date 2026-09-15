@@ -105,7 +105,6 @@ const LayoutTable: React.FC<{ rows: readonly D890LayoutRow[] }> = ({ rows }) => 
           <tr
             key={`${r.offset}-${r.bits ?? ''}-${r.vendorName}`}
             className="border-b border-yellow-600/10 align-top"
-            title={r.note}
           >
             <td className="px-2 py-1 font-mono text-white whitespace-nowrap">{span(r)}</td>
             <td className="px-2 py-1 font-mono text-neon-cyan">{r.vendorName}</td>
@@ -113,7 +112,6 @@ const LayoutTable: React.FC<{ rows: readonly D890LayoutRow[] }> = ({ rows }) => 
             <td className="px-2 py-1 font-mono text-white">{r.field ?? '—'}</td>
             <td className="px-2 py-1 text-cool-gray">
               {r.encoding}
-              {r.note && <div className="text-[11px] text-cool-gray/70 mt-0.5">{r.note}</div>}
             </td>
             <td className="px-2 py-1">
               <Badge provenance={r.provenance} />
@@ -344,7 +342,6 @@ const MemoryMapTable: React.FC = () => (
             </td>
             <td className="px-2 py-1 text-cool-gray">
               {r.contents}
-              {r.note && <div className="text-[11px] text-cool-gray/70 mt-0.5">{r.note}</div>}
             </td>
             <td className="px-2 py-1">
               {r.read ? (

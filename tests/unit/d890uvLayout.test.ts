@@ -14,6 +14,26 @@ const SRC = readFileSync(
   'utf8',
 );
 
+const LAYOUT_SRC = readFileSync(
+  join(__dirname, '../../src/radios/d890uv/recordLayout.ts'),
+  'utf8',
+);
+
+/**
+ * The `//` comment directly above the recordLayout.ts entry whose first line contains `marker`.
+ * The research behind an entry is kept there rather than in the data, so it does not ship.
+ */
+function commentAbove(marker: string): string {
+  const at = LAYOUT_SRC.indexOf(marker);
+  if (at < 0) return '';
+  const lines = LAYOUT_SRC.slice(0, LAYOUT_SRC.lastIndexOf('\n', at)).split('\n');
+  const comment: string[] = [];
+  while (lines.length && /^\s*\/\//.test(lines[lines.length - 1])) {
+    comment.unshift(lines.pop()!.replace(/^\s*\/\/\s?/, ''));
+  }
+  return comment.join(' ');
+}
+
 /**
  * Byte offsets a function body reads, however it reaches them.
  *
@@ -225,7 +245,7 @@ describe('DA-7X2 record layout documentation', () => {
     // binary, so it must not be presented as coming from the binary.
     const callId = D890_CHANNEL_LAYOUT.find((r) => r.vendorName === 'Call_ID')!;
     expect(callId.provenance).toBe('hardware');
-    expect(callId.note).toMatch(/index/i);
+    expect(commentAbove("vendorName: 'Call_ID'")).toMatch(/index/i);
   });
 });
 
@@ -253,7 +273,7 @@ describe('DA-7X2 never-write regions', () => {
     expect(flagged.map((r) => r.name)).toEqual(['Local info']);
     for (const r of flagged) {
       expect(r.write, `${r.name} cannot be both neverWrite and write`).toBeFalsy();
-      expect(r.note, `${r.name} must say why`).toMatch(/NEVER WRITE/);
+      expect(commentAbove(`name: '${r.name}'`), `${r.name} must say why`).toMatch(/NEVER WRITE/);
     }
   });
 });
