@@ -19,6 +19,8 @@ import { ConfirmModal } from '../ui/ConfirmModal';
 import { Card } from '../ui/Card';
 import { channelsLabel, recordChannelEdit } from '../../services/channelHistory';
 import { describeChannelDelete } from '../../services/channelDelete';
+import { selectByClick, type SelectionClick } from './channelSelection';
+import { isDialogOpen, isInteractive, isTextEntry, MOD_KEY } from '../../utils/keyboardTargets';
 import { EmptyState } from '../ui/EmptyState';
 
 interface ChannelsTableProps {
@@ -27,6 +29,8 @@ interface ChannelsTableProps {
   onScrollComplete?: () => void;    // Callback after scroll completes
   selectedChannelNumbers?: Set<number>;
   onSelectionChange?: (set: Set<number>) => void;
+  /** Delete or Backspace with channels selected: ask to delete them. */
+  onRequestDelete?: () => void;
 }
 
 export const ChannelsTable: React.FC<ChannelsTableProps> = ({
@@ -35,6 +39,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
   onScrollComplete,
   selectedChannelNumbers: selectedChannelNumbersProp,
   onSelectionChange,
+  onRequestDelete,
 }) => {
   const { channels: channelsFromStore, updateChannel, deleteChannel, addChannel } = useChannelsStore();
   const { caps } = useRadioCapabilities();
@@ -78,6 +83,8 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
 
   const selectableChannelNumbers = channels.filter(ch => !isVFOChannel(ch.number)).map(ch => ch.number);
   const someSelectableSelected = selectableChannelNumbers.some(n => selectedChannelNumbers.has(n));
+  const allSelectableSelected =
+    selectableChannelNumbers.length > 0 && selectableChannelNumbers.every(n => selectedChannelNumbers.has(n));
   const selectableRef = useRef(selectableChannelNumbers);
   selectableRef.current = selectableChannelNumbers;
 
@@ -162,43 +169,24 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
     );
   }, [updateChannel, updateSettings]);
 
-  /** Row click: plain = single select; Shift = range (e.g. 4,5,6,7,8); Alt = add/remove (random multi-select). Skip when clicking inputs/buttons. */
+  const applyClick = useCallback((channelNumber: number, click: SelectionClick) => {
+    const next = selectByClick(selectionRef.current, channelNumber, click, selectableRef.current, anchorRef.current);
+    anchorRef.current = next.anchor;
+    setSelectionRef.current(next.selected);
+  }, []);
+
+  /** Row click: plain = one; Shift = range; Cmd/Ctrl or Alt = add/remove. Clicks on the row's own controls don't select. */
   const handleRowClick = useCallback((channelNumber: number, e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.closest('input, button, select, [role="button"]')) return;
     if (isVFOChannel(channelNumber)) return;
-    const selectable = selectableRef.current;
-    const setSelection = setSelectionRef.current;
-    if (e.shiftKey) {
-      const anchor = anchorRef.current != null && selectable.includes(anchorRef.current)
-        ? anchorRef.current
-        : channelNumber;
-      const fromIdx = selectable.indexOf(anchor);
-      const toIdx = selectable.indexOf(channelNumber);
-      if (fromIdx === -1 || toIdx === -1) {
-        setSelection(new Set([channelNumber]));
-        anchorRef.current = channelNumber;
-        return;
-      }
-      const [lo, hi] = fromIdx <= toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
-      const range = new Set(selectable.slice(lo, hi + 1));
-      range.add(channelNumber);
-      setSelection(range);
-    } else if (e.altKey) {
-      const next = new Set(selectionRef.current);
-      if (next.has(channelNumber)) next.delete(channelNumber);
-      else next.add(channelNumber);
-      setSelection(next);
-      anchorRef.current = channelNumber;
-    } else {
-      setSelection(new Set([channelNumber]));
-      anchorRef.current = channelNumber;
-    }
-  }, []);
+    applyClick(channelNumber, { shift: e.shiftKey, toggle: e.altKey || e.metaKey || e.ctrlKey });
+  }, [applyClick]);
 
-  const clearSelection = () => {
-    setSelectedChannelNumbers(new Set());
-  };
+  /** A row's checkbox adds or removes that row; with Shift it selects a range. */
+  const handleToggleSelect = useCallback((channelNumber: number, e: React.MouseEvent) => {
+    applyClick(channelNumber, { shift: e.shiftKey, toggle: !e.shiftKey });
+  }, [applyClick]);
 
   const handleEdit = useCallback((channel: Channel) => setEditingChannel(channel), []);
   const handleDelete = useCallback((channel: Channel) => setChannelToDelete(channel), []);
@@ -229,6 +217,42 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
     else rowRefs.current.delete(channelNumber);
   }, []);
 
+  const channelsRef = useRef(channels);
+  channelsRef.current = channels;
+  const onRequestDeleteRef = useRef(onRequestDelete);
+  onRequestDeleteRef.current = onRequestDelete;
+
+  // Keys for the selection, while no field has the keyboard and no dialog is
+  // open: Cmd/Ctrl+A selects every shown channel, Escape clears, Delete asks to
+  // delete the selection, and Enter opens the editor on a single selection.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || isTextEntry(e.target) || isDialogOpen()) return;
+      const selected = selectionRef.current;
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setSelectionRef.current(new Set(selectableRef.current));
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey || selected.size === 0) return;
+      if (e.key === 'Escape') {
+        setSelectionRef.current(new Set());
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        onRequestDeleteRef.current?.();
+      } else if (e.key === 'Enter' && selected.size === 1 && !isInteractive(e.target)) {
+        const [only] = selected;
+        const channel = channelsRef.current.find((ch) => ch.number === only);
+        if (channel) {
+          e.preventDefault();
+          setEditingChannel(channel);
+        }
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   if (channels.length === 0) {
     return (
       <Card>
@@ -253,10 +277,16 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
             <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-0 bg-dark-charcoal z-30 min-w-[28px] w-[28px]">
               <input
                 type="checkbox"
-                checked={someSelectableSelected}
-                onChange={clearSelection}
+                ref={(el) => {
+                  if (el) el.indeterminate = someSelectableSelected && !allSelectableSelected;
+                }}
+                checked={allSelectableSelected}
+                onChange={() =>
+                  setSelectedChannelNumbers(allSelectableSelected ? new Set() : new Set(selectableChannelNumbers))
+                }
                 className="checkbox-theme"
-                title="Clear selection"
+                title={allSelectableSelected ? 'Clear selection' : `Select every channel shown (${MOD_KEY}+A)`}
+                aria-label={allSelectableSelected ? 'Clear selection' : 'Select every channel shown'}
               />
             </th>
             <th className="px-2 py-2 text-left text-neon-cyan font-bold sticky left-[28px] bg-dark-charcoal z-30 min-w-[40px]" title="Channel number">#</th>
@@ -353,6 +383,7 @@ export const ChannelsTable: React.FC<ChannelsTableProps> = ({
                 dataIndex={virtualItem.index}
                 onCellChange={handleCellChange}
                 onRowClick={handleRowClick}
+                onToggleSelect={handleToggleSelect}
                 onEdit={handleEdit}
                 onClone={handleClone}
                 onDelete={handleDelete}

@@ -54,6 +54,7 @@ function renderRow(channel: Channel, analogOnly: boolean) {
           dataIndex={0}
           onCellChange={noop}
           onRowClick={noop}
+          onToggleSelect={noop}
           onEdit={noop}
           onClone={noop}
           onDelete={noop}

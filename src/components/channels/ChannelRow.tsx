@@ -55,6 +55,8 @@ interface ChannelRowProps {
   dataIndex: number;
   onCellChange: CellChangeHandler;
   onRowClick: (channelNumber: number, e: React.MouseEvent) => void;
+  /** The row's checkbox: add or remove this row, or with Shift select a range. */
+  onToggleSelect: (channelNumber: number, e: React.MouseEvent) => void;
   onEdit: (channel: Channel) => void;
   onClone: (channel: Channel) => void;
   onDelete: (channel: Channel) => void;
@@ -188,6 +190,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
   dataIndex,
   onCellChange,
   onRowClick,
+  onToggleSelect,
   onEdit,
   onClone,
   onDelete,
@@ -228,7 +231,18 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           : 'hover:bg-deep-gray hover:bg-opacity-50'
       }`}
     >
-      <td className={`px-2 py-2 sticky left-0 z-10 min-w-[28px] w-[28px] ${isSelected ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`} title={isVFOChannel(channel.number) ? 'VFO' : 'Click = one; Shift+click = range; Alt+click = add/remove'} />
+      <td className={`px-2 py-2 sticky left-0 z-10 min-w-[28px] w-[28px] ${isSelected ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`} title={isVFOChannel(channel.number) ? 'VFO' : undefined}>
+        {!isVFOChannel(channel.number) && (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            readOnly
+            onClick={(e) => onToggleSelect(channel.number, e)}
+            className="checkbox-theme"
+            aria-label={`Select channel ${channel.number}`}
+          />
+        )}
+      </td>
       <td className={`px-2 py-2 text-white sticky left-[28px] z-10 text-sm font-medium ${isSelected ? 'bg-neon-cyan bg-opacity-20' : 'bg-deep-gray'}`}>
         {isVFOChannel(channel.number) ? getVFOIdentifier(channel.number) : channel.number}
       </td>

@@ -33,6 +33,7 @@ import { REDO_SHORTCUT, UNDO_SHORTCUT, useChannelUndoShortcuts } from '../../hoo
 import { ChannelUndoNotice } from './ChannelUndoNotice';
 import { useChannelWriteRule } from '../../hooks/useChannelWriteRule';
 import { isChannelWritable } from '../../services/validation/writeFilter';
+import { MOD_KEY } from '../../utils/keyboardTargets';
 
 /** Which channel table the tab is showing. */
 type ChannelView = 'main' | 'am' | 'fm';
@@ -391,8 +392,11 @@ export const ChannelsTab: React.FC = () => {
           </div>
         ) : (
           !isBroadcast && (
-            <p className="text-cool-gray text-xs shrink-0 whitespace-nowrap" title="Channel selection shortcuts">
-              Click row = one · Shift+click = range · Alt+click = add/remove
+            <p
+              className="text-cool-gray text-xs shrink-0 whitespace-nowrap"
+              title={`Click a row to select it, Shift+click for a range, ${MOD_KEY}+click to add or remove one, ${MOD_KEY}+A for every channel shown. Then Delete to delete, Enter to edit one, Esc to clear.`}
+            >
+              Click = one · Shift = range · {MOD_KEY}+click = add/remove · {MOD_KEY}+A = all
             </p>
           )
         )}
@@ -417,6 +421,7 @@ export const ChannelsTab: React.FC = () => {
           onScrollComplete={handleScrollComplete}
           selectedChannelNumbers={selectedChannelNumbers}
           onSelectionChange={setSelectedChannelNumbers}
+          onRequestDelete={handleDeleteSelectedClick}
         />
         )}
       </div>
