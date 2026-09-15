@@ -530,7 +530,7 @@ export const Toolbar: React.FC = () => {
                 role="img"
                 aria-label="Unsaved changes"
                 title="Unsaved changes: edits since the last read, write, import or export. Write them to the radio or export a file to keep them."
-                className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-amber-400 ring-2 ring-deep-gray"
+                className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-neon-magenta shadow-glow-magenta ring-2 ring-deep-gray"
               />
             )}
           </span>
