@@ -474,24 +474,33 @@ export const Toolbar: React.FC = () => {
               </div>
             )}
           </div>
-          {hasUnsavedEdits && (
-            <span
-              className="text-xs font-semibold text-amber-300 px-2 py-1 rounded border border-amber-400 border-opacity-40 whitespace-nowrap"
-              title="Edits since the last read, write, import or export. Write them to the radio or export a file to keep them."
+          {/* Unsaved edits show as a dot on Write, with the words in its tooltip. */}
+          <span className="relative inline-flex">
+            <Button
+              variant="primary"
+              onClick={handleWrite}
+              disabled={isConnecting || isWriting || radioBusy || (channels.length === 0 && zones.length === 0 && scanLists.length === 0) || !webSerialSupported || !!connectionError}
+              className={!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}
+              title={
+                !webSerialSupported
+                  ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.'
+                  : hasUnsavedEdits
+                    ? 'Write codeplug to connected radio (unsaved changes)'
+                    : 'Write codeplug to connected radio'
+              }
+              glow={webSerialSupported}
             >
-              Unsaved changes
-            </span>
-          )}
-          <Button
-            variant="primary"
-            onClick={handleWrite}
-            disabled={isConnecting || isWriting || radioBusy || (channels.length === 0 && zones.length === 0 && scanLists.length === 0) || !webSerialSupported || !!connectionError}
-            className={!webSerialSupported ? 'opacity-50 cursor-not-allowed' : ''}
-            title={!webSerialSupported ? 'Web Serial API not supported. Please use Chrome, Edge, Opera, or Brave.' : 'Write codeplug to connected radio'}
-            glow={webSerialSupported}
-          >
-            {isWriting ? 'Writing...' : 'Write to Radio'}
-          </Button>
+              {isWriting ? 'Writing...' : 'Write to Radio'}
+            </Button>
+            {hasUnsavedEdits && (
+              <span
+                role="img"
+                aria-label="Unsaved changes"
+                title="Unsaved changes: edits since the last read, write, import or export. Write them to the radio or export a file to keep them."
+                className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-amber-400 ring-2 ring-deep-gray"
+              />
+            )}
+          </span>
           {error && !error.includes('Please click the button directly') && (
             <span className="text-red-400 text-xs ml-2">{error}</span>
           )}
