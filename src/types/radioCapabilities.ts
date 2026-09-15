@@ -215,6 +215,13 @@ export interface RadioCapabilities {
    */
   channelColumns?: readonly ChannelColumnGroup[];
   maxChannels?: number;
+  /**
+   * Longest channel name the radio keeps: 16 on the DM-32 and the D890UV family,
+   * 12 on the UV5R-Mini, 8 on the FT-65 and FT-25R, 6 on the FT-4 and FT-4VR.
+   * A write cuts a longer name, or on the D890UV refuses it. Absent falls back
+   * to 16, what the editors allowed before this existed.
+   */
+  maxChannelNameLength?: number;
   /** If false, radio has no zones (e.g. UV5R-Mini). */
   supportsZones?: boolean;
   /** If false, radio has no scan lists. */

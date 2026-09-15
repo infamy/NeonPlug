@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { isVFOChannel, getVFOIdentifier } from '../../utils/vfoChannels';
 import type { Channel } from '../../models/Channel';
 import type { ScanList } from '../../models/ScanList';
@@ -18,6 +18,7 @@ import {
   type ExtraChannelColumn,
 } from './extraChannelColumns';
 import { BUTTON, FIELD } from '../ui/controlStyles';
+import { FrequencyInput } from './FrequencyInput';
 
 // Re-exported so existing importers keep working; the numbers now derive from
 // the radio's channel count rather than being hardcoded in three places.
@@ -25,44 +26,6 @@ export { isVFOChannel, getVFOIdentifier };
 
 export const isDigitalMode = (mode: Channel['mode']): boolean =>
   mode === 'Digital' || mode === 'Fixed Digital';
-
-// Frequency input component that only updates parent on blur (prevents cursor jumping)
-interface FrequencyInputProps {
-  value: number;
-  onChange: (value: number) => void;
-  className?: string;
-}
-
-const FrequencyInput: React.FC<FrequencyInputProps> = ({ value, onChange, className }) => {
-  const [localValue, setLocalValue] = useState(value.toFixed(4));
-
-  // Sync local value when prop changes (e.g., when channel changes)
-  useEffect(() => {
-    setLocalValue(value.toFixed(4));
-  }, [value]);
-
-  const handleBlur = () => {
-    const parsed = parseFloat(localValue);
-    if (!isNaN(parsed) && parsed > 0) {
-      onChange(parsed);
-      setLocalValue(parsed.toFixed(4));
-    } else {
-      // Reset to original value if invalid
-      setLocalValue(value.toFixed(4));
-    }
-  };
-
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      value={localValue}
-      onChange={(e) => setLocalValue(e.target.value)}
-      onBlur={handleBlur}
-      className={className}
-    />
-  );
-};
 
 export type CellChangeHandler = (
   channelNumber: number,
@@ -265,7 +228,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           className={`${FIELD} border rounded px-2 py-1 w-full text-xs ${
             isVFOChannel(channel.number) ? 'text-cool-gray cursor-not-allowed' : ''
           }`}
-          maxLength={16}
+          maxLength={caps?.maxChannelNameLength ?? 16}
           placeholder={isVFOChannel(channel.number) ? `VFO ${getVFOIdentifier(channel.number)}` : ''}
         />
       </td>
@@ -273,7 +236,8 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
         <FrequencyInput
           value={channel.rxFrequency}
           onChange={(val) => handleCellChange(channel.number, 'rxFrequency', val)}
-          className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
+          className="border rounded px-2 py-1 w-full text-xs"
+          aria-label={`Channel ${channel.number} RX frequency`}
         />
       </td>
       <td className="px-1 py-2 align-middle">
@@ -309,7 +273,8 @@ export const ChannelRow: React.FC<ChannelRowProps> = React.memo(({
           <FrequencyInput
             value={channel.txFrequency}
             onChange={(val) => handleCellChange(channel.number, 'txFrequency', val)}
-            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
+            className="border rounded px-2 py-1 w-full text-xs"
+            aria-label={`Channel ${channel.number} TX frequency`}
           />
         )}
       </td>

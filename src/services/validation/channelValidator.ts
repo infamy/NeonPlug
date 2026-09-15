@@ -1,6 +1,6 @@
 import type { Channel } from '../../models/Channel';
 import type { RadioBandLimits } from '../../types/radioCapabilities';
-import { isNoTxFrequency, isRxInNoTxBand } from './frequencyValidator';
+import { isNoTxFrequency, isRxInNoTxBand, isValidFrequencyRange } from './frequencyValidator';
 import { isValidColorCode, isValidTimeSlot } from './dmrValidator';
 
 export interface ValidationError {
@@ -11,6 +11,16 @@ export interface ValidationError {
 /** Default max channel number when capabilities don't specify (e.g. DM-32UV). */
 const DEFAULT_MAX_CHANNELS = 4000;
 
+/** Default longest name when capabilities don't specify: the DM-32's 16. */
+const DEFAULT_MAX_NAME_LENGTH = 16;
+
+export interface ChannelValidationOptions {
+  /** capabilities.maxChannelNameLength */
+  maxNameLength?: number;
+  /** capabilities.blankTxAnyBand: a blank TX is allowed whatever the RX. */
+  blankTxAnyBand?: boolean;
+}
+
 /**
  * Validate a channel. Band limits and maxChannels come from radio capabilities
  * (getCapabilitiesForModel(radioInfo?.model)).
@@ -18,40 +28,48 @@ const DEFAULT_MAX_CHANNELS = 4000;
 export function validateChannel(
   channel: Channel,
   bandLimits?: RadioBandLimits | null,
-  maxChannels: number = DEFAULT_MAX_CHANNELS
+  maxChannels: number = DEFAULT_MAX_CHANNELS,
+  options: ChannelValidationOptions = {}
 ): ValidationError[] {
   const errors: ValidationError[] = [];
+  const maxNameLength = options.maxNameLength ?? DEFAULT_MAX_NAME_LENGTH;
 
   // Name validation
   if (!channel.name || channel.name.trim().length === 0) {
     errors.push({ field: 'name', message: 'Channel name is required' });
   }
-  if (channel.name.length > 16) {
-    errors.push({ field: 'name', message: 'Channel name must be 16 characters or less' });
+  if (channel.name.length > maxNameLength) {
+    errors.push({ field: 'name', message: `Channel name must be ${maxNameLength} characters or less` });
   }
 
   // Frequency validation
   if (channel.rxFrequency <= 0) {
     errors.push({ field: 'rxFrequency', message: 'RX frequency must be greater than 0' });
   }
-  const isNoTxChannel = isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx && isNoTxFrequency(channel.txFrequency);
-  if (!isNoTxChannel && channel.txFrequency <= 0) {
+  // The same blank-TX rule as isValidChannelFrequency.
+  const blankTx = options.blankTxAnyBand
+    ? isNoTxFrequency(channel.txFrequency)
+    : isRxInNoTxBand(channel.rxFrequency) && channel.forbidTx && isNoTxFrequency(channel.txFrequency);
+  if (!blankTx && channel.txFrequency <= 0) {
     errors.push({ field: 'txFrequency', message: 'TX frequency must be greater than 0' });
   }
 
-  // Band limits validation (from radio capabilities)
+  // Band limits validation (from radio capabilities). TX as well as RX: a write
+  // leaves out a channel whose TX is out of band just as it does one whose RX is.
   if (bandLimits) {
-    const isVHF = channel.rxFrequency >= bandLimits.vhfMin && channel.rxFrequency <= bandLimits.vhfMax;
-    const hasUhfBand = bandLimits.uhfMin != null && bandLimits.uhfMax != null;
-    const isUHF = bandLimits.uhfMin != null && bandLimits.uhfMax != null &&
-      channel.rxFrequency >= bandLimits.uhfMin && channel.rxFrequency <= bandLimits.uhfMax;
-    if (!isVHF && !isUHF) {
-      const ranges = hasUhfBand
-        ? `VHF: ${bandLimits.vhfMin}-${bandLimits.vhfMax} MHz, UHF: ${bandLimits.uhfMin}-${bandLimits.uhfMax} MHz`
-        : `VHF: ${bandLimits.vhfMin}-${bandLimits.vhfMax} MHz`;
+    const ranges = bandLimits.uhfMin != null && bandLimits.uhfMax != null
+      ? `VHF: ${bandLimits.vhfMin}-${bandLimits.vhfMax} MHz, UHF: ${bandLimits.uhfMin}-${bandLimits.uhfMax} MHz`
+      : `VHF: ${bandLimits.vhfMin}-${bandLimits.vhfMax} MHz`;
+    if (!isValidFrequencyRange(channel.rxFrequency, bandLimits)) {
       errors.push({
         field: 'rxFrequency',
         message: `RX frequency must be within radio band limits (${ranges})`,
+      });
+    }
+    if (!blankTx && channel.txFrequency > 0 && !isValidFrequencyRange(channel.txFrequency, bandLimits)) {
+      errors.push({
+        field: 'txFrequency',
+        message: `TX frequency must be within radio band limits (${ranges})`,
       });
     }
   }
@@ -84,15 +102,15 @@ export function validateChannel(
 export function validateChannels(
   channels: Channel[],
   bandLimits?: RadioBandLimits | null,
-  maxChannels: number = DEFAULT_MAX_CHANNELS
+  maxChannels: number = DEFAULT_MAX_CHANNELS,
+  options: ChannelValidationOptions = {}
 ): Map<number, ValidationError[]> {
   const errors = new Map<number, ValidationError[]>();
   channels.forEach((channel) => {
-    const channelErrors = validateChannel(channel, bandLimits, maxChannels);
+    const channelErrors = validateChannel(channel, bandLimits, maxChannels, options);
     if (channelErrors.length > 0) {
       errors.set(channel.number, channelErrors);
     }
   });
   return errors;
 }
-

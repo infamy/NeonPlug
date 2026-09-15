@@ -18,6 +18,11 @@ export const FIELD =
   'focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan ' +
   'disabled:opacity-50 disabled:cursor-not-allowed';
 
+/** A field holding what the radio can't take: text that isn't a value, or a value it can't hold. */
+export const FIELD_INVALID =
+  'bg-deep-gray border-red-500 text-white focus:outline-none focus:border-red-400 ' +
+  'disabled:opacity-50 disabled:cursor-not-allowed';
+
 /** A borderless cell that edits in place, in dense settings and broadcast tables. */
 export const FIELD_INLINE = 'bg-transparent border-none outline-none text-white focus:bg-panel focus:px-1';
 

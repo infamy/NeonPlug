@@ -222,6 +222,24 @@ describe('validateChannel', () => {
     expect(errors.some(e => e.field === 'rxFrequency')).toBe(false);
   });
 
+  it('flags TX frequency outside band limits, which a write would leave out', () => {
+    const errors = validateChannel(validChannel({ rxFrequency: 146.52, txFrequency: 300 }), DEFAULT_BAND_LIMITS);
+    expect(errors.map(e => e.field)).toEqual(['txFrequency']);
+  });
+
+  it('does not band-check a blank TX on a radio that holds one in any band', () => {
+    const ch = validChannel({ rxFrequency: 446.0, txFrequency: NO_TX_FREQUENCY });
+    expect(validateChannel(ch, DEFAULT_BAND_LIMITS, 4000, { blankTxAnyBand: true })).toHaveLength(0);
+    expect(validateChannel(ch, DEFAULT_BAND_LIMITS).some(e => e.field === 'txFrequency')).toBe(true);
+  });
+
+  it("holds a name to the radio's own length", () => {
+    expect(validateChannel(validChannel({ name: 'Repeater' }), null, 4000, { maxNameLength: 8 })).toHaveLength(0);
+    expect(validateChannel(validChannel({ name: 'Repeater1' }), null, 4000, { maxNameLength: 8 })).toEqual([
+      { field: 'name', message: 'Channel name must be 8 characters or less' },
+    ]);
+  });
+
   it('validates color code for digital channels', () => {
     const ch = validChannel({ mode: 'Digital', colorCode: 16 }); // 16 is out of 0-15
     const errors = validateChannel(ch);
