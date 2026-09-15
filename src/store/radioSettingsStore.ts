@@ -17,7 +17,7 @@ interface RadioSettingsState {
 }
 
 // Deep comparison helper for RadioSettings
-function deepEqual(obj1: any, obj2: any): boolean {
+export function deepEqual(obj1: any, obj2: any): boolean {
   if (obj1 === obj2) return true;
   if (obj1 == null || obj2 == null) return false;
   if (typeof obj1 !== 'object' || typeof obj2 !== 'object') return false;

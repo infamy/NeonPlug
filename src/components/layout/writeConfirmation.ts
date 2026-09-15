@@ -36,6 +36,8 @@ export interface WriteSummaryInput {
   droppedChannels: readonly { number: number; name: string }[];
   droppedZones: readonly string[];
   droppedScanLists: readonly string[];
+  /** The settings the write sends (settings/settingsFields.ts); `all` for an imported codeplug. */
+  settings?: { labels: readonly string[]; all: boolean };
 }
 
 /** A list shown up to a limit, with a count of what did not fit. */
@@ -58,6 +60,8 @@ export interface RegionRow {
 export interface WriteConfirmation {
   /** One line: what the write sends, and to which radio. */
   headline: string | null;
+  /** The settings the write changes, or that it writes all of them. */
+  settingsLine: string | null;
   /** Destructive consequences. Shown first, because they are what cannot be undone. */
   removals: { count: number; unit: 'channel' | 'zone'; list: Capped<number> }[];
   /** What the write leaves out because the radio cannot hold it. */
@@ -91,6 +95,7 @@ export const WRITE_CONFIRM_LIMITS = {
   skipped: 5,
   checkItems: 10,
   leftOut: 10,
+  settings: 8,
 } as const;
 
 function checkItems(w: CodeplugWriteWarning): string[] {
@@ -128,6 +133,18 @@ function buildHeadline(summary: WriteSummaryInput | undefined): string | null {
   return `Writes ${listCounts(summary)} to ${summary.model ? `the ${summary.model}` : 'the radio'}.`;
 }
 
+function buildSettingsLine(summary: WriteSummaryInput | undefined): string | null {
+  const settings = summary?.settings;
+  if (!settings) return null;
+  if (settings.all) return 'Writes every setting in the imported codeplug.';
+  const n = settings.labels.length;
+  if (n === 0) return null;
+  const limit = WRITE_CONFIRM_LIMITS.settings;
+  const shown = settings.labels.slice(0, limit).join(', ');
+  const more = n > limit ? `, and ${n - limit} more` : '';
+  return `Changes ${n} ${formatPlural(n, 'setting')}: ${shown}${more}.`;
+}
+
 function buildLeftOut(summary: WriteSummaryInput | undefined): WriteConfirmation['leftOut'] {
   if (!summary) return null;
   const { droppedChannels, droppedZones, droppedScanLists } = summary;
@@ -148,6 +165,7 @@ export function buildWriteConfirmation({ preview, integrity, warnings, summary }
 
   const headline = buildHeadline(summary);
   const leftOut = buildLeftOut(summary);
+  const settingsLine = buildSettingsLine(summary);
 
   const removals: WriteConfirmation['removals'] = [];
   if (preview && preview.clearedChannels.length > 0) {
@@ -174,13 +192,14 @@ export function buildWriteConfirmation({ preview, integrity, warnings, summary }
     consequence: f.consequence,
   }));
 
-  if (!preview) return { headline, removals, leftOut, checks, readWarnings, plan: null };
+  if (!preview) return { headline, settingsLine, removals, leftOut, checks, readWarnings, plan: null };
 
   const bytesChanged = preview.bytesChanged;
   const bytesNew = preview.bytesNew ?? 0;
 
   return {
     headline,
+    settingsLine,
     removals,
     leftOut,
     checks,

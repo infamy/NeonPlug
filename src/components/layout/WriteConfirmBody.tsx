@@ -58,6 +58,7 @@ export const WriteConfirmBody: React.FC<WriteConfirmInput> = (input) => {
   return (
     <div className="space-y-4 text-sm pb-1">
       {c.headline && <p className="text-white">{c.headline}</p>}
+      {c.settingsLine && <p className="text-cool-gray -mt-3">{c.settingsLine}</p>}
 
       {/* What cannot be undone leads — it used to sit mid-paragraph. */}
       {c.removals.map((r) => (

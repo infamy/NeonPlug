@@ -19,6 +19,8 @@ import { getRadioPickerOptions, getMigrationTargetModels } from '../../radios';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
 import { planWritableCodeplug } from '../../services/validation/writeFilter';
 import { currentWriteFilterOptions } from '../../services/writeFilterOptions';
+import { getSettingsProfileForModel } from '../../data/settingsProfiles';
+import { changedSettingLabels } from '../settings/settingsFields';
 import { migrateCodeplug } from '../../services/codeplugMigration';
 import { exportableTables } from '../../services/codeplugExport';
 import { applyCodeplugToStores } from '../../services/applyCodeplug';
@@ -372,6 +374,13 @@ export const Toolbar: React.FC = () => {
     // what order lives in writeConfirmation.ts; how it looks in WriteConfirmBody.
     // Which radio, what the write sends, and what it leaves out: the filter the write runs.
     const writable = planWritableCodeplug(channels, zones, scanLists, currentWriteFilterOptions());
+    const settingsState = useRadioSettingsStore.getState();
+    const settingsChanges = changedSettingLabels(
+      getSettingsProfileForModel(effectiveModel),
+      settingsState.settings,
+      settingsState.originalSettings,
+      settingsState.changedFields
+    );
     const summary = {
       model: writeModel,
       channels: writable.channels.length,
@@ -380,6 +389,7 @@ export const Toolbar: React.FC = () => {
       droppedChannels: writable.droppedChannels.map(({ number, name }) => ({ number, name })),
       droppedZones: writable.droppedZones,
       droppedScanLists: writable.droppedScanLists,
+      settings: settingsChanges,
     };
     setWriteConfirm({ preview, integrity, warnings, summary });
     setWriteWarningOpen(true);

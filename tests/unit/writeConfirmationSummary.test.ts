@@ -29,6 +29,16 @@ describe('the write confirmation summary', () => {
     expect(c.leftOut?.scanLists.count).toBe(0);
   });
 
+  it('names the settings the write changes, or says it writes them all', () => {
+    expect(confirm(summary({ settings: { labels: ['Squelch Level', 'Backlight'], all: false } })).settingsLine).toBe(
+      'Changes 2 settings: Squelch Level, Backlight.'
+    );
+    expect(confirm(summary({ settings: { labels: [], all: true } })).settingsLine).toBe(
+      'Writes every setting in the imported codeplug.'
+    );
+    expect(confirm(summary()).settingsLine).toBeNull();
+  });
+
   it('has no headline where no summary was given', () => {
     expect(confirm().headline).toBeNull();
   });
