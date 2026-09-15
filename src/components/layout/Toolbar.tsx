@@ -85,8 +85,6 @@ export const Toolbar: React.FC = () => {
   const [snapshotsList, setSnapshotsList] = useState<ReturnType<typeof getSnapshots>>([]);
   const [snapshotsClearConfirmOpen, setSnapshotsClearConfirmOpen] = useState(false);
   const readDropdownRef = useRef<HTMLDivElement>(null);
-  // The write's last progress message, which is its result.
-  const lastProgressMessage = useRef('');
   const webSerialSupported = isWebSerialSupported();
   // Edits since the last read, write, import or export (services/unsavedEdits.ts).
   const unsavedChanges = useUnsavedChangesStore((s) => s.dirty || s.contactsDirty);
@@ -277,15 +275,15 @@ export const Toolbar: React.FC = () => {
       setConnectionError(null);
       setLastOperationMode(null);
       useUnsavedChangesStore.getState().markClean();
-      setProgress(0);
-      setProgressMessage('');
-      setCurrentStep('');
       const modelLabel = useRadioStore.getState().radioInfo?.model ?? effectiveModel ?? undefined;
-      const read = codeplugFromStores();
-      // What the read found stays on screen until dismissed. The progress
-      // dialog closes the moment the read ends.
-      showAlertBody(<CodeplugSummaryBody data={read} lead={`Read from ${modelLabel ?? 'the radio'}`} />, 'Read complete');
-      await saveSnapshot(read, { eventType: 'read', radioModel: modelLabel });
+      await saveSnapshot(codeplugFromStores(), { eventType: 'read', radioModel: modelLabel });
+      // No summary to dismiss: the progress dialog shows the finished read for
+      // two seconds and closes.
+      setTimeout(() => {
+        setProgress(0);
+        setProgressMessage('');
+        setCurrentStep('');
+      }, 2000);
     } catch (err) {
       showOperationError(err, 'Connection failed');
     }
@@ -312,12 +310,10 @@ export const Toolbar: React.FC = () => {
       setProgress(0);
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
-      lastProgressMessage.current = '';
 
       await writeChannelsToRadio(channels, zones, scanLists, (progress, message, step) => {
         setProgress(progress);
         setProgressMessage(message);
-        lastProgressMessage.current = message;
         if (step) {
           setCurrentStep(step);
         }
@@ -327,15 +323,16 @@ export const Toolbar: React.FC = () => {
       setLastOperationMode(null);
       // Everything but the contact list, which a codeplug write doesn't send.
       useUnsavedChangesStore.getState().markWritten();
-      setIsWriting(false);
-      setProgress(0);
-      setProgressMessage('');
-      setCurrentStep('');
-      // The result stays on screen until dismissed, instead of two seconds of
-      // progress text: it is where channels left out of the write are mentioned.
-      showAlert(lastProgressMessage.current || 'The write finished.', 'Write complete');
       const modelLabel = useRadioStore.getState().radioInfo?.model ?? effectiveModel ?? undefined;
       await saveSnapshot(codeplugFromStores(), { eventType: 'write', radioModel: modelLabel });
+      // As with a read: the finished write stays in the progress dialog for two
+      // seconds, with nothing to dismiss.
+      setTimeout(() => {
+        setIsWriting(false);
+        setProgress(0);
+        setProgressMessage('');
+        setCurrentStep('');
+      }, 2000);
     } catch (err) {
       showOperationError(err, 'Write failed');
       setIsWriting(false);
