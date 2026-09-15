@@ -48,6 +48,11 @@ export const ChannelsTab: React.FC = () => {
   const outOfBand = useOutOfBandActive();
   const supportsVfoChannels = caps?.supportsVfoChannels === true;
   const zones = useZonesStore((s) => s.zones);
+  // Whether a delete leaves a hole or packs the table, as the radio's own software does.
+  const deleteRules = {
+    keepNumbers: caps?.channelDeleteKeepsNumbers === true,
+    lists: caps?.supportsZones !== false || caps?.supportsScanLists !== false,
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [scrollToChannel, setScrollToChannel] = useState<number | null>(null);
   const [selectedChannelNumbers, setSelectedChannelNumbers] = useState<Set<number>>(new Set());
@@ -214,7 +219,7 @@ export const ChannelsTab: React.FC = () => {
     // A selection outlives a search, so it can hold rows the search now hides.
     const shown = new Set(filteredChannels.map(ch => ch.number));
     const hidden = toDelete.filter(n => !shown.has(n)).length;
-    const effect = describeChannelDelete(channels, toDelete, hidden);
+    const effect = describeChannelDelete(channels, toDelete, hidden, deleteRules);
     setPendingDelete({
       numbers: toDelete,
       message: `Delete ${channelsLabel(toDelete)}?${effect ? `\n\n${effect}` : ''}`,
@@ -224,7 +229,7 @@ export const ChannelsTab: React.FC = () => {
   const handleDeleteSelectedConfirm = () => {
     if (!pendingDelete) return;
     const label = channelsLabel(pendingDelete.numbers);
-    recordChannelEdit(`delete ${label}`, () => deleteChannels(pendingDelete.numbers), {
+    recordChannelEdit(`delete ${label}`, () => deleteChannels(pendingDelete.numbers, deleteRules), {
       announce: `Deleted ${label}.`,
     });
     setSelectedChannelNumbers(new Set());

@@ -57,6 +57,8 @@ const FT65_CAPS_BASE: RadioCapabilities = {
   },
   writeValidations: { channelsMustBeInZones: false },
   maxChannels: 200,
+  // A memory is its slot; CHIRP and the radio's own menu delete one in place.
+  channelDeleteKeepsNumbers: true,
   supportsZones: false,
   supportsScanLists: false,
   supportsContacts: false,
