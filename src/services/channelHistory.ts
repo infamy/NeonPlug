@@ -23,6 +23,8 @@ import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
 import { useEncryptionKeysStore } from '../store/encryptionKeysStore';
 import { useQuickContactsStore } from '../store/quickContactsStore';
 import { useRXGroupsStore } from '../store/rxGroupsStore';
+import { useRadioStore } from '../store/radioStore';
+import type { RadioTables } from '../types/radioTables';
 import { useRadioSettingsStore } from '../store/radioSettingsStore';
 import { useScanListsStore } from '../store/scanListsStore';
 import { useZonesStore } from '../store/zonesStore';
@@ -37,6 +39,9 @@ interface ChannelSnapshot {
   /** VFO A and B are rows in the channel grid, but they live in the settings. */
   vfoA: Channel | undefined;
   vfoB: Channel | undefined;
+  /** The DA-7X2's zone current A/B, which a delete that leaves a hole moves. */
+  zoneCurrent: RadioTables['zoneCurrentChannels'] | undefined;
+  zoneCurrentEdits: RadioTables['zoneCurrentEdits'] | undefined;
 }
 
 interface HistoryEntry {
@@ -78,6 +83,7 @@ let lastNoticeId = 0;
 function snapshotStores(): ChannelSnapshot {
   const { channels, rawChannelData } = useChannelsStore.getState();
   const settings = useRadioSettingsStore.getState().settings;
+  const { tables } = useRadioStore.getState();
   return {
     channels,
     rawChannelData,
@@ -85,6 +91,8 @@ function snapshotStores(): ChannelSnapshot {
     scanLists: useScanListsStore.getState().scanLists,
     vfoA: settings?.vfoA,
     vfoB: settings?.vfoB,
+    zoneCurrent: tables.zoneCurrentChannels,
+    zoneCurrentEdits: tables.zoneCurrentEdits,
   };
 }
 
@@ -95,7 +103,9 @@ function sameSnapshot(a: ChannelSnapshot, b: ChannelSnapshot): boolean {
     a.zones === b.zones &&
     a.scanLists === b.scanLists &&
     a.vfoA === b.vfoA &&
-    a.vfoB === b.vfoB
+    a.vfoB === b.vfoB &&
+    a.zoneCurrent === b.zoneCurrent &&
+    a.zoneCurrentEdits === b.zoneCurrentEdits
   );
 }
 
@@ -114,6 +124,13 @@ function restore(snapshot: ChannelSnapshot): void {
     useChannelsStore.setState({ channels: snapshot.channels, rawChannelData: snapshot.rawChannelData });
     useZonesStore.setState({ zones: snapshot.zones });
     useScanListsStore.setState({ scanLists: snapshot.scanLists });
+    const radio = useRadioStore.getState();
+    if (radio.tables.zoneCurrentChannels !== snapshot.zoneCurrent) {
+      radio.setTable('zoneCurrentChannels', snapshot.zoneCurrent ?? null);
+    }
+    if (radio.tables.zoneCurrentEdits !== snapshot.zoneCurrentEdits) {
+      radio.setTable('zoneCurrentEdits', snapshot.zoneCurrentEdits ?? null);
+    }
     const { settings, updateSettings } = useRadioSettingsStore.getState();
     if (!settings) return;
     const vfos: Partial<RadioSettings> = {};
@@ -255,6 +272,12 @@ export function watchChannelHistory(): () => void {
     }),
     useEncryptionKeysStore.subscribe((s, prev) => {
       if (s.keys !== prev.keys) changedElsewhere();
+    }),
+    useRadioStore.subscribe((s, prev) => {
+      const { zoneCurrentChannels, zoneCurrentEdits } = s.tables;
+      if (zoneCurrentChannels !== prev.tables.zoneCurrentChannels || zoneCurrentEdits !== prev.tables.zoneCurrentEdits) {
+        changedElsewhere();
+      }
     }),
   ];
   return () => stops.forEach((stop) => stop());
