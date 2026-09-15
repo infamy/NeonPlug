@@ -11,11 +11,6 @@ import { planChannelWrite } from '../radios/d890uv/writePlan';
 import { dryRunWrite } from '../radios/d890uv/writeDryRun';
 import type { CodeplugReadSinks } from '../radios/codeplugReads';
 import { getCapabilitiesForModel } from '../radios/capabilities';
-import { D890_MODEL_IDS } from '../radios/d890uv/constants';
-
-/** True for the DA-7X2 family, which plans its own band check. */
-const protocolIsD890 = (model: string | null) =>
-  model != null && (D890_MODEL_IDS as readonly string[]).includes(model);
 import type { Contact } from '../models/Contact';
 import { useRadioStore } from '../store/radioStore';
 import { useChannelsStore } from '../store/channelsStore';
@@ -34,8 +29,8 @@ import { useEncryptionKeysStore } from '../store/encryptionKeysStore';
 import type { Channel } from '../models/Channel';
 import type { Zone } from '../models/Zone';
 import type { ScanList } from '../models/ScanList';
-import { isWritableChannelFrequency } from '../services/validation/frequencyValidator';
-import { useOutOfBandStore } from '../store/outOfBandStore';
+import { planWritableCodeplug } from '../services/validation/writeFilter';
+import { currentWriteFilterOptions } from '../services/writeFilterOptions';
 import { parseBootImageHeader } from '../utils/bootImage';
 import { formatPlural } from '../utils/formatPlural';
 import { classifyRadioError } from '../utils/radioErrors';
@@ -1178,59 +1173,20 @@ export function useRadioConnection() {
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     try {
-      // Filter channels to only include those with valid frequencies (use effective model for capabilities)
       const effectiveModel = radioInfo?.model ?? selectedRadioModel ?? null;
-      const writeCaps = getCapabilitiesForModel(effectiveModel);
-      const bandLimits = writeCaps?.bandLimits;
-      // The hidden out-of-band switch in About, on a radio that allows it (the DM-32 for now).
-      const outOfBand =
-        writeCaps?.supportsOutOfBandFrequencies === true && useOutOfBandStore.getState().allowOutOfBandFrequencies;
-      //
-      // ⚠️ NOT applied to the DA-7X2.
-      //
-      // On that radio the presence mask is computed from the channels this
-      // write plans, so a channel filtered out here is a channel DELETED from
-      // the radio — silently, behind a console.warn. And the filter fires on
-      // exactly the channels a real DA-7X2 carries: one was read from hardware
-      // with an airband entry at 118 MHz and an FM broadcast entry at 98.5 MHz
-      // sitting in the main list. Filtering them would have wiped both.
-      //
-      // `planChannelWrite` does this check properly instead: it refuses loudly,
-      // and only for a channel whose TX frequency was CHANGED to something out
-      // of band. One already on the radio is left alone.
-      const isD890 = protocolIsD890(radioInfo?.model ?? selectedRadioModel ?? null);
-      const validChannels = isD890
-        ? channels
-        : channels.filter(ch =>
-            isWritableChannelFrequency(ch, bandLimits, { blankTxAnyBand: writeCaps?.blankTxAnyBand, outOfBand })
-          );
-      const filteredCount = channels.length - validChannels.length;
-
+      // What this write sends once what the radio cannot hold is left out:
+      // channels outside its bands, and zones and scan lists left empty. The
+      // confirmation lists exactly this; writeFilterOptions.ts says what is
+      // filtered on which radio, and why the DA-7X2's channels are not.
+      const writable = planWritableCodeplug(channels, zones, scanLists, currentWriteFilterOptions());
+      const validChannels = writable.channels;
+      const filteredZones = writable.zones;
+      const filteredScanLists = writable.scanLists;
+      const filteredCount = writable.droppedChannels.length;
       if (filteredCount > 0) {
         console.warn(`Filtered out ${filteredCount} channel(s) with frequencies outside supported ranges`);
       }
-      
-      // Update zones to only include channel numbers that exist (never write zone refs to non-existent channels)
-      const validChannelNumbers = new Set(validChannels.map(ch => ch.number));
-      const filteredZones = zones.map(zone => {
-        const invalidRefs = zone.channels.filter(chNum => !validChannelNumbers.has(chNum));
-        if (invalidRefs.length > 0) {
-          console.warn(
-            `[Zones] Zone "${zone.name}" referenced non-existent channel(s): ${invalidRefs.join(', ')}. Removed before write to prevent radio errors.`
-          );
-        }
-        return {
-          ...zone,
-          channels: zone.channels.filter(chNum => validChannelNumbers.has(chNum))
-        };
-      }).filter(zone => zone.channels.length > 0); // Remove empty zones
-      
-      // Update scan lists to only include valid channel numbers
-      const filteredScanLists = scanLists.map(scanList => ({
-        ...scanList,
-        channels: scanList.channels.filter(chNum => validChannelNumbers.has(chNum))
-      })).filter(scanList => scanList.channels.length > 0); // Remove empty scan lists
-      
+
       // Use protocol for connected radio (write path)
       protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
       const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;

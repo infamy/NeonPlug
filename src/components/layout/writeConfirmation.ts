@@ -14,6 +14,7 @@
 import type { D890WritePreview } from '../../hooks/useRadioConnection';
 import type { D890IntegrityFinding } from '../../radios/d890uv/integrity';
 import type { CodeplugWriteWarning } from '../../services/validation/codeplugValidator';
+import { formatPlural } from '../../utils/formatPlural';
 
 export interface WriteConfirmInput {
   /** Null for radios that do not plan their writes this way. */
@@ -22,6 +23,19 @@ export interface WriteConfirmInput {
   integrity: readonly D890IntegrityFinding[];
   /** Codeplug checks from validateCodeplugForWrite. */
   warnings: readonly CodeplugWriteWarning[];
+  /** Which radio the write runs as, and what it sends and leaves out. */
+  summary?: WriteSummaryInput;
+}
+
+export interface WriteSummaryInput {
+  model: string | null;
+  channels: number;
+  zones: number;
+  scanLists: number;
+  /** Left out because the radio cannot hold them (services/validation/writeFilter.ts). */
+  droppedChannels: readonly { number: number; name: string }[];
+  droppedZones: readonly string[];
+  droppedScanLists: readonly string[];
 }
 
 /** A list shown up to a limit, with a count of what did not fit. */
@@ -42,8 +56,16 @@ export interface RegionRow {
 }
 
 export interface WriteConfirmation {
+  /** One line: what the write sends, and to which radio. */
+  headline: string | null;
   /** Destructive consequences. Shown first, because they are what cannot be undone. */
   removals: { count: number; unit: 'channel' | 'zone'; list: Capped<number> }[];
+  /** What the write leaves out because the radio cannot hold it. */
+  leftOut: null | {
+    channels: { count: number; list: Capped<string> };
+    zones: { count: number; list: Capped<string> };
+    scanLists: { count: number; list: Capped<string> };
+  };
   checks: { message: string; list: Capped<string> }[];
   readWarnings: { blocker: boolean; region: string; problem: string; consequence: string }[];
   plan: null | {
@@ -68,6 +90,7 @@ export const WRITE_CONFIRM_LIMITS = {
   channelsWritten: 12,
   skipped: 5,
   checkItems: 10,
+  leftOut: 10,
 } as const;
 
 function checkItems(w: CodeplugWriteWarning): string[] {
@@ -87,8 +110,44 @@ function checkItems(w: CodeplugWriteWarning): string[] {
   return [];
 }
 
-export function buildWriteConfirmation({ preview, integrity, warnings }: WriteConfirmInput): WriteConfirmation {
+/** "3 channels, 2 zones and 1 scan list", leaving out what there is none of. */
+function listCounts(summary: WriteSummaryInput): string {
+  const parts = [
+    [summary.channels, 'channel'],
+    [summary.zones, 'zone'],
+    [summary.scanLists, 'scan list'],
+  ]
+    .filter(([count]) => (count as number) > 0)
+    .map(([count, noun]) => `${(count as number).toLocaleString()} ${formatPlural(count as number, noun as string)}`);
+  if (parts.length <= 1) return parts[0] ?? 'nothing';
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
+function buildHeadline(summary: WriteSummaryInput | undefined): string | null {
+  if (!summary) return null;
+  return `Writes ${listCounts(summary)} to ${summary.model ? `the ${summary.model}` : 'the radio'}.`;
+}
+
+function buildLeftOut(summary: WriteSummaryInput | undefined): WriteConfirmation['leftOut'] {
+  if (!summary) return null;
+  const { droppedChannels, droppedZones, droppedScanLists } = summary;
+  if (droppedChannels.length + droppedZones.length + droppedScanLists.length === 0) return null;
+  const L = WRITE_CONFIRM_LIMITS.leftOut;
+  return {
+    channels: {
+      count: droppedChannels.length,
+      list: capList(droppedChannels.map((c) => `${c.number} ${c.name || '(no name)'}`), L),
+    },
+    zones: { count: droppedZones.length, list: capList(droppedZones, L) },
+    scanLists: { count: droppedScanLists.length, list: capList(droppedScanLists, L) },
+  };
+}
+
+export function buildWriteConfirmation({ preview, integrity, warnings, summary }: WriteConfirmInput): WriteConfirmation {
   const L = WRITE_CONFIRM_LIMITS;
+
+  const headline = buildHeadline(summary);
+  const leftOut = buildLeftOut(summary);
 
   const removals: WriteConfirmation['removals'] = [];
   if (preview && preview.clearedChannels.length > 0) {
@@ -115,13 +174,15 @@ export function buildWriteConfirmation({ preview, integrity, warnings }: WriteCo
     consequence: f.consequence,
   }));
 
-  if (!preview) return { removals, checks, readWarnings, plan: null };
+  if (!preview) return { headline, removals, leftOut, checks, readWarnings, plan: null };
 
   const bytesChanged = preview.bytesChanged;
   const bytesNew = preview.bytesNew ?? 0;
 
   return {
+    headline,
     removals,
+    leftOut,
     checks,
     readWarnings,
     plan: {

@@ -17,6 +17,8 @@ import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useEncryptionKeysStore } from '../../store/encryptionKeysStore';
 import { getRadioPickerOptions, getMigrationTargetModels } from '../../radios';
 import { validateCodeplugForWrite } from '../../services/validation/codeplugValidator';
+import { planWritableCodeplug } from '../../services/validation/writeFilter';
+import { currentWriteFilterOptions } from '../../services/writeFilterOptions';
 import { migrateCodeplug } from '../../services/codeplugMigration';
 import { exportableTables } from '../../services/codeplugExport';
 import { applyCodeplugToStores } from '../../services/applyCodeplug';
@@ -368,7 +370,18 @@ export const Toolbar: React.FC = () => {
     }
     // Handed over as data, not assembled into a string. What it says and in
     // what order lives in writeConfirmation.ts; how it looks in WriteConfirmBody.
-    setWriteConfirm({ preview, integrity, warnings });
+    // Which radio, what the write sends, and what it leaves out: the filter the write runs.
+    const writable = planWritableCodeplug(channels, zones, scanLists, currentWriteFilterOptions());
+    const summary = {
+      model: writeModel,
+      channels: writable.channels.length,
+      zones: writable.zones.length,
+      scanLists: writable.scanLists.length,
+      droppedChannels: writable.droppedChannels.map(({ number, name }) => ({ number, name })),
+      droppedZones: writable.droppedZones,
+      droppedScanLists: writable.droppedScanLists,
+    };
+    setWriteConfirm({ preview, integrity, warnings, summary });
     setWriteWarningOpen(true);
   };
 
@@ -545,10 +558,10 @@ export const Toolbar: React.FC = () => {
         isOpen={writeWarningOpen}
         onClose={() => setWriteWarningOpen(false)}
         onConfirm={handleWriteWarningConfirm}
-        title="Write to radio"
+        title={writeModel ? `Write to ${writeModel}` : 'Write to radio'}
         body={writeConfirm ? <WriteConfirmBody {...writeConfirm} /> : undefined}
         size="lg"
-        confirmLabel="Continue"
+        confirmLabel={writeModel ? `Write to ${writeModel}` : 'Write to radio'}
         cancelLabel="Cancel"
         variant="default"
       />

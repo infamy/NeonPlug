@@ -57,6 +57,8 @@ export const WriteConfirmBody: React.FC<WriteConfirmInput> = (input) => {
 
   return (
     <div className="space-y-4 text-sm pb-1">
+      {c.headline && <p className="text-white">{c.headline}</p>}
+
       {/* What cannot be undone leads — it used to sit mid-paragraph. */}
       {c.removals.map((r) => (
         <Callout
@@ -71,6 +73,34 @@ export const WriteConfirmBody: React.FC<WriteConfirmInput> = (input) => {
           <More more={r.list.more} />
         </Callout>
       ))}
+
+      {c.leftOut && (
+        <Callout tone="caution" title="Left out of this write">
+          <div className="space-y-1">
+            {c.leftOut.channels.count > 0 && (
+              <p>
+                {n(c.leftOut.channels.count)} {formatPlural(c.leftOut.channels.count, 'channel')} outside this
+                radio&apos;s bands: {c.leftOut.channels.list.items.join(', ')}
+                <More more={c.leftOut.channels.list.more} />
+              </p>
+            )}
+            {c.leftOut.zones.count > 0 && (
+              <p>
+                {formatPlural(c.leftOut.zones.count, 'Zone', 'Zones')} with no channels to write:{' '}
+                {c.leftOut.zones.list.items.join(', ')}
+                <More more={c.leftOut.zones.list.more} />
+              </p>
+            )}
+            {c.leftOut.scanLists.count > 0 && (
+              <p>
+                {formatPlural(c.leftOut.scanLists.count, 'Scan list', 'Scan lists')} with no channels to write:{' '}
+                {c.leftOut.scanLists.list.items.join(', ')}
+                <More more={c.leftOut.scanLists.list.more} />
+              </p>
+            )}
+          </div>
+        </Callout>
+      )}
 
       {c.checks.length > 0 && (
         <Callout tone="caution" title="Codeplug check">
