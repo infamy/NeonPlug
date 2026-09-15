@@ -10,7 +10,8 @@ import { codeplugToJsonSafe, jsonSafeToCodeplug, CodeplugFormatError } from './c
 const STORAGE_KEY = 'neonplug-codeplug-snapshots';
 const MAX_SNAPSHOTS = 50;
 
-export type SnapshotEventType = 'read' | 'write' | 'import';
+/** `backup` keeps unsaved edits just before something replaces them (services/unsavedEdits.ts). */
+export type SnapshotEventType = 'read' | 'write' | 'import' | 'backup';
 
 export interface SnapshotEntry {
   id: string;
@@ -26,6 +27,8 @@ export interface SaveSnapshotOptions {
   eventType: SnapshotEventType;
   radioModel?: string;
   fileName?: string;
+  /** For a backup, what was about to replace the codeplug, e.g. "reading the radio". */
+  reason?: string;
 }
 
 interface StoredSnapshots {
@@ -100,7 +103,7 @@ function generateId(): string {
 }
 
 function buildSnapshotLabel(options: SaveSnapshotOptions): string {
-  const { eventType, radioModel, fileName } = options;
+  const { eventType, radioModel, fileName, reason } = options;
   const model = radioModel ?? 'unknown radio';
   switch (eventType) {
     case 'read':
@@ -109,6 +112,8 @@ function buildSnapshotLabel(options: SaveSnapshotOptions): string {
       return `Write to ${model}`;
     case 'import':
       return fileName ? `Import: ${fileName} (${model})` : `Import (${model})`;
+    case 'backup':
+      return `Unsaved edits, before ${reason ?? 'replacing them'} (${model})`;
     default:
       return 'Codeplug';
   }

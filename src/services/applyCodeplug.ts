@@ -29,6 +29,7 @@ import { useDMRRadioIDsStore } from '../store/dmrRadioIdsStore';
 import { useQuickContactsStore } from '../store/quickContactsStore';
 import { useRXGroupsStore } from '../store/rxGroupsStore';
 import { useEncryptionKeysStore } from '../store/encryptionKeysStore';
+import { useUnsavedChangesStore } from '../store/unsavedChangesStore';
 
 export type ApplyCodeplugIntent = 'import' | 'restore';
 
@@ -56,4 +57,6 @@ export function applyCodeplugToStores(data: CodeplugData, intent: ApplyCodeplugI
   // Radio-specific tables (AM/FM, roaming, DTMF, hot keys …). Absent from files
   // written before 2026-09-12, for which this is a no-op.
   applyImportedTables(data.tables, radio.setTable);
+  // What was just loaded is saved somewhere already: in a file or a snapshot.
+  useUnsavedChangesStore.getState().markClean();
 }

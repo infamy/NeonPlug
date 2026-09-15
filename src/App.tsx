@@ -25,6 +25,8 @@ import { confirmNewerFormat } from './utils/codeplugFormatPrompt';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
 import type { CodeplugData } from './services/codeplugExport';
 import { applyCodeplugToStores } from './services/applyCodeplug';
+import { backupUnsavedEdits, hasUnsavedEdits, trackUnsavedEdits } from './services/unsavedEdits';
+import { useUnsavedChangesStore } from './store/unsavedChangesStore';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
 import { setLogStore, logger, LogLevel } from './utils/protocolLogger';
 import { installDevStoreHandle } from './utils/devStoreHandle';
@@ -107,6 +109,22 @@ function App() {
     return () => observer.disconnect();
   }, []);
 
+  // Edits since the last read, write, import or export, and a warning before the
+  // tab closes on them (services/unsavedEdits.ts).
+  useEffect(() => {
+    const stop = trackUnsavedEdits();
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedEdits()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => {
+      stop();
+      window.removeEventListener('beforeunload', warnBeforeUnload);
+    };
+  }, []);
+
   const handleReadFromRadio = (transport?: 'serial' | 'ble') => {
     if (transport != null) {
       setPreferredTransport(transport);
@@ -148,6 +166,7 @@ function App() {
         // null = user declined the newer-format warning; not an error.
         if (!codeplugData) return;
 
+        await backupUnsavedEdits(`opening ${file.name}`);
         applyCodeplugToStores(codeplugData, 'import');
         
         setShowStartupModal(false);
@@ -193,13 +212,17 @@ function App() {
   const handleDismissStartup = () => {
     setShowStartupModal(false);
     setShowPickRadioModal(false);
-    // Load sample data if user dismisses
+    // Load sample data if user dismisses. "Change radio type…" reopens this
+    // screen over a loaded codeplug, so unsaved edits are snapshotted first.
+    void backupUnsavedEdits('loading the sample data');
     setChannels(sampleChannels);
     setContacts(sampleContacts);
     setZones(sampleZones);
+    useUnsavedChangesStore.getState().markClean();
   };
 
-  const handleRestoreSnapshot = (codeplugData: CodeplugData) => {
+  const handleRestoreSnapshot = async (codeplugData: CodeplugData) => {
+    await backupUnsavedEdits('restoring a snapshot');
     applyCodeplugToStores(codeplugData, 'restore');
     setShowStartupModal(false);
     setShowPickRadioModal(false);

@@ -21,6 +21,8 @@ import { migrateCodeplug } from '../../services/codeplugMigration';
 import { exportableTables } from '../../services/codeplugExport';
 import { applyCodeplugToStores } from '../../services/applyCodeplug';
 import { saveSnapshot, getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
+import { backupUnsavedEdits, codeplugFromStores } from '../../services/unsavedEdits';
+import { useUnsavedChangesStore } from '../../store/unsavedChangesStore';
 // Codeplug export/import are lazy loaded when needed
 import { useRadioConnection } from '../../hooks/useRadioConnection';
 import { useAlert } from '../../hooks/useAlert';
@@ -78,6 +80,11 @@ export const Toolbar: React.FC = () => {
   const [snapshotsClearConfirmOpen, setSnapshotsClearConfirmOpen] = useState(false);
   const readDropdownRef = useRef<HTMLDivElement>(null);
   const webSerialSupported = isWebSerialSupported();
+  // Edits since the last read, write, import or export (services/unsavedEdits.ts).
+  const unsavedChanges = useUnsavedChangesStore((s) => s.dirty);
+  const hasUnsavedEdits =
+    unsavedChanges &&
+    (channels.length > 0 || zones.length > 0 || scanLists.length > 0 || contacts.length > 0 || quickContacts.length > 0);
 
   const formatEventType = (eventType?: SnapshotEventType): string => {
     if (!eventType) return '';
@@ -129,41 +136,9 @@ export const Toolbar: React.FC = () => {
     exportDate: new Date().toISOString(),
   });
 
-  const buildCodeplugDataFromStores = () => {
-    const cs = useChannelsStore.getState();
-    const zs = useZonesStore.getState();
-    const sls = useScanListsStore.getState();
-    const cts = useContactsStore.getState();
-    const des = useDigitalEmergencyStore.getState();
-    const aes = useAnalogEmergencyStore.getState();
-    const rss = useRadioSettingsStore.getState();
-    const rs = useRadioStore.getState();
-    const qms = useQuickMessagesStore.getState();
-    const drs = useDMRRadioIDsStore.getState();
-    const qcs = useQuickContactsStore.getState();
-    const rgs = useRXGroupsStore.getState();
-    const eks = useEncryptionKeysStore.getState();
-    return {
-      channels: cs.channels,
-      zones: zs.zones,
-      scanLists: sls.scanLists,
-      contacts: cts.contacts,
-      digitalEmergencies: des.systems,
-      digitalEmergencyConfig: des.config,
-      analogEmergencies: aes.systems,
-      radioSettings: rss.settings,
-      radioInfo: rs.radioInfo,
-      messages: qms.messages,
-      radioIds: drs.radioIds,
-      quickContacts: qcs.contacts,
-      rxGroups: rgs.groups,
-      encryptionKeys: eks.keys,
-      tables: exportableTables(rs.tables),
-      exportDate: new Date().toISOString(),
-    };
-  };
-
   const handleConvertReplace = async () => {
+    const targetLabel = getRadioPickerOptions().find((o) => o.modelId === convertTargetModel)?.label ?? convertTargetModel;
+    await backupUnsavedEdits(`converting for ${targetLabel}`);
     const data = buildCodeplugData();
     const { migrated, loss } = migrateCodeplug(data, convertTargetModel);
     setChannels(migrated.channels);
@@ -182,7 +157,6 @@ export const Toolbar: React.FC = () => {
     setEncryptionKeys(migrated.encryptionKeys);
     setSelectedRadioModel(convertTargetModel);
     setConvertModalOpen(false);
-    const targetLabel = getRadioPickerOptions().find((o) => o.modelId === convertTargetModel)?.label ?? convertTargetModel;
     showAlertBody(
       <div className="space-y-3 text-sm pb-1">
         <p className="text-white">Converted for {targetLabel}.</p>
@@ -207,7 +181,7 @@ export const Toolbar: React.FC = () => {
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    
+
     try {
       // Lazy load codeplug import when needed
       const { importCodeplug } = await import('../../services/codeplugExport');
@@ -218,10 +192,11 @@ export const Toolbar: React.FC = () => {
       // null = user declined the newer-format warning; not an error.
       if (!codeplugData) return;
 
+      await backupUnsavedEdits(`opening ${file.name}`);
       // An import marks the radio settings changed so a write sends them
       // (issue #2); applyCodeplugToStores is the one place that decides it.
       applyCodeplugToStores(codeplugData, 'import');
-      
+
       showAlertBody(
         <CodeplugSummaryBody data={codeplugData} lead="Codeplug imported" fileName={file.name} />,
         'Import'
@@ -230,7 +205,7 @@ export const Toolbar: React.FC = () => {
     } catch (error) {
       showAlert(error instanceof Error ? error.message : 'Failed to import codeplug', 'Import');
     }
-    
+
     // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -240,6 +215,7 @@ export const Toolbar: React.FC = () => {
   const handleExport = async () => {
     const { exportCodeplug } = await import('../../services/codeplugExport');
     await exportCodeplug(buildCodeplugData());
+    useUnsavedChangesStore.getState().markClean();
   };
 
   const handleRead = async (forcePortSelection = true) => {
@@ -251,6 +227,10 @@ export const Toolbar: React.FC = () => {
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
 
+      // A read clears the codeplug before it connects, so unsaved edits are
+      // snapshotted first. Not awaited: the port picker needs this click's user
+      // activation, and the codeplug is captured before this line returns.
+      void backupUnsavedEdits('reading the radio');
       await readFromRadio((progress, message, step) => {
         setProgress(progress);
         setProgressMessage(message);
@@ -261,8 +241,9 @@ export const Toolbar: React.FC = () => {
 
       setConnectionError(null);
       setLastOperationMode(null);
+      useUnsavedChangesStore.getState().markClean();
       const modelLabel = useRadioStore.getState().radioInfo?.model ?? effectiveModel ?? undefined;
-      await saveSnapshot(buildCodeplugDataFromStores(), { eventType: 'read', radioModel: modelLabel });
+      await saveSnapshot(codeplugFromStores(), { eventType: 'read', radioModel: modelLabel });
       setTimeout(() => {
         setProgress(0);
         setProgressMessage('');
@@ -305,7 +286,7 @@ export const Toolbar: React.FC = () => {
       setProgress(0);
       setProgressMessage('Selecting port...');
       setCurrentStep('Selecting port');
-      
+
       await writeChannelsToRadio(channels, zones, scanLists, (progress, message, step) => {
         setProgress(progress);
         setProgressMessage(message);
@@ -313,11 +294,12 @@ export const Toolbar: React.FC = () => {
           setCurrentStep(step);
         }
       });
-      
+
       setConnectionError(null);
       setLastOperationMode(null);
+      useUnsavedChangesStore.getState().markClean();
       const modelLabel = useRadioStore.getState().radioInfo?.model ?? effectiveModel ?? undefined;
-      await saveSnapshot(buildCodeplugDataFromStores(), { eventType: 'write', radioModel: modelLabel });
+      await saveSnapshot(codeplugFromStores(), { eventType: 'write', radioModel: modelLabel });
       setTimeout(() => {
         setIsWriting(false);
         setProgress(0);
@@ -396,6 +378,7 @@ export const Toolbar: React.FC = () => {
       return;
     }
     if (!data) return;
+    await backupUnsavedEdits('restoring a snapshot');
     applyCodeplugToStores(data, 'restore');
     setSnapshotsModalOpen(false);
     showAlertBody(<CodeplugSummaryBody data={data} lead="Codeplug restored" />, 'Restore');
@@ -491,6 +474,14 @@ export const Toolbar: React.FC = () => {
               </div>
             )}
           </div>
+          {hasUnsavedEdits && (
+            <span
+              className="text-xs font-semibold text-amber-300 px-2 py-1 rounded border border-amber-400 border-opacity-40 whitespace-nowrap"
+              title="Edits since the last read, write, import or export. Write them to the radio or export a file to keep them."
+            >
+              Unsaved changes
+            </span>
+          )}
           <Button
             variant="primary"
             onClick={handleWrite}
