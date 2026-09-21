@@ -3,48 +3,39 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 /**
- * Vite plugin to inline favicon as base64 data URI during build
- * This keeps the source HTML clean while embedding the favicon for offline use
- * Reads favicon.ico directly and converts to base64 on-the-fly
+ * Inline the favicon as a base64 data URI at build time, so the icon rides
+ * inside index.html — required for the offline single-file build (a saved
+ * HTML file can't reference a sibling icon) and saves a request otherwise.
+ *
+ * Runs with order 'pre' so the replacement happens BEFORE Vite's asset
+ * pipeline rewrites the href to a hashed filename (the previous version ran
+ * after and its pattern never matched, silently inlining nothing).
  */
 export function inlineFavicon(): Plugin {
   return {
     name: 'inline-favicon',
-    transformIndexHtml(html) {
-      try {
-        // Try to find favicon.ico in common locations (root first, then public)
-        const possiblePaths = [
-          join(process.cwd(), 'favicon.ico'),
-          join(process.cwd(), 'public', 'favicon.ico'),
-        ];
-
-        let faviconPath: string | null = null;
-        for (const path of possiblePaths) {
-          if (existsSync(path)) {
-            faviconPath = path;
-            break;
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        try {
+          const possiblePaths = [
+            join(process.cwd(), 'favicon.png'),
+            join(process.cwd(), 'public', 'favicon.png'),
+          ];
+          const faviconPath = possiblePaths.find((p) => existsSync(p));
+          if (!faviconPath) {
+            console.warn('favicon.png not found, skipping inline');
+            return html;
           }
-        }
 
-        if (!faviconPath) {
-          console.warn('Favicon not found, skipping inline');
+          const faviconBase64 = readFileSync(faviconPath).toString('base64');
+          const dataUri = `data:image/png;base64,${faviconBase64}`;
+          return html.replace(/href="\/favicon\.png"/g, `href="${dataUri}"`);
+        } catch (error) {
+          console.warn('Failed to inline favicon:', error);
           return html;
         }
-
-        // Read the favicon file and convert to base64
-        const faviconBuffer = readFileSync(faviconPath);
-        const faviconBase64 = faviconBuffer.toString('base64');
-
-        // Replace the placeholder with the actual data URI
-        const dataUri = `data:image/x-icon;base64,${faviconBase64}`;
-        return html.replace(
-          /href="\/favicon\.ico"/g,
-          `href="${dataUri}"`
-        );
-      } catch (error) {
-        console.warn('Failed to inline favicon:', error);
-        return html;
-      }
+      },
     },
   };
 }

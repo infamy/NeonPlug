@@ -7,6 +7,7 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import { LIMITS } from '../../radios/dm32uv/constants';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 const ALARM_TYPES = ['None', 'Only Whistle', 'Normal', 'Secret', 'Secret With Voice'];
 const ALARM_MODES = ['Emergency Alarm', 'Alarm Call'];
@@ -60,7 +61,7 @@ export const AnalogEmergencyList: React.FC = () => {
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          className="px-3 py-1 bg-yellow-900/30 text-yellow-400 text-sm rounded border border-yellow-600/30 hover:bg-yellow-900/50 transition-colors"
+          className={`${BUTTON.caution} px-3 py-1 text-sm rounded border`}
         >
           {expanded ? 'Hide' : 'Show'}
         </button>
@@ -80,7 +81,7 @@ export const AnalogEmergencyList: React.FC = () => {
             <button
               onClick={handleAdd}
               disabled={systems.length >= LIMITS.ANALOG_EMERGENCY_MAX}
-              className="px-3 py-1.5 text-xs bg-neon-cyan bg-opacity-10 border border-neon-cyan text-neon-cyan rounded hover:bg-opacity-20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className={`${BUTTON.outline} px-3 py-1.5 text-xs border rounded`}
             >
               + Add
             </button>
@@ -89,7 +90,7 @@ export const AnalogEmergencyList: React.FC = () => {
           {systems.length === 0 ? (
             <EmptyState message="No analog emergency systems configured." />
           ) : (
-            <div className="max-h-[calc(100vh-400px)] overflow-auto">
+            <div className="max-h-[70vh] overflow-auto">
               <div className="inline-block min-w-full">
                 <table className="w-full border-collapse text-xs">
                   <thead className="sticky top-0 z-20">
@@ -117,14 +118,14 @@ export const AnalogEmergencyList: React.FC = () => {
                             value={system.name}
                             onChange={(e) => updateSystem(i, { name: e.target.value.slice(0, 16) })}
                             maxLength={16}
-                            className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-2 py-1 w-full text-xs`}
                           />
                         </td>
                         <td className="px-2 py-1.5">
                           <select
                             value={system.alarmType}
                             onChange={(e) => updateSystem(i, { alarmType: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {ALARM_TYPES.map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -135,7 +136,7 @@ export const AnalogEmergencyList: React.FC = () => {
                           <select
                             value={system.alarmMode}
                             onChange={(e) => updateSystem(i, { alarmMode: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {ALARM_MODES.map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -146,7 +147,7 @@ export const AnalogEmergencyList: React.FC = () => {
                           <select
                             value={system.signalling}
                             onChange={(e) => updateSystem(i, { signalling: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {SIGNALLING.map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -157,7 +158,7 @@ export const AnalogEmergencyList: React.FC = () => {
                           <select
                             value={system.revertChannel}
                             onChange={(e) => updateSystem(i, { revertChannel: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {channels.length > 0
                               ? channels.slice(0, 16).map((ch) => (
@@ -173,7 +174,7 @@ export const AnalogEmergencyList: React.FC = () => {
                           <select
                             value={system.squelchMode}
                             onChange={(e) => updateSystem(i, { squelchMode: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {SQUELCH_MODES.map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -184,7 +185,7 @@ export const AnalogEmergencyList: React.FC = () => {
                           <select
                             value={system.idType}
                             onChange={(e) => updateSystem(i, { idType: Number(e.target.value) })}
-                            className="bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded px-1 py-1 focus:outline-none focus:border-neon-cyan w-full text-xs text-white"
+                            className={`${FIELD} border rounded px-1 py-1 w-full text-xs`}
                           >
                             {ID_TYPES.map((label, v) => (
                               <option key={v} value={v}>{label}</option>
@@ -202,7 +203,7 @@ export const AnalogEmergencyList: React.FC = () => {
                         <td className="px-2 py-1.5 text-center">
                           <button
                             onClick={() => setDeleteTarget(i)}
-                            className="text-red-400 hover:text-red-300 transition-colors px-1"
+                            className={`${BUTTON.dangerQuiet} px-1`}
                             title="Delete"
                           >
                             ✕

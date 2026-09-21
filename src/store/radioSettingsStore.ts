@@ -5,7 +5,13 @@ interface RadioSettingsState {
   settings: RadioSettings | null;
   originalSettings: RadioSettings | null; // Store original settings from radio
   changedFields: Set<string>; // Track which fields have been modified
-  setSettings: (settings: RadioSettings | null) => void;
+  /** Every key was marked changed by opening a codeplug, so a write sends them all. */
+  allChanged: boolean;
+  // markAllChanged: when true (used by the codeplug IMPORT path), every
+  // settings key is flagged as changed so a subsequent Write pushes the full
+  // imported block. Without it, imported settings never reach the radio
+  // because the write path only encodes changedFields (see issue #2).
+  setSettings: (settings: RadioSettings | null, opts?: { markAllChanged?: boolean }) => void;
   updateSettings: (updates: Partial<RadioSettings>) => void;
   hasChanges: () => boolean; // Check if any settings have been modified
   getChangedFields: () => string[]; // Get list of changed field names
@@ -13,7 +19,7 @@ interface RadioSettingsState {
 }
 
 // Deep comparison helper for RadioSettings
-function deepEqual(obj1: any, obj2: any): boolean {
+export function deepEqual(obj1: any, obj2: any): boolean {
   if (obj1 === obj2) return true;
   if (obj1 == null || obj2 == null) return false;
   if (typeof obj1 !== 'object' || typeof obj2 !== 'object') return false;
@@ -50,10 +56,16 @@ export const useRadioSettingsStore = create<RadioSettingsState>((set, get) => ({
   settings: null,
   originalSettings: null,
   changedFields: new Set<string>(),
-  setSettings: (settings) => set({ 
+  allChanged: false,
+  setSettings: (settings, opts) => set({
+    allChanged: !!(settings && opts?.markAllChanged),
     settings,
     originalSettings: settings ? JSON.parse(JSON.stringify(settings)) : null, // Deep clone
-    changedFields: new Set<string>(), // Reset changes when loading new settings
+    // Default (read-from-radio): no fields dirty. Import path passes
+    // markAllChanged so every field writes back (issue #2).
+    changedFields: settings && opts?.markAllChanged
+      ? new Set<string>(Object.keys(settings))
+      : new Set<string>(),
   }),
   updateSettings: (updates) =>
     set((state) => {
@@ -92,6 +104,7 @@ export const useRadioSettingsStore = create<RadioSettingsState>((set, get) => ({
   },
   clearChanges: () => set((state) => ({
     changedFields: new Set<string>(),
+    allChanged: false,
     originalSettings: state.settings ? JSON.parse(JSON.stringify(state.settings)) : null,
   })),
 }));

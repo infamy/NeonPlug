@@ -27,6 +27,7 @@ export function createDefaultChannel(overrides: Partial<Channel> = {}): Channel 
     unknown1A_6_4: 0,
     unknown1A_3: false,
     aprsReceive: false,
+    unknown1A_1_0: 3, // OEM CPS writes 3 here on every channel
     emergencyIndicator: false,
     emergencyAck: false,
     emergencySystemId: 0,

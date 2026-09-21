@@ -6,6 +6,7 @@
 import type { WebSerialPort } from './types';
 import { CONNECTION } from './constants';
 import { log } from '../../utils/protocolLogger';
+import { assertBlockWritable, type WriteGuardContext } from './writeGuard';
 
 // Re-export for backward compatibility
 export type SerialPort = WebSerialPort;
@@ -42,6 +43,17 @@ export class DM32Connection {
   private port: WebSerialPort | null = null;
   private readBuffer: Uint8Array = new Uint8Array(0); // Persistent read buffer
   private isReading: boolean = false; // Prevent concurrent reads
+
+  /**
+   * Checked by both write methods before a byte is sent. With none installed,
+   * nothing is written: see writeGuard.ts.
+   */
+  private writeGuard: (() => WriteGuardContext | null) | null = null;
+
+  /** Install the check every write goes through. DM32UVProtocol does this for each connection it makes. */
+  setWriteGuard(provider: () => WriteGuardContext | null): void {
+    this.writeGuard = provider;
+  }
 
   async connect(port: WebSerialPort): Promise<void> {
     // Clear any leftover state from previous connections
@@ -258,6 +270,7 @@ export class DM32Connection {
     if (data.length !== 4096) {
       throw new Error(`Write data must be exactly 4096 bytes, got ${data.length}`);
     }
+    assertBlockWritable({ address, length: data.length, data, metadata }, this.writeGuard?.() ?? null);
 
     // Write command format: 0x57 ("W") <addr:3> <0x00> <0x10> <data:4096>
     // The metadata byte is INSIDE the data block at offset 0xFFF, not sent separately
@@ -361,6 +374,7 @@ export class DM32Connection {
     if (data.length !== 2048 && data.length !== 4096) {
       throw new Error(`Boot image block must be 2048 or 4096 bytes, got ${data.length}`);
     }
+    assertBlockWritable({ address, length: data.length, data }, this.writeGuard?.() ?? null);
     const addrBytes = new Uint8Array([
       address & 0xff,
       (address >> 8) & 0xff,

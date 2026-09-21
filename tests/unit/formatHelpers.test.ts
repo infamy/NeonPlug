@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatAddress, formatBytes, clamp } from '../../src/utils/formatHelpers';
+import { formatAddress, formatBytes, formatByteProgress, clamp } from '../../src/utils/formatHelpers';
 
 describe('formatAddress', () => {
   it('returns N/A when address is undefined', () => {
@@ -85,5 +85,20 @@ describe('clamp', () => {
   it('works when min equals max', () => {
     expect(clamp(5, 3, 3)).toBe(3);
     expect(clamp(0, 3, 3)).toBe(3);
+  });
+});
+
+describe('formatByteProgress', () => {
+  it("puts both numbers in the total's unit", () => {
+    expect(formatByteProgress(3_800_000, 13_568_170)).toBe('3.6 of 12.9 MB');
+    expect(formatByteProgress(512_000, 13_568_170)).toBe('0.5 of 12.9 MB');
+  });
+
+  it('drops to KB under a megabyte, so a small total never reads "0.0 of 0.1 MB"', () => {
+    expect(formatByteProgress(40_960, 94_686)).toBe('40 of 92 KB');
+  });
+
+  it('gives bytes under a kilobyte', () => {
+    expect(formatByteProgress(50, 100)).toBe('50 of 100 B');
   });
 });

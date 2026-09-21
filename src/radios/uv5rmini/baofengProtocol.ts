@@ -4,10 +4,16 @@
 
 import {
   BAOFENG_BLOCK_SIZE,
+  BAOFENG_BLE_UPLOAD_BLOCK_SIZE,
   BAOFENG_READ_RESPONSE_LEN,
 } from './constants';
 
-/** Magics for read mode (3rd magic last byte 0x00). */
+/**
+ * The magics CHIRP's `_do_ident` sends after the ident, for BOTH directions:
+ * `_magics = [(b"\x46", 16), (b"\x4d", 15), (b"SEND!...", 1)]`. We used to
+ * send a second variant for uploads with the last byte 0x01, which CHIRP has
+ * no equivalent for.
+ */
 export const BAOFENG_MAGICS_READ: Array<{ send: Uint8Array; responseLen: number }> = [
   { send: new Uint8Array([0x46]), responseLen: 16 },
   { send: new Uint8Array([0x4d]), responseLen: 15 },
@@ -80,19 +86,26 @@ export function buildBaofengReadFrame(addr: number, length: number): Uint8Array 
   return frame;
 }
 
-/** Build write frame: 0x57 + addr (2 BE) + 0x40 + encrypted 64-byte block. */
+/**
+ * Build write frame: 0x57 + addr (2 BE) + length (1) + encrypted block.
+ *
+ * The length is the block's own, as in CHIRP's `_make_frame(b"W", addr,
+ * _blocksize, data)`: 0x40 over serial and 0x80 over Bluetooth.
+ */
 export function buildBaofengWriteFrame(
   addr: number,
   block: Uint8Array,
   encrsym: number = 1
 ): Uint8Array {
-  if (block.length !== BAOFENG_BLOCK_SIZE) throw new Error('Block must be 64 bytes');
+  if (block.length !== BAOFENG_BLOCK_SIZE && block.length !== BAOFENG_BLE_UPLOAD_BLOCK_SIZE) {
+    throw new Error(`Block must be ${BAOFENG_BLOCK_SIZE} or ${BAOFENG_BLE_UPLOAD_BLOCK_SIZE} bytes`);
+  }
   const payload = baofengDecrypt(encrsym, block);
-  const frame = new Uint8Array(4 + BAOFENG_BLOCK_SIZE);
+  const frame = new Uint8Array(4 + block.length);
   frame[0] = 0x57;
   frame[1] = (addr >>> 8) & 0xff;
   frame[2] = addr & 0xff;
-  frame[3] = 0x40;
+  frame[3] = block.length & 0xff;
   frame.set(payload, 4);
   return frame;
 }

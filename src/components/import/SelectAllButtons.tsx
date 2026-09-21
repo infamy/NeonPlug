@@ -1,4 +1,5 @@
 import React from 'react';
+import { BUTTON } from '../ui/controlStyles';
 
 interface SelectAllButtonsProps {
   onSelectAll: () => void;
@@ -12,10 +13,10 @@ export const SelectAllButtons: React.FC<SelectAllButtonsProps> = ({
   selectAllLabel = 'Select All',
 }) => (
   <div className="flex gap-2">
-    <button onClick={onSelectAll} className="text-sm text-neon-cyan hover:text-neon-cyan-bright">
+    <button onClick={onSelectAll} className={`${BUTTON.link} text-sm`}>
       {selectAllLabel}
     </button>
-    <button onClick={onDeselectAll} className="text-sm text-neon-cyan hover:text-neon-cyan-bright">
+    <button onClick={onDeselectAll} className={`${BUTTON.link} text-sm`}>
       Deselect All
     </button>
   </div>

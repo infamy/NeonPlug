@@ -1,34 +1,80 @@
 import React, { useState } from 'react';
 import { useDebugStore } from '../../store/debugStore';
+import { useOutOfBandStore } from '../../store/outOfBandStore';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { RADIO_DESCRIPTORS } from '../../radios';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { Button } from '../ui/Button';
 import { ConfirmModal } from '../ui/ConfirmModal';
-import { downloadOfflineAsZip } from '../../utils/offlineDownload';
+import { downloadOfflineAsZip, OFFLINE_RELEASE_URL } from '../../utils/offlineDownload';
+import { PageHeader } from '../ui/PageHeader';
+import { VERSION_LABEL, COMMIT_HASH, BUILD_TIME, IS_RELEASE_BUILD, RELEASE_NOTES_URL } from '../../utils/version';
+import { latestEntry, whatsNewItems } from '../../utils/changelog';
+import changelogSource from '../../../CHANGELOG.md?raw';
 
 const OFFLINE_FALLBACK_MESSAGE =
-  'The offline version is available on GitHub Pages.\n\n' +
-  'Click OK to open it, then use your browser\'s "Save Page As" to save as neonplug.html.\n\n' +
+  'The latest tagged release is published as a single downloadable HTML file.\n\n' +
+  'Click Download to save neonplug-latest.html from GitHub Releases.\n\n' +
   'Or build it locally using the instructions below.';
 
-const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
+const LATEST_RELEASE = latestEntry(changelogSource);
+const WHATS_NEW = LATEST_RELEASE ? whatsNewItems(LATEST_RELEASE) : [];
 
 export const AboutTab: React.FC = () => {
   const { debugMode, setDebugMode } = useDebugStore();
+  const { allowOutOfBandFrequencies, setAllowOutOfBandFrequencies } = useOutOfBandStore();
+  const { caps } = useRadioCapabilities();
+  const [outOfBandConfirmOpen, setOutOfBandConfirmOpen] = useState(false);
   const [offlineFallbackOpen, setOfflineFallbackOpen] = useState(false);
 
   return (
     <>
-    <div className="h-full overflow-y-auto">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-neon-cyan mb-2">About NeonPlug</h2>
-        <p className="text-cool-gray">
-          Online Digital CPS — program your radio directly from your browser.
-        </p>
-      </div>
+    <div>
+      <PageHeader
+        title="About NeonPlug"
+        description="Online Digital CPS — program your radio directly from your browser."
+      />
 
       <div className="space-y-6">
+        {/* What's new — parsed from the bundled CHANGELOG.md so it works offline */}
+        {LATEST_RELEASE && (
+          <Card>
+            <div className="flex items-baseline justify-between gap-3 flex-wrap">
+              <SectionTitle>What's New</SectionTitle>
+              <span className="text-xs font-mono text-muted">
+                {VERSION_LABEL}
+                {LATEST_RELEASE.date && ` · ${LATEST_RELEASE.date}`}
+              </span>
+            </div>
+            {!IS_RELEASE_BUILD && (
+              <p className="text-xs text-muted mb-3">
+                You're on a development build, which is ahead of the notes below.
+              </p>
+            )}
+            <ul className="list-disc list-inside text-cool-gray text-sm space-y-1 ml-4">
+              {WHATS_NEW.slice(0, 12).map((item, i) => (
+                <li key={i}>{item}</li>
+              ))}
+            </ul>
+            {WHATS_NEW.length > 12 && (
+              <p className="text-xs text-muted mt-2">
+                …and {WHATS_NEW.length - 12} more.
+              </p>
+            )}
+            <p className="text-xs text-muted mt-3">
+              <a
+                href={RELEASE_NOTES_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="link-accent"
+              >
+                Full release notes and previous versions
+              </a>
+            </p>
+          </Card>
+        )}
+
         {/* Offline Version */}
         <Card>
           <SectionTitle>Offline Version</SectionTitle>
@@ -53,6 +99,7 @@ export const AboutTab: React.FC = () => {
                   }
                 }}
                 variant="primary"
+                size="none"
                 className="inline-flex items-center justify-center px-6 py-3"
               >
                 📥 Download Offline Version (ZIP)
@@ -63,9 +110,9 @@ export const AboutTab: React.FC = () => {
                 {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
                   <> From the dev server the downloaded file is the dev build (not standalone). For a single-file offline build, use the live site or run <code className="text-neon-cyan">npm run build:single</code>.</>
                 )}
-                {' '}If the button doesn't work, visit the{' '}
-                <a href="https://infamy.github.io/NeonPlug/" target="_blank" rel="noopener noreferrer" className="link-accent">live version</a>{' '}
-                and use your browser's "Save Page As" feature.
+                {' '}If the button doesn't work,{' '}
+                <a href={OFFLINE_RELEASE_URL} target="_blank" rel="noopener noreferrer" className="link-accent">download the latest release</a>{' '}
+                instead.
               </p>
             </div>
 
@@ -75,10 +122,10 @@ export const AboutTab: React.FC = () => {
                 To build your own offline version from source:
               </p>
               <pre className="bg-black rounded p-3 text-xs text-neon-cyan overflow-x-auto">
-                <code>git clone https://github.com/infamy/NeonPlug.git
-cd NeonPlug
-npm install
-npm run build:single</code>
+                {/* A string, not JSX text: JSX folds line breaks in text into
+                    single spaces, so these four commands rendered as one line
+                    that fails when pasted. */}
+                <code>{'git clone https://github.com/infamy/NeonPlug.git\ncd NeonPlug\nnpm install\nnpm run build:single'}</code>
               </pre>
               <p className="text-cool-gray text-xs mt-2">
                 The single-file HTML will be in the <code className="text-neon-cyan">dist/index.html</code> file.
@@ -203,15 +250,20 @@ npm run build:single</code>
               <div className="text-xs text-cool-gray font-mono">
                 <div>
                   <span className="text-cool-gray">Version: </span>
-                  <span className="text-neon-cyan">
-                    {typeof __COMMIT_HASH__ !== 'undefined' ? __COMMIT_HASH__ : 'dev'}
-                  </span>
+                  <span className="text-neon-cyan">{VERSION_LABEL}</span>
+                  {!IS_RELEASE_BUILD && (
+                    <span className="text-muted"> (development build)</span>
+                  )}
                 </div>
-                {typeof __BUILD_TIME__ !== 'undefined' && (
+                <div className="mt-1">
+                  <span className="text-cool-gray">Commit: </span>
+                  <span className="text-neon-cyan">{COMMIT_HASH}</span>
+                </div>
+                {BUILD_TIME && (
                   <div className="mt-1">
                     <span className="text-cool-gray">Built: </span>
                     <span className="text-neon-cyan">
-                      {new Date(__BUILD_TIME__).toLocaleString()}
+                      {new Date(BUILD_TIME).toLocaleString()}
                     </span>
                   </div>
                 )}
@@ -330,16 +382,65 @@ npm run build:single</code>
             )}
           </div>
         </div>
+
+        {/* Out-of-band frequencies. Hidden until debug mode is on, and shown whenever the
+            switch is on, so it can always be turned off. DM-32 only for now. */}
+        {caps?.supportsOutOfBandFrequencies && (debugMode || allowOutOfBandFrequencies) && (
+          <div className="bg-deep-gray rounded-lg border-2 border-red-500 p-6">
+            <h3 className="text-2xl font-bold text-red-400 mb-3">⚠ Out-of-band frequencies</h3>
+            <div className="space-y-3">
+              <p className="text-base font-semibold text-red-300">
+                For radios with modified firmware only. Writing frequencies outside a stock radio's bands
+                can make the write fail or leave the radio misbehaving, and transmitting outside the bands
+                a radio was built for can damage it and may be illegal.
+              </p>
+              <p className="text-cool-gray text-sm">
+                While this is on, NeonPlug stops checking channels against the radio's bands: the channel
+                editor shows no band errors, and a write keeps every channel below 1000 MHz as it is. It
+                stays on until you turn it off here.
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  allowOutOfBandFrequencies ? setAllowOutOfBandFrequencies(false) : setOutOfBandConfirmOpen(true)
+                }
+                className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
+                  allowOutOfBandFrequencies
+                    ? 'bg-red-900/40 text-red-300 border border-red-500 hover:bg-red-900/60'
+                    : 'bg-red-900/20 text-red-400 border border-red-600/40 hover:bg-red-900/30'
+                }`}
+              >
+                {allowOutOfBandFrequencies ? '⚠ Out-of-band frequencies ON: turn off' : 'Turn on out-of-band frequencies'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
     <ConfirmModal
       isOpen={offlineFallbackOpen}
       onClose={() => setOfflineFallbackOpen(false)}
-      onConfirm={() => window.open(OFFLINE_VERSION_URL, '_blank')}
+      onConfirm={() => window.open(OFFLINE_RELEASE_URL, '_blank')}
       title="Download offline version"
       message={OFFLINE_FALLBACK_MESSAGE}
-      confirmLabel="OK"
-      variant="alert"
+      confirmLabel="Download"
+      cancelLabel="Close"
+      variant="default"
+    />
+    <ConfirmModal
+      isOpen={outOfBandConfirmOpen}
+      onClose={() => setOutOfBandConfirmOpen(false)}
+      onConfirm={() => setAllowOutOfBandFrequencies(true)}
+      title="Turn on out-of-band frequencies?"
+      message={
+        'Only do this for a radio with modified firmware.\n\n' +
+        "NeonPlug will stop checking channels against the radio's bands, and will write them as they are. " +
+        'On a stock radio that can make the write fail or leave the radio misbehaving, and transmitting ' +
+        'outside its bands can damage it and may be illegal.\n\n' +
+        'It stays on until you turn it off in About.'
+      }
+      confirmLabel="Turn on"
+      variant="danger"
     />
     </>
   );

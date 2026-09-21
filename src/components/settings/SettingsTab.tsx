@@ -25,49 +25,29 @@ import {
 import { formatAddress } from '../../utils/formatHelpers';
 import { getSettingsProfileForModel } from '../../data/settingsProfiles';
 import { SettingsFieldRenderer } from './fields';
+import { fieldMatches, fieldUpdate, getFieldValue, isFieldChanged } from './settingsFields';
 import type { RadioSettings } from '../../models/RadioSettings';
-import type { SettingsFieldDescriptor } from '../../types/settingsProfile';
-
-/** Get value from settings by key; supports nested path (e.g. menuEnableFlags.zoneList) and lockKey mapping */
-function getFieldValue(settings: RadioSettings | null, key: string): unknown {
-  if (!settings) return undefined;
-  if (key === 'lockKey') return settings.lockKey === 'Auto' ? 1 : 0;
-  if (key.includes('.')) {
-    const parts = key.split('.');
-    let v: unknown = settings;
-    for (const p of parts) v = (v as unknown as Record<string, unknown>)?.[p];
-    return v;
-  }
-  return (settings as unknown as Record<string, unknown>)[key];
-}
-
-/** Build partial update for a field key; supports nested path and lockKey mapping */
-function handleFieldChange(
-  settings: RadioSettings | null,
-  key: string,
-  value: unknown,
-  updateRadioSettings: (u: Partial<RadioSettings>) => void
-): void {
-  if (!settings) return;
-  if (key === 'lockKey') {
-    updateRadioSettings({ lockKey: value === 1 ? 'Auto' : 'Manual' });
-    return;
-  }
-  if (key.includes('.')) {
-    const [parent, ...rest] = key.split('.');
-    const leaf = rest.join('.');
-    const parentObj = (settings as unknown as Record<string, unknown>)[parent];
-    const spread = typeof parentObj === 'object' && parentObj !== null ? { ...(parentObj as Record<string, unknown>) } : {};
-    (spread as Record<string, unknown>)[leaf] = value;
-    updateRadioSettings({ [parent]: spread } as Partial<RadioSettings>);
-    return;
-  }
-  updateRadioSettings({ [key]: value } as Partial<RadioSettings>);
-}
+import type { SettingsFieldDescriptor, SettingsFeature } from '../../types/settingsProfile';
+import { FEATURE_AREAS } from './featureAreas';
+import { PageHeader } from '../ui/PageHeader';
+import { resolveContactCapacity } from '../../utils/contactCapacity';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 export const SettingsTab: React.FC = () => {
   const { radioInfo, bootImageRaw } = useRadioStore();
   const { readBootImage, writeBootImage, isConnecting } = useRadioConnection();
+  /**
+   * Which profile section is on screen, and a free-text filter across all of
+   * them.
+   *
+   * The DA-7X2 profile carries 241 fields across 19 sections — one of which
+   * ("Unmapped bytes") is 118 inputs on its own. Rendering every section at once
+   * made the page a wall with no way to find anything. The vendor CPS solves the
+   * same problem with tabs, and our sections already ARE its tabs, so this shows
+   * one at a time. The filter is the escape hatch: it searches every section, so
+   * "where is X" does not require knowing which tab X lives on.
+   */
+  const [settingsFilter, setSettingsFilter] = useState('');
   const [bootImageProgress, setBootImageProgress] = useState(0);
   const [bootImageMessage, setBootImageMessage] = useState('');
   const [bootImageError, setBootImageError] = useState<string | null>(null);
@@ -84,7 +64,13 @@ export const SettingsTab: React.FC = () => {
   const { channels } = useChannelsStore();
   const { zones } = useZonesStore();
   const { contacts, contactsLoaded } = useContactsStore();
-  const { settings: radioSettings, updateSettings: updateRadioSettings } = useRadioSettingsStore();
+  const { settings: radioSettings, originalSettings, updateSettings: updateRadioSettings } = useRadioSettingsStore();
+  const [onlyChanged, setOnlyChanged] = useState(false);
+  /** Set one settings field by key, nested paths and the lock key included. */
+  const setField = (key: string, value: unknown) => {
+    const update = fieldUpdate(radioSettings, key, value);
+    if (update) updateRadioSettings(update);
+  };
   const { calibration, calibrationLoaded } = useCalibrationStore();
   const [showCalibration, setShowCalibration] = useState(false);
   const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
@@ -92,10 +78,13 @@ export const SettingsTab: React.FC = () => {
   const { caps, model: effectiveModel } = useRadioCapabilities();
   const settingsProfile = getSettingsProfileForModel(effectiveModel);
 
-  const EXPECTED_FIRMWARE = 'DM32.01.L01.048';
   const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
   const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));
-  const needsFirmwareUpdate = hasRealFirmware && radioInfo!.firmware !== EXPECTED_FIRMWARE && !isNewerFirmware;
+  // Only warn when the radio declares a known-good firmware. No declaration
+  // means no opinion — not 'wrong firmware'.
+  const expectedFirmware = caps?.expectedFirmware;
+  const needsFirmwareUpdate = !!expectedFirmware && hasRealFirmware &&
+    radioInfo!.firmware !== expectedFirmware && !isNewerFirmware;
 
   /** Display value for device info fields; show "-" when unknown (e.g. after convert). */
   const deviceValue = (v: string | undefined) => (v && v.trim() && v !== '-' ? v : '-');
@@ -103,7 +92,7 @@ export const SettingsTab: React.FC = () => {
   // Usage statistics: totals from current radio capabilities (converted codeplug shows target radio limits)
   const maxChannels = caps?.maxChannels ?? 4000;
   const maxZones = caps?.maxZones ?? (caps?.supportsZones ? 250 : 0);
-  const maxContacts = caps?.supportsContacts ? (radioInfo?.maxContacts ?? 50000) : 0;
+  const maxContacts = resolveContactCapacity(caps, radioInfo);
   const vfoCount = (radioSettings?.vfoA ? 1 : 0) + (radioSettings?.vfoB ? 1 : 0);
   const channelUsage = {
     used: channels.length - vfoCount,
@@ -312,8 +301,43 @@ export const SettingsTab: React.FC = () => {
     setBootImageDragOver(false);
   };
 
+  // Cards that are their own top-level section today — boot image,
+  // the one-key/button assignments, and the DM-32's GPS & APRS — join
+  // the same chip row as the profile sections. They are settings like
+  // any other, and having them as separate slabs below a tabbed area
+  // meant the page was tabbed AND still a wall.
+  //
+  // Putting GPS & APRS here also lands the DA-7X2's own APRS section
+  // beside it, so both radios' APRS is one chip on one page rather
+  // than two different places to look.
+  const featureTabs = ([
+    { id: 'feature-bootImage', title: 'Boot Image', feature: 'bootImage' },
+    { id: 'feature-oneKeyOperation', title: 'One Key Operation', feature: 'oneKeyOperation' },
+    { id: 'feature-roaming', title: 'Roaming', feature: 'roaming' },
+    { id: 'feature-gpsRoaming', title: 'GPS Roaming', feature: 'gpsRoaming' },
+    { id: 'feature-satellites', title: 'Satellites', feature: 'satellites' },
+    { id: 'feature-toneLists', title: '5-Tone & 2-Tone', feature: 'toneLists' },
+    { id: 'feature-emergencyAlarm', title: 'Emergency Alarm', feature: 'emergencyAlarm' },
+    // Its own chip rather than a block inside the Auto repeater settings
+    // section: it is a 250-slot table, not a field, and the section is built
+    // from the settings profile.
+    { id: 'feature-autoRepeaterOffsets', title: 'Auto-Repeater Offsets', feature: 'autoRepeaterOffsets' },
+    { id: 'feature-pictures', title: 'Boot & Standby Backgrounds', feature: 'pictures' },
+    { id: 'feature-gpsAprs', title: 'GPS & APRS', feature: 'gpsAprs' },
+    { id: 'feature-statusMessages', title: 'Status Messages', feature: 'statusMessages' },
+    { id: 'feature-hotKeyGrid', title: 'Hot Keys', feature: 'hotKeyGrid' },
+    { id: 'feature-addressBooks', title: 'Address Books', feature: 'addressBooks' },
+    { id: 'feature-smsStore', title: 'SMS Store', feature: 'smsStore' },
+    { id: 'feature-dtmf', title: 'DTMF', feature: 'dtmf' },
+  ] satisfies { id: string; title: string; feature: SettingsFeature }[]).filter((t) =>
+    settingsProfile?.features?.includes(t.feature) &&
+    // A section that owns an area renders it itself; listing it here too would
+    // draw it twice and give it a second, competing anchor.
+    !settingsProfile.sections.some((sec) => sec.area === t.feature)
+  );
+
   return (
-    <div className="h-full overflow-y-auto">
+    <div>
       {/* Boot image crop modal */}
       <Modal
         isOpen={showBootImageCropModal}
@@ -357,14 +381,14 @@ export const SettingsTab: React.FC = () => {
               <button
                 type="button"
                 onClick={closeBootImageCropModal}
-                className="px-4 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-50 text-neon-cyan text-sm font-medium rounded hover:bg-neon-cyan hover:text-black transition-colors"
+                className={`${BUTTON.neutral} px-4 py-2 border text-sm font-medium rounded`}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={applyBootImageCrop}
-                className="px-4 py-2 bg-neon-cyan text-black text-sm font-medium rounded hover:bg-cyan-300 transition-colors"
+                className={`${BUTTON.primary} px-4 py-2 text-sm font-medium rounded`}
               >
                 Apply
               </button>
@@ -373,10 +397,7 @@ export const SettingsTab: React.FC = () => {
         )}
       </Modal>
 
-      <div className="mb-6">
-        <SectionTitle as="h2" size="xl" bold className="text-2xl">Settings</SectionTitle>
-        <p className="text-cool-gray text-sm mt-1">Radio information, memory usage, and configuration</p>
-      </div>
+      <PageHeader title="Settings" description="Radio information, memory usage, and configuration" />
 
       {!radioInfo ? (
         <Card variant="subdued" className="border-opacity-30 text-center">
@@ -399,7 +420,7 @@ export const SettingsTab: React.FC = () => {
                   {(needsFirmwareUpdate || isNewerFirmware) && (
                     <button
                       onClick={() => setShowFirmwareWarning(true)}
-                      className="text-yellow-400 hover:text-yellow-300 transition-colors cursor-pointer"
+                      className={`${BUTTON.cautionLink} cursor-pointer`}
                       title={isNewerFirmware ? "Firmware version not recommended" : "Firmware update recommended"}
                     >
                       ⚠️
@@ -507,7 +528,7 @@ export const SettingsTab: React.FC = () => {
 
           {/* Boot / Startup Image Section - only when profile declares bootImage feature */}
           {settingsProfile?.features?.includes('bootImage') && (
-          <Card>
+          <Card id="settings-section-feature-bootImage">
             <SectionTitle size="lg" underline>Boot / Startup Image</SectionTitle>
             <p className="text-cool-gray text-sm mb-6">
               Optionally read from the radio to see the current image, then import your image (drag and drop or click Import). It will be resized to 240×320 portrait. When it looks right, send it to the radio.
@@ -520,7 +541,7 @@ export const SettingsTab: React.FC = () => {
                   type="button"
                   onClick={handleReadBootImage}
                   disabled={isConnecting}
-                  className="px-4 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-50 text-neon-cyan text-sm font-medium rounded hover:bg-neon-cyan hover:text-black disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className={`${BUTTON.outline} px-4 py-2 border text-sm font-medium rounded`}
                   title="Read current boot image from radio (optional)"
                 >
                   Read from radio
@@ -536,7 +557,7 @@ export const SettingsTab: React.FC = () => {
                   type="button"
                   onClick={() => bootImageFileInputRef.current?.click()}
                   disabled={isConnecting}
-                  className="px-4 py-2 bg-neon-cyan text-black text-sm font-medium rounded hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className={`${BUTTON.primary} px-4 py-2 text-sm font-medium rounded`}
                   title="Choose an image; it will be resized to 240×320"
                 >
                   Import
@@ -546,7 +567,7 @@ export const SettingsTab: React.FC = () => {
                   type="button"
                   onClick={handleWriteBootImageToRadio}
                   disabled={isConnecting || !pendingBootImagePayload || pendingBootImagePayload.length !== BOOT_IMAGE.SIZE}
-                  className="px-4 py-2 bg-neon-cyan text-black text-sm font-medium rounded hover:bg-cyan-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className={`${BUTTON.primary} px-4 py-2 text-sm font-medium rounded`}
                   title="Send your image to the radio"
                 >
                   Write to radio
@@ -640,23 +661,119 @@ export const SettingsTab: React.FC = () => {
               ) : null;
             }
             if (!radioSettings) return null;
+
+            const query = settingsFilter.trim().toLowerCase();
+            // Everything renders. Sections are AREAS, not tabs: a setting behind
+            // a tab is a setting nobody finds, and this page's problem was never
+            // that it showed too much — it was that there was no way to navigate
+            // it. So the chips below jump to a section rather than swapping it in,
+            // and the filter narrows what is on screen without hiding a section
+            // the user has not thought to click.
+            const changedCount = profile.sections.reduce(
+              (n, sec) => n + sec.fields.filter((f) => isFieldChanged(radioSettings, originalSettings, f.key)).length,
+              0
+            );
+            const showOnlyChanged = onlyChanged && changedCount > 0;
+            // A field is found by its label, hint, section title, or a bit or option label.
+            const visible = query || showOnlyChanged
+              ? profile.sections
+                  .map((sec) => ({
+                    ...sec,
+                    fields: sec.fields.filter(
+                      (f) =>
+                        fieldMatches(f, query, sec.title) &&
+                        (!showOnlyChanged || isFieldChanged(radioSettings, originalSettings, f.key))
+                    ),
+                  }))
+                  .filter((sec) => sec.fields.length > 0)
+              : profile.sections;
+            const matchCount = visible.reduce((n, sec) => n + sec.fields.length, 0);
+            const total = profile.sections.reduce((n, sec) => n + sec.fields.length, 0);
+
             return (
               <Card>
                 <SectionTitle underline>Radio Configuration</SectionTitle>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
-                  {profile.sections.map((section) => (
-                    <Card key={section.id} variant="subdued" padding="tight">
+
+                <div className="mt-3 mb-4 space-y-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      type="text"
+                      value={settingsFilter}
+                      onChange={(e) => setSettingsFilter(e.target.value)}
+                      placeholder={`Search ${total} settings…`}
+                      className={`${FIELD} w-full max-w-md border rounded px-3 py-1.5 text-sm`}
+                    />
+                    {changedCount > 0 && (
+                      <label className="flex items-center gap-1.5 text-xs text-cool-gray">
+                        <input type="checkbox" checked={onlyChanged} onChange={(e) => setOnlyChanged(e.target.checked)} />
+                        Show only changed ({changedCount})
+                      </label>
+                    )}
+                  </div>
+                  {query || showOnlyChanged ? (
+                    <p className="text-xs text-cool-gray">
+                      {matchCount} of {total} settings {query ? `match “${settingsFilter.trim()}”` : 'changed'}
+                      {query && showOnlyChanged && ', changed only'}
+                      {matchCount === 0 && query && ' — try part of the label the vendor CPS uses'}
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        ...profile.sections.map((sec) => ({
+                          id: sec.id,
+                          title: sec.title,
+                          count: sec.fields.length,
+                        })),
+                        ...featureTabs.map((t) => ({ id: t.id, title: t.title, count: null })),
+                      ].map((tab) => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() =>
+                            document
+                              .getElementById(`settings-section-${tab.id}`)
+                              ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          }
+                          className={`${BUTTON.subtle} px-2 py-0.5 text-xs border rounded`}
+                        >
+                          {tab.title}
+                          {tab.count !== null && <span className="ml-1 opacity-50">{tab.count}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* One section fills the width and columnises its own fields;
+                    a filter can match several, so those stack as cards. Keeping
+                    the old 4-across section grid for a single section left three
+                    empty columns and a very tall thin strip of inputs. */}
+                <div className="space-y-4">
+                  {visible.map((section) => (
+                    <Card
+                      key={section.id}
+                      id={`settings-section-${section.id}`}
+                      variant="subdued"
+                      padding="tight"
+                    >
                       <SectionTitle as="h4" size="md">{section.title}</SectionTitle>
-                      <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-3">
                         {section.fields.map((field) => (
                           <SettingsFieldRenderer
                             key={field.key}
                             field={field as SettingsFieldDescriptor}
                             value={getFieldValue(radioSettings, field.key)}
-                            onChange={(v) => handleFieldChange(radioSettings, field.key, v, updateRadioSettings)}
+                            onChange={(v) => setField(field.key, v)}
+                            changed={isFieldChanged(radioSettings, originalSettings, field.key)}
+                            onRevert={() => setField(field.key, getFieldValue(originalSettings, field.key))}
                           />
                         ))}
                       </div>
+                      {/* An area the section owns, below its own fields. */}
+                      {(() => {
+                        const Area = section.area ? FEATURE_AREAS[section.area] : undefined;
+                        return Area ? <div className="mt-6"><Area /></div> : null;
+                      })()}
                     </Card>
                   ))}
                 </div>
@@ -664,9 +781,21 @@ export const SettingsTab: React.FC = () => {
             );
           })()}
 
-          {/* One Key Operation - only when profile declares the feature */}
+          {/* Areas a radio declared, rendered from FEATURE_AREAS. The anchor id
+              is built from the same tab id the jump-nav chip uses, so the two
+              cannot drift apart. Order follows featureTabs. */}
+          {featureTabs.map((t) => {
+            const Area = FEATURE_AREAS[t.feature];
+            if (!Area) return null;
+            return (
+              <Card key={t.id} id={`settings-section-${t.id}`} className="mt-6">
+                <Area />
+              </Card>
+            );
+          })}
+
           {radioSettings && settingsProfile?.features?.includes('oneKeyOperation') && (
-            <Card className="mt-6">
+            <Card id="settings-section-feature-oneKeyOperation" className="mt-6">
               <SectionTitle underline>One Key Operation</SectionTitle>
 
               {/* Analog Call */}
@@ -696,7 +825,7 @@ export const SettingsTab: React.FC = () => {
                                   newAnalogCall[index] = { ...entry, callType: parseInt(e.target.value) || 0 };
                                   updateRadioSettings({ analogCall: newAnalogCall });
                                 }}
-                                className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                                className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               >
                                 {ANALOG_CALL_TYPE_OPTIONS.map(option => (
                                   <option key={option.value} value={option.value}>{option.label}</option>
@@ -714,7 +843,7 @@ export const SettingsTab: React.FC = () => {
                                   newAnalogCall[index] = { ...entry, callId: parseInt(e.target.value) || 0 };
                                   updateRadioSettings({ analogCall: newAnalogCall });
                                 }}
-                                className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                                className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               />
                             </td>
                           </tr>
@@ -754,7 +883,7 @@ export const SettingsTab: React.FC = () => {
                                 newOneTouchCall[index] = { ...entry, callType: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ oneTouchCall: newOneTouchCall });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             >
                               {ONE_TOUCH_CALL_TYPE_OPTIONS.map(option => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -772,7 +901,7 @@ export const SettingsTab: React.FC = () => {
                                 newOneTouchCall[index] = { ...entry, callObject: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ oneTouchCall: newOneTouchCall });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             />
                           </td>
                           <td className="py-2 px-3">
@@ -783,7 +912,7 @@ export const SettingsTab: React.FC = () => {
                                 newOneTouchCall[index] = { ...entry, digitalCallType: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ oneTouchCall: newOneTouchCall });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             >
                               {DIGITAL_CALL_TYPE_OPTIONS.map(option => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -801,7 +930,7 @@ export const SettingsTab: React.FC = () => {
                                 newOneTouchCall[index] = { ...entry, sms: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ oneTouchCall: newOneTouchCall });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             />
                           </td>
                         </tr>
@@ -843,7 +972,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, operateMode: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             >
                               {FUN_PLUS_OPERATE_MODE_OPTIONS.map(option => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -858,7 +987,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, menuSelect: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               disabled={entry.operateMode !== 1}
                             >
                               {FUN_PLUS_MENU_SELECT_OPTIONS.map(option => (
@@ -874,7 +1003,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, callWay: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               disabled={entry.operateMode !== 0}
                             >
                               {FUN_PLUS_CALL_WAY_OPTIONS.map(option => (
@@ -893,7 +1022,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, callObject: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               disabled={entry.operateMode !== 0}
                             />
                           </td>
@@ -905,7 +1034,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, digitalCallType: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-neon-cyan disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                               disabled={entry.operateMode !== 0 || entry.callWay !== 2}
                             >
                               {DIGITAL_CALL_TYPE_OPTIONS.map(option => (
@@ -924,7 +1053,7 @@ export const SettingsTab: React.FC = () => {
                                 newFunPlus[index] = { ...entry, sms: parseInt(e.target.value) || 0 };
                                 updateRadioSettings({ funPlus: newFunPlus });
                               }}
-                              className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                              className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                             />
                           </td>
                         </tr>
@@ -939,7 +1068,7 @@ export const SettingsTab: React.FC = () => {
 
           {/* GPS & APRS Settings */}
           {radioSettings && settingsProfile?.features?.includes('gpsAprs') && (
-            <Card className="mt-6">
+            <Card id="settings-section-feature-gpsAprs" className="mt-6">
               <SectionTitle underline>GPS & APRS</SectionTitle>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
@@ -960,7 +1089,9 @@ export const SettingsTab: React.FC = () => {
                         key={field.key}
                         field={field}
                         value={getFieldValue(radioSettings, field.key)}
-                        onChange={(v) => handleFieldChange(radioSettings, field.key, v, updateRadioSettings)}
+                        onChange={(v) => setField(field.key, v)}
+                        changed={isFieldChanged(radioSettings, originalSettings, field.key)}
+                        onRevert={() => setField(field.key, getFieldValue(originalSettings, field.key))}
                       />
                     ))}
                   </div>
@@ -977,7 +1108,9 @@ export const SettingsTab: React.FC = () => {
                         key={field.key}
                         field={field}
                         value={getFieldValue(radioSettings, field.key)}
-                        onChange={(v) => handleFieldChange(radioSettings, field.key, v, updateRadioSettings)}
+                        onChange={(v) => setField(field.key, v)}
+                        changed={isFieldChanged(radioSettings, originalSettings, field.key)}
+                        onRevert={() => setField(field.key, getFieldValue(originalSettings, field.key))}
                       />
                     ))}
                   </div>
@@ -997,7 +1130,9 @@ export const SettingsTab: React.FC = () => {
                         key={field.key}
                         field={field}
                         value={getFieldValue(radioSettings, field.key)}
-                        onChange={(v) => handleFieldChange(radioSettings, field.key, v, updateRadioSettings)}
+                        onChange={(v) => setField(field.key, v)}
+                        changed={isFieldChanged(radioSettings, originalSettings, field.key)}
+                        onRevert={() => setField(field.key, getFieldValue(originalSettings, field.key))}
                       />
                     ))}
 
@@ -1011,7 +1146,7 @@ export const SettingsTab: React.FC = () => {
                         max={16776415}
                         value={radioSettings.aprsUploadId ?? 0}
                         onChange={(e) => updateRadioSettings({ aprsUploadId: Math.max(0, Math.min(16776415, parseInt(e.target.value) || 0)) })}
-                        className="w-full px-3 py-2 bg-dark-charcoal border border-neon-cyan border-opacity-30 rounded text-white focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                        className={`${FIELD} w-full px-3 py-2 border rounded`}
                         placeholder="0 = unset"
                       />
                     </div>
@@ -1040,7 +1175,7 @@ export const SettingsTab: React.FC = () => {
                                   max={4000}
                                   value={(radioSettings[key] as number) ?? 0}
                                   onChange={(e) => updateRadioSettings({ [key]: parseInt(e.target.value) || 0 } as Partial<RadioSettings>)}
-                                  className="w-full px-2 py-1 bg-deep-gray border border-neon-cyan border-opacity-30 rounded text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+                                  className={`${FIELD} w-full px-2 py-1 border rounded text-sm`}
                                 />
                               </td>
                             </tr>
@@ -1069,7 +1204,7 @@ export const SettingsTab: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowCalibration(!showCalibration)}
-              className="px-3 py-1 bg-yellow-900/30 text-yellow-400 text-sm rounded border border-yellow-600/30 hover:bg-yellow-900/50 transition-colors"
+              className={`${BUTTON.caution} px-3 py-1 text-sm rounded border`}
             >
               {showCalibration ? 'Hide' : 'Show'}
             </button>
@@ -1229,7 +1364,7 @@ export const SettingsTab: React.FC = () => {
                 <>
                   <p className="text-white mb-2">
                     Your radio firmware version is <span className="font-mono text-neon-cyan">{radioInfo?.firmware}</span>, 
-                    but the recommended version is <span className="font-mono text-neon-cyan">{EXPECTED_FIRMWARE}</span>.
+                    but the recommended version is <span className="font-mono text-neon-cyan">{expectedFirmware}</span>.
                   </p>
                   <p className="text-cool-gray">
                     We recommend updating your firmware to ensure compatibility with all features and bug fixes. 

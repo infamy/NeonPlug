@@ -11,6 +11,14 @@ export const BAOFENG_ACK = 0x06;
 /** Block size for read/write. */
 export const BAOFENG_BLOCK_SIZE = 0x40;
 
+/**
+ * Blocks a BLE upload sends, from CHIRP's `UV5RMini.BLE_UP_BLOCK_SIZE`: its
+ * `_upload` writes 0x80 at a time over Bluetooth and 0x40 over serial. Sending
+ * 0x40 over Bluetooth leaves the radio waiting for the rest of a block, so it
+ * never answers with 0x06.
+ */
+export const BAOFENG_BLE_UPLOAD_BLOCK_SIZE = 0x80;
+
 /** Read response = 4-byte header + BLOCK_SIZE payload. */
 export const BAOFENG_READ_RESPONSE_LEN = 4 + BAOFENG_BLOCK_SIZE;
 
@@ -28,8 +36,13 @@ export const BAOFENG_CLONE_BLOCK_COUNT = BAOFENG_MEM_SIZES.reduce(
 export const BAOFENG_CHANNEL_COUNT = 999;
 export const BAOFENG_CHANNEL_SIZE = 32;
 
-/** Serial baud rate for UV5R-Mini (CHIRP default for Baofeng). */
-export const UV5RMINI_BAUD_RATE = 38400;
+/**
+ * Serial baud rate for UV5R-Mini, as CHIRP uses: its UV5RMini sets no rate of its own
+ * and inherits UV17Pro.BAUD_RATE = 115200, the only rate in baofeng_uv17Pro.py.
+ * This was 38400, and the radio did not answer the ident at that speed (2026-09-12).
+ * BLE has no baud rate, so BLE reads never showed it.
+ */
+export const UV5RMINI_BAUD_RATE = 115200;
 
 /** Firmware version string offset in clone image (CHIRP baofeng_uv17Pro _fw_ver_start). */
 export const BAOFENG_FW_VER_OFFSET = 0x1ef0;

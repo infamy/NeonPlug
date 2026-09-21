@@ -18,6 +18,14 @@ export interface RadioDescriptor {
   group?: string;
   /** Whether the radio supports BLE in addition to serial. */
   supportsBle: boolean;
+  /**
+   * Maturity, shown as a badge in the picker.
+   *
+   * 'alpha' means the driver writes to this radio but has not been proven
+   * across the whole codeplug — the user is choosing it knowing that. Absent
+   * means no badge, which is the claim that it is ordinary.
+   */
+  status?: 'alpha';
   /** Factory that returns a new protocol instance. */
   protocolFactory: () => RadioProtocol;
   /** Capabilities for this radio (limits, feature flags, parsers). */

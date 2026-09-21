@@ -20,5 +20,18 @@ export interface EncryptionKey {
   
   /** Key (32 bytes, 64 hex chars) */
   key: string;
+
+  /**
+   * Radio-side identifier that a channel references to select this key.
+   *
+   * Present only on radios whose key table carries an ID separate from the
+   * slot — the DA-7X2's basic "Encryption Code" table stores a 16-bit ID
+   * alongside the key, and a channel points at that ID rather than at the slot.
+   * The DM-32 has no equivalent, so this is undefined there and must stay
+   * optional.
+   *
+   * It is NOT the same as `id`, which is the slot/entry number.
+   */
+  encryptionId?: number;
 }
 

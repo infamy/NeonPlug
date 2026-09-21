@@ -4,11 +4,12 @@ import { ConfirmModal } from './ConfirmModal';
 import { getRadioPickerOptions } from '../../radios';
 import { useRadioStore } from '../../store/radioStore';
 import { isWebSerialSupported, isWebBluetoothSupported, getSupportedBrowsers } from '../../utils/browserSupport';
-import { downloadOfflineAsZip } from '../../utils/offlineDownload';
+import { downloadOfflineAsZip, OFFLINE_RELEASE_URL } from '../../utils/offlineDownload';
 import { getSnapshots, getSnapshotData, clearSnapshots, type SnapshotEventType } from '../../services/codeplugSnapshots';
-import type { CodeplugData } from '../../services/codeplugExport';
-
-const OFFLINE_VERSION_URL = 'https://infamy.github.io/NeonPlug/';
+import { readWithFormatOverride, type CodeplugData } from '../../services/codeplugExport';
+import { BUTTON } from './controlStyles';
+import { useConfirmDialog } from '../../hooks/useConfirmDialog';
+import { confirmNewerFormat } from '../../utils/codeplugFormatPrompt';
 
 function formatEventType(eventType?: SnapshotEventType): string {
   if (!eventType) return '';
@@ -41,8 +42,8 @@ interface StartupModalProps {
 }
 
 const OFFLINE_FALLBACK_MESSAGE =
-  'The offline version is available on GitHub Pages.\n\n' +
-  'Click OK to open it, then use your browser\'s "Save Page As" to save as neonplug.html.\n\n' +
+  'The latest tagged release is published as a single downloadable HTML file.\n\n' +
+  'Click Download to save neonplug-latest.html from GitHub Releases.\n\n' +
   'Or build it locally using the instructions in the About tab.';
 
 export const StartupModal: React.FC<StartupModalProps> = ({
@@ -58,6 +59,10 @@ export const StartupModal: React.FC<StartupModalProps> = ({
   const [recentExpanded, setRecentExpanded] = useState(false);
   const [snapshots, setSnapshots] = useState<ReturnType<typeof getSnapshots>>([]);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  /** Which brand's radios are showing; null shows the brand tier. */
+  const [brand, setBrand] = useState<string | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const { confirm, confirmProps } = useConfirmDialog();
   const { selectedRadioModel, setSelectedRadioModel } = useRadioStore();
 
   useEffect(() => {
@@ -66,6 +71,12 @@ export const StartupModal: React.FC<StartupModalProps> = ({
     }
   }, [isOpen]);
   const options = useMemo(() => getRadioPickerOptions(), []);
+
+  // Reopening follows the remembered radio again, rather than leaving the list
+  // wherever it was last browsed.
+  useEffect(() => {
+    if (isOpen) setBrand(null);
+  }, [isOpen]);
 
   // Group options by manufacturer; ungrouped radios go under a blank key
   const groupedOptions = useMemo(() => {
@@ -78,9 +89,18 @@ export const StartupModal: React.FC<StartupModalProps> = ({
     return groups;
   }, [options]);
 
-  // Default to first radio if none selected
-  const effectiveSelected = selectedRadioModel ?? options[0]?.modelId ?? null;
-  const selectedOption = options.find(o => o.modelId === effectiveSelected);
+  // NO fallback to the first radio. It used to default to options[0], which put
+  // "Read from DM-32UV" under the biggest button on screen for somebody who had
+  // never chosen a DM-32UV; the Read button is disabled until a radio is picked.
+  // Persisted now, so a returning user arrives with theirs already selected.
+  const effectiveSelected = selectedRadioModel;
+  const selectedOption = options.find((o) => o.modelId === effectiveSelected);
+
+  // Which brand's radios are listed: whatever was clicked, else the brand of
+  // the remembered radio, else the first. Derived rather than stored, so it
+  // cannot drift out of step with the selection.
+  const activeBrand =
+    brand ?? selectedOption?.group ?? Array.from(groupedOptions.keys())[0] ?? '';
 
   if (!isOpen) return null;
 
@@ -107,44 +127,72 @@ export const StartupModal: React.FC<StartupModalProps> = ({
   };
 
   return (
+    // The overlay scrolls, and the panel centres itself only when it fits (my-auto).
+    // Centred in a fixed box instead, a panel taller than the window lost its top
+    // and bottom with no way to reach them: a 1366×768 laptop on first run.
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90"
+      className="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-black bg-opacity-90 p-4"
     >
       <div
-        className="bg-deep-gray rounded-lg p-8 max-w-md w-full mx-4 border border-neon-cyan shadow-glow-cyan"
+        className="my-auto bg-deep-gray rounded-lg p-6 sm:p-8 max-w-md w-full border border-neon-cyan shadow-glow-cyan"
       >
         <div className="text-center mb-6">
           <h1 className="text-4xl font-bold text-neon-cyan mb-2">NEONPLUG</h1>
           <p className="text-cool-gray text-sm">Channel programming software</p>
         </div>
 
+        {/* Brands beside radios, not one behind the other.
+            A single scrolling list stopped fitting once the DA-7X2 gained its
+            second name, and a drill-down fixed that by charging a click for
+            something the eye can do — so both columns are on screen, and the
+            one that grows scrolls. */}
         <p className="text-white text-center mb-4">Pick a radio</p>
-        <div className="mb-6 space-y-3 max-h-64 overflow-y-auto pr-1">
-          {Array.from(groupedOptions.entries()).map(([group, opts]) => (
-            <div key={group || '__ungrouped'}>
-              {group && (
-                <p className="text-cool-gray text-xs font-semibold uppercase tracking-wider mb-1 px-1">
-                  {group}
-                </p>
-              )}
-              <div className="grid grid-cols-2 gap-2">
-                {opts.map((opt) => (
-                  <button
-                    key={opt.modelId}
-                    type="button"
-                    onClick={() => setSelectedRadioModel(opt.modelId)}
-                    className={`flex items-center justify-center px-3 py-2 rounded border-2 transition-all text-sm font-medium ${
-                      effectiveSelected === opt.modelId
-                        ? 'border-neon-cyan bg-neon-cyan bg-opacity-10 shadow-glow-cyan text-white'
-                        : 'border-cool-gray hover:border-neon-cyan text-cool-gray hover:text-white'
-                    }`}
+        <div className="mb-6 grid grid-cols-[7rem_1fr] gap-2 max-h-64">
+          <div className="overflow-y-auto pr-1 space-y-1">
+            {Array.from(groupedOptions.entries()).map(([group, opts]) => (
+              <button
+                key={group || '__ungrouped'}
+                type="button"
+                onClick={() => setBrand(group)}
+                className={`w-full flex items-baseline justify-between px-2 py-1.5 rounded border transition-all text-xs font-semibold uppercase tracking-wider ${
+                  activeBrand === group
+                    ? 'border-neon-cyan bg-neon-cyan bg-opacity-10 text-white'
+                    : 'border-transparent hover:border-cool-gray text-cool-gray hover:text-white'
+                }`}
+              >
+                <span>{group || 'Other'}</span>
+                <span className="text-[10px] opacity-50 font-normal">{opts.length}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="overflow-y-auto pr-1 space-y-2 content-start">
+            {(groupedOptions.get(activeBrand) ?? []).map((opt) => (
+              <button
+                key={opt.modelId}
+                type="button"
+                onClick={() => setSelectedRadioModel(opt.modelId)}
+                className={`w-full flex items-center justify-center px-3 py-2 rounded border-2 transition-all text-sm font-medium ${
+                  effectiveSelected === opt.modelId
+                    ? 'border-neon-cyan bg-neon-cyan bg-opacity-10 shadow-glow-cyan text-white'
+                    : 'border-cool-gray hover:border-neon-cyan text-cool-gray hover:text-white'
+                }`}
+              >
+                {opt.label}
+                {opt.status === 'alpha' && (
+                  // Said plainly at the moment of choosing, not buried in a
+                  // doc: this driver writes to the radio and not every region
+                  // has been proven on hardware.
+                  <span
+                    title="Alpha: writes are supported but not every region is hardware-verified"
+                    className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-500 bg-opacity-20 text-yellow-400 border border-yellow-600 border-opacity-50"
                   >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+                    Alpha
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="space-y-4 mb-6">
@@ -171,18 +219,20 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           <Button
             variant="primary"
             onClick={handleReadClick}
-            className="w-full py-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-deep-gray disabled:text-cool-gray disabled:shadow-none"
+            size="none"
+            className="w-full px-4 py-4 text-lg disabled:bg-deep-gray disabled:text-cool-gray disabled:shadow-none"
             glow={canConnect}
             disabled={!canConnect || !effectiveSelected}
             title={!canConnect ? 'Web Serial and Web Bluetooth are not supported in this browser' : `Read codeplug from ${selectedOption?.label ?? 'radio'}`}
           >
-            Read from {selectedOption?.label ?? 'Radio'}
+            {selectedOption ? `Read from ${selectedOption.label}` : 'Pick a radio first'}
           </Button>
 
           <Button
             variant="secondary"
             onClick={onLoadFile}
-            className="w-full py-4 text-lg"
+            size="none"
+            className="w-full px-4 py-4 text-lg"
           >
             Import Codeplug
           </Button>
@@ -195,7 +245,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
               <button
                 type="button"
                 onClick={() => setRecentExpanded(!recentExpanded)}
-                className="w-full px-4 py-2 flex items-center justify-between text-left text-cool-gray hover:text-white hover:bg-cool-gray hover:bg-opacity-20 transition-colors"
+                className={`${BUTTON.menuItem} w-full px-4 py-2 flex items-center justify-between text-left`}
               >
                 <span className="text-sm font-medium">Recent codeplugs ({snapshots.length})</span>
                 <span className="text-xs">{recentExpanded ? '▼' : '▶'}</span>
@@ -212,7 +262,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                           {s.eventType && (
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
                               s.eventType === 'read' ? 'bg-neon-cyan bg-opacity-20 text-neon-cyan' :
-                              s.eventType === 'write' ? 'bg-neon-purple bg-opacity-20 text-neon-purple' :
+                              s.eventType === 'write' ? 'bg-neon-magenta bg-opacity-20 text-neon-magenta' :
                               'bg-amber-500 bg-opacity-20 text-amber-400'
                             }`}>
                               {formatEventType(s.eventType)}
@@ -227,14 +277,25 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                       </div>
                       <button
                         type="button"
-                        onClick={() => {
-                          const data = getSnapshotData(s.id);
+                        onClick={async () => {
+                          let data;
+                          try {
+                            data = await readWithFormatOverride(
+                              (opts) => getSnapshotData(s.id, opts),
+                              confirmNewerFormat(confirm)
+                            );
+                          } catch (error) {
+                            setRestoreError(
+                              error instanceof Error ? error.message : 'Unknown error'
+                            );
+                            return;
+                          }
                           if (data) {
                             onRestoreSnapshot(data);
                             setRecentExpanded(false);
                           }
                         }}
-                        className="flex-shrink-0 px-3 py-1 text-xs font-semibold text-neon-cyan border border-neon-cyan rounded hover:bg-neon-cyan hover:bg-opacity-20 transition-colors"
+                        className={`${BUTTON.outline} flex-shrink-0 px-3 py-1 text-xs font-semibold border rounded`}
                       >
                         Restore
                       </button>
@@ -244,7 +305,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setClearConfirmOpen(true)}
-                      className="text-xs text-cool-gray hover:text-red-400 transition-colors"
+                      className={`${BUTTON.dangerQuiet} text-xs`}
                     >
                       Clear all
                     </button>
@@ -264,7 +325,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
                   setOfflineFallbackOpen(true);
                 }
               }}
-              className="text-neon-cyan hover:underline bg-transparent border-none cursor-pointer p-0 font-inherit text-inherit"
+              className={`${BUTTON.link} hover:underline cursor-pointer p-0`}
             >
               Download offline version (ZIP)
             </button>
@@ -273,7 +334,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           {onDismiss && (
             <button
               onClick={onDismiss}
-              className="w-full text-cool-gray hover:text-white text-sm py-2"
+              className={`${BUTTON.ghost} w-full text-sm py-2`}
             >
               Continue with sample data
             </button>
@@ -281,7 +342,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
           {onCancel && (
             <button
               onClick={onCancel}
-              className="w-full text-cool-gray hover:text-white text-sm py-2"
+              className={`${BUTTON.ghost} w-full text-sm py-2`}
             >
               Cancel
             </button>
@@ -312,7 +373,7 @@ export const StartupModal: React.FC<StartupModalProps> = ({
             <button
               type="button"
               onClick={() => setTransportChoiceOpen(false)}
-              className="w-full text-cool-gray hover:text-white text-sm mt-4"
+              className={`${BUTTON.ghost} w-full text-sm mt-4`}
             >
               Cancel
             </button>
@@ -323,11 +384,12 @@ export const StartupModal: React.FC<StartupModalProps> = ({
       <ConfirmModal
         isOpen={offlineFallbackOpen}
         onClose={() => setOfflineFallbackOpen(false)}
-        onConfirm={() => window.open(OFFLINE_VERSION_URL, '_blank')}
+        onConfirm={() => window.open(OFFLINE_RELEASE_URL, '_blank')}
         title="Download offline version"
         message={OFFLINE_FALLBACK_MESSAGE}
-        confirmLabel="OK"
-        variant="alert"
+        confirmLabel="Download"
+        cancelLabel="Close"
+        variant="default"
       />
       <ConfirmModal
         isOpen={clearConfirmOpen}
@@ -340,8 +402,17 @@ export const StartupModal: React.FC<StartupModalProps> = ({
         title="Clear all snapshots"
         message="Remove all recent codeplug snapshots from local storage? This cannot be undone."
         confirmLabel="Clear all"
+        variant="danger"
+      />
+      <ConfirmModal
+        isOpen={restoreError !== null}
+        onClose={() => setRestoreError(null)}
+        title="Cannot restore snapshot"
+        message={restoreError ?? ''}
+        confirmLabel="OK"
         variant="alert"
       />
+      <ConfirmModal {...confirmProps} />
     </div>
   );
 };

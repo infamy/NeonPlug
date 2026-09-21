@@ -7,5 +7,14 @@ export interface Contact {
   province?: string;           // Province/State
   country?: string;            // Country
   remark?: string;             // Additional remarks/notes
+  /**
+   * In the radio's Friends List.
+   *
+   * On the DA-7X2 this is not a separate list — it is the vendor's `MyFriend`
+   * flag on the contact itself, and the CPS's Friends List is a filtered view.
+   * Optional so radios without the concept stay distinguishable from "not a
+   * friend".
+   */
+  isFriend?: boolean;
 }
 

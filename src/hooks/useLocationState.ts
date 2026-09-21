@@ -38,7 +38,14 @@ export function useLocationState() {
     } else {
       if (!city.trim()) throw new Error('Please enter a city name.');
       const geocoded = await geocodeLocation(city, state);
-      if (!geocoded) throw new Error('Could not find location. Please check the city and state names, or use coordinates instead.');
+      if (!geocoded) {
+        // The lookup also comes back empty on a network error, which is not a spelling mistake.
+        throw new Error(
+          navigator.onLine
+            ? 'Could not find location. Please check the city and state names, or use coordinates instead.'
+            : 'Finding a city needs an internet connection. Use your current location or enter coordinates instead.'
+        );
+      }
       lat = geocoded.latitude;
       lon = geocoded.longitude;
       setLatitude(lat.toFixed(6));

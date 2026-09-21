@@ -3,22 +3,72 @@ import { createDefaultChannel } from '../../utils/channelHelpers';
 import { CTCSS_FREQUENCIES } from '../../utils/ctcssConstants';
 import { parseCSV, type ImportResult } from './csvImporter';
 
+const NO_TONE: CTCSSDCS = { type: 'None' };
+
+function ctcss(hz: number): CTCSSDCS {
+  // Any standard tone, or anything in the CTCSS range
+  const standard = CTCSS_FREQUENCIES.some((std) => Math.abs(std - hz) < 0.1);
+  return standard || (hz >= 67 && hz <= 250.3) ? { type: 'CTCSS', value: hz } : NO_TONE;
+}
+
+function dcs(code: number, polarity: string | undefined): CTCSSDCS {
+  // CHIRP marks a reversed (inverted) code R; NeonPlug calls it P.
+  return code > 0 ? { type: 'DCS', value: code, polarity: polarity === 'R' ? 'P' : 'N' } : NO_TONE;
+}
+
+/**
+ * A row's TX and RX tones, read the way CHIRP reads its own columns (split_tone_encode in
+ * chirp_common.py). CHIRP writes every tone column on every row, 88.5 Hz and code 023 where
+ * nothing is set, so only the Tone column says which of them count:
+ *
+ * - Tone:  TX rToneFreq, RX none
+ * - TSQL:  TX and RX cToneFreq
+ * - DTCS:  TX and RX DtcsCode
+ * - Cross: CrossMode is "TX->RX". Tone is rToneFreq on TX and cToneFreq on RX, DTCS is
+ *          DtcsCode on TX and RxDtcsCode on RX, and an empty side has no tone.
+ *
+ * Anything else, a blank Tone included, has no tones. DtcsPolarity is two letters, TX then RX.
+ */
+function chirpRowTones(columns: {
+  tone: string;
+  rToneFreq: number;
+  cToneFreq: number;
+  dtcsCode: number;
+  rxDtcsCode: number;
+  dtcsPolarity: string;
+  crossMode: string;
+}): { tx: CTCSSDCS; rx: CTCSSDCS } {
+  const [txPolarity, rxPolarity] = columns.dtcsPolarity.toUpperCase();
+  switch (columns.tone) {
+    case 'Tone':
+      return { tx: ctcss(columns.rToneFreq), rx: NO_TONE };
+    case 'TSQL':
+      return { tx: ctcss(columns.cToneFreq), rx: ctcss(columns.cToneFreq) };
+    case 'DTCS':
+      return { tx: dcs(columns.dtcsCode, txPolarity), rx: dcs(columns.dtcsCode, rxPolarity) };
+    case 'Cross': {
+      const [txMode = '', rxMode = ''] = columns.crossMode.split('->');
+      const tx =
+        txMode === 'Tone' ? ctcss(columns.rToneFreq) : txMode === 'DTCS' ? dcs(columns.dtcsCode, txPolarity) : NO_TONE;
+      const rx =
+        rxMode === 'Tone' ? ctcss(columns.cToneFreq) : rxMode === 'DTCS' ? dcs(columns.rxDtcsCode, rxPolarity) : NO_TONE;
+      return { tx, rx };
+    }
+    default:
+      return { tx: NO_TONE, rx: NO_TONE };
+  }
+}
+
 /**
  * Parse Chirp CSV format and convert to Channel objects
- * 
+ *
  * Chirp CSV format fields:
  * - Location: Channel number (we ignore this and use next available)
  * - Name: Channel name
  * - Frequency: RX Frequency (MHz)
- * - Duplex: Duplex mode (we ignore)
- * - Offset: Offset in MHz (positive = +, negative = -)
- * - Tone: Tone mode (Tone, TSQL, DTCS, Cross, None)
- * - rToneFreq: RX tone frequency (Hz)
- * - cToneFreq: TX tone frequency (Hz)
- * - DtcsCode: DCS code
- * - DtcsPolarity: DCS polarity (N or P)
- * - RxDtcsCode: RX DCS code
- * - CrossMode: Cross mode
+ * - Duplex: '+' or '-' shifts TX by Offset, 'split' makes Offset the TX frequency, 'off' means no TX
+ * - Offset: A size in MHz, always positive; Duplex gives its direction
+ * - Tone, rToneFreq, cToneFreq, DtcsCode, DtcsPolarity, RxDtcsCode, CrossMode: see chirpRowTones
  * - Mode: FM, NFM, DV, etc.
  * - TStep: Step frequency (kHz)
  * - Skip: Skip flag
@@ -48,6 +98,7 @@ export function importChannelsFromChirpCSV(
     // Location field is ignored - we use next available channel number
     const nameIdx = getIndex('Name');
     const frequencyIdx = getIndex('Frequency');
+    const duplexIdx = getIndex('Duplex');
     const offsetIdx = getIndex('Offset');
     const toneIdx = getIndex('Tone');
     const rToneFreqIdx = getIndex('rToneFreq');
@@ -55,7 +106,7 @@ export function importChannelsFromChirpCSV(
     const dtcsCodeIdx = getIndex('DtcsCode');
     const dtcsPolarityIdx = getIndex('DtcsPolarity');
     const rxDtcsCodeIdx = getIndex('RxDtcsCode');
-    // CrossMode is handled via tone mode, not stored separately
+    const crossModeIdx = getIndex('CrossMode');
     const modeIdx = getIndex('Mode');
     const tStepIdx = getIndex('TStep');
     const skipIdx = getIndex('Skip');
@@ -84,14 +135,8 @@ export function importChannelsFromChirpCSV(
         // Get basic fields
         const name = getValue(nameIdx) || `Channel ${currentChannelNumber}`;
         const rxFrequency = getNumber(frequencyIdx, 0);
-        const offset = getValue(offsetIdx);
-        const tone = getValue(toneIdx);
-        const rToneFreq = getNumber(rToneFreqIdx, 0);
-        const cToneFreq = getNumber(cToneFreqIdx, 0);
-        const dtcsCode = getNumber(dtcsCodeIdx, 0);
-        const dtcsPolarity = getValue(dtcsPolarityIdx).toUpperCase() as 'N' | 'P' | '';
-        const rxDtcsCode = getNumber(rxDtcsCodeIdx, 0);
-        // CrossMode is handled via tone mode, not stored separately
+        const duplex = getValue(duplexIdx).toLowerCase();
+        const offset = getNumber(offsetIdx, 0);
         const mode = getValue(modeIdx).toUpperCase();
         const tStep = getNumber(tStepIdx, 0);
         const skip = getValue(skipIdx);
@@ -105,88 +150,33 @@ export function importChannelsFromChirpCSV(
           continue;
         }
 
-        // Calculate TX frequency from offset
+        // TX frequency from Duplex and Offset. Offset is only a size: without Duplex it
+        // means nothing, which is why a '-' repeater used to come in transmitting above RX.
+        const mhz = (value: number) => Math.round(value * 1e6) / 1e6;
         let txFrequency = rxFrequency;
-        if (offset) {
-          const offsetNum = parseFloat(offset);
-          if (!isNaN(offsetNum)) {
-            txFrequency = rxFrequency + offsetNum;
-          }
-        }
+        let forbidTx = false;
+        if (duplex === '+') txFrequency = mhz(rxFrequency + offset);
+        else if (duplex === '-') txFrequency = mhz(rxFrequency - offset);
+        else if (duplex === 'split' && offset > 0) txFrequency = offset;
+        else if (duplex === 'off') forbidTx = true;
 
         // Determine channel mode
         // Note: Chirp doesn't actually support digital channels, so even if we detect
         // digital indicators (DV mode, URCALL, etc.), we'll import as analog
-        let channelMode: Channel['mode'] = 'Analog';
-        // If mode is explicitly FM or NFM, use Analog
-        if (mode === 'NFM' || mode === 'FM') {
-          channelMode = 'Analog';
-        }
-        // Even if we see DV/DMR indicators, import as analog since Chirp doesn't support digital
-        // The user can manually convert to digital later if needed
+        const channelMode: Channel['mode'] = 'Analog';
 
         // Determine bandwidth from mode
         const bandwidth: Channel['bandwidth'] = mode === 'NFM' ? '12.5kHz' : '25kHz';
 
-        // Parse tone settings
-        const parseTone = (toneMode: string, toneFreq: number, dcsCode: number, dcsPolarity: 'N' | 'P' | ''): CTCSSDCS => {
-          if (toneMode === 'DTCS' || toneMode === 'DTCS-R' || dcsCode > 0) {
-            // Use DCS code if available
-            const code = dcsCode > 0 ? dcsCode : (toneFreq > 0 ? Math.round(toneFreq) : 0);
-            if (code > 0) {
-              // Accept any DCS code, not just ones in the predefined list
-              // The radio will handle validation
-              return {
-                type: 'DCS',
-                value: code,
-                polarity: dcsPolarity || 'N',
-              };
-            }
-          }
-          
-          if (toneMode === 'Tone' || toneMode === 'TSQL' || toneMode === 'Cross' || toneFreq > 0) {
-            // Use CTCSS frequency
-            const freq = toneFreq > 0 ? toneFreq : 0;
-            if (freq > 0) {
-              // Accept any CTCSS frequency in the standard range (67-250.3 Hz)
-              // Check if it's close to a standard frequency or just use it directly
-              const isStandardFreq = CTCSS_FREQUENCIES.some(stdFreq => Math.abs(stdFreq - freq) < 0.1);
-              if (isStandardFreq || (freq >= 67 && freq <= 250.3)) {
-                return {
-                  type: 'CTCSS',
-                  value: freq,
-                };
-              }
-            }
-          }
-          
-          return { type: 'None' };
-        };
-
-        // Parse RX and TX tones
-        // RX tone mode: TSQL/Cross use the tone value, DTCS uses DTCS-R if rxDtcsCode is set, otherwise check if tone is DTCS
-        const rxToneMode = tone === 'TSQL' || tone === 'Cross' 
-          ? tone 
-          : (tone === 'DTCS' || rxDtcsCode > 0 ? 'DTCS-R' : '');
-        
-        // TX tone mode: Tone/TSQL/Cross use the tone value, DTCS uses DTCS if tone is DTCS or dtcsCode is set
-        const txToneMode = tone === 'Tone' || tone === 'TSQL' || tone === 'Cross' 
-          ? tone 
-          : (tone === 'DTCS' || dtcsCode > 0 ? 'DTCS' : '');
-        
-        const rxCtcssDcs = parseTone(
-          rxToneMode,
-          rToneFreq,
-          rxDtcsCode > 0 ? rxDtcsCode : dtcsCode,
-          dtcsPolarity
-        );
-        
-        const txCtcssDcs = parseTone(
-          txToneMode,
-          cToneFreq,
-          dtcsCode,
-          dtcsPolarity
-        );
+        const tones = chirpRowTones({
+          tone: getValue(toneIdx),
+          rToneFreq: getNumber(rToneFreqIdx, 0),
+          cToneFreq: getNumber(cToneFreqIdx, 0),
+          dtcsCode: getNumber(dtcsCodeIdx, 0),
+          rxDtcsCode: getNumber(rxDtcsCodeIdx, 0),
+          dtcsPolarity: getValue(dtcsPolarityIdx),
+          crossMode: getValue(crossModeIdx),
+        });
 
         // Determine power level
         let powerLevel: Channel['power'] = 'High';
@@ -221,11 +211,12 @@ export function importChannelsFromChirpCSV(
           name: name.substring(0, 16), // Max 16 chars
           rxFrequency,
           txFrequency,
+          forbidTx,
           mode: channelMode,
           bandwidth,
           power: powerLevel,
-          rxCtcssDcs,
-          txCtcssDcs,
+          rxCtcssDcs: tones.rx,
+          txCtcssDcs: tones.tx,
           stepFrequency: stepFreq,
           scanAdd: skip.toLowerCase() !== 's', // Skip = 'S' means don't scan
           source: comment || `Imported from Chirp CSV`,
@@ -253,4 +244,3 @@ export function importChannelsFromChirpCSV(
     };
   }
 }
-

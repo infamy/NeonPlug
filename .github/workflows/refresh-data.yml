@@ -1,0 +1,90 @@
+name: Refresh RadioID Data
+
+# radioid.net's DMR user list and repeater list, kept fresh in src/data. The site
+# serves those files as they are (deploy.yml copies src/data), so a download is
+# only committed after it passes the checks below, and a push is followed by an
+# explicit deploy.
+
+on:
+  schedule:
+    - cron: '0 6 */3 * *'  # Every 3 days at 06:00 UTC
+  workflow_dispatch:        # Manual trigger via GitHub Actions UI
+
+permissions:
+  contents: write  # commit the refreshed files
+  actions: write   # start the Pages deploy
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download latest RadioID data
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/radioid
+          curl -fsSL --retry 3 --max-time 300 "https://radioid.net/static/user.csv" -o /tmp/radioid/radioid-users.csv
+          curl -fsSL --retry 3 --max-time 300 "https://radioid.net/static/rptrs.json" -o /tmp/radioid/rptrs.json
+
+      # A bad download (an error page, a cut-off file, a changed format) must never
+      # replace good data. Each file has to keep the shape the app reads, and hold
+      # at least 90% of the entries in the file it replaces.
+      - name: Check the downloads
+        run: |
+          set -euo pipefail
+          node - <<'EOF'
+          const fs = require('fs');
+          const fail = (msg) => { console.error(msg); process.exit(1); };
+          const lines = (f) => fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean);
+
+          // ContactsTab reads these columns by position, so the header must match exactly.
+          const header = 'RADIO_ID,CALLSIGN,FIRST_NAME,LAST_NAME,CITY,STATE,COUNTRY';
+          const csvNew = lines('/tmp/radioid/radioid-users.csv');
+          const csvOld = lines('src/data/radioid-users.csv');
+          if (csvNew[0] !== header) fail(`user.csv header changed: ${csvNew[0]}`);
+          if (csvNew.length < csvOld.length * 0.9) fail(`user.csv has ${csvNew.length} lines, the current file ${csvOld.length}`);
+
+          const repeaters = (f) => {
+            const list = JSON.parse(fs.readFileSync(f, 'utf8')).rptrs;
+            if (!Array.isArray(list)) fail(`${f} has no rptrs list`);
+            return list.length;
+          };
+          const rptrsNew = repeaters('/tmp/radioid/rptrs.json');
+          const rptrsOld = repeaters('src/data/rptrs.json');
+          if (rptrsNew < rptrsOld * 0.9) fail(`rptrs.json has ${rptrsNew} repeaters, the current file ${rptrsOld}`);
+
+          console.log(`user.csv: ${csvNew.length - 1} users (was ${csvOld.length - 1}); rptrs.json: ${rptrsNew} repeaters (was ${rptrsOld})`);
+          EOF
+          cp /tmp/radioid/radioid-users.csv /tmp/radioid/rptrs.json src/data/
+
+      - name: Commit and push if changed
+        id: commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/data/radioid-users.csv src/data/rptrs.json
+          if git diff --staged --quiet; then
+            echo "No changes — data is already up to date"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "chore: refresh RadioID data $(date -u +%Y-%m-%d)"
+            # main may have moved since the checkout; put the data commit on top of it.
+            git pull --rebase origin main
+            git push
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A push made with GITHUB_TOKEN starts no workflows (see release.yml), so
+      # without this the site keeps serving the old files until something else merges.
+      - name: Trigger Pages deploy
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref main

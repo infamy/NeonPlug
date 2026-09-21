@@ -1,16 +1,36 @@
-import React from 'react';
+import React, { useId, type ReactNode } from 'react';
+import { BUTTON } from './controlStyles';
 
 export type ConfirmModalVariant = 'danger' | 'default' | 'alert';
+
+const DANGER_BUTTON =
+  'px-4 py-2 rounded font-medium bg-red-600 bg-opacity-20 border border-red-500 border-opacity-50 text-red-300 hover:bg-opacity-30 hover:border-opacity-70 transition-colors';
+const PRIMARY_BUTTON =
+  'px-4 py-2 rounded font-medium bg-neon-cyan bg-opacity-15 border border-neon-cyan border-opacity-50 text-neon-cyan hover:bg-opacity-25 transition-colors';
 
 interface ConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm?: () => void;
   title: string;
-  message: string;
+  /** Plain text, shown with its own line breaks. */
+  message?: string;
+  /**
+   * Structured content, rendered INSTEAD of `message`.
+   *
+   * For dialogs whose content has real hierarchy. The write confirmation was a
+   * pre-wrapped string, which flattened destructive warnings, byte counts and a
+   * checklist into one grey paragraph — with a text divider wider than the
+   * dialog and hard line breaks landing mid-sentence.
+   */
+  body?: ReactNode;
+  /** 'lg' widens the dialog for content that needs the room. */
+  size?: 'md' | 'lg';
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: ConfirmModalVariant;
+  /** A third choice, between Cancel and the confirm button. Like them, it closes the dialog. */
+  extraAction?: { label: string; onClick: () => void; variant?: 'danger' | 'default' };
 }
 
 export const ConfirmModal: React.FC<ConfirmModalProps> = ({
@@ -19,10 +39,14 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   onConfirm,
   title,
   message,
+  body,
+  size = 'md',
   confirmLabel = 'Delete',
   cancelLabel = 'Cancel',
   variant = 'danger',
+  extraAction,
 }) => {
+  const titleId = useId();
   if (!isOpen) return null;
 
   const handleConfirm = () => {
@@ -35,37 +59,53 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-75"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-75 p-4"
       onClick={onClose}
     >
       <div
-        className={`bg-deep-gray rounded-lg p-6 max-w-md w-full mx-4 border shadow-xl flex flex-col gap-4 ${
-          isDanger ? 'border-red-500 border-opacity-50' : 'border-neon-cyan border-opacity-30'
-        }`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className={`bg-deep-gray rounded-lg w-full max-h-[90vh] border shadow-xl flex flex-col ${
+          size === 'lg' ? 'max-w-2xl' : 'max-w-md'
+        } ${isDanger ? 'border-red-500 border-opacity-50' : 'border-neon-cyan border-opacity-30'}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className={`text-xl font-bold ${isDanger ? 'text-red-400' : 'text-neon-cyan'}`}>
+        <h2 id={titleId} className={`px-6 pt-6 pb-4 text-xl font-bold ${isDanger ? 'text-red-400' : 'text-neon-cyan'}`}>
           {title}
         </h2>
-        <p className="text-cool-gray text-sm whitespace-pre-wrap">{message}</p>
-        <div className="flex justify-end gap-3 mt-2">
+        {/* Only the content scrolls. However much a dialog has to say, its
+            buttons stay on screen — a long write confirmation on a short window
+            used to push Continue out of reach. */}
+        <div className="px-6 min-h-0 overflow-y-auto">
+          {body ?? <p className="text-cool-gray text-sm whitespace-pre-wrap">{message}</p>}
+        </div>
+        <div className="flex justify-end gap-3 px-6 pt-6 pb-6">
           {!isAlert && (
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded border border-neon-cyan border-opacity-30 text-cool-gray hover:text-white hover:bg-neon-cyan hover:bg-opacity-10 transition-colors"
+              className={`${BUTTON.neutral} px-4 py-2 rounded border`}
             >
               {cancelLabel}
+            </button>
+          )}
+          {extraAction && (
+            <button
+              type="button"
+              onClick={() => {
+                extraAction.onClick();
+                onClose();
+              }}
+              className={extraAction.variant === 'danger' ? DANGER_BUTTON : PRIMARY_BUTTON}
+            >
+              {extraAction.label}
             </button>
           )}
           <button
             type="button"
             onClick={handleConfirm}
-            className={
-              isDanger
-                ? 'px-4 py-2 rounded font-medium bg-red-600 bg-opacity-20 border border-red-500 border-opacity-50 text-red-300 hover:bg-opacity-30 hover:border-opacity-70 transition-colors'
-                : 'px-4 py-2 rounded font-medium bg-neon-cyan bg-opacity-15 border border-neon-cyan border-opacity-50 text-neon-cyan hover:bg-opacity-25 transition-colors'
-            }
+            className={isDanger ? DANGER_BUTTON : PRIMARY_BUTTON}
           >
             {isAlert ? (confirmLabel ?? 'OK') : confirmLabel}
           </button>

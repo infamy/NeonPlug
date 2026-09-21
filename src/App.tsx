@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { MainLayout } from './components/layout/MainLayout';
 import { StartupModal } from './components/ui/StartupModal';
 import { ConfirmModal } from './components/ui/ConfirmModal';
+import { CodeplugSummaryBody } from './components/layout/CodeplugSummaryBody';
 
 // Lazy load tabs for better code splitting - only load when tab is active
 const ChannelsTab = lazy(() => import('./components/channels/ChannelsTab').then(m => ({ default: m.ChannelsTab })));
@@ -16,41 +17,33 @@ const DiagnosticsTab = lazy(() => import('./components/diagnostics/DiagnosticsTa
 import { useChannelsStore } from './store/channelsStore';
 import { useContactsStore } from './store/contactsStore';
 import { useZonesStore } from './store/zonesStore';
-import { useScanListsStore } from './store/scanListsStore';
-import { useRadioSettingsStore } from './store/radioSettingsStore';
-import { useDigitalEmergencyStore } from './store/digitalEmergencyStore';
-import { useAnalogEmergencyStore } from './store/analogEmergencyStore';
-import { useQuickMessagesStore } from './store/quickMessagesStore';
-import { useDMRRadioIDsStore } from './store/dmrRadioIdsStore';
-import { useQuickContactsStore } from './store/quickContactsStore';
-import { useRXGroupsStore } from './store/rxGroupsStore';
-import { useEncryptionKeysStore } from './store/encryptionKeysStore';
 import { useRadioStore } from './store/radioStore';
 import { useRadioConnection } from './hooks/useRadioConnection';
 import { useAlert } from './hooks/useAlert';
+import { useConfirmDialog } from './hooks/useConfirmDialog';
+import { confirmNewerFormat } from './utils/codeplugFormatPrompt';
 import { importChannelsFromCSV, importContactsFromCSV } from './services/csv';
+import { nothingImportedMessage, unreadableRowsNote } from './services/csv/importProblems';
+import { formatPlural } from './utils/formatPlural';
 import type { CodeplugData } from './services/codeplugExport';
+import { applyCodeplugToStores } from './services/applyCodeplug';
+import { backupUnsavedEdits, hasUnsavedEdits, trackUnsavedEdits } from './services/unsavedEdits';
+import { watchChannelHistory } from './services/channelHistory';
+import { useUnsavedChangesStore } from './store/unsavedChangesStore';
 import { sampleChannels, sampleContacts, sampleZones } from './utils/sampleData';
 import { setLogStore, logger, LogLevel } from './utils/protocolLogger';
+import { installDevStoreHandle } from './utils/devStoreHandle';
 import { useLogStore } from './store/logStore';
 
 function App() {
   const [activeTab, setActiveTab] = useState('channels');
   const [showStartupModal, setShowStartupModal] = useState(true);
-  const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert('Import');
+  const { alertOpen, alertMessage, alertBody, alertSize, alertTitle, showAlert, showAlertBody, closeAlert } = useAlert('Import');
+  const { confirm, confirmProps } = useConfirmDialog();
   const { setChannels, channels } = useChannelsStore();
   const { setContacts } = useContactsStore();
   const { setZones } = useZonesStore();
-  const { setScanLists } = useScanListsStore();
-  const { setSettings: setRadioSettings } = useRadioSettingsStore();
-  const { setSystems: setDigitalEmergencies, setConfig: setDigitalEmergencyConfig } = useDigitalEmergencyStore();
-  const { setSystems: setAnalogEmergencies } = useAnalogEmergencyStore();
-  const { setMessages } = useQuickMessagesStore();
-  const { setRadioIds } = useDMRRadioIDsStore();
-  const { setContacts: setQuickContacts } = useQuickContactsStore();
-  const { setGroups: setRXGroups } = useRXGroupsStore();
-  const { setKeys: setEncryptionKeys } = useEncryptionKeysStore();
-  const { setRadioInfo, setPreferredTransport, showPickRadioModal, setShowPickRadioModal } = useRadioStore();
+  const { setPreferredTransport, showPickRadioModal, setShowPickRadioModal } = useRadioStore();
   const { isConnecting, error: radioError } = useRadioConnection();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -63,6 +56,9 @@ function App() {
     // Allow debug logging to be toggled without a code change:
     //   enable:  localStorage.setItem('neonplug_log_level', 'debug')  then reload
     //   disable: localStorage.removeItem('neonplug_log_level')         then reload
+    // Dev builds only — lets a UI gated behind "read a radio first" be looked
+    // at without one. Stripped from every production build.
+    installDevStoreHandle();
     const stored = localStorage.getItem('neonplug_log_level');
     if (stored === 'verbose') {
       logger.configure({ level: LogLevel.VERBOSE });
@@ -116,6 +112,26 @@ function App() {
     return () => observer.disconnect();
   }, []);
 
+  // Edits since the last read, write, import or export, and a warning before the
+  // tab closes on them (services/unsavedEdits.ts).
+  useEffect(() => {
+    const stop = trackUnsavedEdits();
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedEdits()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => {
+      stop();
+      window.removeEventListener('beforeunload', warnBeforeUnload);
+    };
+  }, []);
+
+  // Undo on the Channels tab puts back older copies of the channel, zone and
+  // scan list stores, so its history is dropped once anything else changes them.
+  useEffect(() => watchChannelHistory(), []);
+
   const handleReadFromRadio = (transport?: 'serial' | 'ble') => {
     if (transport != null) {
       setPreferredTransport(transport);
@@ -139,27 +155,6 @@ function App() {
     }, 100);
   };
 
-  const applyCodeplugToStores = (codeplugData: CodeplugData) => {
-    setChannels(codeplugData.channels);
-    setZones(codeplugData.zones);
-    setScanLists(codeplugData.scanLists);
-    setContacts(codeplugData.contacts);
-    setDigitalEmergencies(codeplugData.digitalEmergencies);
-    if (codeplugData.digitalEmergencyConfig) {
-      setDigitalEmergencyConfig(codeplugData.digitalEmergencyConfig);
-    }
-    setAnalogEmergencies(codeplugData.analogEmergencies);
-    if (codeplugData.radioSettings) {
-      setRadioSettings(codeplugData.radioSettings);
-    }
-    setRadioInfo(codeplugData.radioInfo ?? null);
-    setMessages(codeplugData.messages ?? []);
-    setRadioIds(codeplugData.radioIds ?? []);
-    setQuickContacts(codeplugData.quickContacts ?? []);
-    setRXGroups(codeplugData.rxGroups ?? []);
-    setEncryptionKeys(codeplugData.encryptionKeys ?? []);
-  };
-
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -170,29 +165,21 @@ function App() {
     // Check if it's a codeplug file (.neonplug = zipped JSON)
     if (fileExtension === 'neonplug') {
       try {
-        const { importCodeplug } = await import('./services/codeplugExport');
-        const codeplugData = await importCodeplug(file);
-        
-        applyCodeplugToStores(codeplugData);
+        const { importCodeplug, readWithFormatOverride } = await import('./services/codeplugExport');
+        const codeplugData = await readWithFormatOverride(
+          (opts) => importCodeplug(file, opts),
+          confirmNewerFormat(confirm)
+        );
+        // null = user declined the newer-format warning; not an error.
+        if (!codeplugData) return;
+
+        await backupUnsavedEdits(`opening ${file.name}`);
+        applyCodeplugToStores(codeplugData, 'import');
         
         setShowStartupModal(false);
         const { saveSnapshot } = await import('./services/codeplugSnapshots');
-        saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
-        const lines = [
-          `• ${codeplugData.channels.length} channels`,
-          `• ${codeplugData.zones.length} zones`,
-          `• ${codeplugData.scanLists.length} scan lists`,
-          `• ${codeplugData.contacts.length} contacts`,
-          `• ${codeplugData.digitalEmergencies?.length ?? 0} digital emergency system(s)`,
-          `• ${codeplugData.analogEmergencies?.length ?? 0} analog emergency system(s)`,
-          codeplugData.radioSettings ? '• Radio settings' : null,
-          `• ${codeplugData.messages?.length ?? 0} quick message(s)`,
-          `• ${codeplugData.radioIds?.length ?? 0} DMR radio ID(s)`,
-          `• ${codeplugData.quickContacts?.length ?? 0} talk group(s)`,
-          `• ${codeplugData.rxGroups?.length ?? 0} RX group(s)`,
-          `• ${codeplugData.encryptionKeys?.length ?? 0} encryption key(s)`,
-        ].filter(Boolean);
-        showAlert(`Successfully imported codeplug!\n\n${lines.join('\n')}`);
+        await saveSnapshot(codeplugData, { eventType: 'import', fileName: file.name });
+        showAlertBody(<CodeplugSummaryBody data={codeplugData} lead="Codeplug imported" fileName={file.name} />);
       } catch (error) {
         showAlert(`Failed to import codeplug: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
@@ -200,23 +187,32 @@ function App() {
       // Legacy CSV import support
       const text = await file.text();
 
+      // Rows that can't be read are left out and named; only a file with nothing
+      // readable is refused. Either list replaces the current one, so unsaved
+      // edits are snapshotted first, as they are for a codeplug file.
       if (fileName.includes('channel')) {
         const result = importChannelsFromCSV(text);
-        if (result.success && result.channels) {
-          setChannels(result.channels);
+        const read = result.channels ?? [];
+        if (read.length > 0) {
+          await backupUnsavedEdits(`opening ${file.name}`);
+          setChannels(read);
           setShowStartupModal(false);
-          showAlert(`Successfully imported ${result.channels.length} channels`);
+          const skipped = unreadableRowsNote(result.errors);
+          showAlert(`Imported ${read.length} ${formatPlural(read.length, 'channel')}.${skipped ? `\n\n${skipped}` : ''}`);
         } else {
-          showAlert(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
+          showAlert(nothingImportedMessage(result.errors));
         }
       } else if (fileName.includes('contact')) {
         const result = importContactsFromCSV(text);
-        if (result.success && result.contacts) {
-          setContacts(result.contacts);
+        const read = result.contacts ?? [];
+        if (read.length > 0) {
+          await backupUnsavedEdits(`opening ${file.name}`);
+          setContacts(read);
           setShowStartupModal(false);
-          showAlert(`Successfully imported ${result.contacts.length} contacts`);
+          const skipped = unreadableRowsNote(result.errors);
+          showAlert(`Imported ${read.length} ${formatPlural(read.length, 'contact')}.${skipped ? `\n\n${skipped}` : ''}`);
         } else {
-          showAlert(`Import failed: ${result.errors?.join(', ') || 'Unknown error'}`);
+          showAlert(nothingImportedMessage(result.errors));
         }
       } else {
         showAlert('File must be a codeplug (.neonplug) or CSV file containing "channel" or "contact" in the filename');
@@ -232,14 +228,18 @@ function App() {
   const handleDismissStartup = () => {
     setShowStartupModal(false);
     setShowPickRadioModal(false);
-    // Load sample data if user dismisses
+    // Load sample data if user dismisses. "Change radio type…" reopens this
+    // screen over a loaded codeplug, so unsaved edits are snapshotted first.
+    void backupUnsavedEdits('loading the sample data');
     setChannels(sampleChannels);
     setContacts(sampleContacts);
     setZones(sampleZones);
+    useUnsavedChangesStore.getState().markClean();
   };
 
-  const handleRestoreSnapshot = (codeplugData: CodeplugData) => {
-    applyCodeplugToStores(codeplugData);
+  const handleRestoreSnapshot = async (codeplugData: CodeplugData) => {
+    await backupUnsavedEdits('restoring a snapshot');
+    applyCodeplugToStores(codeplugData, 'restore');
     setShowStartupModal(false);
     setShowPickRadioModal(false);
   };
@@ -303,9 +303,12 @@ function App() {
         onClose={closeAlert}
         title={alertTitle}
         message={alertMessage}
+        body={alertBody}
+        size={alertSize}
         confirmLabel="OK"
         variant="alert"
       />
+      <ConfirmModal {...confirmProps} />
     </>
   );
 }

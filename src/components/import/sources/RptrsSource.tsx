@@ -9,6 +9,7 @@ import { SelectAllButtons } from '../SelectAllButtons';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { SectionTitle } from '../../ui/SectionTitle';
+import { FIELD } from '../../ui/controlStyles';
 
 interface RptrsSourceProps {
   rptrs: (RptrData & { distance?: number })[];
@@ -138,7 +139,7 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
               placeholder="Filter by callsign, city, or network..."
               value={rptrsSearchFilter}
               onChange={(e) => setRptrsSearchFilter(e.target.value)}
-              className="w-full bg-black border border-neon-cyan rounded px-3 py-2 text-white"
+              className={`${FIELD} w-full border rounded px-3 py-2`}
             />
           </div>
 
@@ -246,7 +247,8 @@ export const RptrsSource: React.FC<RptrsSourceProps> = ({
               <Button
                 onClick={handleAddRptrsChannels}
                 disabled={isAddingRptrs}
-                className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
+                variant="accent"
+                className="w-full"
               >
                 {isAddingRptrs
                   ? 'Adding DMR Repeater Channels...'

@@ -13,9 +13,11 @@ import {
   checkEmptyBlocks,
   readAndConcatenateBlocks,
   storeRawData,
+  isTalkGroupBlock,
   type MemoryBlock,
 } from './memory';
-import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, encodeEncryptionKey, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContacts, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
+import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, encodeEncryptionKey, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContactsBlocks, encodeQuickAccessList, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
+import { formatPlural } from '../../utils/formatPlural';
 import type { RadioInfo, DM32Protocol } from '../../types/radio';
 import { BaseDigitalProtocol } from '../shared/BaseProtocols';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact, EncryptionKey } from '../../models';
@@ -24,6 +26,7 @@ import { METADATA, BLOCK_SIZE, OFFSET, VFRAME, CONNECTION, LIMITS } from './cons
 import { BOOT_IMAGE } from '../../utils/bootImage';
 import { getContactCapacityWithFallback } from '../../utils/firmware';
 import { withTimeout } from './connection';
+import { assertBlockWritable, type WriteGuardContext } from './writeGuard';
 import { log } from '../../utils/protocolLogger';
 
 /**
@@ -380,6 +383,9 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     // Note: DM32Connection.connect() handles the post-open INIT_DELAY internally
     this.port = port;
     this.connection = new DM32Connection();
+    // Every write this connection sends is checked against the memory layout and
+    // block map as they stand at that moment: see writeGuard.ts.
+    this.connection.setWriteGuard(() => this.writeGuardContext());
     // Each request/response in connect() has its own 2s timeout (per-request basis)
     await this.connection.connect(port);
 
@@ -425,6 +431,48 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     // Enter programming mode
     // Each request/response in enterProgrammingMode() has its own 2s timeout
     await this.connection.enterProgrammingMode();
+  }
+
+  /**
+   * What every write is checked against (writeGuard.ts). Read at the moment of
+   * each write, so a fresh metadata scan is seen without anything having to hand
+   * it over. Null until the memory layout is known, which refuses everything.
+   */
+  private writeGuardContext(): WriteGuardContext | null {
+    const layout = this.radioInfo?.memoryLayout;
+    if (!layout) return null;
+    return { configStart: layout.configStart, configEnd: layout.configEnd, blocks: this.discoveredBlocks };
+  }
+
+  /**
+   * Refuse a contact write before its first block if any block it would touch
+   * runs past the contact memory V-frame 0x0F reports, or is one the write guard
+   * refuses.
+   *
+   * writeContacts walks 4 KB blocks up from that range's start, one for every 44
+   * contacts, and nothing else checks where the walk ends: a long enough list
+   * would carry on into whatever memory follows.
+   */
+  private assertContactWriteFits(baseAddr: number, endAddr: number, contactCount: number): void {
+    const CONTACTS_PER_BLOCK = 44; // writeContacts' own layout
+    const firstBlockAddr = Math.floor(baseAddr / BLOCK_SIZE.STANDARD) * BLOCK_SIZE.STANDARD;
+    // The count header goes out even for an empty list, so there is always a block.
+    const blocks = Math.max(1, Math.ceil(contactCount / CONTACTS_PER_BLOCK));
+    const lastByte = firstBlockAddr + blocks * BLOCK_SIZE.STANDARD - 1;
+    if (lastByte > endAddr) {
+      const fit =
+        Math.max(0, Math.floor((endAddr + 1 - firstBlockAddr) / BLOCK_SIZE.STANDARD)) * CONTACTS_PER_BLOCK;
+      throw new Error(
+        `Refusing to write ${contactCount.toLocaleString()} contacts: they need ${blocks} blocks (4 KB each) ` +
+          `starting at 0x${firstBlockAddr.toString(16).toUpperCase()}, which runs past the end of the radio's ` +
+          `contact memory at 0x${endAddr.toString(16).toUpperCase()}. At most ${fit.toLocaleString()} fit. ` +
+          `Nothing was written.`
+      );
+    }
+    const guard = this.writeGuardContext();
+    for (let i = 0; i < blocks; i++) {
+      assertBlockWritable({ address: firstBlockAddr + i * BLOCK_SIZE.STANDARD, length: BLOCK_SIZE.STANDARD }, guard);
+    }
   }
 
   /**
@@ -599,7 +647,7 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       METADATA.CALIBRATION,          // Calibration (0x02)
       METADATA.RX_GROUPS,            // RX Groups (0x0F)
       METADATA.METADATA_0x44,        // Metadata block 0x44 (Talk Groups data)
-      METADATA.METADATA_0x06,        // Metadata block 0x06 (Config section 4 - Talk Groups counter)
+      METADATA.METADATA_0x06,        // Metadata block 0x06 (Config section 4)
       METADATA.TX_CONTACT_LOW,       // TX Contact block 0x42 (channels 1-2048)
       METADATA.TX_CONTACT_HIGH,      // TX Contact block 0x43 (channels 2049+ and VFOs)
     ];
@@ -636,11 +684,16 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       log.error('Radio Settings block (metadata 0x04) is missing from blocks to read!', 'Protocol');
     }
 
-    // Step 2c: Add zone and scan list blocks
+    // Step 2c: Add zone, scan list, and talk group blocks
+    // Talk Groups span metadata 0x44-0x48 (5 blocks) — 0x44 alone is also in
+    // fixedMetadataBlocks above for the "critical/missing" warning; the dedup below
+    // handles the overlap.
     const zoneBlocks = blocks.filter(b => b.type === 'zone');
     const scanBlocks = blocks.filter(b => b.type === 'scan');
+    const talkGroupBlocks = blocks.filter(b => b.type === 'talkgroup');
     blocksToRead.push(...zoneBlocks);
     blocksToRead.push(...scanBlocks);
+    blocksToRead.push(...talkGroupBlocks);
 
     // Step 2d: Add other data type blocks
     const messageBlocks = blocks.filter(b => b.type === 'message');
@@ -835,7 +888,7 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       METADATA.CALIBRATION,
       METADATA.RX_GROUPS,
       METADATA.METADATA_0x44,        // Talk Groups data
-      METADATA.METADATA_0x06,        // Talk Groups counter
+      METADATA.METADATA_0x06,        // Config section 4
       METADATA.TX_CONTACT_LOW,       // TX Contact block 0x42 (channels 1-2048)
       METADATA.TX_CONTACT_HIGH,      // TX Contact block 0x43 (channels 2049+ and VFOs)
     ];
@@ -1070,6 +1123,26 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     }
     const baseAddr = this.getBootImageBaseAddress();
     const fullBlocks = BOOT_IMAGE.FULL_BLOCKS;
+    // Every block checked before the first is sent. The base is V-frame 0x0E's,
+    // or a default when that is missing, and nothing else checks where it points.
+    // The image is pixels, not metadata blocks, so it must stay out of the config
+    // memory entirely.
+    const guard = this.writeGuardContext();
+    if (guard && baseAddr <= guard.configEnd && baseAddr + BOOT_IMAGE.SIZE - 1 >= guard.configStart) {
+      throw new Error(
+        `Refusing to write the boot image at 0x${baseAddr.toString(16).toUpperCase()}: it would overlap the ` +
+          `radio's config memory, where channels, settings and calibration live. Nothing was written.`
+      );
+    }
+    for (let i = 0; i < BOOT_IMAGE.BLOCKS; i++) {
+      assertBlockWritable(
+        {
+          address: baseAddr + i * BLOCK_SIZE.STANDARD,
+          length: i < fullBlocks ? BLOCK_SIZE.STANDARD : BOOT_IMAGE.LAST_CHUNK_SIZE,
+        },
+        guard
+      );
+    }
     for (let i = 0; i < fullBlocks; i++) {
       const progress = Math.floor(((i + 1) / BOOT_IMAGE.BLOCKS) * 100);
       this.onProgress?.(progress, `Writing boot image block ${i + 1} of ${BOOT_IMAGE.BLOCKS}...`);
@@ -1569,9 +1642,11 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
 
     this.onProgress?.(0, 'Parsing zones from cached blocks...');
 
-    // Zone metadata identified from debug export: 0x5c
-    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE);
-    log.info(`Found ${zoneBlocks.length} zone blocks (metadata 0x${METADATA.ZONE.toString(16)})`, 'Protocol');
+    // Zone blocks span metadata 0x5c-0x64 (9 blocks, covers LIMITS.ZONES_MAX)
+    const zoneBlocks = this.discoveredBlocks
+      .filter(b => b.type === 'zone')
+      .sort((a, b) => a.metadata - b.metadata);
+    log.info(`Found ${zoneBlocks.length} zone blocks (metadata 0x${METADATA.ZONE_FIRST.toString(16)}-0x${METADATA.ZONE_LAST.toString(16)})`, 'Protocol');
 
     if (checkEmptyBlocks(zoneBlocks, 'zone', this.onProgress)) {
       return [];
@@ -1583,12 +1658,19 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     this.onProgress?.(50, 'Parsing zone data...');
     const zones = parseZones(allZoneData, (zoneNum, rawData, name) => {
       // Store raw zone data for debug export
+      // Offset math mirrors parseZones(): first block has a 16-byte header, later blocks don't
+      const zoneIdx = zoneNum - 1;
+      const blockIdx = Math.floor(zoneIdx / LIMITS.ZONES_PER_BLOCK);
+      const indexInBlock = zoneIdx % LIMITS.ZONES_PER_BLOCK;
+      const zoneOffset = blockIdx === 0
+        ? OFFSET.ZONE_START + indexInBlock * BLOCK_SIZE.ZONE
+        : blockIdx * BLOCK_SIZE.STANDARD + indexInBlock * BLOCK_SIZE.ZONE;
       storeRawData(
         this.rawZoneData,
         name,
         rawData,
         { zoneNum },
-        OFFSET.ZONE_START + (zoneNum - 1) * BLOCK_SIZE.ZONE
+        zoneOffset
       );
     });
 
@@ -1629,8 +1711,12 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       this.discoveredBlocks = blocks;
     }
 
-    // Get zone blocks (metadata 0x5c)
-    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE);
+    // NOTE: unlike writeAllData() (the multi-block-aware path actually used by the app),
+    // this legacy single-block method only targets the first zone block and intentionally
+    // does not recognize the full 0x5c-0x64 zone range — its flat write-offset math below
+    // isn't block-boundary aware, so writing to multiple blocks here would silently
+    // misplace zone data. Fix that before broadening this to multiple blocks.
+    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE_FIRST);
 
     if (zoneBlocks.length === 0) {
       throw new Error('No zone blocks found');
@@ -1939,6 +2025,8 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     
     const ENTRY_SIZE = 0x5C; // 92 bytes per contact
     
+    this.assertContactWriteFits(baseAddr, endAddr, contacts.length);
+
     // Write contact count in first 16 bytes (4 bytes count + 12 bytes padding)
     // Count is at baseAddr, contacts start at baseAddr + 0x10
     this.onProgress?.(5, `Writing contact count header...`);
@@ -2433,13 +2521,34 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
   }
 
   /**
-   * Parse Talk Groups from cached blocks (metadata 0x44)
-   * Blocks must be read first via bulkReadRequiredBlocks()
-   * This method ONLY parses - it does NOT read from the radio
-   * Connection is not required - data comes from cache
-   * 
-   * IMPORTANT: This method should ONLY be called AFTER all blocks have been read.
-   * Parsing errors will not affect the reading process since reading is already complete.
+   * The talk group blocks, 0x44 up, in slot order.
+   *
+   * Slot numbers run on from one block to the next, 170 to a block, and channels
+   * (0x42/0x43) and the Quick Access Contact List (0x0B) reference talk groups by
+   * slot. Past a missing or repeated block the numbering can't be known, so this
+   * refuses rather than guess, and so do the read and the write that use it.
+   */
+  private talkGroupBlocksInOrder(): MemoryBlock[] {
+    const blocks = this.discoveredBlocks.filter(isTalkGroupBlock).sort((a, b) => a.metadata - b.metadata);
+    blocks.forEach((block, i) => {
+      if (block.metadata !== METADATA.TALK_GROUP_FIRST + i) {
+        throw new Error(
+          `The radio's talk group blocks are ${blocks.map((b) => `0x${b.metadata.toString(16).toUpperCase()}`).join(', ')}, ` +
+            `not a run from 0x44, so which slot each talk group is in can't be worked out. NeonPlug won't read or write them.`
+        );
+      }
+    });
+    return blocks;
+  }
+
+  /**
+   * Parse Talk Groups from the cached blocks 0x44-0x48. Reads nothing from the
+   * radio: blocks must be read first via bulkReadRequiredBlocks().
+   *
+   * Refuses rather than return part of the list. A write puts back exactly the
+   * list read, so a block left out would delete its talk groups from the radio
+   * and move every later one down a slot, out from under the channels that
+   * reference it. The read reports the refusal and carries on with the rest.
    */
   async readQuickContacts(): Promise<QuickContact[]> {
     requireRadioInfo(this.radioInfo);
@@ -2456,272 +2565,157 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
 
     this.onProgress?.(0, 'Parsing Talk Groups from cached blocks...');
 
-    // Find metadata block 0x44
-    const quickContactBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x44);
-    if (!quickContactBlock) {
+    const talkGroupBlocks = this.talkGroupBlocksInOrder();
+    if (talkGroupBlocks.length === 0) {
       // Talk Groups are optional - return empty array if not found
-      log.debug('Talk Groups block (metadata 0x44) not found', 'Protocol');
+      log.debug('Talk Groups blocks (metadata 0x44-0x48) not found', 'Protocol');
       return [];
     }
 
-    const cachedBlock = this.getCachedBlockByAddress(quickContactBlock.address);
-    if (!cachedBlock) {
-      log.warn(`Talk Groups block at 0x${quickContactBlock.address.toString(16)} not found in cache`, 'Protocol');
-      return [];
+    const allContacts: QuickContact[] = [];
+    let nextIndex = 1;
+    for (const block of talkGroupBlocks) {
+      const cachedBlock = this.getCachedBlockByAddress(block.address);
+      if (!cachedBlock) {
+        throw new Error(
+          `Talk group block 0x${block.metadata.toString(16).toUpperCase()} at ` +
+            `0x${block.address.toString(16).padStart(6, '0').toUpperCase()} was not read, so the talk group list would be incomplete.`
+        );
+      }
+      // Slots stop before the metadata byte at 0xFFF.
+      const usableData = cachedBlock.data.slice(0, OFFSET.METADATA_BYTE);
+      const { contacts, nextIndex: blockNextIndex } = parseQuickContacts(usableData, undefined, nextIndex);
+      allContacts.push(...contacts);
+      nextIndex = blockNextIndex;
     }
-
-    // Parse from cached data only - no radio access
-    // Wrap in try-catch to ensure parsing errors don't propagate and affect other parsing
-    try {
-      const contacts = parseQuickContacts(cachedBlock.data);
-      this.onProgress?.(100, `Successfully processed ${contacts.length} talk groups`);
-      return contacts;
-    } catch (error) {
-      log.error('Error parsing Talk Groups - returning empty array to prevent blocking other parsing', 'Protocol', error);
-      // Return empty array instead of throwing - parsing errors should not block other operations
-      return [];
-    }
+    this.onProgress?.(100, `Successfully processed ${allContacts.length} talk groups`);
+    return allContacts;
   }
 
   /**
-   * Write Talk Groups to the radio
-   * 
-   * Updates three metadata blocks:
-   * - 0x44: Talk Groups data (contact entries)
-   * - 0x06: Talk Groups counter (at offset 0x1FF)
-   * - 0x0B: Quick Access Contact List (header, bitmask, and sorted index tables)
-   * 
+   * Refuse a talk group list the radio can't hold, before anything is written.
+   *
+   * useRadioConnection calls this ahead of the channel write, so a list that
+   * doesn't fit stops the whole write rather than leaving channels on the radio
+   * that reference talk groups it never got. writeQuickContacts checks again.
+   */
+  async assertTalkGroupWriteFits(count: number): Promise<void> {
+    requireConnection(this.connection, this.radioInfo);
+    await this.discoverBlocksIfNeeded();
+    this.checkTalkGroupCapacity(count);
+  }
+
+  /**
+   * The talk group blocks a list of `count` would be written to, refusing a list
+   * they can't hold. The capacity is the blocks the radio's scan found, 170 each:
+   * NeonPlug can't add a block, so a radio with one holds 170 talk groups however
+   * many the model allows.
+   */
+  private checkTalkGroupCapacity(count: number): MemoryBlock[] {
+    if (count > LIMITS.TALK_GROUPS_MAX) {
+      throw new Error(`Maximum of ${LIMITS.TALK_GROUPS_MAX} talk groups allowed. Got ${count}`);
+    }
+    const blocks = this.talkGroupBlocksInOrder();
+    if (blocks.length === 0) {
+      throw new Error('Talk Groups block (metadata 0x44) not found');
+    }
+    const capacity = blocks.length * LIMITS.TALK_GROUPS_PER_BLOCK;
+    if (count > capacity) {
+      throw new Error(
+        `Refusing to write ${count} ${formatPlural(count, 'talk group')}: the radio's block scan found ` +
+          `${blocks.length} ${formatPlural(blocks.length, 'talk group block')}, which ${formatPlural(blocks.length, 'holds', 'hold')} ${capacity}, ` +
+          `and NeonPlug can't add blocks. No talk groups were written.`
+      );
+    }
+    return blocks;
+  }
+
+  /** Scan the block map unless there is one already, from a restored cache or writeAllData. */
+  private async discoverBlocksIfNeeded(): Promise<void> {
+    if (this.discoveredBlocks.length > 0) return;
+    this.onProgress?.(5, 'Discovering blocks...');
+    this.discoveredBlocks = await discoverMemoryBlocks(
+      this.connection!,
+      this.radioInfo!.memoryLayout!.configStart,
+      this.radioInfo!.memoryLayout!.configEnd,
+      (current, total) => {
+        const progress = 5 + Math.floor((current / total) * 5); // 5-10%
+        this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
+      }
+    );
+  }
+
+  /**
+   * Write Talk Groups to the radio: every talk group block (0x44-0x48), then the
+   * Quick Access Contact List (0x0B) that indexes them.
+   *
+   * Every talk group block the radio has is written, so a shorter list than
+   * before leaves the later blocks empty rather than holding stale entries.
+   * Block 0x06 is left alone. Its byte 0x1FF used to be written as the talk
+   * group count, but in both CPS captures it tracks the analog contact count
+   * (TODO-DM32-SPEC-AUDIT.md item 17).
+   *
+   * Everything is built and checked before the first block is sent, so a refusal
+   * never leaves the talk groups half written. That includes block 0x0B having
+   * been read: reading it now, in the middle of a write, can reboot the radio.
+   *
    * @param contacts - Array of Talk Groups to write
-   * @throws {Error} If not connected or block not found
+   * @throws {Error} If not connected, or the list or the radio's blocks are refused
    */
   async writeQuickContacts(contacts: QuickContact[]): Promise<void> {
     requireConnection(this.connection, this.radioInfo);
 
-    if (contacts.length > LIMITS.TALK_GROUPS_MAX) {
-      throw new Error(`Maximum of ${LIMITS.TALK_GROUPS_MAX} talk groups allowed. Got ${contacts.length}`);
-    }
-
     this.onProgress?.(0, 'Preparing to write Talk Groups...');
-
-    // Discover blocks if not already discovered
-    if (this.discoveredBlocks.length === 0) {
-      if (!this.radioInfo) {
-        throw new Error('Radio info not available. Connect and read radio info first.');
-      }
-      this.onProgress?.(5, 'Discovering blocks...');
-      const blocks = await discoverMemoryBlocks(
-        this.connection!,
-        this.radioInfo!.memoryLayout!.configStart,
-        this.radioInfo!.memoryLayout!.configEnd,
-        (current, total) => {
-          const progress = 5 + Math.floor((current / total) * 5); // 5-10%
-          this.onProgress?.(progress, `Reading metadata ${current} of ${total}...`);
-        }
-      );
-      this.discoveredBlocks = blocks;
-    }
-
-    // Find metadata block 0x44 (Talk Groups data)
-    const quickContactBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x44);
-    if (!quickContactBlock) {
-      throw new Error('Talk Groups block (metadata 0x44) not found');
-    }
-
-    // Find metadata block 0x06 (Config section 4 - contains Talk Groups counter)
-    const counterBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x06);
-    if (!counterBlock) {
-      throw new Error('Config block 0x06 (Talk Groups counter) not found');
-    }
+    await this.discoverBlocksIfNeeded();
+    const talkGroupBlocks = this.checkTalkGroupCapacity(contacts.length);
 
     // Find metadata block 0x0B (Quick Access Contact List)
     const quickAccessBlock = this.discoveredBlocks.find(b => b.metadata === METADATA.METADATA_0x0B);
     if (!quickAccessBlock) {
       throw new Error('Quick Access Contact List block (metadata 0x0B) not found');
     }
+    const cachedQuickAccessBlock = this.getCachedBlockByAddress(quickAccessBlock.address);
+    if (!cachedQuickAccessBlock) {
+      throw new Error(
+        'Refusing to write talk groups: the Quick Access Contact List (block 0x0B) that indexes them was not read, ' +
+          'and reading it now, in the middle of a write, can reboot the radio. No talk groups were written.'
+      );
+    }
 
     this.onProgress?.(10, 'Encoding Talk Groups...');
-
-    // Encode contacts to 4KB block
-    const blockData = encodeQuickContacts(contacts);
-
-    // Get block 0x06 from cache or read it fresh
-    this.onProgress?.(30, 'Preparing config block 0x06...');
-    let counterBlockData: Uint8Array;
-    
-    const cachedCounterBlock = this.getCachedBlockByAddress(counterBlock.address);
-    if (cachedCounterBlock) {
-      // Use cached data (make a copy to avoid modifying the cache)
-      counterBlockData = new Uint8Array(cachedCounterBlock.data);
-      log.debug('Using cached block 0x06 data', 'Protocol');
-    } else {
-      // Read from radio if not cached
-      log.debug('Reading block 0x06 from radio (not in cache)', 'Protocol');
-      counterBlockData = await this.connection!.readMemory(counterBlock.address, BLOCK_SIZE.STANDARD);
-    }
-
-    // Update ONLY the Talk Groups counter at offset 0x1FF (byte 511)
-    // All other data in the block is preserved
-    this.onProgress?.(40, 'Updating Talk Groups counter...');
-    const oldCounter = counterBlockData[OFFSET.TALK_GROUP_COUNTER];
-    counterBlockData[OFFSET.TALK_GROUP_COUNTER] = contacts.length & 0xFF; // Write count as single byte
-    log.info(`Updating Talk Groups counter from ${oldCounter} to ${contacts.length} at offset 0x1FF`, 'Protocol');
-
-    // Write the counter block first
-    this.onProgress?.(50, 'Writing Talk Groups counter to radio...');
-    await this.connection!.writeMemory(counterBlock.address, counterBlockData, METADATA.METADATA_0x06);
-    log.info(`Updated Talk Groups counter to ${contacts.length} at block 0x06 offset 0x1FF`, 'Protocol');
-
-    // Write the Talk Groups data block
-    this.onProgress?.(70, 'Writing Talk Groups data to radio...');
-    await this.connection!.writeMemory(quickContactBlock.address, blockData, METADATA.METADATA_0x44);
-
-    // Update cache (store the written data)
-    const cachedBlockIndex = this.cachedBlockData.findIndex(b => b.address === quickContactBlock.address);
-    if (cachedBlockIndex >= 0) {
-      this.cachedBlockData[cachedBlockIndex] = {
-        metadata: METADATA.METADATA_0x44,
-        address: quickContactBlock.address,
-        data: blockData,
-      };
-    } else {
-      this.cachedBlockData.push({
-        metadata: METADATA.METADATA_0x44,
-        address: quickContactBlock.address,
-        data: blockData,
-      });
-    }
-
-    // Update cache for counter block too
-    const cachedCounterIndex = this.cachedBlockData.findIndex(b => b.address === counterBlock.address);
-    if (cachedCounterIndex >= 0) {
-      this.cachedBlockData[cachedCounterIndex] = {
-        metadata: METADATA.METADATA_0x06,
-        address: counterBlock.address,
-        data: counterBlockData,
-      };
-    } else {
-      this.cachedBlockData.push({
-        metadata: METADATA.METADATA_0x06,
-        address: counterBlock.address,
-        data: counterBlockData,
-      });
-    }
-
-    // Update metadata block 0x0B (Quick Access Contact List)
-    this.onProgress?.(75, 'Updating Quick Access Contact List (0x0B)...');
-    
-    // Get block 0x0B from cache or read it fresh
-    let quickAccessData: Uint8Array;
-    const cachedQuickAccessBlock = this.getCachedBlockByAddress(quickAccessBlock.address);
-    if (cachedQuickAccessBlock) {
-      quickAccessData = new Uint8Array(cachedQuickAccessBlock.data);
-      log.debug('Using cached block 0x0B data', 'Protocol');
-    } else {
-      log.debug('Reading block 0x0B from radio (not in cache)', 'Protocol');
-      quickAccessData = await this.connection!.readMemory(quickAccessBlock.address, BLOCK_SIZE.STANDARD);
-    }
-
-    // Count call types
-    let groupCallCount = 0;
-    let privateCallCount = 0;
-    let allCallCount = 0;
-    
-    contacts.forEach(contact => {
-      if (contact.callType === 0x04) groupCallCount++;      // Group Call
-      else if (contact.callType === 0x03) privateCallCount++; // Private Call
-      else if (contact.callType === 0x05) allCallCount++;    // All Call
-    });
-
-    // Update header (0x00-0x0F)
-    const totalCount = contacts.length;
-    quickAccessData[0x00] = totalCount & 0xFF;           // Total count low byte
-    quickAccessData[0x01] = (totalCount >> 8) & 0xFF;    // Total count high byte
-    quickAccessData[0x02] = groupCallCount & 0xFF;       // Group call count low byte
-    quickAccessData[0x03] = (groupCallCount >> 8) & 0xFF; // Group call count high byte
-    quickAccessData[0x04] = privateCallCount & 0xFF;     // Private call count
-    
-    log.info(`Updating Quick Access List: Total=${totalCount}, Group=${groupCallCount}, Private=${privateCallCount}`, 'Protocol');
-
-    // Initialize bitmask (0x10-0x1F) - all slots free initially (1 = free, 0 = used)
-    for (let i = 0x10; i < 0x20; i++) {
-      quickAccessData[i] = 0xFF;
-    }
-
-    // Clear Index Table 1 (0x100-0x6FF) and Index Table 2 (0x740-0xCFF)
-    for (let i = 0x100; i < 0x700; i++) {
-      quickAccessData[i] = 0xFF;
-    }
-    for (let i = 0x740; i < 0xD00; i++) {
-      quickAccessData[i] = 0xFF;
-    }
-
-    // Build sorted index lists using physical position (1-based) in block 0x44
-    // The index stored in 0x0B must match the physical position in block 0x44,
-    // NOT the contact.index value (which may have gaps after deletions)
-    const contactsWithIndices = contacts.map((contact, arrayIndex) => ({
-      contactIndex: arrayIndex + 1, // Physical position in block 0x44 (1-based)
-      name: contact.name,
-      callType: contact.callType,
-      contactNumber: contact.contactNumber, // DMR ID
-      typeByte: contact.callType === 0x03 ? 0x30 : // Private Call
-                contact.callType === 0x04 ? 0x40 : // Group Call
-                contact.callType === 0x05 ? 0x50 : // All Call
-                0x40 // Default to Group Call
-    }));
-
-    // Index Table 1 (@ 0x100): Sort entries alphabetically by Talk Group name (ASCII string comparison)
-    const sortedByName = [...contactsWithIndices].sort((a, b) => 
-      a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
-    );
-    
-    sortedByName.forEach((item, displayIndex) => {
-      const offset = 0x100 + (displayIndex * 2);
-      if (offset < 0x700) {
-        quickAccessData[offset] = item.contactIndex;
-        quickAccessData[offset + 1] = item.typeByte;
-        
-        // Clear bit in bitmask (0 = used, 1 = free)
-        // Use displayIndex for bitmask position, not contactIndex
-        const byteIdx = Math.floor(displayIndex / 8);
-        const bitIdx = displayIndex % 8;
-        if (0x10 + byteIdx < 0x20) {
-          quickAccessData[0x10 + byteIdx] &= ~(1 << bitIdx);
-        }
-      }
-    });
-
-    // Index Table 2 (@ 0x740): Sort entries by DMR ID numerically (lowest ID first)
-    const sortedByDmrId = [...contactsWithIndices].sort((a, b) => 
-      a.contactNumber - b.contactNumber
-    );
-    
-    sortedByDmrId.forEach((item, displayIndex) => {
-      const offset = 0x740 + (displayIndex * 2);
-      if (offset < 0xD00) {
-        quickAccessData[offset] = item.contactIndex;
-        quickAccessData[offset + 1] = item.typeByte;
-      }
-    });
-
-    // Write block 0x0B
-    this.onProgress?.(85, 'Writing Quick Access Contact List to radio...');
-    await this.connection!.writeMemory(quickAccessBlock.address, quickAccessData, METADATA.METADATA_0x0B);
-    log.info(`Updated Quick Access Contact List (0x0B) with ${totalCount} entries`, 'Protocol');
-
-    // Update cache for quick access block
-    const cachedQuickAccessIndex = this.cachedBlockData.findIndex(b => b.address === quickAccessBlock.address);
-    if (cachedQuickAccessIndex >= 0) {
-      this.cachedBlockData[cachedQuickAccessIndex] = {
-        metadata: METADATA.METADATA_0x0B,
+    const encodedBlocks = encodeQuickContactsBlocks(contacts, talkGroupBlocks.map(b => b.metadata));
+    const writes = [
+      ...talkGroupBlocks.map((block, i) => ({ address: block.address, metadata: block.metadata, data: encodedBlocks[i] })),
+      {
         address: quickAccessBlock.address,
-        data: quickAccessData,
-      };
-    } else {
-      this.cachedBlockData.push({
         metadata: METADATA.METADATA_0x0B,
-        address: quickAccessBlock.address,
-        data: quickAccessData,
-      });
+        data: encodeQuickAccessList(cachedQuickAccessBlock.data, contacts),
+      },
+    ];
+
+    // Every block checked before the first is sent, as writeAllData does.
+    const guard = this.writeGuardContext();
+    for (const write of writes) {
+      assertBlockWritable(
+        { address: write.address, length: write.data.length, data: write.data, metadata: write.metadata },
+        guard
+      );
+    }
+
+    for (let i = 0; i < writes.length; i++) {
+      const write = writes[i];
+      const metadataHex = `0x${write.metadata.toString(16).padStart(2, '0').toUpperCase()}`;
+      this.onProgress?.(20 + Math.floor((i / writes.length) * 80), `Writing Talk Groups block ${i + 1} of ${writes.length} (${metadataHex})...`);
+      await this.connection!.writeMemory(write.address, write.data, write.metadata);
+
+      // Update cache (store the written data)
+      const entry = { metadata: write.metadata, address: write.address, data: write.data };
+      const cachedBlockIndex = this.cachedBlockData.findIndex(b => b.address === write.address);
+      if (cachedBlockIndex >= 0) {
+        this.cachedBlockData[cachedBlockIndex] = entry;
+      } else {
+        this.cachedBlockData.push(entry);
+      }
     }
 
     // Don't update blockData map - preserve original raw data from radio for diagnostics
@@ -2729,7 +2723,7 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     // This allows users to download the original raw data from the radio
 
     this.onProgress?.(100, `Successfully wrote ${contacts.length} talk groups`);
-    log.info(`Successfully wrote ${contacts.length} talk groups to blocks 0x44, 0x06, and 0x0B`, 'Protocol');
+    log.info(`Successfully wrote ${contacts.length} talk groups across ${talkGroupBlocks.length} block(s) (0x44-0x${talkGroupBlocks[talkGroupBlocks.length - 1].metadata.toString(16)}), plus 0x0B`, 'Protocol');
   }
 
   /**
@@ -3402,7 +3396,10 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     }
 
     // Generate zone blocks - ALWAYS write zones when writing channels
-    const zoneBlocks = this.discoveredBlocks.filter(b => b.metadata === METADATA.ZONE);
+    // Zone blocks span metadata 0x5c-0x64 (9 blocks, covers LIMITS.ZONES_MAX)
+    const zoneBlocks = this.discoveredBlocks
+      .filter(b => b.type === 'zone')
+      .sort((a, b) => a.metadata - b.metadata);
     if (zoneBlocks.length === 0) {
       throw new Error('No zone blocks found');
     }
@@ -3511,11 +3508,13 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
         const destOffset = isFirstBlock ? OFFSET.ZONE_START : 0;
         blockData.set(sourceData, destOffset);
         
-        // Only set zone count at byte 0 for the first block
+        // Byte 0 of the first block holds the GLOBAL total zone count (not just
+        // this block's share) - confirmed against hardware: a radio with 29 real
+        // zones had byte 0 = 0x1d (29), not clamped to 28.
         if (isFirstBlock) {
-          const zoneCount = Math.min(Math.max(zonesInBlock, 1), 28); // Clamp to 1-28
+          const zoneCount = Math.min(Math.max(zonesToWrite.length, 1), 255);
           blockData[0] = zoneCount;
-          log.debug(`Set zone count in byte 0: ${zoneCount} zones for first block`, 'Protocol');
+          log.debug(`Set zone count in byte 0: ${zoneCount} (total zones across all blocks)`, 'Protocol');
           
           // Preserve the original bytes 1-15 if available (to match original structure)
           if (originalBlockData) {
@@ -3683,11 +3682,20 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
           totalScanListSize = Math.max(totalScanListSize, offset);
         }
       }
-      const totalScanListBlocksNeeded = Math.ceil(totalScanListSize / BLOCK_SIZE.STANDARD);
+      // Allocate at least one full block per discovered scan block: with zero
+      // scan lists (or more discovered blocks than data) the slice below would
+      // otherwise come up short/empty, and writing a short block crashes with
+      // "Cannot read properties of undefined" at the metadata-byte log — the
+      // "always fails on block 13" bug. Every written block must be 4096 bytes.
+      const totalScanListBlocksNeeded = Math.max(
+        scanBlocks.length,
+        Math.ceil(totalScanListSize / BLOCK_SIZE.STANDARD)
+      );
       
-      // Generate concatenated scan list data
+      // Generate concatenated scan list data. Pad with 0x00, not 0xFF — a real
+      // radio's scan block (2026-08 dump) is zero-filled after the last entry.
       const allScanListData = new Uint8Array(totalScanListBlocksNeeded * BLOCK_SIZE.STANDARD);
-      allScanListData.fill(0xFF);
+      allScanListData.fill(0x00);
       
       // Write scan lists to fixed 57-byte boundaries: (57 * N) - 56
       // Entry 1 at offset 1, Entry 2 at offset 58, Entry 3 at offset 115, etc.
@@ -3750,9 +3758,9 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       finalBlocksToWrite.push(block);
     }
     
-    // 2. Zone blocks (metadata 0x5c)
+    // 2. Zone blocks (metadata 0x5c-0x64)
     const zoneBlocksToWrite = blocksToWrite
-      .filter(b => b.metadata === METADATA.ZONE)
+      .filter(b => b.metadata >= METADATA.ZONE_FIRST && b.metadata <= METADATA.ZONE_LAST)
       .sort((a, b) => a.address - b.address);
     
     for (const block of zoneBlocksToWrite) {
@@ -3784,6 +3792,17 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       log.debug(`${metadataHex} at ${addressHex} (${block.data.length} bytes)`, 'Protocol');
     }
     
+    // Every block checked before the first is sent. The connection refuses a bad
+    // block by itself, but only when it gets to it, and by then the blocks ahead
+    // of it are on the radio.
+    const guard = this.writeGuardContext();
+    for (const block of finalBlocksToWrite) {
+      assertBlockWritable(
+        { address: block.address, length: block.data.length, data: block.data, metadata: block.metadata },
+        guard
+      );
+    }
+
     // Step 5: Write all blocks to radio in the correct order
     this.onProgress?.(60, `Writing ${finalBlocksToWrite.length} blocks to radio in correct order...`);
     

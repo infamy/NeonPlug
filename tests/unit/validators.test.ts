@@ -98,6 +98,17 @@ describe('isValidChannelFrequency', () => {
     // TX sentinel but forbidTx not set — not a valid no-TX channel
     expect(isValidChannelFrequency(ch(120.0, NO_TX_FREQUENCY, false))).toBe(false);
   });
+
+  it('rejects a blank TX outside 87-136 MHz on a radio that cannot hold one', () => {
+    expect(isValidChannelFrequency(ch(152.48, NO_TX_FREQUENCY, true))).toBe(false);
+  });
+
+  it('keeps a blank TX in any band, Forbid TX or not, on a radio that holds one', () => {
+    const anyBand = { blankTxAnyBand: true };
+    expect(isValidChannelFrequency(ch(152.48, NO_TX_FREQUENCY, false), null, anyBand)).toBe(true);
+    expect(isValidChannelFrequency(ch(446.0, NO_TX_FREQUENCY, true), null, anyBand)).toBe(true);
+    expect(isValidChannelFrequency(ch(300.0, NO_TX_FREQUENCY, true), null, anyBand)).toBe(false); // RX must still be in band
+  });
 });
 
 describe('isValidFrequency', () => {
@@ -209,6 +220,30 @@ describe('validateChannel', () => {
   it('accepts RX frequency within band limits', () => {
     const errors = validateChannel(validChannel(), DEFAULT_BAND_LIMITS);
     expect(errors.some(e => e.field === 'rxFrequency')).toBe(false);
+  });
+
+  it('flags TX frequency outside band limits, which a write would leave out', () => {
+    const errors = validateChannel(validChannel({ rxFrequency: 146.52, txFrequency: 300 }), DEFAULT_BAND_LIMITS);
+    expect(errors.map(e => e.field)).toEqual(['txFrequency']);
+  });
+
+  it('does not band-check a blank TX on a radio that holds one in any band', () => {
+    const ch = validChannel({ rxFrequency: 446.0, txFrequency: NO_TX_FREQUENCY });
+    expect(validateChannel(ch, DEFAULT_BAND_LIMITS, 4000, { blankTxAnyBand: true })).toHaveLength(0);
+    expect(validateChannel(ch, DEFAULT_BAND_LIMITS).some(e => e.field === 'txFrequency')).toBe(true);
+  });
+
+  it("holds a name to the radio's own length", () => {
+    expect(validateChannel(validChannel({ name: 'Repeater' }), null, 4000, { maxNameLength: 8 })).toHaveLength(0);
+    expect(validateChannel(validChannel({ name: 'Repeater1' }), null, 4000, { maxNameLength: 8 })).toEqual([
+      { field: 'name', message: 'Channel name must be 8 characters or less' },
+    ]);
+  });
+
+  it('can leave RX out of the band check, for a radio whose write keeps any RX', () => {
+    const receiveAnything = validChannel({ rxFrequency: 300, txFrequency: 146.52 });
+    expect(validateChannel(receiveAnything, DEFAULT_BAND_LIMITS, 4000, { checkRxBand: false })).toHaveLength(0);
+    expect(validateChannel(receiveAnything, DEFAULT_BAND_LIMITS).map(e => e.field)).toEqual(['rxFrequency']);
   });
 
   it('validates color code for digital channels', () => {

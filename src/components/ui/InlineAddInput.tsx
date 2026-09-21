@@ -1,5 +1,6 @@
 import React from 'react';
 import { Button } from './Button';
+import { FIELD } from './controlStyles';
 
 interface InlineAddInputProps {
   value: string;
@@ -13,7 +14,7 @@ interface InlineAddInputProps {
 }
 
 const INPUT_CLASS =
-  'bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-32';
+  `${FIELD} border rounded px-2 py-1 text-xs w-32`;
 
 export const InlineAddInput: React.FC<InlineAddInputProps> = ({
   value,
@@ -41,12 +42,14 @@ export const InlineAddInput: React.FC<InlineAddInputProps> = ({
         maxLength={maxLength}
         disabled={disabled}
       />
+      {/* Renders at the standard px-4 py-2, as it always has: the px-3 py-1 it used
+          to pass lost to Button's base padding and never applied. */}
       <Button
         type="button"
         variant="primary"
         onClick={onSubmit}
         disabled={disabled || !value.trim()}
-        className="px-3 py-1 text-xs"
+        className="text-xs"
       >
         {buttonLabel}
       </Button>

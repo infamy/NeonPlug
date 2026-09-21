@@ -2,7 +2,12 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 import { execSync } from 'child_process'
+import { readFileSync } from 'fs'
 import { inlineFavicon } from './vite-plugin-inline-favicon'
+
+const pkg = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf-8')
+) as { version: string }
 
 // Get commit hash from environment or git
 function getCommitHash(): string {
@@ -18,6 +23,21 @@ function getCommitHash(): string {
   }
 }
 
+// The version the build reports. release.yml bumps package.json and then sets
+// VITE_APP_VERSION to the same value, so the two can't drift; every other build
+// (local, main, PR preview) just reads whatever package.json currently says.
+function getAppVersion(): string {
+  return process.env.VITE_APP_VERSION || pkg.version;
+}
+
+// True only for builds produced by the release workflow from a vX.Y.Z tag.
+// Everything else is a dev build of some in-flight commit and says so — a user
+// reporting a radio-write bug from `/dev/` must not look like they were on the
+// tagged release.
+function isReleaseBuild(): boolean {
+  return process.env.VITE_RELEASE === '1';
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const isSingleFile = mode === 'singlefile'
@@ -28,6 +48,8 @@ export default defineConfig(({ mode }) => {
     define: {
       __COMMIT_HASH__: JSON.stringify(commitHash),
       __BUILD_TIME__: JSON.stringify(buildTime),
+      __APP_VERSION__: JSON.stringify(getAppVersion()),
+      __RELEASE_BUILD__: JSON.stringify(isReleaseBuild()),
     },
     plugins: [
       react(),
@@ -43,14 +65,6 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: isSingleFile ? 5000 : 1000,
       rollupOptions: isSingleFile ? undefined : {
         treeshake: {
-          moduleSideEffects: (id) => {
-            // Allow tree-shaking for exceljs
-            if (id.includes('exceljs')) {
-              return false;
-            }
-            // Default behavior for other modules
-            return null;
-          },
           propertyReadSideEffects: false,
           tryCatchDeoptimization: false,
         },
@@ -58,10 +72,6 @@ export default defineConfig(({ mode }) => {
           manualChunks: (id) => {
             // Split vendor libraries
             if (id.includes('node_modules')) {
-              // Separate exceljs as it's large
-              if (id.includes('exceljs')) {
-                return 'exceljs';
-              }
               // Combine all other vendor code into one chunk to avoid circular dependencies
               // This includes react, react-dom, zustand, reactgrid, and all other dependencies
               // While this is less optimal for caching, it eliminates circular chunk warnings
@@ -92,7 +102,7 @@ export default defineConfig(({ mode }) => {
     },
     // Optimize dependencies
     optimizeDeps: {
-      include: ['react', 'react-dom', 'zustand', 'exceljs'], // Include exceljs so it gets a proper ESM default export
+      include: ['react', 'react-dom', 'zustand'],
     },
     // Base path for deployment (empty for root)
     base: './',

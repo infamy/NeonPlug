@@ -1,32 +1,51 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useId, useMemo } from 'react';
 import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
 import { createPortal } from 'react-dom';
 import { useScanListsStore } from '../../store/scanListsStore';
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
+import { lowestFreeSlot } from '../../utils/lowestFreeSlot';
+import { scanListReference } from '../../utils/scanListReference';
+import type { ScanListField } from '../../types/radioCapabilities';
 import { useChannelsStore } from '../../store/channelsStore';
 import type { ScanList } from '../../models/ScanList';
 import type { Channel } from '../../models/Channel';
 import { ListDetailLayout } from '../ui/ListDetailLayout';
 import { OrderedItemPicker } from '../ui/OrderedItemPicker';
-import { channelPickerItem } from '../ui/pickerItems';
+import { channelListPreview, channelPickerItem } from '../ui/pickerItems';
 import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { BUTTON, FIELD, FIELD_INVALID } from '../ui/controlStyles';
 
 export const ScanListsList: React.FC = () => {
+  const { caps } = useRadioCapabilities();
+  // One maximum for the subtitle, the add handler and the Add button. The button
+  // checked a literal 32, so a DA-7X2 (100 lists) could never add a 33rd.
+  const maxScanLists = caps?.maxScanLists ?? 32;
+  // The DM-32 stores 11 characters, the D890UV family 16.
+  const maxNameLength = caps?.maxScanListNameLength ?? 16;
+  // The number a channel stores for each list, shown beside its name.
+  const scanListsBySlot = caps?.scanListsBySlot === true;
   const { scanLists, selectedScanList, setSelectedScanList, addScanList, deleteScanList, renameScanList } = useScanListsStore();
   const [newScanListName, setNewScanListName] = useState('');
-  const [editingScanList, setEditingScanList] = useState<string | null>(null);
+  // Lists are picked, renamed and deleted by position, since several can share
+  // a name: a DM-32 read held six called "Scan List", and one click took all six.
+  const [editingScanList, setEditingScanList] = useState<number | null>(null);
   const [editScanListName, setEditScanListName] = useState('');
-  const [scanListToDelete, setScanListToDelete] = useState<string | null>(null);
+  const [scanListToDelete, setScanListToDelete] = useState<{ index: number; reference: number; name: string } | null>(null);
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
+  const channels = useChannelsStore((s) => s.channels);
+  const channelNames = useMemo(() => new Map(channels.map((ch) => [ch.number, ch.name])), [channels]);
 
-  const selectedScanListData = scanLists.find(sl => sl.name === selectedScanList);
+  const selectedScanListData = selectedScanList === null ? undefined : scanLists[selectedScanList];
+  const selected =
+    selectedScanList !== null && selectedScanListData ? { index: selectedScanList, scanList: selectedScanListData } : null;
 
   const handleAddScanList = () => {
-    if (scanLists.length >= 32) {
-      showAlert('Maximum of 32 scan lists allowed.');
+    if (scanLists.length >= maxScanLists) {
+      showAlert(`Maximum of ${maxScanLists} scan lists allowed.`);
       return;
     }
     if (!newScanListName.trim()) {
@@ -37,45 +56,64 @@ export const ScanListsList: React.FC = () => {
       showAlert('A scan list with this name already exists.');
       return;
     }
-    const scanListName = newScanListName.trim().slice(0, 16);
+    const scanListName = newScanListName.trim().slice(0, maxNameLength);
+    // The LOWEST FREE slot, not the list length. `slot` is a hardware slot and
+    // the table can have holes: deleting a list clears its presence bit and
+    // leaves the survivors where they are, so a radio holding one list in slot 1
+    // has length 1 and slot 0 empty. Appending by length would target slot 1 and
+    // overwrite it, while never reusing the hole — which is how slot 0 ended up
+    // stranded.
+    //
+    // Allocated unconditionally, including when no list currently has a slot.
+    // Guarding on "some list already has one" left a D890 whose lists had ALL
+    // been deleted with no slot to infer from, so the next add could not be
+    // placed at all. A radio that does not use slots — the DM-32 — simply never
+    // reads the field.
+    const used = new Set(scanLists.map((sl) => sl.slot).filter((n): n is number => n !== undefined));
+    const slot = lowestFreeSlot(used, maxScanLists);
+    if (slot === undefined) {
+      showAlert(`No free scan list slot: all ${maxScanLists} are in use.`);
+      return;
+    }
     addScanList({
       name: scanListName,
+      slot,
       ctcScanMode: 0,
       scanTxMode: 0,
       channels: [],
     });
     setNewScanListName('');
-    // Auto-select the newly created scan list so user can immediately add channels
-    setSelectedScanList(scanListName);
+    // Auto-select the newly created scan list so user can immediately add channels.
+    // It goes on the end, at the position that was the list's length.
+    setSelectedScanList(scanLists.length);
   };
 
-  const handleDeleteScanListClick = (name: string) => {
-    setScanListToDelete(name);
+  const handleDeleteScanListClick = (index: number) => {
+    const scanList = scanLists[index];
+    setScanListToDelete({ index, reference: scanListReference(scanList, index, scanListsBySlot), name: scanList.name });
   };
   const handleDeleteScanListConfirm = () => {
     if (scanListToDelete) {
-      deleteScanList(scanListToDelete);
-      if (selectedScanList === scanListToDelete) {
-        setSelectedScanList(null);
-      }
+      // The store clears the selection, or moves it up with the lists below.
+      deleteScanList(scanListToDelete.index);
       setScanListToDelete(null);
     }
   };
 
-  const handleStartEdit = (scanListName: string, e: React.MouseEvent) => {
+  const handleStartEdit = (index: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditingScanList(scanListName);
-    setEditScanListName(scanListName);
+    setEditingScanList(index);
+    setEditScanListName(scanLists[index].name);
   };
 
-  const handleSaveEdit = (oldName: string, e?: React.MouseEvent) => {
+  const handleSaveEdit = (index: number, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    const success = renameScanList(oldName, editScanListName);
+    const success = renameScanList(index, editScanListName);
     if (success) {
       setEditingScanList(null);
       setEditScanListName('');
     } else {
-      showAlert('Invalid scan list name or name already exists. Scan list names must be 1-16 characters and unique.');
+      showAlert(`Invalid scan list name or name already exists. Scan list names must be 1-${maxNameLength} characters and unique.`);
     }
   };
 
@@ -96,17 +134,17 @@ export const ScanListsList: React.FC = () => {
         {scanLists.map((scanList, index) => (
           <div
             key={`${scanList.name}-${index}`}
-            onClick={() => editingScanList !== scanList.name && setSelectedScanList(scanList.name)}
+            onClick={() => editingScanList !== index && setSelectedScanList(index)}
             className={`p-3 transition-colors ${
-              editingScanList === scanList.name
+              editingScanList === index
                 ? 'bg-deep-gray-light'
-                : selectedScanList === scanList.name
+                : selectedScanList === index
                   ? 'bg-neon-cyan bg-opacity-20 border-l-4 border-neon-cyan cursor-pointer'
                   : 'hover:bg-deep-gray hover:bg-opacity-50 cursor-pointer'
             }`}
           >
             <div className="flex justify-between items-center mb-1">
-              {editingScanList === scanList.name ? (
+              {editingScanList === index ? (
                 <div className="flex items-center gap-2 flex-1">
                   <input
                     type="text"
@@ -114,59 +152,64 @@ export const ScanListsList: React.FC = () => {
                     onChange={(e) => setEditScanListName(e.target.value)}
                     onKeyPress={(e) => {
                       if (e.key === 'Enter') {
-                        handleSaveEdit(scanList.name);
+                        handleSaveEdit(index);
                       } else if (e.key === 'Escape') {
                         handleCancelEdit();
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    className="flex-1 bg-transparent border border-neon-cyan rounded px-2 py-1 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
-                    maxLength={16}
+                    className={`${FIELD} flex-1 border rounded px-2 py-1 text-sm`}
+                    maxLength={maxNameLength}
                     autoFocus
                   />
                   <button
-                    onClick={(e) => handleSaveEdit(scanList.name, e)}
-                    className="px-2 py-1 bg-neon-cyan text-dark-charcoal rounded text-xs hover:bg-opacity-90"
+                    onClick={(e) => handleSaveEdit(index, e)}
+                    className={`${BUTTON.primary} px-2 py-1 rounded text-xs`}
                   >
                     Save
                   </button>
                   <button
                     onClick={handleCancelEdit}
-                    className="px-2 py-1 bg-cool-gray bg-opacity-30 text-cool-gray rounded text-xs hover:bg-opacity-50"
+                    className={`${BUTTON.neutral} px-2 py-1 rounded text-xs`}
                   >
                     Cancel
                   </button>
                 </div>
               ) : (
                 <>
-                  <span className="text-white font-medium">{scanList.name}</span>
+                  <span className="text-white font-medium">
+                    <span className="text-cool-gray mr-1">{scanListReference(scanList, index, scanListsBySlot)}:</span>
+                    {scanList.name}
+                  </span>
                   <span className="text-cool-gray text-xs">
                     {scanList.channels.length} {formatPlural(scanList.channels.length, 'channel')}
                   </span>
                 </>
               )}
             </div>
-            {editingScanList !== scanList.name && (
+            {editingScanList !== index && (
               <>
                 {scanList.channels.length > 0 && (
-                  <div className="text-cool-gray text-xs mb-2">
-                    Channels: {scanList.channels.slice(0, 5).join(', ')}
-                    {scanList.channels.length > 5 && ` +${scanList.channels.length - 5} more`}
+                  <div
+                    className="text-cool-gray text-xs mb-2 truncate"
+                    title={channelListPreview(scanList.channels, channelNames, 20)}
+                  >
+                    {channelListPreview(scanList.channels, channelNames)}
                   </div>
                 )}
                 <div className="flex gap-2 justify-end mt-2">
                   <button
-                    onClick={(e) => handleStartEdit(scanList.name, e)}
-                    className="px-2 py-0.5 bg-neon-cyan bg-opacity-50 text-neon-cyan rounded text-xs hover:bg-opacity-70 border border-neon-cyan border-opacity-50"
+                    onClick={(e) => handleStartEdit(index, e)}
+                    className={`${BUTTON.outline} px-2 py-0.5 rounded text-xs border`}
                   >
                     Rename
                   </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleDeleteScanListClick(scanList.name);
+                      handleDeleteScanListClick(index);
                     }}
-                    className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                    className={`${BUTTON.danger} px-2 py-0.5 rounded text-xs border`}
                   >
                     Delete
                   </button>
@@ -179,14 +222,18 @@ export const ScanListsList: React.FC = () => {
     );
 
   const detailContent = (
-    <Card padding="none">
-      <div className="p-4 border-b border-neon-cyan border-opacity-30">
+    <Card padding="none" className="flex flex-col h-full">
+      <div className="p-4 border-b border-neon-cyan border-opacity-30 flex-shrink-0">
         <SectionTitle as="h3" size="md" bold>
-          {selectedScanListData ? `Scan List: ${selectedScanListData.name}` : 'Select a Scan List'}
+          {selected
+            ? `Scan List ${scanListReference(selected.scanList, selected.index, scanListsBySlot)}: ${selected.scanList.name}`
+            : 'Select a Scan List'}
         </SectionTitle>
       </div>
-      {selectedScanListData ? (
-        <ScanListEditor scanList={selectedScanListData} onAlert={showAlert} />
+      {selected ? (
+        <div className="flex-1 min-h-0">
+          <ScanListEditor index={selected.index} scanList={selected.scanList} onAlert={showAlert} />
+        </div>
       ) : (
         <EmptyState
           message="Select a scan list to edit"
@@ -200,22 +247,27 @@ export const ScanListsList: React.FC = () => {
     <>
       <ListDetailLayout
         listTitle="Scan Lists"
-        listSubtitle={`${scanLists.length}/32 scan lists`}
+        listSubtitle={`${scanLists.length}/${maxScanLists} scan lists`}
         addInputPlaceholder="Scan list name..."
         addInputValue={newScanListName}
         onAddInputChange={setNewScanListName}
         onAdd={handleAddScanList}
-        addDisabled={scanLists.length >= 32}
-        addInputMaxLength={16}
+        addDisabled={scanLists.length >= maxScanLists}
+        addInputMaxLength={maxNameLength}
         listContent={listContent}
         detailContent={detailContent}
+        fullHeight
       />
       <ConfirmModal
         isOpen={!!scanListToDelete}
         onClose={() => setScanListToDelete(null)}
         onConfirm={handleDeleteScanListConfirm}
         title="Delete scan list"
-        message={scanListToDelete ? `Are you sure you want to delete scan list "${scanListToDelete}"? This cannot be undone.` : ''}
+        message={
+          scanListToDelete
+            ? `Are you sure you want to delete scan list ${scanListToDelete.reference}, "${scanListToDelete.name}"? This cannot be undone.`
+            : ''
+        }
         confirmLabel="Delete"
         variant="danger"
       />
@@ -281,7 +333,7 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        dropdownRef.current && 
+        dropdownRef.current &&
         !dropdownRef.current.contains(event.target as Node) &&
         buttonRef.current &&
         !buttonRef.current.contains(event.target as Node)
@@ -316,7 +368,7 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
   };
 
   const dropdownContent = isOpen && !disabled && (
-    <div 
+    <div
       ref={dropdownRef}
       className="fixed z-[9999] bg-deep-gray border border-neon-cyan border-opacity-50 rounded shadow-2xl overflow-hidden"
       style={{
@@ -333,7 +385,7 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search channels..."
           autoFocus
-          className="w-full bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-neon-cyan"
+          className={`${FIELD} w-full border rounded px-2 py-1 text-xs`}
         />
       </div>
       <div className="overflow-y-auto max-h-48">
@@ -386,7 +438,7 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan disabled:opacity-50 text-left flex items-center justify-between"
+        className={`${BUTTON.field} w-full border rounded px-2 py-1.5 text-xs text-left flex items-center justify-between`}
       >
         <span className={value ? 'text-white' : 'text-cool-gray'}>{displayValue}</span>
         <span className="text-cool-gray ml-2">▼</span>
@@ -396,15 +448,95 @@ const SearchableChannelSelect: React.FC<SearchableChannelSelectProps> = ({
   );
 };
 
+/**
+ * The scan list's name, edited in place at the top of its editor. Renaming only
+ * lived behind the small Rename button in the list, which is easy to miss. Saved
+ * on Enter or when the field loses focus; Escape puts the name back.
+ */
+const ScanListNameField: React.FC<{ index: number; name: string; maxLength: number }> = ({ index, name, maxLength }) => {
+  const { scanLists, renameScanList } = useScanListsStore();
+  const id = useId();
+  // What is being typed; null while the field shows the saved name.
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const shown = draft ?? name;
+
+  const commit = () => {
+    if (draft === null) return;
+    const next = draft.trim();
+    if (next === name) {
+      setDraft(null);
+      setError(null);
+    } else if (!next) {
+      setError('A scan list needs a name.');
+    } else if (scanLists.some((sl, i) => i !== index && sl.name === next)) {
+      setError(`Another scan list is already called "${next}".`);
+    } else if (renameScanList(index, next)) {
+      setDraft(null);
+      setError(null);
+    } else {
+      setError(`Names are 1 to ${maxLength} characters.`);
+    }
+  };
+
+  return (
+    <div>
+      <label htmlFor={id} className="block text-cool-gray text-xs mb-1">
+        Name
+      </label>
+      <input
+        id={id}
+        type="text"
+        value={shown}
+        maxLength={maxLength}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setError(null);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') {
+            setDraft(null);
+            setError(null);
+          }
+        }}
+        aria-invalid={error ? true : undefined}
+        className={`${error ? FIELD_INVALID : FIELD} w-full border rounded px-2 py-1.5 text-sm`}
+      />
+      <p className={`text-xs mt-0.5 ${error ? 'text-red-300' : 'text-cool-gray'}`}>
+        {error ?? `${shown.length}/${maxLength} characters`}
+      </p>
+    </div>
+  );
+};
+
 interface ScanListEditorProps {
+  /** The list's position in the store, which is how it is changed: names can repeat. */
+  index: number;
   scanList: ScanList;
   onAlert: (message: string) => void;
 }
 
-const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) => {
+const ScanListEditor: React.FC<ScanListEditorProps> = ({ index, scanList, onAlert }) => {
+  // Per-radio, never hardcoded: the DM-32 holds 15 channels per scan list, the
+  // D890UV family 50. This was `maxItems={15}` and silently truncated the D890.
+  const { caps } = useRadioCapabilities();
   const { updateScanList } = useScanListsStore();
   const { channels } = useChannelsStore();
   const [showSettings, setShowSettings] = useState(true);
+
+  // Only offer an editor for a field the radio actually stores. Undefined means
+  // "all of them" — the DM-32's shape, which every radio got before this.
+  const shows = (field: ScanListField) =>
+    caps?.scanListFields === undefined || caps.scanListFields.includes(field);
+  const anySettings = (['ctcScanMode', 'scanTxMode', 'hangTime', 'designatedTxChannel'] as const)
+    .some(shows);
+  const anyPriority = shows('priority1') || shows('priority2');
+  const priorityMembersOnly = caps?.scanListPriorityMembersOnly === true;
+  // Hang time is in the radio's own units: 0.5 s steps on the DM-32, tenths on the D890UV.
+  const hangTime = caps?.scanListHangTime ?? { stepMs: 100, max: 255, default: 30 };
+  const seconds = (units: number) => `${Number(((units * hangTime.stepMs) / 1000).toFixed(1))}s`;
 
   const availableItems = channels
     .filter(ch => !scanList.channels.includes(ch.number))
@@ -414,137 +546,169 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
   // Get sorted list of channels for dropdowns
   const sortedChannels = [...channels].sort((a, b) => a.number - b.number);
 
+  // Where priority channels must be list members (caps.scanListPriorityMembersOnly,
+  // the DM-32) they are picked with the P1/P2 buttons on the member rows below:
+  // the OEM CPS enforces membership and the radio ignores a priority channel that
+  // isn't in the list (hardware-observed 2026-08-07). Other radios pick from every
+  // channel.
+  const priorityLabel = (num?: number) =>
+    num !== undefined ? (channels.find(c => c.number === num)?.name ?? `Ch ${num}`) : 'None';
+
   return (
-    <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-250px)]">
+    <div className="h-full overflow-y-auto p-4 space-y-4">
+      <ScanListNameField key={index} index={index} name={scanList.name} maxLength={caps?.maxScanListNameLength ?? 16} />
+
       {/* Scan List Settings - Collapsible */}
       <div className="bg-neon-cyan bg-opacity-5 border border-neon-cyan border-opacity-30 rounded-lg overflow-hidden">
-        <div 
+        <div
           className="p-3 flex justify-between items-center cursor-pointer hover:bg-neon-cyan hover:bg-opacity-10 transition-colors"
           onClick={() => setShowSettings(!showSettings)}
         >
           <h4 className="text-neon-cyan font-medium">Scan List Settings</h4>
           <span className="text-neon-cyan text-sm">{showSettings ? '▼' : '▶'}</span>
         </div>
-        
+
         {showSettings && (
           <div className="p-4 pt-0 space-y-3 relative">
+            {anySettings && (
             <div className="grid grid-cols-2 gap-4 relative">
-              {/* CTC Scan Mode */}
+              {shows('ctcScanMode') && (
               <div>
                 <label className="block text-cool-gray text-xs mb-1">CTC Scan Mode</label>
                 <select
                   value={scanList.ctcScanMode}
-                  onChange={(e) => updateScanList(scanList.name, { ctcScanMode: parseInt(e.target.value) })}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+                  onChange={(e) => updateScanList(index, { ctcScanMode: parseInt(e.target.value) })}
+                  className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                 >
                   <option value={0}>Not Detection CTC</option>
                   <option value={1}>Detection CTC Non Priority</option>
                   <option value={2}>Detection CTC Priority</option>
                   <option value={3}>Detection CTC</option>
                 </select>
-              </div>
+              </div>)}
 
-              {/* Scan TX Mode */}
+              {shows('scanTxMode') && (
               <div>
                 <label className="block text-cool-gray text-xs mb-1">Scan TX Mode</label>
                 <select
                   value={scanList.scanTxMode}
-                  onChange={(e) => updateScanList(scanList.name, { scanTxMode: parseInt(e.target.value) })}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+                  onChange={(e) => updateScanList(index, { scanTxMode: parseInt(e.target.value) })}
+                  className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                 >
                   <option value={0}>Current Channel</option>
                   <option value={1}>Last Active Channel</option>
                   <option value={2}>Designed Channel</option>
                 </select>
-              </div>
+              </div>)}
 
-              {/* Hang Time */}
+              {/* Hang Time, in the radio's own units (caps.scanListHangTime) */}
+              {shows('hangTime') && (
               <div>
-                <label className="block text-cool-gray text-xs mb-1">Hang Time (tenths of second)</label>
+                <label className="block text-cool-gray text-xs mb-1">
+                  Hang Time
+                  <span className="text-neon-cyan ml-2">{(((scanList.hangTime || hangTime.default) * hangTime.stepMs) / 1000).toFixed(1)}s</span>
+                </label>
                 <input
-                  type="number"
+                  type="range"
                   min={1}
-                  max={255}
-                  value={scanList.hangTime || 30}
-                  onChange={(e) => updateScanList(scanList.name, { hangTime: parseInt(e.target.value) || 30 })}
-                  className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
-                  placeholder="30 = 3.0s"
+                  max={hangTime.max}
+                  step={1}
+                  value={scanList.hangTime || hangTime.default}
+                  onChange={(e) => updateScanList(index, { hangTime: parseInt(e.target.value) || hangTime.default })}
+                  className="w-full accent-neon-cyan"
                 />
-                <p className="text-cool-gray text-xs mt-0.5">{((scanList.hangTime || 30) / 10).toFixed(1)}s</p>
-              </div>
+                <div className="flex justify-between text-cool-gray text-[10px]">
+                  <span>{seconds(1)}</span>
+                  <span>{seconds(hangTime.max)}</span>
+                </div>
+              </div>)}
 
-              {/* Designated TX Channel */}
+              {shows('designatedTxChannel') && (
               <div>
                 <label className="block text-cool-gray text-xs mb-1">Designated TX Channel</label>
                 <SearchableChannelSelect
                   value={scanList.designatedTxChannel}
-                  onChange={(value) => updateScanList(scanList.name, { designatedTxChannel: value || 0 })}
+                  onChange={(value) => updateScanList(index, { designatedTxChannel: value || 0 })}
                   channels={sortedChannels}
                   includeNone={true}
                   includeCurrent={true}
                 />
-                <p className="text-cool-gray text-xs mt-0.5">ENCODED (stored as value-2)</p>
-              </div>
-            </div>
+                <p className="text-cool-gray text-xs mt-0.5">Not written to radio yet — storage offset unverified</p>
+              </div>)}
+            </div>)}
 
-            {/* Priority Settings */}
+            {anyPriority && (
             <div className="pt-2 border-t border-neon-cyan border-opacity-20">
               <h5 className="text-white text-xs font-medium mb-2">Priority Settings</h5>
               <div className="grid grid-cols-2 gap-4">
                 {/* Priority 1 Type */}
+                {shows('priority1') && (
                 <div>
                   <label className="block text-cool-gray text-xs mb-1">Priority 1 Type</label>
                   <select
                     value={scanList.priority1Type || 0}
-                    onChange={(e) => updateScanList(scanList.name, { priority1Type: parseInt(e.target.value) })}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+                    onChange={(e) => updateScanList(index, { priority1Type: parseInt(e.target.value) })}
+                    className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                   >
                     <option value={0}>None</option>
                     <option value={1}>Current Channel</option>
                     <option value={2}>Specific Channel</option>
                   </select>
-                </div>
+                </div>)}
 
                 {/* Priority Channel 1 */}
+                {shows('priority1') && !priorityMembersOnly && (
                 <div>
                   <label className="block text-cool-gray text-xs mb-1">Priority Channel 1</label>
                   <SearchableChannelSelect
                     value={scanList.priorityChannel1}
-                    onChange={(value) => updateScanList(scanList.name, { priorityChannel1: value })}
+                    onChange={(value) => updateScanList(index, { priorityChannel1: value })}
                     channels={sortedChannels}
                     disabled={(scanList.priority1Type || 0) !== 2}
                     placeholder="Select channel..."
                   />
-                </div>
+                </div>)}
 
                 {/* Priority 2 Type */}
+                {shows('priority2') && (
                 <div>
                   <label className="block text-cool-gray text-xs mb-1">Priority 2 Type</label>
                   <select
                     value={scanList.priority2Type || 0}
-                    onChange={(e) => updateScanList(scanList.name, { priority2Type: parseInt(e.target.value) })}
-                    className="w-full bg-deep-gray border border-neon-cyan border-opacity-30 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-neon-cyan"
+                    onChange={(e) => updateScanList(index, { priority2Type: parseInt(e.target.value) })}
+                    className={`${FIELD} w-full border rounded px-2 py-1.5 text-xs`}
                   >
                     <option value={0}>None</option>
                     <option value={1}>Current Channel</option>
                     <option value={2}>Specific Channel</option>
                   </select>
-                </div>
+                </div>)}
 
                 {/* Priority Channel 2 */}
+                {shows('priority2') && !priorityMembersOnly && (
                 <div>
                   <label className="block text-cool-gray text-xs mb-1">Priority Channel 2</label>
                   <SearchableChannelSelect
                     value={scanList.priorityChannel2}
-                    onChange={(value) => updateScanList(scanList.name, { priorityChannel2: value })}
+                    onChange={(value) => updateScanList(index, { priorityChannel2: value })}
                     channels={sortedChannels}
                     disabled={(scanList.priority2Type || 0) !== 2}
                     placeholder="Select channel..."
                   />
-                  <p className="text-cool-gray text-xs mt-0.5">ENCODED (stored as value-2)</p>
-                </div>
+                </div>)}
               </div>
-            </div>
+              {priorityMembersOnly && (
+              <p className="text-cool-gray text-xs mt-2">
+                Tip: set a type to “Specific Channel”, then use the P1 / P2 buttons on the
+                channel rows below to pick the priority channels.
+                {(scanList.priority1Type || 0) === 2 && (
+                  <span className="text-neon-cyan"> P1: {priorityLabel(scanList.priorityChannel1)}.</span>
+                )}
+                {(scanList.priority2Type || 0) === 2 && (
+                  <span className="text-neon-cyan"> P2: {priorityLabel(scanList.priorityChannel2)}.</span>
+                )}
+              </p>)}
+            </div>)}
           </div>
         )}
       </div>
@@ -557,12 +721,63 @@ const ScanListEditor: React.FC<ScanListEditorProps> = ({ scanList, onAlert }) =>
           const ch = channels.find(c => c.number === num);
           return ch ? channelPickerItem(ch) : undefined;
         }}
-        onChange={(ids) => updateScanList(scanList.name, { channels: ids })}
-        maxItems={15}
+        onChange={(ids) => updateScanList(index, { channels: ids })}
+        maxItems={caps?.maxScanListChannels ?? 15}
         itemNoun="channel"
         containerNoun="scan list"
         onAlert={onAlert}
         padded={false}
+        renderRowExtras={priorityMembersOnly ? (id) => {
+          const p1Enabled = (scanList.priority1Type || 0) === 2;
+          const p2Enabled = (scanList.priority2Type || 0) === 2;
+          const isP1 = p1Enabled && scanList.priorityChannel1 === id;
+          const isP2 = p2Enabled && scanList.priorityChannel2 === id;
+          const chipBase = 'px-1.5 py-0.5 rounded text-[10px] font-medium border transition-colors';
+          const chipClass = (enabled: boolean, active: boolean) =>
+            !enabled
+              ? `${chipBase} bg-transparent text-cool-gray border-cool-gray border-opacity-20 opacity-30 cursor-not-allowed`
+              : active
+                ? `${chipBase} bg-neon-cyan text-dark-charcoal border-neon-cyan`
+                : `${chipBase} bg-transparent text-cool-gray border-cool-gray border-opacity-40 hover:text-neon-cyan hover:border-neon-cyan`;
+          return (
+            <div className="flex gap-1 mr-1">
+              <button
+                disabled={!p1Enabled}
+                onClick={() =>
+                  p1Enabled &&
+                  updateScanList(index, { priorityChannel1: isP1 ? undefined : id })
+                }
+                className={chipClass(p1Enabled, isP1)}
+                title={
+                  !p1Enabled
+                    ? 'Set Priority 1 Type to "Specific Channel" to enable'
+                    : isP1
+                      ? 'Clear Priority 1'
+                      : 'Set as Priority Channel 1'
+                }
+              >
+                P1
+              </button>
+              <button
+                disabled={!p2Enabled}
+                onClick={() =>
+                  p2Enabled &&
+                  updateScanList(index, { priorityChannel2: isP2 ? undefined : id })
+                }
+                className={chipClass(p2Enabled, isP2)}
+                title={
+                  !p2Enabled
+                    ? 'Set Priority 2 Type to "Specific Channel" to enable'
+                    : isP2
+                      ? 'Clear Priority 2'
+                      : 'Set as Priority Channel 2'
+                }
+              >
+                P2
+              </button>
+            </div>
+          );
+        } : undefined}
       />
     </div>
   );

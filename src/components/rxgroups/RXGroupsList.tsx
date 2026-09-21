@@ -1,27 +1,37 @@
+import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import React, { useState } from 'react';
 import { useAlert } from '../../hooks/useAlert';
 import { formatPlural } from '../../utils/formatPlural';
 import { useRXGroupsStore } from '../../store/rxGroupsStore';
 import { useQuickContactsStore } from '../../store/quickContactsStore';
+import { useRadioStore } from '../../store/radioStore';
 import type { RXGroup } from '../../models/RXGroup';
+import type { QuickContact } from '../../models/QuickContact';
+import { memberSlotFor, talkGroupForMemberSlot } from '../../services/csv/rxGroupMembers';
 import { ListDetailLayout } from '../ui/ListDetailLayout';
 import { OrderedItemPicker } from '../ui/OrderedItemPicker';
 import type { PickerItem } from '../ui/pickerItems';
 import { Card } from '../ui/Card';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
+import { BUTTON, FIELD } from '../ui/controlStyles';
 
 export const RXGroupsList: React.FC = () => {
+  const { caps } = useRadioCapabilities();
+  // One maximum for the subtitle, the add handler and the Add button. The button
+  // checked a literal 32, so a DA-7X2 (250 groups) could never add a 33rd.
+  const maxGroups = caps?.digital?.limits?.RX_GROUPS_MAX ?? 32;
   const { groups, selectedGroup, setSelectedGroup, addGroup, deleteGroup, updateGroup } = useRXGroupsStore();
   const [newGroupName, setNewGroupName] = useState('');
   const [editingName, setEditingName] = useState<number | null>(null);
   const [editingNameValue, setEditingNameValue] = useState('');
   const [groupToDelete, setGroupToDelete] = useState<{ index: number; name: string } | null>(null);
   const { alertOpen, alertMessage, alertTitle, showAlert, closeAlert } = useAlert();
+  const { talkGroupOf } = useRxGroupMembers();
 
   const handleAddGroup = () => {
-    if (groups.length >= 32) {
-      showAlert('Maximum of 32 RX groups allowed.');
+    if (groups.length >= maxGroups) {
+      showAlert(`Maximum of ${maxGroups} RX groups allowed.`);
       return;
     }
     if (newGroupName.trim()) {
@@ -86,7 +96,7 @@ export const RXGroupsList: React.FC = () => {
                   onClick={(e) => e.stopPropagation()}
                   autoFocus
                   maxLength={11}
-                  className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-white text-sm font-medium focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan w-full"
+                  className={`${FIELD} border rounded px-2 py-1 text-sm font-medium w-full`}
                 />
               ) : (
                 <span
@@ -107,7 +117,7 @@ export const RXGroupsList: React.FC = () => {
             </div>
             {group.talkGroupIndices.length > 0 && (
               <div className="text-cool-gray text-xs mb-2">
-                Talk Groups: {group.talkGroupIndices.slice(0, 5).join(', ')}
+                Talk Groups: {group.talkGroupIndices.slice(0, 5).map((member) => talkGroupOf(member)?.name ?? member).join(', ')}
                 {group.talkGroupIndices.length > 5 && ` +${group.talkGroupIndices.length - 5} more`}
               </div>
             )}
@@ -117,7 +127,7 @@ export const RXGroupsList: React.FC = () => {
                   e.stopPropagation();
                   setGroupToDelete({ index: group.index, name: group.name });
                 }}
-                className="px-2 py-0.5 bg-red-600 bg-opacity-50 text-red-300 rounded text-xs hover:bg-opacity-70 border border-red-600 border-opacity-50"
+                className={`${BUTTON.danger} px-2 py-0.5 rounded text-xs border`}
               >
                 Delete
               </button>
@@ -155,7 +165,7 @@ export const RXGroupsList: React.FC = () => {
                 }}
                 autoFocus
                 maxLength={11}
-                className="bg-transparent border border-neon-cyan border-opacity-30 rounded px-2 py-1 text-neon-cyan font-bold focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan flex-1"
+                className={`${FIELD} border rounded px-2 py-1 text-neon-cyan font-bold flex-1`}
               />
             ) : (
               <div className="flex items-center gap-2 flex-1">
@@ -195,12 +205,12 @@ export const RXGroupsList: React.FC = () => {
     <>
       <ListDetailLayout
         listTitle="RX Groups"
-        listSubtitle={`${groups.length}/32 groups`}
+        listSubtitle={`${groups.length}/${maxGroups} groups`}
         addInputPlaceholder="Group name..."
         addInputValue={newGroupName}
         onAddInputChange={setNewGroupName}
         onAdd={handleAddGroup}
-        addDisabled={groups.length >= 32}
+        addDisabled={groups.length >= maxGroups}
         addInputMaxLength={11}
         listContent={listContent}
         detailContent={detailContent}
@@ -234,29 +244,52 @@ export const RXGroupsList: React.FC = () => {
   );
 };
 
+/**
+ * How RX groups name their members. Most radios store a talk group's DMR ID. A
+ * radio that stores members by slot (the DA-7X2) stores the slot its write
+ * expects, which is not always the talk group's position: see rxGroupMembers.ts.
+ */
+function useRxGroupMembers() {
+  const { caps } = useRadioCapabilities();
+  const { contacts: talkGroups } = useQuickContactsStore();
+  const countAtRead = useRadioStore((s) => s.tables.writeOriginals?.talkgroupCountAtRead);
+  const bySlot = !!caps?.rxGroupMembersBySlot;
+  return {
+    talkGroups,
+    memberOf: (tg: QuickContact): number | undefined =>
+      bySlot ? memberSlotFor(talkGroups, tg, countAtRead) : tg.contactNumber,
+    talkGroupOf: (member: number): QuickContact | undefined =>
+      bySlot
+        ? talkGroupForMemberSlot(talkGroups, member, countAtRead)
+        : talkGroups.find((tg) => tg.contactNumber === member),
+  };
+}
+
 interface RXGroupEditorProps {
   group: RXGroup;
   onAlert: (message: string) => void;
 }
 
 const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group, onAlert }) => {
+  // Per-radio limit, not a hardcoded DM-32 value.
+  const { caps } = useRadioCapabilities();
   const { updateGroup } = useRXGroupsStore();
-  const { contacts: talkGroups } = useQuickContactsStore();
+  const { talkGroups, memberOf, talkGroupOf } = useRxGroupMembers();
 
-  // group.talkGroupIndices stores DMR IDs (contactNumber); rows display "index: name".
-  const talkGroupItem = (tg: (typeof talkGroups)[number]): PickerItem => ({
-    id: tg.contactNumber,
+  // Rows display "index: name"; the id is what the radio stores for the member.
+  const talkGroupItem = (tg: QuickContact, id: number): PickerItem => ({
+    id,
     label: `${tg.index}: ${tg.name}`,
     searchText: `${tg.index} ${tg.name} ${tg.contactNumber}`,
   });
 
-  const availableItems = talkGroups
-    .filter(tg =>
-      !group.talkGroupIndices.includes(tg.contactNumber) &&
-      tg.callType === 0x04 // Only Group Call (exclude Private Call 0x03 and All Call 0x05)
-    )
-    .sort((a, b) => a.index - b.index)
-    .map(talkGroupItem);
+  // Only Group Call (exclude Private Call 0x03 and All Call 0x05)
+  const groupCalls = talkGroups.filter((tg) => tg.callType === 0x04).sort((a, b) => a.index - b.index);
+  const availableItems = groupCalls.flatMap((tg) => {
+    const id = memberOf(tg);
+    return id === undefined || group.talkGroupIndices.includes(id) ? [] : [talkGroupItem(tg, id)];
+  });
+  const unplaceable = groupCalls.filter((tg) => memberOf(tg) === undefined).length;
 
   return (
     <div className="p-4 space-y-4">
@@ -267,24 +300,30 @@ const RXGroupEditor: React.FC<RXGroupEditorProps> = ({ group, onAlert }) => {
           value={group.name}
           onChange={(e) => updateGroup(group.index, { name: e.target.value.slice(0, 11) })}
           maxLength={11}
-          className="flex-1 bg-transparent border border-neon-cyan border-opacity-30 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-neon-cyan focus:shadow-glow-cyan"
+          className={`${FIELD} flex-1 border rounded px-3 py-2 text-sm`}
           placeholder="Enter group name"
         />
       </div>
       <OrderedItemPicker
         selectedIds={group.talkGroupIndices}
         availableItems={availableItems}
-        resolveItem={(dmrId) => {
-          const tg = talkGroups.find(t => t.contactNumber === dmrId);
-          return tg ? talkGroupItem(tg) : undefined;
+        resolveItem={(member) => {
+          const tg = talkGroupOf(member);
+          return tg ? talkGroupItem(tg, member) : undefined;
         }}
         onChange={(ids) => updateGroup(group.index, { talkGroupIndices: ids })}
-        maxItems={32}
+        maxItems={caps?.maxRxGroupMembers ?? 32}
         itemNoun="talk group"
         containerNoun="RX group"
         onAlert={onAlert}
         padded={false}
       />
+      {unplaceable > 0 && (
+        <p className="text-xs text-muted">
+          {unplaceable} {formatPlural(unplaceable, 'talk group')} added after talk groups were deleted can't join an RX
+          group until the radio is written and read again.
+        </p>
+      )}
     </div>
   );
 };

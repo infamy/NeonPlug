@@ -156,35 +156,22 @@ export const DM32UV_SETTINGS_PROFILE: SettingsProfile = {
       ],
     },
     {
-      id: 'buttonSk1',
-      title: 'SK1 Button',
+      // One area, not four. These were four sections of two fields each, which
+      // gave the Settings page four separate headings (and four jump-nav entries)
+      // for what is one topic: what the buttons do. The press is now in the label
+      // instead of the heading, so a reader scans one block of eight rather than
+      // four blocks of two.
+      id: 'buttons',
+      title: 'Buttons',
       fields: [
-        { key: 'sk1Short', label: 'Short Press', type: 'select', optionsId: 'buttonFunction' },
-        { key: 'sk1Long', label: 'Long Press', type: 'select', optionsId: 'buttonFunction' },
-      ],
-    },
-    {
-      id: 'buttonSk2',
-      title: 'SK2 Button',
-      fields: [
-        { key: 'sk2Short', label: 'Short Press', type: 'select', optionsId: 'buttonFunction' },
-        { key: 'sk2Long', label: 'Long Press', type: 'select', optionsId: 'buttonFunction' },
-      ],
-    },
-    {
-      id: 'buttonP1',
-      title: 'P1 Button',
-      fields: [
-        { key: 'p1Short', label: 'Short Press', type: 'select', optionsId: 'buttonFunction' },
-        { key: 'p1Long', label: 'Long Press', type: 'select', optionsId: 'buttonFunction' },
-      ],
-    },
-    {
-      id: 'buttonP2',
-      title: 'P2 Button',
-      fields: [
-        { key: 'p2Short', label: 'Short Press', type: 'select', optionsId: 'buttonFunction' },
-        { key: 'p2Long', label: 'Long Press', type: 'select', optionsId: 'buttonFunction' },
+        { key: 'sk1Short', label: 'SK1 Short Press', type: 'select', optionsId: 'buttonFunction' },
+        { key: 'sk1Long', label: 'SK1 Long Press', type: 'select', optionsId: 'buttonFunction' },
+        { key: 'sk2Short', label: 'SK2 Short Press', type: 'select', optionsId: 'buttonFunction' },
+        { key: 'sk2Long', label: 'SK2 Long Press', type: 'select', optionsId: 'buttonFunction' },
+        { key: 'p1Short', label: 'P1 Short Press', type: 'select', optionsId: 'buttonFunction' },
+        { key: 'p1Long', label: 'P1 Long Press', type: 'select', optionsId: 'buttonFunction' },
+        { key: 'p2Short', label: 'P2 Short Press', type: 'select', optionsId: 'buttonFunction' },
+        { key: 'p2Long', label: 'P2 Long Press', type: 'select', optionsId: 'buttonFunction' },
       ],
     },
     // Menu Items: nested keys under menuEnableFlags (handled via path in SettingsTab)

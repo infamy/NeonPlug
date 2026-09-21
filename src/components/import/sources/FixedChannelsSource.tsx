@@ -10,6 +10,7 @@ import type { Zone } from '../../../models';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
 import { SectionTitle } from '../../ui/SectionTitle';
+import { BUTTON } from '../../ui/controlStyles';
 
 interface FixedChannelsSourceProps {
   onError: (msg: string) => void;
@@ -161,7 +162,7 @@ export const FixedChannelsSource: React.FC<FixedChannelsSourceProps> = ({
                           e.stopPropagation();
                           setExpandedChannelSet(isExpanded ? null : set.name);
                         }}
-                        className="ml-auto text-neon-cyan hover:text-neon-cyan-bright text-sm"
+                        className={`${BUTTON.link} ml-auto text-sm`}
                       >
                         {isExpanded ? '▼' : '▶'}
                       </button>
@@ -206,7 +207,8 @@ export const FixedChannelsSource: React.FC<FixedChannelsSourceProps> = ({
         <Button
           onClick={handleAddFixedChannels}
           disabled={isAddingFixed}
-          className="bg-neon-magenta text-white hover:bg-neon-magenta-bright w-full"
+          variant="accent"
+          className="w-full"
         >
           {isAddingFixed
             ? 'Adding...'
