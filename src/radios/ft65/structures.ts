@@ -312,7 +312,13 @@ export function encodeChannel(image: Uint8Array, ch: Channel, offsetFactor: numb
   // Name, scan and enable bit. A memory new to its slot is scanned, as a new
   // memory is in CHIRP; one the radio already had keeps its own scan setting,
   // which this app does not edit.
-  encodeName(image, idx, ch.name, maxNameLen);
+  //
+  // The name is written only when it changed: a memory programmed from the
+  // radio's VFO pads its name slot with 0x7f, which reads as a space, and
+  // rewriting it with spaces would churn bytes to say the same thing.
+  if (decodeName(image, idx) !== ch.name.slice(0, maxNameLen).trimEnd()) {
+    encodeName(image, idx, ch.name, maxNameLen);
+  }
   if (isNewMemory) setScanIncluded(image, idx, true);
   setChannelEnabled(image, idx, true);
 }

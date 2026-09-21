@@ -139,6 +139,19 @@ describe('patching a memory the radio already has', () => {
     expect(parsed?.rxCtcssDcs).toEqual({ type: 'DCS', value: 23, polarity: 'N' });
   });
 
+  it('leaves a name slot alone when the name has not changed', () => {
+    const image = new Uint8Array(FT65_MEM_SIZE);
+    memoryAsTheRadioWroteIt(image, 1);
+    // A memory programmed from the VFO pads its name with 0x7f, not spaces.
+    image.set([0x43, 0x48, 0x31, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f], FT65_ADDR_NAMES);
+
+    write(image, [1]);
+
+    expect(Array.from(image.subarray(FT65_ADDR_NAMES, FT65_ADDR_NAMES + 8))).toEqual([
+      0x43, 0x48, 0x31, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f,
+    ]);
+  });
+
   it('pads a name with spaces, as the CPS does', () => {
     const image = new Uint8Array(FT65_MEM_SIZE);
     write(image, [1]);
