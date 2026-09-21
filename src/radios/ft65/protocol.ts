@@ -13,7 +13,7 @@ import type { Ft65Settings } from '../../types/ft65Settings';
 import { BaseAnalogProtocol } from '../shared/BaseProtocols';
 import { FT65Connection, openFT65Port, type FT65SerialPort } from './connection';
 import { FT65_NUM_BLOCKS, FT65_BLOCK_SIZE, FT65_MEM_SIZE } from './constants';
-import { parseAllChannels, encodeChannel, clearChannelRegions } from './structures';
+import { parseAllChannels, encodeChannel, clearUnwrittenMemories } from './structures';
 import { parseFt65Settings, writeFt65Settings } from './settingsFormat';
 
 export class FT65Protocol extends BaseAnalogProtocol {
@@ -122,13 +122,13 @@ export class FT65Protocol extends BaseAnalogProtocol {
       this.pendingSettings = null;
     }
 
-    // Clear channel data regions so deleted channels don't leave ghost entries
-    clearChannelRegions(image);
-
-    for (const ch of channels) {
-      if (ch.number >= 1 && ch.number <= 200) {
-        encodeChannel(image, ch, this.offsetFactor, this.maxNameLen);
-      }
+    // A memory is its slot: each channel goes to number - 1, and a slot no
+    // channel holds is deleted the way CHIRP deletes one, by its enable bit
+    // alone, so scan settings and the PMS memories stay as they were.
+    const written = channels.filter((ch) => ch.number >= 1 && ch.number <= 200);
+    clearUnwrittenMemories(image, new Set(written.map((ch) => ch.number - 1)));
+    for (const ch of written) {
+      encodeChannel(image, ch, this.offsetFactor, this.maxNameLen);
     }
 
     await this.conn.enterCloneMode();
