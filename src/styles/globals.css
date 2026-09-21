@@ -44,10 +44,6 @@
   .glow-magenta {
     box-shadow: 0 0 6px #ff00ff, 0 0 15px #ff00ff;
   }
-
-  .glow-purple {
-    box-shadow: 0 0 6px #9B30FF, 0 0 15px #9B30FF;
-  }
 }
 
 /* Themed checkboxes: dark background, cyan border, cyan check */

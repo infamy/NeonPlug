@@ -189,8 +189,7 @@ The app uses **Tailwind CSS** with a custom cyberpunk neon theme defined in `tai
 
 **Palette (from `tailwind.config.js`):**
 - Primary accent: `neon-cyan` (#00FFF7) — primary buttons, highlights, borders
-- Secondary accent: `neon-magenta` (#FF00FF) — tabs, selection, alerts
-- Highlight: `electric-purple` (#9B30FF) — modal headers, secondary accents
+- Secondary accent: `neon-magenta` (#FF00FF) — tabs, selection, alerts, modal headers, the Import button
 - Secondary text: `cool-gray` (#B0B0B0) — labels, muted text
 - Backgrounds: `dark-charcoal`, `deep-gray` (#121212, #1E1E1E)
 
