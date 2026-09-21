@@ -122,6 +122,8 @@ export const D890UV_CAPABILITIES: RadioCapabilities = {
   maxScanListNameLength: 16,
   // Channel names are 16 wide characters too, and a write refuses a longer one.
   maxChannelNameLength: D890_LIMITS.NAME_MAX_CHARS,
+  // The vendor CPS deletes a channel in place: its slot is cleared, nothing moves.
+  channelDeleteKeepsNumbers: true,
   scanListHangTime: { stepMs: 100, max: 255, default: 30 },
   // A channel stores its scan list's SLOT + 1, and deleted lists leave holes.
   scanListsBySlot: true,

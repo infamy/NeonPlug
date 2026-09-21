@@ -13,9 +13,21 @@ import { isVFOChannel } from '../utils/vfoChannels';
 export function describeChannelDelete(
   channels: readonly { number: number }[],
   deleting: readonly number[],
-  hiddenBySearch = 0
+  hiddenBySearch = 0,
+  /** `keepNumbers`: caps.channelDeleteKeepsNumbers. `lists`: the radio has zones or scan lists. */
+  options: { keepNumbers?: boolean; lists?: boolean } = {}
 ): string {
   if (deleting.length === 0) return '';
+  if (options.keepNumbers) {
+    const lists = options.lists
+      ? ` ${deleting.length === 1 ? 'It is' : 'They are'} taken out of zones and scan lists.`
+      : '';
+    const hidden =
+      hiddenBySearch > 0
+        ? ` ${hiddenBySearch} of them ${formatPlural(hiddenBySearch, 'is', 'are')} hidden by the search.`
+        : '';
+    return `Every other channel keeps its number.${lists}${hidden}`;
+  }
   const doomed = new Set(deleting);
   // The same renumbering deleteChannels does, keeping only the channels it moves.
   const renumbered = channels

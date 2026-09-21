@@ -51,6 +51,8 @@ export const UV5RMINI_CAPABILITIES: RadioCapabilities = {
   maxChannels: 999,
   // A write keeps 12 characters of a name (channelMapping.ts).
   maxChannelNameLength: 12,
+  // A channel is its slot; CHIRP and the radio's own menu delete one in place.
+  channelDeleteKeepsNumbers: true,
   supportsZones: false,
   supportsScanLists: false,
   supportsContacts: false,
