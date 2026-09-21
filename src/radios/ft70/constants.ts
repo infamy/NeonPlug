@@ -23,7 +23,8 @@ export const FT70_ID_BLOCK_SIZE = 10;
 export const FT70_DATA_BLOCK_SIZE = 65217;
 export const FT70_MEM_SIZE = FT70_ID_BLOCK_SIZE + FT70_DATA_BLOCK_SIZE; // 65227 bytes
 
-/** Chunk size used when streaming the (large) data block, for pacing + progress. */
+/** How much of the incoming data block to take at a time, for progress reporting.
+ *  The upload has its own, much smaller chunk size — see connection.ts. */
 export const FT70_CHUNK_SIZE = 1024;
 
 /** First 5 bytes of the ID block — radio model identifier. */

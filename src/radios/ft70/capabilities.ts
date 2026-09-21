@@ -13,7 +13,8 @@ const FT70_CLONE_MODE_INSTRUCTIONS = {
     '3. Click Continue below to connect (you may be asked to select the serial port). Don\'t press [BAND] yet — the radio sends immediately on that key press with no handshake, so it has to happen after the connection is already open and listening.',
   readStart:
     'Connected and listening for the radio.\n\n' +
-    'Press the [BAND] key on the radio now to start sending, then click Continue.',
+    'Press the [BAND] key on the radio to start sending, and click Continue. ' +
+    'Either order works — the app waits up to two minutes for the radio to start.',
   write:
     'FT-70D Clone Mode — Write (computer → radio)\n\n' +
     '1. Turn the radio on and connect the USB clone cable to the DATA terminal.\n' +

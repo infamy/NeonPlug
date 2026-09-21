@@ -17,9 +17,29 @@ import { BaseSerialConnection, type SerialLikePort } from '../shared/BaseSerialC
 import { requestSerialPort } from '../shared/serialPort';
 
 const ACK = 0x06;
-const READ_TIMEOUT_MS = 60_000;
+/**
+ * The radio starts sending when a PERSON presses BAND, so the wait for the
+ * first block is a wait on them, not on the radio. It used to be 8 seconds,
+ * which anyone who clicked Continue before pressing the button lost.
+ */
+const CLONE_START_TIMEOUT_MS = 120_000;
+/**
+ * Once it is streaming it does not pause. CHIRP gives up after 2 seconds of
+ * silence mid-transfer (yaesu_clone._chunk_read); this is the same idea with
+ * more room for a slow tab.
+ */
+const STREAM_TIMEOUT_MS = 5_000;
 const ACK_TIMEOUT_MS = 8_000;
+/**
+ * CHIRP's _chunk_write sends the data block 32 bytes at a time with a 30 ms
+ * sleep between chunks — about 1 kB/s, a quarter of what 38400 baud allows,
+ * and a full minute for the upload. Sending faster than this is the difference
+ * between a write that lands and one that doesn't.
+ */
+const WRITE_CHUNK_SIZE = 32;
 const WRITE_CHUNK_DELAY_MS = 30;
+/** How often to report upload progress, in chunks. */
+const WRITE_PROGRESS_EVERY = 32;
 
 export type FT70SerialPort = SerialLikePort;
 
@@ -32,6 +52,11 @@ export class FT70Connection extends BaseSerialConnection {
   /** Open the port and set up reader/writer. */
   async open(port: FT70SerialPort): Promise<void> {
     await super.openPort(port);
+    // pyserial raises DTR and RTS when it opens a port, so CHIRP has both high
+    // throughout. Web Serial leaves them low unless asked, and a programming
+    // cable that takes its enable from either line stays mute in both
+    // directions — the radio never hears us and we never hear the radio.
+    await port.setSignals?.({ dataTerminalReady: true, requestToSend: true });
     await this.delay(300);
     this.buf = new Uint8Array(0);
   }
@@ -49,9 +74,17 @@ export class FT70Connection extends BaseSerialConnection {
     const image = new Uint8Array(FT70_ID_BLOCK_SIZE + FT70_DATA_BLOCK_SIZE);
 
     // ID block: some cables echo a single ACK byte ahead of the real data — chew it if present.
-    let idBlock = await this.readExact(FT70_ID_BLOCK_SIZE, ACK_TIMEOUT_MS);
+    onProgress?.(0, 'Waiting for the radio to start sending');
+    let idBlock: Uint8Array;
+    try {
+      idBlock = await this.readExact(FT70_ID_BLOCK_SIZE, CLONE_START_TIMEOUT_MS);
+    } catch {
+      throw new Error(
+        'The radio sent nothing. Check it is in clone mode with SEND selected, that the plug is fully seated, and that the cable is the one for this radio.'
+      );
+    }
     if (idBlock[0] === ACK) {
-      const extra = await this.readExact(1, ACK_TIMEOUT_MS);
+      const extra = await this.readExact(1, STREAM_TIMEOUT_MS);
       idBlock = new Uint8Array([...idBlock.slice(1), extra[0]]);
     }
     image.set(idBlock, 0);
@@ -63,16 +96,23 @@ export class FT70Connection extends BaseSerialConnection {
     // of the radio's data. Strip it exactly like CHIRP's _chunk_read does —
     // without this the whole image shifts by one byte and the read times out
     // waiting for the last byte.
-    let firstByte = await this.readExact(1, READ_TIMEOUT_MS);
+    let firstByte = await this.readExact(1, STREAM_TIMEOUT_MS);
     if (firstByte[0] === ACK) {
-      firstByte = await this.readExact(1, READ_TIMEOUT_MS);
+      firstByte = await this.readExact(1, STREAM_TIMEOUT_MS);
     }
     image[FT70_ID_BLOCK_SIZE] = firstByte[0];
 
     let received = 1;
     while (received < FT70_DATA_BLOCK_SIZE) {
       const step = Math.min(FT70_CHUNK_SIZE, FT70_DATA_BLOCK_SIZE - received);
-      const chunk = await this.readExact(step, READ_TIMEOUT_MS);
+      let chunk: Uint8Array;
+      try {
+        chunk = await this.readExact(step, STREAM_TIMEOUT_MS);
+      } catch {
+        throw new Error(
+          `The radio stopped sending after ${FT70_ID_BLOCK_SIZE + received} of ${FT70_ID_BLOCK_SIZE + FT70_DATA_BLOCK_SIZE} bytes. Start the clone again from the radio.`
+        );
+      }
       image.set(chunk, FT70_ID_BLOCK_SIZE + received);
       received += step;
       onProgress?.(Math.round((received / FT70_DATA_BLOCK_SIZE) * 100), `Reading ${received}/${FT70_DATA_BLOCK_SIZE} bytes`);
@@ -101,14 +141,30 @@ export class FT70Connection extends BaseSerialConnection {
       }
     }
 
-    // Data block: stream in paced chunks, no per-chunk ack.
+    // Data block: 32 bytes at a time with a pause between, the pace CHIRP
+    // uses. No per-chunk ack — the radio says nothing until the end. The whole
+    // upload takes about a minute; going faster is what breaks it.
     let sent = 0;
+    let chunks = 0;
     while (sent < FT70_DATA_BLOCK_SIZE) {
-      const step = Math.min(FT70_CHUNK_SIZE, FT70_DATA_BLOCK_SIZE - sent);
+      const step = Math.min(WRITE_CHUNK_SIZE, FT70_DATA_BLOCK_SIZE - sent);
       await this.write(image.subarray(FT70_ID_BLOCK_SIZE + sent, FT70_ID_BLOCK_SIZE + sent + step));
       sent += step;
-      onProgress?.(Math.round((sent / FT70_DATA_BLOCK_SIZE) * 100), `Writing ${sent}/${FT70_DATA_BLOCK_SIZE} bytes`);
+      chunks++;
+      if (chunks % WRITE_PROGRESS_EVERY === 0 || sent === FT70_DATA_BLOCK_SIZE) {
+        onProgress?.(Math.round((sent / FT70_DATA_BLOCK_SIZE) * 100), `Writing ${sent}/${FT70_DATA_BLOCK_SIZE} bytes`);
+      }
       await this.delay(WRITE_CHUNK_DELAY_MS);
     }
+
+    // A two-pin cable reflects everything we just sent. CHIRP reads it back and
+    // drops it; leaving it in the buffer would make the next operation parse
+    // our own upload as the radio's reply.
+    try {
+      await this.readExact(1, 500);
+    } catch {
+      // Nothing echoed back, which is the normal case on a proper cable.
+    }
+    this.buf = new Uint8Array(0);
   }
 }

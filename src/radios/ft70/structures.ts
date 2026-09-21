@@ -196,37 +196,68 @@ export function parseChannel(image: Uint8Array, idx: number): Channel | null {
 export function encodeChannel(image: Uint8Array, ch: Channel): void {
   const idx = ch.number - 1;
   const slotBase = FT70_ADDR_CHANNELS + idx * FT70_CHANNEL_SIZE;
+  const existingFlag = image[flagOffset(idx)];
+  const isNewMemory = !isValid(existingFlag) || !isUsed(existingFlag);
 
-  image.fill(0x00, slotBase, slotBase + FT70_CHANNEL_SIZE);
+  // A slot the radio isn't using can hold anything, including a deleted
+  // memory's leftovers, so a memory new to one starts from CHIRP's blank
+  // (ft70.py _wipe_memory: zeros, with unknown1 set to 5). A slot the radio IS
+  // using is patched, so everything this app doesn't model — the tuning step,
+  // the mode bits that say C4FM, AMS, the S-meter squelch, the attenuator,
+  // auto-step and bell — keeps the bytes the radio wrote.
+  if (isNewMemory) {
+    image.fill(0x00, slotBase, slotBase + FT70_CHANNEL_SIZE);
+    image[slotBase + MEM.FLAGS1] = 0x05;
+  }
 
   const diffKhz = Math.round((ch.txFrequency - ch.rxFrequency) * 1000);
-  const duplexIdx = Math.abs(diffKhz) < 1 ? 0 : diffKhz > 0 ? 2 : 1; // '', '+', '-'
+  const duplexIdx = Math.abs(diffKhz) < 1 ? 0 : diffKhz > 0 ? 2 : 1; // '', '-', '+'
 
   encodeBCDkHz(Math.round(ch.rxFrequency * 1000), image, slotBase + MEM.FREQ);
   encodeBCDkHz(Math.abs(diffKhz), image, slotBase + MEM.OFFSET);
 
-  image[slotBase + MEM.MODE_DUPLEX] = (duplexIdx & 0x3) << 4; // mode=FM(0), tune_step=0(auto)
+  // duplex is bits 5-4. The mode above it and the tuning step below it are the
+  // radio's: this app shows every channel as analog FM, so writing the mode
+  // field would turn a C4FM memory into an FM one.
+  image[slotBase + MEM.MODE_DUPLEX] =
+    (image[slotBase + MEM.MODE_DUPLEX] & ~0x30) | ((duplexIdx & 0x3) << 4);
 
+  // display_tag (bit 7) on, as CHIRP always sets it; deviation is bit 5.
   const deviation = ch.bandwidth === '12.5kHz' ? 1 : 0;
-  image[slotBase + MEM.FLAGS1] = (1 << 7) | (deviation << 5); // display_tag=1 (show name)
+  image[slotBase + MEM.FLAGS1] = (image[slotBase + MEM.FLAGS1] & ~0xa0) | 0x80 | (deviation << 5);
 
+  // power is bits 7-6 and tone_mode bits 3-0; unknown2 and ams sit between them.
   const powerMap: Record<string, number> = { Low: 1, Medium: 2, High: 3 };
   const { toneMode, toneIdx, dcsIdx } = encodeTone(ch.txCtcssDcs, ch.rxCtcssDcs);
-  image[slotBase + MEM.FLAGS2] = ((powerMap[ch.power] ?? 3) << 6) | (toneMode & 0xf);
-  image[slotBase + MEM.TONE] = toneIdx & 0x3f;
-  image[slotBase + MEM.DCS] = dcsIdx & 0x7f;
+  image[slotBase + MEM.FLAGS2] =
+    (image[slotBase + MEM.FLAGS2] & 0x30) | (((powerMap[ch.power] ?? 3) & 0x3) << 6) | (toneMode & 0xf);
+  image[slotBase + MEM.TONE] = (image[slotBase + MEM.TONE] & 0xc0) | (toneIdx & 0x3f);
+  image[slotBase + MEM.DCS] = (image[slotBase + MEM.DCS] & 0x80) | (dcsIdx & 0x7f);
 
   encodeLabel(image, slotBase, ch.name);
 
-  const flag = (isNoSubVfo(ch.rxFrequency) ? 0x80 : 0) | 0x02 /* used */ | 0x01 /* valid */
-    | (ch.scanAdd === false ? 0x04 /* skip */ : 0);
-  image[flagOffset(idx)] = flag;
+  // The flag byte: used and valid on, nosubvfo worked out from the frequency as
+  // CHIRP does, skip from the scan setting. pskip — the radio's "select" skip —
+  // and the unknown bits keep what the radio had, because nothing here can show
+  // them.
+  let flag = image[flagOffset(idx)];
+  flag = (flag & ~0x80) | (isNoSubVfo(ch.rxFrequency) ? 0x80 : 0);
+  flag = (flag & ~0x04) | (ch.scanAdd === false ? 0x04 : 0);
+  image[flagOffset(idx)] = flag | 0x03;
 }
 
-/** Zero out flag[] and memory[] regions before re-encoding, so deleted channels don't leave ghost entries. */
-export function clearChannelRegions(image: Uint8Array): void {
-  image.fill(0x00, FT70_ADDR_FLAGS, FT70_ADDR_FLAGS + FT70_MAX_CHANNELS);
-  image.fill(0x00, FT70_ADDR_CHANNELS, FT70_ADDR_CHANNELS + FT70_MAX_CHANNELS * FT70_CHANNEL_SIZE);
+/**
+ * Mark the memories a write doesn't hold as unused, the way CHIRP deletes one:
+ * clear the used and valid bits and nothing else (ft70.py set_memory for an
+ * empty memory). The slot's 32 bytes and the rest of its flag byte stay put.
+ *
+ * This used to zero all 900 flag bytes and all 900 slots, which threw away
+ * every per-channel setting the app doesn't model on every single write.
+ */
+export function deleteUnwrittenMemories(image: Uint8Array, written: ReadonlySet<number>): void {
+  for (let idx = 0; idx < FT70_MAX_CHANNELS; idx++) {
+    if (!written.has(idx)) image[flagOffset(idx)] &= ~0x03;
+  }
 }
 
 /** Parse all 900 channel slots from a full memory image. */

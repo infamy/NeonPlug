@@ -13,8 +13,8 @@ import type { Channel, RadioSettings } from '../../models';
 import type { Ft70Settings } from '../../types/ft70Settings';
 import { BaseAnalogProtocol } from '../shared/BaseProtocols';
 import { FT70Connection, openFT70Port, type FT70SerialPort } from './connection';
-import { FT70_MEM_SIZE, FT70_MODEL_ID } from './constants';
-import { parseAllChannels, encodeChannel, clearChannelRegions, applyChecksum } from './structures';
+import { FT70_MAX_CHANNELS, FT70_MEM_SIZE, FT70_MODEL_ID } from './constants';
+import { parseAllChannels, encodeChannel, deleteUnwrittenMemories, applyChecksum } from './structures';
 import { parseFt70Settings, writeFt70Settings } from './settingsFormat';
 
 export class FT70Protocol extends BaseAnalogProtocol {
@@ -103,12 +103,12 @@ export class FT70Protocol extends BaseAnalogProtocol {
       this.pendingSettings = null;
     }
 
-    clearChannelRegions(image);
-    for (const ch of channels) {
-      if (ch.number >= 1 && ch.number <= 900) {
-        encodeChannel(image, ch);
-      }
-    }
+    // A memory is its slot: each channel goes to number - 1, and a slot no
+    // channel holds is deleted by its used/valid flags alone, as CHIRP does, so
+    // the settings this app doesn't model stay as the radio wrote them.
+    const written = channels.filter((ch) => ch.number >= 1 && ch.number <= FT70_MAX_CHANNELS);
+    deleteUnwrittenMemories(image, new Set(written.map((ch) => ch.number - 1)));
+    for (const ch of written) encodeChannel(image, ch);
 
     applyChecksum(image);
 

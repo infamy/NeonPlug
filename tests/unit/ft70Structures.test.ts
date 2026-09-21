@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   decodeBCDkHz, encodeBCDkHz, computeChecksum, applyChecksum,
-  parseChannel, encodeChannel, parseAllChannels, clearChannelRegions,
+  parseChannel, encodeChannel, parseAllChannels, deleteUnwrittenMemories,
 } from '../../src/radios/ft70/structures';
-import { FT70_MEM_SIZE, FT70_ADDR_CHECKSUM, FT70_ADDR_FLAGS, FT70_ADDR_CHANNELS } from '../../src/radios/ft70/constants';
+import { FT70_MEM_SIZE, FT70_ADDR_CHECKSUM, FT70_ADDR_FLAGS, FT70_ADDR_CHANNELS, MEM } from '../../src/radios/ft70/constants';
 import { createDefaultChannel } from '../../src/utils/channelHelpers';
 
 function makeImage(): Uint8Array {
@@ -154,7 +154,7 @@ describe('encodeChannel / parseChannel round trip', () => {
   });
 });
 
-describe('parseAllChannels / clearChannelRegions', () => {
+describe('parseAllChannels / deleteUnwrittenMemories', () => {
   it('parses multiple programmed channels and skips empty slots', () => {
     const img = makeImage();
     encodeChannel(img, createDefaultChannel({ number: 1, rxFrequency: 146.52, txFrequency: 146.52 }));
@@ -163,13 +163,46 @@ describe('parseAllChannels / clearChannelRegions', () => {
     expect(channels.map((c) => c.number)).toEqual([1, 3]);
   });
 
-  it('clearChannelRegions wipes flags and channel data', () => {
+  it('deletes a memory the write leaves out by its flags alone, and moves no other', () => {
     const img = makeImage();
     encodeChannel(img, createDefaultChannel({ number: 1, rxFrequency: 146.52, txFrequency: 146.52 }));
-    expect(parseAllChannels(img)).toHaveLength(1);
-    clearChannelRegions(img);
-    expect(parseAllChannels(img)).toHaveLength(0);
-    expect(img[FT70_ADDR_FLAGS]).toBe(0);
-    expect(img[FT70_ADDR_CHANNELS]).toBe(0);
+    encodeChannel(img, createDefaultChannel({ number: 3, rxFrequency: 446.0, txFrequency: 446.0 }));
+    const slot1 = img.slice(FT70_ADDR_CHANNELS, FT70_ADDR_CHANNELS + 32);
+
+    deleteUnwrittenMemories(img, new Set([2])); // keep memory 3 only
+
+    expect(parseAllChannels(img).map((c) => c.number)).toEqual([3]);
+    // The deleted memory's own bytes are left where they are, as CHIRP leaves them.
+    expect(img.slice(FT70_ADDR_CHANNELS, FT70_ADDR_CHANNELS + 32)).toEqual(slot1);
+  });
+
+  it('keeps the per-channel settings this app does not model', () => {
+    const img = makeImage();
+    encodeChannel(img, createDefaultChannel({ number: 1, rxFrequency: 146.52, txFrequency: 146.52 }));
+    // As the radio would leave them: a tuning step, C4FM mode, AMS on, a bell.
+    img[FT70_ADDR_CHANNELS + MEM.MODE_DUPLEX] |= 0x04;      // tune_step
+    img[FT70_ADDR_CHANNELS + MEM.MODE_DUPLEX] |= 0x40;      // mode bits
+    img[FT70_ADDR_CHANNELS + MEM.FLAGS2] |= 0x10;           // ams
+    img[FT70_ADDR_CHANNELS + 31] = 0x01;                    // bell
+    img[FT70_ADDR_FLAGS] |= 0x08;                           // pskip
+
+    encodeChannel(img, createDefaultChannel({ number: 1, rxFrequency: 146.52, txFrequency: 146.52 }));
+
+    expect(img[FT70_ADDR_CHANNELS + MEM.MODE_DUPLEX] & 0x0f).toBe(0x04);
+    expect(img[FT70_ADDR_CHANNELS + MEM.MODE_DUPLEX] & 0xc0).toBe(0x40);
+    expect(img[FT70_ADDR_CHANNELS + MEM.FLAGS2] & 0x10).toBe(0x10);
+    expect(img[FT70_ADDR_CHANNELS + 31]).toBe(0x01);
+    expect(img[FT70_ADDR_FLAGS] & 0x08).toBe(0x08);
+  });
+
+  it('starts a memory new to a slot from CHIRP\'s blank', () => {
+    const img = makeImage();
+    img.fill(0xaa, FT70_ADDR_CHANNELS, FT70_ADDR_CHANNELS + 32); // a deleted memory's leftovers
+
+    encodeChannel(img, createDefaultChannel({ number: 1, rxFrequency: 146.52, txFrequency: 146.52 }));
+
+    expect(img[FT70_ADDR_CHANNELS + MEM.FLAGS1] & 0x0f).toBe(0x05); // unknown1, as _wipe_memory sets it
+    expect(img[FT70_ADDR_CHANNELS + 31]).toBe(0x00);
+    expect(parseChannel(img, 0)!.rxFrequency).toBeCloseTo(146.52, 4);
   });
 });

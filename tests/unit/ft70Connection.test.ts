@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { FT70Connection } from '../../src/radios/ft70/connection';
 import type { SerialLikePort } from '../../src/radios/shared/BaseSerialConnection';
 import {
@@ -28,9 +28,17 @@ const DATA_BLOCK = (() => {
 })();
 
 /** Fake Web Serial port pre-loaded with everything the radio will send. */
-function makePort(rxData: Uint8Array): { port: SerialLikePort; written: number[] } {
+function makePort(rxData: Uint8Array): {
+  port: SerialLikePort;
+  written: number[];
+  chunks: number[];
+  signals: { dataTerminalReady?: boolean; requestToSend?: boolean }[];
+} {
   const written: number[] = [];
+  const chunks: number[] = [];
+  const signals: { dataTerminalReady?: boolean; requestToSend?: boolean }[] = [];
   const port: SerialLikePort = {
+    setSignals: async (s) => { signals.push(s); },
     readable: new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(rxData);
@@ -38,12 +46,12 @@ function makePort(rxData: Uint8Array): { port: SerialLikePort; written: number[]
       },
     }),
     writable: new WritableStream<Uint8Array>({
-      write(chunk) { written.push(...chunk); },
+      write(chunk) { written.push(...chunk); chunks.push(chunk.length); },
     }),
     open: async () => {},
     close: async () => {},
   };
-  return { port, written };
+  return { port, written, chunks, signals };
 }
 
 async function readImageFrom(rxData: Uint8Array) {
@@ -77,5 +85,41 @@ describe('FT70Connection.readImage', () => {
 
     expect(image.slice(0, FT70_ID_BLOCK_SIZE)).toEqual(ID_BLOCK);
     expect(image.slice(FT70_ID_BLOCK_SIZE)).toEqual(DATA_BLOCK);
+  });
+});
+
+describe('FT70Connection.open', () => {
+  it('raises DTR and RTS, as pyserial does for CHIRP', async () => {
+    const { port, signals } = makePort(new Uint8Array(0));
+    const conn = new FT70Connection();
+    await conn.open(port);
+
+    expect(signals).toEqual([{ dataTerminalReady: true, requestToSend: true }]);
+  });
+});
+
+describe('FT70Connection.writeImage', () => {
+  it("sends the data block 32 bytes at a time, at CHIRP's pace", async () => {
+    vi.useFakeTimers();
+    try {
+      // The radio acks the ID block and then says nothing until the end.
+      const { port, chunks } = makePort(Uint8Array.of(ACK));
+      const conn = new FT70Connection();
+      const opening = conn.open(port);
+      await vi.runAllTimersAsync();
+      await opening;
+
+      const writing = conn.writeImage(concat(ID_BLOCK, DATA_BLOCK));
+      await vi.runAllTimersAsync();
+      await writing;
+
+      // One write for the ID block, then the data block in 32-byte pieces.
+      const dataChunks = chunks.slice(1);
+      expect(chunks[0]).toBe(FT70_ID_BLOCK_SIZE);
+      expect(Math.max(...dataChunks)).toBe(32);
+      expect(dataChunks.reduce((n, c) => n + c, 0)).toBe(FT70_DATA_BLOCK_SIZE);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
