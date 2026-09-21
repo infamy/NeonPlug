@@ -7,11 +7,11 @@ import {
   BAOFENG_IDENT,
   BAOFENG_ACK,
   BAOFENG_BLOCK_SIZE,
+  BAOFENG_BLE_UPLOAD_BLOCK_SIZE,
   BAOFENG_READ_RESPONSE_LEN,
 } from './constants';
 import {
   BAOFENG_MAGICS_READ,
-  BAOFENG_MAGICS_UPLOAD,
   buildBaofengReadFrame,
   buildBaofengWriteFrame,
   parseBaofengReadResponse,
@@ -79,7 +79,7 @@ export class UV5RMiniBleConnection {
   private rxBuffer = new Uint8Array(0);
   private resolveWhenByte: { byte: number; resolve: (v: boolean) => void; t: ReturnType<typeof setTimeout> } | null = null;
 
-  async connect(device: BluetoothDevice): Promise<void> {
+  async connect(device: BluetoothDevice, mode: 'download' | 'upload' = 'download'): Promise<void> {
     const { server, char } = await connectUV5RMiniBle(device);
     this.server = server;
     this.char = char;
@@ -94,7 +94,12 @@ export class UV5RMiniBleConnection {
     this.clearBuffer();
 
     await this.send(BAOFENG_IDENT);
-    await this.waitForByte(BAOFENG_ACK, 8000);
+    await this.waitForByte(BAOFENG_ACK, 8000, `${mode} ident`);
+    // The direction is fixed for the whole session: the radio answers one
+    // ident per power cycle, so a write has to start in upload mode rather
+    // than turn a read session around.
+    // CHIRP sends the same magics for both directions; the mode only decides
+    // the block size an upload uses.
     for (const { send, responseLen } of BAOFENG_MAGICS_READ) {
       this.clearBuffer();
       await this.send(send);
@@ -117,19 +122,22 @@ export class UV5RMiniBleConnection {
     return parseBaofengReadResponse(raw);
   }
 
+  /** Blocks a Bluetooth upload sends, per CHIRP's BLE_UP_BLOCK_SIZE. */
+  readonly uploadBlockSize = BAOFENG_BLE_UPLOAD_BLOCK_SIZE;
+
   async writeBlock(addr: number, block: Uint8Array): Promise<void> {
-    if (block.length !== BAOFENG_BLOCK_SIZE) throw new Error('Block must be 64 bytes');
     this.clearBuffer();
     const frame = buildBaofengWriteFrame(addr, block);
     await this.send(frame);
-    await this.waitForByte(BAOFENG_ACK, WRITE_ACK_TIMEOUT_MS);
+    await this.waitForByte(BAOFENG_ACK, WRITE_ACK_TIMEOUT_MS, `ack for block 0x${addr.toString(16)}`);
   }
 
+  /** Kept for a caller that connected without saying which direction it wanted. */
   async handshakeUpload(): Promise<void> {
     this.clearBuffer();
     await this.send(BAOFENG_IDENT);
-    await this.waitForByte(BAOFENG_ACK, 8000);
-    for (const { send, responseLen } of BAOFENG_MAGICS_UPLOAD) {
+    await this.waitForByte(BAOFENG_ACK, 8000, 'upload ident, mid-session');
+    for (const { send, responseLen } of BAOFENG_MAGICS_READ) {
       this.clearBuffer();
       await this.send(send);
       await this.readBytes(responseLen, 4000);
@@ -169,7 +177,7 @@ export class UV5RMiniBleConnection {
     }
   }
 
-  private waitForByte(byte: number, timeoutMs: number): Promise<void> {
+  private waitForByte(byte: number, timeoutMs: number, what = ''): Promise<void> {
     return new Promise((resolve, reject) => {
       for (let i = 0; i < this.rxBuffer.length; i++) {
         if (this.rxBuffer[i] === byte) {
@@ -181,7 +189,7 @@ export class UV5RMiniBleConnection {
       const t = setTimeout(() => {
         if (this.resolveWhenByte) {
           this.resolveWhenByte = null;
-          reject(new Error(`Timeout waiting for byte 0x${byte.toString(16)}`));
+          reject(new Error(`Timeout waiting for byte 0x${byte.toString(16)}${what ? ` (${what})` : ''}`));
         }
       }, timeoutMs);
       this.resolveWhenByte = { byte, resolve: () => { clearTimeout(t); resolve(); }, t };
