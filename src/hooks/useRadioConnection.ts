@@ -136,6 +136,28 @@ export interface D890WritePreview {
   refusal?: string;
 }
 
+/**
+ * How to connect to a radio: the transport the user picked for it, not the
+ * driver's default.
+ *
+ * Only the read passed one, so a UV5R-Mini read over Bluetooth was written over
+ * serial — the driver falls back to serial when no transport is named. Radios
+ * with no Bluetooth get no transport at all, which is what they expect.
+ */
+function connectOptionsFor(
+  model?: string | null,
+  extra: { forcePortSelection?: boolean; mode?: 'download' | 'upload' } = {}
+): { forcePortSelection?: boolean; transport?: 'serial' | 'ble'; mode?: 'download' | 'upload' } {
+  // Read from the store rather than closing over it: these callbacks would
+  // otherwise need the transport in every dependency array.
+  const { radioInfo, selectedRadioModel, preferredTransport } = useRadioStore.getState();
+  const caps = getCapabilitiesForModel(model ?? radioInfo?.model ?? selectedRadioModel ?? '');
+  const transport = caps?.supportsBle
+    ? (preferredTransport ?? caps?.preferredTransport ?? 'serial')
+    : undefined;
+  return { ...extra, ...(transport != null && { transport }) };
+}
+
 export function useRadioConnection() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -607,18 +629,13 @@ export function useRadioConnection() {
       protocol = createProtocolForModel(effectiveModel ?? '') ?? createDefaultProtocol();
       protocol.onProgress = (progress, message) => onProgress?.(progress, message);
 
-      // caps here is only used for transport selection — re-resolved inside performRead
-      // from the actual model string the radio returns.
-      const caps = getCapabilitiesForModel(effectiveModel);
-      const transport = caps?.supportsBle
-        ? (preferredTransport ?? caps?.preferredTransport ?? 'serial')
-        : undefined;
+      const options = connectOptionsFor(effectiveModel, { forcePortSelection });
       onProgress?.(5,
         forcePortSelection
-          ? (transport === 'ble' ? 'Select BLE device...' : 'Select serial port...')
+          ? (options.transport === 'ble' ? 'Select BLE device...' : 'Select serial port...')
           : 'Reconnecting to radio...',
         steps[0]);
-      await protocol.connect({ forcePortSelection, ...(transport != null && { transport }) });
+      await protocol.connect(options);
 
       await performRead(protocol);
     } catch (err) {
@@ -641,7 +658,7 @@ export function useRadioConnection() {
           onProgress?.(5, 'Retrying...', steps[0]);
           protocol = createProtocolForModel(effectiveModel ?? '') ?? createDefaultProtocol();
           protocol.onProgress = (progress, message) => onProgress?.(progress, message);
-          await protocol.connect();
+          await protocol.connect(connectOptionsFor());
           await performRead(protocol);
           return;
         } catch (retryErr) {
@@ -708,7 +725,7 @@ export function useRadioConnection() {
       
       // Connect to radio (reuse existing connection if available)
       report(0, 'Connecting to radio...');
-      await protocol.connect();
+      await protocol.connect(connectOptionsFor());
       
       // Get radio info if not already available
       if (!radioInfo) {
@@ -802,7 +819,7 @@ export function useRadioConnection() {
       protocol = createProtocolForModel(selectedRadioModel ?? radioInfo?.model ?? '');
       if (!protocol) throw new Error('No driver for this radio.');
       report(0, 'Connecting to radio...');
-      await protocol.connect();
+      await protocol.connect(connectOptionsFor());
       await run(protocol as RadioProtocol & Partial<OptionalDigitalReads>, report);
       report(100, `${label} complete.`);
     } catch (err) {
@@ -891,7 +908,7 @@ export function useRadioConnection() {
         report(progress, message);
       };
       report(0, 'Connecting to radio...');
-      await protocol.connect();
+      await protocol.connect(connectOptionsFor());
       if (!radioInfo) {
         report(5, 'Reading radio information...');
         const info = await protocol.getRadioInfo();
@@ -939,7 +956,7 @@ export function useRadioConnection() {
         report(progress, message);
       };
       report(0, 'Connecting to radio...');
-      await protocol.connect();
+      await protocol.connect(connectOptionsFor());
       if (!radioInfo) {
         report(5, 'Reading radio information...');
         const info = await protocol.getRadioInfo();
@@ -999,7 +1016,7 @@ export function useRadioConnection() {
       
       // Connect to radio
       onProgress?.(0, 'Connecting to radio...');
-      await protocol.connect();
+      await protocol.connect(connectOptionsFor());
       
       // Get radio info if not already available
       if (!radioInfo) {
@@ -1228,11 +1245,17 @@ export function useRadioConnection() {
       };
       
       // Step 1: Select port
-      onProgress?.(5, 'Please select a serial port in the browser dialog...', steps[0]);
+      // A write opens its own session, in upload mode: see the UV5R-Mini driver.
+      const writeOptions = connectOptionsFor(null, { mode: 'upload' });
+      onProgress?.(5,
+        writeOptions.transport === 'ble'
+          ? 'Please select the radio in the Bluetooth dialog...'
+          : 'Please select a serial port in the browser dialog...',
+        steps[0]);
       
       // Step 2: Connect to radio
       onProgress?.(10, 'Connecting to radio...', steps[1]);
-      await protocol.connect();
+      await protocol.connect(writeOptions);
       
       // Step 3: Get radio info
       onProgress?.(10, 'Reading radio information...', steps[2]);

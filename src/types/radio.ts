@@ -12,7 +12,7 @@ export type { RadioSettings } from '../models';
  * Analog radios (FT-65, UV5R-Mini) implement only this surface.
  */
 export interface AnalogRadioProtocol {
-  connect(portOrOptions?: string | { forcePortSelection?: boolean; transport?: string }): Promise<void>;
+  connect(portOrOptions?: string | { forcePortSelection?: boolean; transport?: string; mode?: 'download' | 'upload' }): Promise<void>;
   disconnect(): Promise<void>;
   isConnected(): boolean;
   getRadioInfo(): Promise<RadioInfo>;

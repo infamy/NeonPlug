@@ -24,6 +24,8 @@ import { parseUv5rMiniSettings, writeUv5rMiniSettings, UV5RMINI_SETTINGS_OFFSET 
 const UV5RMINI_MODEL = 'UV5R-Mini';
 
 type ConnectionLike = {
+  /** Bytes per upload block: 0x40 over serial, 0x80 over Bluetooth. */
+  readonly uploadBlockSize?: number;
   readBlock(addr: number): Promise<Uint8Array>;
   writeBlock(addr: number, block: Uint8Array): Promise<void>;
   handshakeUpload(): Promise<void>;
@@ -35,6 +37,8 @@ export class UV5RMiniProtocol extends BaseAnalogProtocol {
   private port: import('./serialConnection').UV5RMiniSerialPort | null = null;
   /** Cached image from last readChannels (used by readRadioSettings and getFirmwareFromCache). */
   private cachedImage: Uint8Array | null = null;
+  /** Which direction this session was opened in. A write session reads nothing. */
+  private sessionMode: 'download' | 'upload' = 'download';
 
   /**
    * Expose the cached clone image so `useRadioConnection` can persist it into
@@ -67,16 +71,17 @@ export class UV5RMiniProtocol extends BaseAnalogProtocol {
     return String.fromCharCode(...slice.subarray(0, end)).trim();
   }
 
-  async connect(portOrOptions?: string | { forcePortSelection?: boolean; transport?: 'serial' | 'ble' }): Promise<void> {
+  async connect(portOrOptions?: string | { forcePortSelection?: boolean; transport?: 'serial' | 'ble'; mode?: 'download' | 'upload' }): Promise<void> {
     const options =
       typeof portOrOptions === 'object' && portOrOptions != null ? portOrOptions : {};
     const forcePortSelection = options.forcePortSelection ?? false;
     const transport = options.transport ?? 'serial';
+    this.sessionMode = options.mode === 'upload' ? 'upload' : 'download';
 
     if (transport === 'ble') {
       const device = await requestUV5RMiniBleDevice();
       const bleConn = new UV5RMiniBleConnection();
-      await bleConn.connect(device);
+      await bleConn.connect(device, this.sessionMode);
       this.connection = bleConn;
       this.port = null;
     } else {
@@ -109,7 +114,9 @@ export class UV5RMiniProtocol extends BaseAnalogProtocol {
 
   async getRadioInfo(): Promise<RadioInfo> {
     let firmware = '';
-    if (this.connection) {
+    // Only a read session answers a read command. In a write session this would
+    // sit until it timed out, and the block would never come.
+    if (this.connection && this.sessionMode === 'download') {
       try {
         const blockAddr = Math.floor(BAOFENG_FW_VER_OFFSET / BAOFENG_BLOCK_SIZE) * BAOFENG_BLOCK_SIZE;
         const block = await this.connection.readBlock(blockAddr);
@@ -186,7 +193,9 @@ export class UV5RMiniProtocol extends BaseAnalogProtocol {
       );
     }
 
-    await this.connection.handshakeUpload();
+    // A session opened for writing is already in upload mode; this is for a
+    // caller that connected without saying which direction it wanted.
+    if (this.sessionMode !== 'upload') await this.connection.handshakeUpload();
 
     const image = new Uint8Array(0x8240);
     image.fill(0xff);
@@ -198,10 +207,15 @@ export class UV5RMiniProtocol extends BaseAnalogProtocol {
       }
     }
 
+    // Bluetooth takes 0x80 at a time, serial 0x40 (CHIRP's UV5RMini._upload).
+    // The last block of the channel area runs 0x20 past it into the gap before
+    // the settings at 0x8040, and carries the 0xff this image is filled with.
+    const blockSize = this.connection.uploadBlockSize ?? BAOFENG_BLOCK_SIZE;
     let written = 0;
-    const totalBlocks = Math.ceil((BAOFENG_CHANNEL_COUNT * BAOFENG_CHANNEL_SIZE) / BAOFENG_BLOCK_SIZE);
-    for (let addr = 0; addr < BAOFENG_CHANNEL_COUNT * BAOFENG_CHANNEL_SIZE; addr += BAOFENG_BLOCK_SIZE) {
-      const block = image.subarray(addr, addr + BAOFENG_BLOCK_SIZE);
+    const channelBytes = BAOFENG_CHANNEL_COUNT * BAOFENG_CHANNEL_SIZE;
+    const totalBlocks = Math.ceil(channelBytes / blockSize);
+    for (let addr = 0; addr < channelBytes; addr += blockSize) {
+      const block = image.subarray(addr, addr + blockSize);
       await this.connection.writeBlock(addr, block);
       written++;
       if (this.onProgress && written % 20 === 0) {
