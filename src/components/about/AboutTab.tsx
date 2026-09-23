@@ -272,6 +272,23 @@ export const AboutTab: React.FC = () => {
           </div>
         </Card>
 
+        {/* Acknowledgements */}
+        <Card>
+          <SectionTitle>Acknowledgements</SectionTitle>
+          <p className="text-cool-gray">
+            Thanks to{' '}
+            <a
+              href="https://baofengtech.com/product/da-7x2/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="link-accent"
+            >
+              BTECH Radios
+            </a>{' '}
+            for providing the DA-7X2 that NeonPlug&apos;s DA-7X2 support is built and tested on.
+          </p>
+        </Card>
+
         {/* Data Sources & Attribution */}
         <Card>
           <SectionTitle>Data Sources & Attribution</SectionTitle>
