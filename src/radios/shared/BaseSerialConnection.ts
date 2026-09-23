@@ -18,6 +18,20 @@ export abstract class BaseSerialConnection {
   protected buf = new Uint8Array(0);
   protected port: SerialLikePort | null = null;
 
+  /**
+   * The read the radio's next bytes will arrive on — only ever one.
+   *
+   * Web Serial cannot take back a `read()` once it has been asked for, so a
+   * wait that timed out used to leave its read behind and start another. The
+   * next bytes the radio sent went to the abandoned read and were lost: after
+   * any timeout, the first chunk of the next reply simply vanished, which on
+   * the FT-65 made every retry after a first timeout fail the same way (the
+   * July 2026 review's "lost reply"). Now whatever arrives is added to `buf` by
+   * the read itself, whoever is waiting, and the next wait takes over the same
+   * read instead of starting a second one.
+   */
+  private inFlight: Promise<number> | null = null;
+
   protected async openPort(port: SerialLikePort): Promise<void> {
     this.port = port;
     this.buf = new Uint8Array(0);
@@ -36,6 +50,7 @@ export abstract class BaseSerialConnection {
     this.reader = null;
     this.writer = null;
     this.port = null;
+    this.inFlight = null;
   }
 
   protected async write(data: Uint8Array): Promise<void> {
@@ -46,39 +61,11 @@ export abstract class BaseSerialConnection {
   protected async readExact(n: number, timeoutMs: number): Promise<Uint8Array<ArrayBuffer>> {
     const deadline = Date.now() + timeoutMs;
     while (this.buf.length < n) {
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) {
+      const got = await this.waitForChunk(deadline - Date.now());
+      if (got === null) {
         throw new Error(`Timeout: needed ${n} bytes, have ${this.buf.length}`);
       }
-
-      // The deadline check above is not enough on its own: `reader.read()` never
-      // resolves while the radio sends nothing, so a silent radio used to hang
-      // the whole operation forever instead of timing out. Racing the read
-      // against the remaining time is what turns "the app froze" into
-      // "Timeout: needed 3 bytes, have 0" — which is the difference between a
-      // debuggable failure and a mystery.
-      const TIMED_OUT = Symbol('timeout');
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const result = await Promise.race([
-        this.reader!.read(),
-        new Promise<typeof TIMED_OUT>((resolve) => {
-          timer = setTimeout(() => resolve(TIMED_OUT), remaining);
-        }),
-      ]);
-      clearTimeout(timer);
-
-      if (result === TIMED_OUT) {
-        throw new Error(`Timeout: needed ${n} bytes, have ${this.buf.length}`);
-      }
-
-      const { value, done } = result;
-      if (done) throw new Error('Serial port closed unexpectedly');
-      if (value && value.length > 0) {
-        const next = new Uint8Array(this.buf.length + value.length);
-        next.set(this.buf);
-        next.set(value, this.buf.length);
-        this.buf = next;
-      } else {
+      if (got === 0) {
         // An EMPTY chunk is the only time to pause: `read()` came back with
         // nothing, so going straight round could spin. Every real chunk goes
         // straight back to `read()`, which itself blocks until the radio sends
@@ -96,6 +83,57 @@ export abstract class BaseSerialConnection {
     const result = new Uint8Array(this.buf.slice(0, n));
     this.buf = this.buf.length > n ? this.buf.slice(n) : new Uint8Array(0);
     return result;
+  }
+
+  /**
+   * Wait up to `timeoutMs` for the radio's next chunk, which lands in `buf`.
+   * Resolves to its length — 0 for an empty chunk — or to null when the time
+   * runs out first. On a timeout the read carries on, and the next wait picks
+   * it up rather than asking for another.
+   *
+   * The race is what turns a silent radio into "Timeout: needed 3 bytes, have
+   * 0" instead of a hang: `read()` never resolves while nothing arrives.
+   */
+  protected async waitForChunk(timeoutMs: number): Promise<number | null> {
+    if (timeoutMs <= 0) return null;
+    const TIMED_OUT = Symbol('timeout');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const result = await Promise.race([
+      this.nextChunk(),
+      new Promise<typeof TIMED_OUT>((resolve) => {
+        timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs);
+      }),
+    ]);
+    clearTimeout(timer);
+    return result === TIMED_OUT ? null : result;
+  }
+
+  /** The read in flight, started if there is none. Resolves to the chunk's length. */
+  private nextChunk(): Promise<number> {
+    if (this.inFlight) return this.inFlight;
+    if (!this.reader) throw new Error('Not connected');
+    const read: Promise<number> = this.reader.read().then(
+      ({ value, done }) => {
+        if (this.inFlight === read) this.inFlight = null;
+        if (done) throw new Error('Serial port closed unexpectedly');
+        if (!value || value.length === 0) return 0;
+        const next = new Uint8Array(this.buf.length + value.length);
+        next.set(this.buf);
+        next.set(value, this.buf.length);
+        this.buf = next;
+        return value.length;
+      },
+      (err: unknown) => {
+        if (this.inFlight === read) this.inFlight = null;
+        throw err;
+      }
+    );
+    // A read nobody is waiting on any more can still fail — the port closing
+    // under it, say. The waiter, if there is one, sees the error; this only
+    // stops it being reported as unhandled when there is none.
+    read.catch(() => {});
+    this.inFlight = read;
+    return read;
   }
 
   protected delay(ms: number): Promise<void> {
