@@ -42,8 +42,13 @@ export abstract class BaseSerialConnection {
   }
 
   protected async closeStreams(): Promise<void> {
+    // Cancel, then let go of each stream: a port can't be closed while a reader
+    // or writer still holds one, and closing it is what frees it for the next
+    // operation.
     try { await this.reader?.cancel(); } catch { /* ignore */ }
+    try { this.reader?.releaseLock(); } catch { /* ignore */ }
     try { await this.writer?.close(); } catch { /* ignore */ }
+    try { this.writer?.releaseLock(); } catch { /* ignore */ }
     if (this.port) {
       try { await this.port.close(); } catch { /* ignore */ }
     }
