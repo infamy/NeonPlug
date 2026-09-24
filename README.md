@@ -98,6 +98,14 @@ This project was built with the assistance of AI, but all design decisions and a
 
 ---
 
+## 🙏 Acknowledgements
+
+Thanks to [BTECH Radios](https://baofengtech.com/product/da-7x2/) for providing the DA-7X2 that NeonPlug's DA-7X2 support is built and tested on.
+
+Radio donations are welcome — having the radio on hand is what gets support for a new model built and tested. If you have one to donate, [open a GitHub issue](https://github.com/infamy/NeonPlug/issues/new) with the model.
+
+---
+
 ## 📜 License
 
 MIT License - feel free to use this project for your own radio programming needs!
