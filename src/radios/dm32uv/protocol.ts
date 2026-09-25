@@ -1175,20 +1175,27 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
   /**
    * Concatenate cached blocks into a single Uint8Array
    */
+  /**
+   * Join one kind's cached blocks (zones, scan lists) into a single buffer, in
+   * order. A block the scan found but the read never fetched is an error.
+   *
+   * It used to log a warning and carry on without moving past the gap, so every
+   * block after a missing one landed 4 KB early: zone 29 parsed where zone 1
+   * belonged, and so on to the end, with zeros where the last block should be.
+   * Throwing fails the read instead — the read path then loads nothing and says
+   * which section it couldn't read, so a shifted table can't be written back.
+   */
   private concatenateCachedBlocks(blocks: MemoryBlock[]): Uint8Array {
     const allData = new Uint8Array(blocks.length * BLOCK_SIZE.STANDARD);
-    let offset = 0;
-    
-    for (const block of blocks) {
+    blocks.forEach((block, i) => {
       const cachedBlock = this.getCachedBlockByAddress(block.address);
-      if (cachedBlock) {
-        allData.set(cachedBlock.data, offset);
-        offset += BLOCK_SIZE.STANDARD;
-      } else {
-        log.warn(`Block at address 0x${block.address.toString(16)} not found in cache`, 'Protocol');
+      if (!cachedBlock) {
+        throw new Error(
+          `The ${block.type} block at 0x${block.address.toString(16)} (metadata 0x${block.metadata.toString(16)}) was not read, so the ${block.type} data after it cannot be placed.`
+        );
       }
-    }
-    
+      allData.set(cachedBlock.data, i * BLOCK_SIZE.STANDARD);
+    });
     return allData;
   }
 
