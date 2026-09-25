@@ -7,6 +7,7 @@ import type { RadioDescriptor } from './types';
 import { DM32UV_DESCRIPTOR } from './dm32uv/descriptor';
 import { UV5RMINI_DESCRIPTOR } from './uv5rmini/descriptor';
 import { FT65_DESCRIPTOR, FT4_DESCRIPTOR, FT4VR_DESCRIPTOR, FT25R_DESCRIPTOR } from './ft65/descriptor';
+import { FT70_DESCRIPTOR } from './ft70/descriptor';
 import { D890UV_DESCRIPTOR, D890UV_ANYTONE_DESCRIPTOR } from './d890uv/descriptor';
 
 export type ProtocolFactory = () => RadioProtocol;
@@ -19,6 +20,7 @@ export const RADIO_DESCRIPTORS: readonly RadioDescriptor[] = [
   FT4_DESCRIPTOR,
   FT4VR_DESCRIPTOR,
   FT25R_DESCRIPTOR,
+  FT70_DESCRIPTOR,
   // ALPHA. Reads and writes the whole codeplug, with most regions confirmed by
   // hardware round trips and the rest written back as read — see
   // DA7X2-COVERAGE.md for exactly which. Two descriptors, one driver: the same

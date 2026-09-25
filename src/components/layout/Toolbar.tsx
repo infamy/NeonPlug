@@ -76,6 +76,14 @@ export const Toolbar: React.FC = () => {
   const [lastOperationMode, setLastOperationMode] = useState<'read' | 'write' | null>(null);
   const [writeWarningOpen, setWriteWarningOpen] = useState(false);
   const [writeConfirm, setWriteConfirm] = useState<WriteConfirmInput | null>(null);
+  // Radios that can only be put into clone mode by hand (FT-70D): which modal
+  // is up, and the promise the read waits on while the user presses the button.
+  const [cloneInstructionsOpen, setCloneInstructionsOpen] = useState(false);
+  const [pendingReadForceSelection, setPendingReadForceSelection] = useState(true);
+  const [cloneStartOpen, setCloneStartOpen] = useState(false);
+  const [cloneStartPrompt, setCloneStartPrompt] = useState({ title: '', message: '' });
+  const cloneStartResolveRef = useRef<(() => void) | null>(null);
+  const cloneStartRejectRef = useRef<((err: Error) => void) | null>(null);
   const { alertOpen, alertMessage, alertBody, alertSize, alertTitle, showAlert, showAlertBody, closeAlert } = useAlert();
   const { confirm, confirmProps } = useConfirmDialog();
   const [convertModalOpen, setConvertModalOpen] = useState(false);
@@ -251,7 +259,32 @@ export const Toolbar: React.FC = () => {
     setProgressMessage(progressLabel);
   };
 
-  const handleRead = async (forcePortSelection = true) => {
+  // For radios that need a manual button-press to start sending (e.g. FT-70D): the radio
+  // streams immediately with no handshake, so we must already be connected and listening
+  // before asking the user to press it — otherwise the transmission can finish before
+  // anyone is reading. Resolves once the user confirms the "press it now" modal.
+  const waitForCloneStart = (title: string, message: string) => new Promise<void>((resolve, reject) => {
+    cloneStartResolveRef.current = resolve;
+    cloneStartRejectRef.current = reject;
+    setCloneStartPrompt({ title, message });
+    setCloneStartOpen(true);
+  });
+
+  const handleCloneStartConfirm = () => {
+    setCloneStartOpen(false);
+    cloneStartResolveRef.current?.();
+    cloneStartResolveRef.current = null;
+    cloneStartRejectRef.current = null;
+  };
+
+  const handleCloneStartCancel = () => {
+    setCloneStartOpen(false);
+    cloneStartRejectRef.current?.(new Error('Cancelled by user.'));
+    cloneStartResolveRef.current = null;
+    cloneStartRejectRef.current = null;
+  };
+
+  const doRead = async (forcePortSelection = true) => {
     window.focus();
     try {
       setConnectionError(null);
@@ -264,13 +297,20 @@ export const Toolbar: React.FC = () => {
       // snapshotted first. Not awaited: the port picker needs this click's user
       // activation, and the codeplug is captured before this line returns.
       void backupUnsavedEdits('reading the radio');
+
+      // A radio that has to be armed by hand is told to send only once the port
+      // is open and listening: it streams the instant the button is pressed.
+      const instructions = caps?.cloneModeInstructions;
+      const onConnected = instructions
+        ? () => waitForCloneStart('Start sending from radio', instructions.readStart)
+        : undefined;
       await readFromRadio((progress, message, step) => {
         setProgress(progress);
         setProgressMessage(message);
         if (step) {
           setCurrentStep(step);
         }
-      }, { forcePortSelection });
+      }, { forcePortSelection, onConnected });
 
       setConnectionError(null);
       setLastOperationMode(null);
@@ -289,6 +329,20 @@ export const Toolbar: React.FC = () => {
     }
   };
 
+  const handleRead = (forcePortSelection = true) => {
+    if (caps?.cloneModeInstructions) {
+      setPendingReadForceSelection(forcePortSelection);
+      setCloneInstructionsOpen(true);
+      return;
+    }
+    doRead(forcePortSelection);
+  };
+
+  const handleCloneInstructionsConfirm = () => {
+    setCloneInstructionsOpen(false);
+    doRead(pendingReadForceSelection);
+  };
+
   const handleRetry = () => {
     if (lastOperationMode === 'write') {
       handleWrite();
@@ -303,6 +357,15 @@ export const Toolbar: React.FC = () => {
 
   const startWriteOperation = async () => {
     window.focus();
+    // A radio armed by hand has to be sitting in receive-clone mode before the
+    // first byte goes out, so this comes before the port is even opened.
+    if (caps?.cloneModeInstructions) {
+      try {
+        await waitForCloneStart('Prepare radio to receive', caps.cloneModeInstructions.write);
+      } catch {
+        return;
+      }
+    }
     setIsWriting(true);
     setLastOperationMode('write');
     try {
@@ -572,6 +635,26 @@ export const Toolbar: React.FC = () => {
         body={writeConfirm ? <WriteConfirmBody {...writeConfirm} /> : undefined}
         size="lg"
         confirmLabel={writeModel ? `Write to ${writeModel}` : 'Write to radio'}
+        cancelLabel="Cancel"
+        variant="default"
+      />
+      <ConfirmModal
+        isOpen={cloneInstructionsOpen}
+        onClose={() => setCloneInstructionsOpen(false)}
+        onConfirm={handleCloneInstructionsConfirm}
+        title="Prepare radio for clone mode"
+        message={caps?.cloneModeInstructions?.read ?? ''}
+        confirmLabel="Continue"
+        cancelLabel="Cancel"
+        variant="default"
+      />
+      <ConfirmModal
+        isOpen={cloneStartOpen}
+        onClose={handleCloneStartCancel}
+        onConfirm={handleCloneStartConfirm}
+        title={cloneStartPrompt.title}
+        message={cloneStartPrompt.message}
+        confirmLabel="Continue"
         cancelLabel="Cancel"
         variant="default"
       />
