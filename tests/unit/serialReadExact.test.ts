@@ -127,3 +127,62 @@ describe('the timeout race is kept', () => {
     await outcome;
   });
 });
+
+describe('a timeout does not cost the next reply', () => {
+  /** Count the reads the connection asks the port for. */
+  function countReads(c: Probe) {
+    const reader = (c as unknown as { reader: ReadableStreamDefaultReader<Uint8Array> }).reader;
+    const read = reader.read.bind(reader);
+    const counter = { calls: 0 };
+    reader.read = () => {
+      counter.calls++;
+      return read();
+    };
+    return counter;
+  }
+
+  it('hands the bytes that arrive after a timeout to the next read', async () => {
+    vi.useFakeTimers();
+    const { port, send } = fakePort();
+    const c = new Probe();
+    await c.attach(port);
+    const first = expect(c.read(4, 1000)).rejects.toThrow('Timeout: needed 4 bytes, have 0');
+    await vi.advanceTimersByTimeAsync(1000);
+    await first;
+
+    // The abandoned read used to swallow this chunk, whoever it was meant for.
+    const second = c.read(4, 1000);
+    send(bytes(4, 0xa0));
+    expect(Array.from(await second)).toEqual(bytes(4, 0xa0));
+  });
+
+  it('keeps a chunk that arrives while nobody is waiting', async () => {
+    vi.useFakeTimers();
+    const { port, send } = fakePort();
+    const c = new Probe();
+    await c.attach(port);
+    const first = expect(c.read(4, 1000)).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(1000);
+    await first;
+
+    send(bytes(4, 0x10));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(Array.from(await c.read(4, 1000))).toEqual(bytes(4, 0x10));
+  });
+
+  it('takes over the read left running instead of asking for a second one', async () => {
+    vi.useFakeTimers();
+    const { port, send } = fakePort();
+    const c = new Probe();
+    await c.attach(port);
+    const reads = countReads(c);
+    const first = expect(c.read(4, 1000)).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(1000);
+    await first;
+
+    const second = c.read(4, 1000);
+    send(bytes(4));
+    await second;
+    expect(reads.calls).toBe(1);
+  });
+});

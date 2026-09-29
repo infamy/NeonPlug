@@ -87,7 +87,18 @@ export class UV5RMiniProtocol extends BaseAnalogProtocol {
     } else {
       this.port = await openUV5RMiniPort(forcePortSelection);
       const serialConn = new UV5RMiniSerialConnection();
-      await serialConn.connect(this.port);
+      try {
+        await serialConn.connect(this.port);
+      } catch (err) {
+        // The handshake failed with the port open and its streams locked, and
+        // disconnect() has no connection to close. Closing only the port fails
+        // while its streams are locked, so every later Read found the port
+        // "busy" until the page was reloaded. Close the connection itself, as
+        // the DA-7X2 does when its handshake fails.
+        await serialConn.disconnect().catch(() => {});
+        this.port = null;
+        throw err;
+      }
       this.connection = serialConn;
     }
   }

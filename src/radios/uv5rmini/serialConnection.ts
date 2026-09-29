@@ -97,13 +97,11 @@ export class UV5RMiniSerialConnection extends BaseSerialConnection {
           return;
         }
       }
-      const { value } = await this.reader!.read();
-      if (value && value.length > 0) {
-        const next = new Uint8Array(this.buf.length + value.length);
-        next.set(this.buf);
-        next.set(value, this.buf.length);
-        this.buf = next;
-      }
+      // Waits on the shared read, bounded by what is left of the deadline.
+      // This called `reader.read()` bare, which never returns while the radio
+      // is silent: a handshake the radio didn't answer hung the read at 5% and
+      // left the port locked until the page was reloaded.
+      await this.waitForChunk(deadline - Date.now());
       await this.delay(20);
     }
     throw new Error(`Timeout waiting for byte 0x${byte.toString(16)}`);
@@ -123,13 +121,7 @@ export class UV5RMiniSerialConnection extends BaseSerialConnection {
           : new Uint8Array(0);
         return out;
       }
-      const { value } = await this.reader!.read();
-      if (value && value.length > 0) {
-        const next = new Uint8Array(this.buf.length + value.length);
-        next.set(this.buf);
-        next.set(value, this.buf.length);
-        this.buf = next;
-      }
+      await this.waitForChunk(deadline - Date.now());
       await this.delay(20);
     }
     throw new Error(
