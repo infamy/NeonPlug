@@ -19,6 +19,8 @@ version says how old a build is, not how big its changes are. Whether a saved
 
 ## [Unreleased]
 
+## [2026.9.1] — 2026-09-29
+
 - Deleting a channel on the DA-7X2, FT-65 family or UV5R-Mini leaves its slot empty, and every other channel keeps its number, as the vendor software does.
 - UV5R-Mini writes work over Bluetooth.
 - FT-65 family writes keep scan settings, PMS memories and tuning steps, and DCS channels stay DCS.
@@ -34,6 +36,25 @@ version says how old a build is, not how big its changes are. Whether a saved
 - DM-32 talk groups past 170 now read and write.
 - Most of the MMDVM, CSV and talk group work comes from Will (@Will-83), who also reported the blank-TX bug. Thank you, Will.
 - Thanks to BTECH Radios for the DA-7X2 its support is built on.
+
+### What's Changed
+* Chore/release followups by @infamy in https://github.com/infamy/NeonPlug/pull/178
+* Keep DM-32 channels with a blank TX in any band by @infamy in https://github.com/infamy/NeonPlug/pull/181
+* auto refresh dmr ids, and repeater data from radioid.net by @infamy in https://github.com/infamy/NeonPlug/pull/138
+* Add a hidden out-of-band switch for the DM-32 by @infamy in https://github.com/infamy/NeonPlug/pull/182
+* Fix CHIRP CSV tones and offsets (#175) by @infamy in https://github.com/infamy/NeonPlug/pull/183
+* Usability review fixes by @infamy in https://github.com/infamy/NeonPlug/pull/184
+* Scan lists by position, and neon magenta accents by @infamy in https://github.com/infamy/NeonPlug/pull/190
+* Delete channels in place on the DA-7X2, FT-65 family and UV5R-Mini by @infamy in https://github.com/infamy/NeonPlug/pull/191
+* Write to the UV5R-Mini the way CHIRP does by @infamy in https://github.com/infamy/NeonPlug/pull/192
+* Keep FT-65 scan settings and PMS memories through a write by @infamy in https://github.com/infamy/NeonPlug/pull/188
+* Tidy the README by @infamy in https://github.com/infamy/NeonPlug/pull/193
+* Thank BTECH Radios for the DA-7X2, and welcome radio donations by @infamy in https://github.com/infamy/NeonPlug/pull/195
+* Stop losing serial replies, and stop shifting DM-32 zones past a gap by @infamy in https://github.com/infamy/NeonPlug/pull/194
+* Release notes for 2026.9.1 by @infamy in https://github.com/infamy/NeonPlug/pull/196
+
+
+**Full Changelog**: https://github.com/infamy/NeonPlug/compare/v2026.9.0...v2026.9.1
 
 ## [2026.9.0] — 2026-09-13
 
