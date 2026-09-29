@@ -19,10 +19,21 @@ version says how old a build is, not how big its changes are. Whether a saved
 
 ## [Unreleased]
 
+- Deleting a channel on the DA-7X2, FT-65 family or UV5R-Mini leaves its slot empty, and every other channel keeps its number, as the vendor software does.
+- UV5R-Mini writes work over Bluetooth.
+- FT-65 family writes keep scan settings, PMS memories and tuning steps, and DCS channels stay DCS.
+- A DM-32 with several scan lists of the same name no longer edits them all at once.
+- DM-32 channels with a blank TX are kept in any band instead of being dropped.
+- CHIRP CSV import and export get tones and offsets right.
+- Serial reads no longer lose a reply after a timeout, and a radio that doesn't answer fails with a message instead of hanging.
+- A DM-32 read with a missing zone or scan list block stops instead of loading them shifted.
+- DMR IDs and repeater data refresh from radioid.net every few days.
+- Fixes to the channel grid, read and write messages, imports, talk groups and unsaved changes.
 - MMDVM hotspot channels can be duplex, use either timeslot, and pick existing talk groups.
 - Every list exports to CSV and imports back, adding to what's there or replacing it.
 - DM-32 talk groups past 170 now read and write.
-- Most of these fixes come from Will (@Will-83). Thank you, Will.
+- Most of the MMDVM, CSV and talk group work comes from Will (@Will-83), who also reported the blank-TX bug. Thank you, Will.
+- Thanks to BTECH Radios for the DA-7X2 its support is built on.
 
 ## [2026.9.0] — 2026-09-13
 
