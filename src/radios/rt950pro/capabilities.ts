@@ -34,9 +34,8 @@ export const RT950PRO_CAPABILITIES: RadioCapabilities = {
   supportsScanLists: false,
   supportsContacts: false,
   analogOnly: true,
-  // It can be programmed over Bluetooth as well (data on ffe1 after an unlock
-  // on ff31), which this driver doesn't do yet.
-  supportsBle: false,
+  // Bluetooth as well as the cable: data on ffe1 after an unlock on ff31.
+  supportsBle: true,
   preferredTransport: 'serial',
   supportsBulkRead: false,
 };

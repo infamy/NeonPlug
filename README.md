@@ -20,7 +20,7 @@ NeonPlug lets you program your radio directly from your browser—no software in
 | FT-4 / FT-4XR / FT-4XE | Yaesu | VHF + UHF (Analog) | USB (SCU-35) |
 | FT-4VR | Yaesu | VHF (Analog) | USB (SCU-35) |
 | FT-25R | Yaesu | VHF (Analog) | USB (SCU-35) |
-| RT-950 Pro — alpha | Radtel | Multi-band (Analog) | USB (programming cable) |
+| RT-950 Pro — alpha | Radtel | Multi-band (Analog) | USB (programming cable) or BLE |
 
 *Alpha* means the driver reads and writes the whole codeplug, but not every part of it has been checked on the radio yet. The DA-7X2, DA-7XR and AT-D890UV are the same radio under three names. The RT-950 Pro driver is new and hasn't been on a radio yet.
 

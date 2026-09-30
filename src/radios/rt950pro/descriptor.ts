@@ -16,7 +16,7 @@ export const RT950PRO_DESCRIPTOR: RadioDescriptor = {
   label: 'RT-950 Pro',
   icon: '📻',
   group: 'Radtel',
-  supportsBle: false,
+  supportsBle: true,
   status: 'alpha',
   protocolFactory: () => new RT950ProProtocol(),
   capabilities: RT950PRO_CAPABILITIES,

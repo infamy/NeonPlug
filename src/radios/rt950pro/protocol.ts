@@ -1,6 +1,6 @@
 /**
  * RT950ProProtocol: the Radtel RT-950 Pro. Analog, 960 channels, over the
- * radio's USB programming cable.
+ * radio's USB programming cable or Bluetooth — the same session on either.
  *
  * Each read and each write is one session, run the vendor CPS's way:
  * handshake, every region block by block, then 'E'. A read keeps the whole
@@ -15,9 +15,12 @@ import type { RadioInfo } from '../../types/radio';
 import type { Channel, RadioSettings } from '../../models';
 import type { Rt950ProSettings } from '../../types/rt950proSettings';
 import { BaseAnalogProtocol } from '../shared/BaseProtocols';
-import { RT950ProConnection, openRT950ProPort, type RT950ProSerialPort } from './connection';
+import { RT950ProSerialLink, openRT950ProPort } from './connection';
+import { RT950ProBleLink, requestRT950ProBleDevice } from './bleConnection';
+import { RT950ProSession, type Rt950Link } from './session';
 import {
   RT950PRO_BLOCK_SIZE,
+  RT950PRO_COMMIT_SETTLE_MS,
   RT950PRO_IMAGE_SIZE,
   RT950PRO_SEGMENTS,
   RT950PRO_SEGMENT_OFFSETS,
@@ -29,51 +32,56 @@ import { log } from '../../utils/protocolLogger';
 
 const TOTAL_BLOCKS = RT950PRO_IMAGE_SIZE / RT950PRO_BLOCK_SIZE;
 
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export class RT950ProProtocol extends BaseAnalogProtocol {
   /** Settings go into the image and out with writeChannels, in the same session —
    *  the connection hook stages them with writeRadioSettings first. */
   readonly bufferedSettingsWrite = true;
 
-  private conn: RT950ProConnection | null = null;
+  private session: RT950ProSession | null = null;
   private pendingSettings: Rt950ProSettings | null = null;
-  private port: RT950ProSerialPort | null = null;
   private cachedImage: Uint8Array | null = null;
 
   async connect(
     portOrOptions?: string | { forcePortSelection?: boolean; transport?: string; mode?: 'download' | 'upload' }
   ): Promise<void> {
     const opts = typeof portOrOptions === 'object' ? portOrOptions : {};
-    this.port = await openRT950ProPort(opts.forcePortSelection ?? false);
-    const conn = new RT950ProConnection();
-    await conn.open(this.port);
+    let link: Rt950Link;
+    if (opts.transport === 'ble') {
+      link = await RT950ProBleLink.connect(await requestRT950ProBleDevice());
+    } else {
+      const serial = new RT950ProSerialLink();
+      await serial.open(await openRT950ProPort(opts.forcePortSelection ?? false));
+      link = serial;
+    }
+    const session = new RT950ProSession(link);
     try {
       // What the radio calls itself goes to the log, not into RadioInfo: it is
       // a model name, and the device card's Firmware row would show it as a
       // version (the DA-7X2 made that mistake first).
-      const reported = await conn.handshake();
+      const reported = await session.handshake();
       log.info(`Identified as ${reported}`, 'RT950Pro');
     } catch (err) {
       // Close what the failed handshake opened, or the port stays locked and
       // every later attempt finds it busy.
-      await conn.close();
-      this.port = null;
+      await session.close();
       throw err;
     }
-    this.conn = conn;
+    this.session = session;
   }
 
   async disconnect(): Promise<void> {
     this.cachedImage = null;
     this.pendingSettings = null;
-    if (this.conn) {
-      await this.conn.close();
-      this.conn = null;
+    if (this.session) {
+      await this.session.close();
+      this.session = null;
     }
-    this.port = null;
   }
 
   isConnected(): boolean {
-    return this.conn !== null;
+    return this.session !== null;
   }
 
   async getRadioInfo(): Promise<RadioInfo> {
@@ -94,24 +102,24 @@ export class RT950ProProtocol extends BaseAnalogProtocol {
   }
 
   async readChannels(): Promise<Channel[]> {
-    const conn = this.requireConnection();
+    const session = this.requireSession();
     const image = new Uint8Array(RT950PRO_IMAGE_SIZE);
     let done = 0;
     for (const [i, segment] of RT950PRO_SEGMENTS.entries()) {
       for (let offset = 0; offset < segment.length; offset += RT950PRO_BLOCK_SIZE) {
-        const block = await conn.readBlock(segment.readCommand, segment.address + offset);
+        const block = await session.readBlock(segment.readCommand, segment.address + offset);
         image.set(block, RT950PRO_SEGMENT_OFFSETS[i] + offset);
         done++;
         this.onProgress?.(Math.round((done / TOTAL_BLOCKS) * 100), `Reading ${segment.label}`);
       }
     }
-    await conn.end();
+    await session.end();
     this.cachedImage = image;
     return parseAllChannels(image);
   }
 
   async writeChannels(channels: Channel[]): Promise<void> {
-    const conn = this.requireConnection();
+    const session = this.requireSession();
     if (!this.cachedImage || this.cachedImage.length !== RT950PRO_IMAGE_SIZE) {
       // The write sends every region the vendor CPS sends. Without a read's
       // image, everything but the channels would go out as zeros.
@@ -125,19 +133,27 @@ export class RT950ProProtocol extends BaseAnalogProtocol {
     applyChannels(image, channels);
 
     let done = 0;
+    let committed = false;
     for (const [i, segment] of RT950PRO_SEGMENTS.entries()) {
       for (let offset = 0; offset < segment.length; offset += RT950PRO_BLOCK_SIZE) {
         const at = RT950PRO_SEGMENT_OFFSETS[i] + offset;
-        await conn.writeBlock(
+        await session.writeBlock(
           segment.writeCommand,
           segment.address + offset,
-          image.subarray(at, at + RT950PRO_BLOCK_SIZE)
+          image.subarray(at, at + RT950PRO_BLOCK_SIZE),
+          segment.ackTimeoutMs
         );
+        if (segment.pauseAfterBlockMs) await delay(segment.pauseAfterBlockMs);
         done++;
         this.onProgress?.(Math.round((done / TOTAL_BLOCKS) * 100), `Writing ${segment.label}`);
       }
+      committed ||= segment.commits === true;
     }
-    await conn.end();
+    // The APRS block commits the session to flash, and the radio may drop a
+    // Bluetooth link straight after acknowledging it: let the commit settle,
+    // then end the session without failing a write that has already landed.
+    if (committed) await delay(RT950PRO_COMMIT_SETTLE_MS);
+    await session.end({ bestEffort: committed });
     this.cachedImage = image;
   }
 
@@ -154,8 +170,8 @@ export class RT950ProProtocol extends BaseAnalogProtocol {
     this.pendingSettings = radioSpecific;
   }
 
-  private requireConnection(): RT950ProConnection {
-    if (!this.conn) throw new Error('Not connected');
-    return this.conn;
+  private requireSession(): RT950ProSession {
+    if (!this.session) throw new Error('Not connected');
+    return this.session;
   }
 }
