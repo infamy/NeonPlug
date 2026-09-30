@@ -12,7 +12,8 @@
  */
 
 import type { RadioInfo } from '../../types/radio';
-import type { Channel } from '../../models';
+import type { Channel, RadioSettings } from '../../models';
+import type { Rt950ProSettings } from '../../types/rt950proSettings';
 import { BaseAnalogProtocol } from '../shared/BaseProtocols';
 import { RT950ProConnection, openRT950ProPort, type RT950ProSerialPort } from './connection';
 import {
@@ -22,16 +23,21 @@ import {
   RT950PRO_SEGMENT_OFFSETS,
 } from './constants';
 import { applyChannels, parseAllChannels } from './structures';
+import { parseRt950ProSettings, writeRt950ProSettings } from './settingsFormat';
 import { RT950PRO_MODEL_ID } from './modelId';
+import { log } from '../../utils/protocolLogger';
 
 const TOTAL_BLOCKS = RT950PRO_IMAGE_SIZE / RT950PRO_BLOCK_SIZE;
 
 export class RT950ProProtocol extends BaseAnalogProtocol {
+  /** Settings go into the image and out with writeChannels, in the same session —
+   *  the connection hook stages them with writeRadioSettings first. */
+  readonly bufferedSettingsWrite = true;
+
   private conn: RT950ProConnection | null = null;
+  private pendingSettings: Rt950ProSettings | null = null;
   private port: RT950ProSerialPort | null = null;
   private cachedImage: Uint8Array | null = null;
-  /** What the radio called itself in the handshake. */
-  private reportedModel = '';
 
   async connect(
     portOrOptions?: string | { forcePortSelection?: boolean; transport?: string; mode?: 'download' | 'upload' }
@@ -41,7 +47,11 @@ export class RT950ProProtocol extends BaseAnalogProtocol {
     const conn = new RT950ProConnection();
     await conn.open(this.port);
     try {
-      this.reportedModel = await conn.handshake();
+      // What the radio calls itself goes to the log, not into RadioInfo: it is
+      // a model name, and the device card's Firmware row would show it as a
+      // version (the DA-7X2 made that mistake first).
+      const reported = await conn.handshake();
+      log.info(`Identified as ${reported}`, 'RT950Pro');
     } catch (err) {
       // Close what the failed handshake opened, or the port stays locked and
       // every later attempt finds it busy.
@@ -54,6 +64,7 @@ export class RT950ProProtocol extends BaseAnalogProtocol {
 
   async disconnect(): Promise<void> {
     this.cachedImage = null;
+    this.pendingSettings = null;
     if (this.conn) {
       await this.conn.close();
       this.conn = null;
@@ -68,7 +79,7 @@ export class RT950ProProtocol extends BaseAnalogProtocol {
   async getRadioInfo(): Promise<RadioInfo> {
     return {
       model: RT950PRO_MODEL_ID,
-      firmware: this.reportedModel,
+      firmware: '',
       buildDate: '',
       memoryLayout: { configStart: 0, configEnd: RT950PRO_IMAGE_SIZE - 1 },
     };
@@ -107,6 +118,10 @@ export class RT950ProProtocol extends BaseAnalogProtocol {
       throw new Error('Read the radio first. A write needs the image from a read to keep the radio\'s settings.');
     }
     const image = this.cachedImage.slice();
+    if (this.pendingSettings) {
+      writeRt950ProSettings(image, this.pendingSettings);
+      this.pendingSettings = null;
+    }
     applyChannels(image, channels);
 
     let done = 0;
@@ -124,6 +139,19 @@ export class RT950ProProtocol extends BaseAnalogProtocol {
     }
     await conn.end();
     this.cachedImage = image;
+  }
+
+  override async readRadioSettings(): Promise<RadioSettings | null> {
+    if (!this.cachedImage) return null;
+    const radioSpecific = parseRt950ProSettings(this.cachedImage);
+    if (!radioSpecific) return null;
+    return { radioSpecific } as unknown as RadioSettings;
+  }
+
+  override async writeRadioSettings(settings: RadioSettings): Promise<void> {
+    const radioSpecific = settings.radioSpecific as Rt950ProSettings | undefined;
+    if (!radioSpecific) return;
+    this.pendingSettings = radioSpecific;
   }
 
   private requireConnection(): RT950ProConnection {

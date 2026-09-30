@@ -234,6 +234,35 @@ describe('RT-950 Pro read and write', () => {
     expect(Array.from(slotOf(radio.clone, 3))).toEqual(new Array(32).fill(0xff));
   });
 
+  it('writes a changed setting into its own byte and nothing else', async () => {
+    const radio = new SimulatedRT950();
+    radio.clone.fill(0xff, 0x9000, 0x9100); // every setting at its factory default
+    radio.clone[0x9000] = 0x03; // but squelch 3
+    radio.channel(1, 'CALL', 146.52);
+    plugIn(radio);
+    const before = radio.clone.slice();
+
+    const protocol = new RT950ProProtocol();
+    await protocol.connect({ forcePortSelection: false });
+    const channels = await protocol.readChannels();
+    const settings = await protocol.readRadioSettings();
+    const image = protocol.getMemoryImage()!.slice();
+    await protocol.disconnect();
+    expect(settings?.radioSpecific).toMatchObject({ squelch: 3, keyBeep: -1 });
+
+    const writer = new RT950ProProtocol();
+    writer.setMemoryImage(image);
+    await writer.connect({ forcePortSelection: false, mode: 'upload' });
+    await writer.writeRadioSettings({ ...settings!, radioSpecific: { ...(settings!.radioSpecific as object), squelch: 6 } });
+    await writer.writeChannels(channels);
+    await writer.disconnect();
+
+    const changed: number[] = [];
+    for (let i = 0; i < before.length; i++) if (radio.clone[i] !== before[i]) changed.push(i);
+    expect(changed).toEqual([0x9000]);
+    expect(radio.clone[0x9000]).toBe(0x06);
+  });
+
   it('refuses to write without a read to start from', async () => {
     const radio = new SimulatedRT950();
     plugIn(radio);

@@ -7,6 +7,7 @@ import type { RadioDescriptor } from '../types';
 import { RT950ProProtocol } from './protocol';
 import { RT950PRO_CAPABILITIES } from './capabilities';
 import { RT950PRO_MODEL_ID } from './modelId';
+import { RT950PRO_SETTINGS_PROFILE } from './settingsProfile';
 
 export { RT950PRO_MODEL_ID };
 
@@ -19,5 +20,5 @@ export const RT950PRO_DESCRIPTOR: RadioDescriptor = {
   status: 'alpha',
   protocolFactory: () => new RT950ProProtocol(),
   capabilities: RT950PRO_CAPABILITIES,
-  settingsProfile: null,
+  settingsProfile: RT950PRO_SETTINGS_PROFILE,
 };
