@@ -8,6 +8,7 @@ import { DM32UV_DESCRIPTOR } from './dm32uv/descriptor';
 import { UV5RMINI_DESCRIPTOR } from './uv5rmini/descriptor';
 import { FT65_DESCRIPTOR, FT4_DESCRIPTOR, FT4VR_DESCRIPTOR, FT25R_DESCRIPTOR } from './ft65/descriptor';
 import { D890UV_DESCRIPTOR, D890UV_ANYTONE_DESCRIPTOR } from './d890uv/descriptor';
+import { RT950PRO_DESCRIPTOR } from './rt950pro/descriptor';
 
 export type ProtocolFactory = () => RadioProtocol;
 
@@ -27,6 +28,8 @@ export const RADIO_DESCRIPTORS: readonly RadioDescriptor[] = [
   // is not on their radio.
   D890UV_DESCRIPTOR,
   D890UV_ANYTONE_DESCRIPTOR,
+  // ALPHA, and untested on hardware. Same protocol family as the UV5R-Mini.
+  RT950PRO_DESCRIPTOR,
 ];
 
 /** Backward compatibility: same radio, multiple model IDs. */

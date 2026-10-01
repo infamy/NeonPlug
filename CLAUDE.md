@@ -140,6 +140,7 @@ workflow's output — editing release.yml's `sed`/`printf` will not fail any tes
 | `FT25R_DESCRIPTOR` | `FT-25R` | Analog | same family |
 | `D890UV_DESCRIPTOR` (BTECH) | `DA-7X2`, `DA-7XR` | Digital (DMR) | **ALPHA — reads and writes.** Sparse 32-bit address space, not a clone image. 4000 ch, banked talkgroups, 921600 baud. |
 | `D890UV_ANYTONE_DESCRIPTOR` | `AT-D890UV` | Digital (DMR) | **ALPHA.** The same radio and the same driver, under Anytone's name — two picker entries so nobody has to recognise the other vendor's label. |
+| `RT950PRO_DESCRIPTOR` | `RT-950 Pro` | Analog | **ALPHA, not yet run on a radio.** The UV5R-Mini's protocol family (shared scrambling in `radios/shared/uv17proCrypt.ts`). 960 ch, 0x80-byte blocks, **serial + BLE** (one `RT950ProSession` over either link; BLE needs a one-time unlock on ff31). Writes only the regions the vendor CPS writes (`assertWritableBlock`), never 0x7800–0x7FFF or 0xE000 up; APRS writes with 0x58 (0x55 is refused by the radio). |
 
 FT-70D support exists on the **`feat/ft70` branch only** — not merged to `main`.
 DA-7X2 support exists on the **`feat/da7x2` branch only** and is **ALPHA**. It
