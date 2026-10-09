@@ -132,11 +132,11 @@ afterEach(() => {
 });
 
 describe('RT-950 Pro over Bluetooth', () => {
-  it('offers every device, and asks for the services it needs', async () => {
+  it('offers only radios named walkie-talkie, and asks for the services it needs', async () => {
     const requestDevice = inRange(new FakeBleRadio());
     await requestRT950ProBleDevice();
     expect(requestDevice).toHaveBeenCalledWith({
-      acceptAllDevices: true,
+      filters: [{ name: 'walkie-talkie' }],
       optionalServices: [RT950PRO_BLE_DATA_SERVICE, UNLOCK_SERVICE],
     });
   });

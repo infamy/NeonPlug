@@ -53,7 +53,7 @@ export interface Rt950BleDevice {
   addEventListener(type: 'gattserverdisconnected', listener: () => void): void;
 }
 
-/** Ask the browser for the radio. It advertises under a name nobody has recorded, so every device is offered. */
+/** Ask the browser for the radio. It advertises as "walkie-talkie", the same name as the UV5R-Mini. */
 export async function requestRT950ProBleDevice(): Promise<Rt950BleDevice> {
   if (globalThis.isSecureContext === false) throw new Error('Web Bluetooth needs HTTPS or localhost.');
   const bluetooth = (navigator as Navigator & {
@@ -61,7 +61,7 @@ export async function requestRT950ProBleDevice(): Promise<Rt950BleDevice> {
   }).bluetooth;
   if (!bluetooth) throw new Error('Web Bluetooth is not supported here. Use Chrome on desktop or Android.');
   return bluetooth.requestDevice({
-    acceptAllDevices: true,
+    filters: [{ name: 'walkie-talkie' }],
     optionalServices: [RT950PRO_BLE_DATA_SERVICE, ...RT950PRO_BLE_UNLOCK_SERVICES],
   });
 }
