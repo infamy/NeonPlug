@@ -1,3 +1,5 @@
+import type { RadioCapabilities } from '../types/radioCapabilities';
+
 /**
  * Firmware utility functions
  */
@@ -122,3 +124,24 @@ export function isFirmware049OrNewer(firmware: string): boolean {
   return !isNaN(versionNumber) && versionNumber >= 49;
 }
 
+
+/**
+ * Whether the connected radio's firmware gets a warning: too new to be tested
+ * (`newer`), or older than the known-good one (`update`). A firmware the radio
+ * lists as supported gets neither. Shared by the status bar and the Settings
+ * tab so the two can't disagree.
+ */
+export function firmwareWarning(
+  caps: RadioCapabilities | null | undefined,
+  firmware: string | undefined
+): { isNewerFirmware: boolean; needsFirmwareUpdate: boolean } {
+  const real = !!firmware && firmware !== '-' && firmware.trim() !== '';
+  if (!real || caps?.supportedFirmware?.includes(firmware!)) {
+    return { isNewerFirmware: false, needsFirmwareUpdate: false };
+  }
+  const isNewerFirmware = !!caps?.isFirmware049OrNewer?.(firmware!);
+  // Only warn when the radio declares a known-good firmware. No declaration
+  // means no opinion — not 'wrong firmware'.
+  const needsFirmwareUpdate = !!caps?.expectedFirmware && firmware !== caps.expectedFirmware && !isNewerFirmware;
+  return { isNewerFirmware, needsFirmwareUpdate };
+}

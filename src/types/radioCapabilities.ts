@@ -208,6 +208,11 @@ export interface RadioCapabilities {
    * warning for not being a DM-32.
    */
   expectedFirmware?: string;
+  /**
+   * Other firmware known to work, warned about neither as outdated nor as too
+   * new — a regional build of a supported version, say.
+   */
+  supportedFirmware?: readonly string[];
   /** Validations to run before writing codeplug to this radio. Only run when model is known. */
   writeValidations?: WriteValidations;
   /** Max channel count (e.g. 999 for UV5R-Mini, 4000 for DM32). */

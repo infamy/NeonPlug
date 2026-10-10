@@ -3,6 +3,7 @@ import { useRadioStore } from '../../store/radioStore';
 import { useRadioCapabilities } from '../../hooks/useRadioCapabilities';
 import { Modal } from '../ui/Modal';
 import { BUTTON } from '../ui/controlStyles';
+import { firmwareWarning } from '../../utils/firmware';
 
 const USER_GESTURE_MESSAGE = 'Unable to read from radio, please read from a radio or load a codeplug to continue';
 
@@ -11,13 +12,8 @@ export const StatusBar: React.FC = () => {
   const { caps } = useRadioCapabilities();
   const [showFirmwareWarning, setShowFirmwareWarning] = useState(false);
   const showUserGestureInBar = connectionError?.includes('Please click the button directly') ?? false;
-  const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
-  const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));
-  // Only warn when the radio declares a known-good firmware. No declaration
-  // means no opinion — not 'wrong firmware'.
   const expectedFirmware = caps?.expectedFirmware;
-  const needsFirmwareUpdate = !!expectedFirmware && hasRealFirmware &&
-    radioInfo!.firmware !== expectedFirmware && !isNewerFirmware;
+  const { isNewerFirmware, needsFirmwareUpdate } = firmwareWarning(caps, radioInfo?.firmware);
   const deviceValue = (v: string | undefined) => (v && v.trim() && v !== '-' ? v : '-');
 
   return (
