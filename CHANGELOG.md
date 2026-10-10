@@ -19,6 +19,9 @@ version says how old a build is, not how big its changes are. Whether a saved
 
 ## [Unreleased]
 
+- New radio: the Radtel RT-950 Pro, over its USB cable or Bluetooth — channels and settings. Alpha.
+- The DM-32's Taiwan firmware, DM32.NRF.01.049, no longer shows a firmware warning.
+
 ## [2026.9.1] — 2026-09-29
 
 - Deleting a channel on the DA-7X2, FT-65 family or UV5R-Mini leaves its slot empty, and every other channel keeps its number, as the vendor software does.
