@@ -31,7 +31,8 @@ export function writeFilterOptionsFor(
     // `planChannelWrite` does this check properly instead: it refuses loudly,
     // and only for a channel whose TX frequency was CHANGED to something out
     // of band. One already on the radio is left alone.
-    filterBand: !(model != null && (D890_MODEL_IDS as readonly string[]).includes(model)),
+    filterBand:
+      !(model != null && (D890_MODEL_IDS as readonly string[]).includes(model)) && !caps?.writeKeepsEveryBand,
     bandLimits: caps?.bandLimits,
     blankTxAnyBand: caps?.blankTxAnyBand,
     outOfBand,

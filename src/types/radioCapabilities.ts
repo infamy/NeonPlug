@@ -180,6 +180,17 @@ export interface RadioCapabilities {
    */
   blankTxAnyBand?: boolean;
   /**
+   * The write never drops a channel for being out of band.
+   *
+   * On a radio where a channel is its slot, the write filter dropping a
+   * channel empties that slot — the channel is deleted from the radio, and the
+   * filter fires on exactly the entries such radios carry (airband, broadcast
+   * FM). Set it where the band limits can't describe everything the radio
+   * holds. The DA-7X2 is exempt the same way, by its model, in
+   * writeFilterOptions.ts.
+   */
+  writeKeepsEveryBand?: boolean;
+  /**
    * The hidden out-of-band switch (About, once debug mode is on) applies to this radio:
    * while it is on, channels aren't checked against bandLimits in the editor or on write.
    * For radios with modified firmware. The DM-32 only, for now.
