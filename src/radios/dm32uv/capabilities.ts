@@ -34,6 +34,9 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
   supportsOutOfBandFrequencies: true,
   isFirmware049OrNewer,
   expectedFirmware: 'DM32.01.L01.048',
+  // The standard 50k-contact firmware in a Taiwan build, confirmed supported.
+  // Without this its 049 tripped the "too new" warning.
+  supportedFirmware: ['DM32.NRF.01.049'],
   writeValidations: {
     channelsMustBeInZones: true,
   },

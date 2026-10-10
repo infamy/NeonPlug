@@ -32,6 +32,7 @@ import { FEATURE_AREAS } from './featureAreas';
 import { PageHeader } from '../ui/PageHeader';
 import { resolveContactCapacity } from '../../utils/contactCapacity';
 import { BUTTON, FIELD } from '../ui/controlStyles';
+import { firmwareWarning } from '../../utils/firmware';
 
 export const SettingsTab: React.FC = () => {
   const { radioInfo, bootImageRaw } = useRadioStore();
@@ -78,13 +79,8 @@ export const SettingsTab: React.FC = () => {
   const { caps, model: effectiveModel } = useRadioCapabilities();
   const settingsProfile = getSettingsProfileForModel(effectiveModel);
 
-  const hasRealFirmware = !!(radioInfo?.firmware && radioInfo.firmware !== '-' && radioInfo.firmware.trim() !== '');
-  const isNewerFirmware = !!(hasRealFirmware && caps?.isFirmware049OrNewer?.(radioInfo!.firmware));
-  // Only warn when the radio declares a known-good firmware. No declaration
-  // means no opinion — not 'wrong firmware'.
   const expectedFirmware = caps?.expectedFirmware;
-  const needsFirmwareUpdate = !!expectedFirmware && hasRealFirmware &&
-    radioInfo!.firmware !== expectedFirmware && !isNewerFirmware;
+  const { isNewerFirmware, needsFirmwareUpdate } = firmwareWarning(caps, radioInfo?.firmware);
 
   /** Display value for device info fields; show "-" when unknown (e.g. after convert). */
   const deviceValue = (v: string | undefined) => (v && v.trim() && v !== '-' ? v : '-');
