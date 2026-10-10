@@ -19,8 +19,18 @@ version says how old a build is, not how big its changes are. Whether a saved
 
 ## [Unreleased]
 
+## [2026.10.0] — 2026-10-10
+
 - New radio: the Radtel RT-950 Pro, over its USB cable or Bluetooth — channels and settings. Alpha.
 - The DM-32's Taiwan firmware, DM32.NRF.01.049, no longer shows a firmware warning.
+
+### What's Changed
+* Add the Radtel RT-950 Pro (alpha, untested on hardware) by @infamy in https://github.com/infamy/NeonPlug/pull/197
+* Don't warn about DM32.NRF.01.049 by @infamy in https://github.com/infamy/NeonPlug/pull/201
+* Release notes for 2026.10.0 by @infamy in https://github.com/infamy/NeonPlug/pull/202
+
+
+**Full Changelog**: https://github.com/infamy/NeonPlug/compare/v2026.9.1...v2026.10.0
 
 ## [2026.9.1] — 2026-09-29
 
