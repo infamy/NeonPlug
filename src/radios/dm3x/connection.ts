@@ -55,7 +55,7 @@ export class DM3xConnection {
     this.writeGuard = provider;
   }
 
-  async connect(port: WebSerialPort): Promise<void> {
+  async connect(port: WebSerialPort, psearchNames: readonly string[] = ['DP570', 'DM32', 'DM-32']): Promise<void> {
     // Clear any leftover state from previous connections
     this.readBuffer = new Uint8Array(0);
     this.isReading = false;
@@ -104,8 +104,13 @@ export class DM3xConnection {
     }
 
     const modelString = new TextDecoder('ascii', { fatal: false }).decode(psearchResponse.slice(1)).replace(/\0/g, '').trim();
-    if (!modelString.includes('DP570') && !modelString.includes('DM32') && !modelString.includes('DM-32')) {
-      throw new Error(`Unsupported radio model: "${modelString}". Expected DP570UV or DM-32UV. Response: ${psearchHex}`);
+    // Stricter than the vendor CPS, which only checks the 0x06: this is what
+    // stops one DM-3x model's codeplug going to another.
+    if (!psearchNames.some((name) => modelString.includes(name))) {
+      throw new Error(
+        `Unsupported radio model: "${modelString}". Expected a name containing ${psearchNames.join(', ')}. ` +
+          `Response: ${psearchHex}`
+      );
     }
 
     await this.delay(50);

@@ -45,7 +45,26 @@ import { parseHardwareFeatures, FACTORY_INFO_FEATURE_OFFSET } from './factoryInf
  * await protocol.disconnect();
  * ```
  */
+/**
+ * Which DM-3x radio a DM3xRadio talks to. The radios share one protocol and
+ * memory layout; what differs is the name the radio answers PSEARCH with and
+ * the model ID its capabilities are registered under.
+ */
+export interface DM3xVariant {
+  /** Model ID reported in RadioInfo, which picks the capabilities. */
+  model: string;
+  /** Substrings of the PSEARCH reply this variant accepts. */
+  psearchNames: readonly string[];
+}
+
+/** The DM-32UV, also sold as the DP570UV. Its model ID predates the picker. */
+export const DM32_VARIANT: DM3xVariant = { model: 'DP570UV', psearchNames: ['DP570', 'DM32', 'DM-32'] };
+
 export class DM3xRadio extends BaseDigitalProtocol implements DM3xProtocol {
+  constructor(private readonly variant: DM3xVariant = DM32_VARIANT) {
+    super();
+  }
+
   private connection: DM3xConnection | null = null;
   private port: WebSerialPort | null = null;
   private radioInfo: RadioInfo | null = null;
@@ -388,7 +407,7 @@ export class DM3xRadio extends BaseDigitalProtocol implements DM3xProtocol {
     // block map as they stand at that moment: see writeGuard.ts.
     this.connection.setWriteGuard(() => this.writeGuardContext());
     // Each request/response in connect() has its own 2s timeout (per-request basis)
-    await this.connection.connect(port);
+    await this.connection.connect(port, this.variant.psearchNames);
 
     // Query V-frames to get radio info
     // Each V-frame query has its own 2s timeout (per-request basis)
@@ -415,7 +434,7 @@ export class DM3xRadio extends BaseDigitalProtocol implements DM3xProtocol {
     // const contactsRange = vframes.get(0x0F);
 
     this.radioInfo = {
-      model: 'DP570UV',
+      model: this.variant.model,
       firmware,
       buildDate,
       dspVersion,

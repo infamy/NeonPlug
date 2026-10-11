@@ -153,6 +153,8 @@ describe('channel column gating', () => {
     // rather than a screen of features it may not have.
     for (const d of RADIO_DESCRIPTORS) {
       if (d.capabilities === DM32UV_CAPABILITIES || d.capabilities === D890UV_CAPABILITIES) continue;
+      // The DM-36 shares the DM-32UV's channel record, so its columns too.
+      if (d.capabilities.channelColumns === DM32UV_CAPABILITIES.channelColumns) continue;
       expect(d.capabilities.channelColumns ?? []).toEqual([]);
     }
   });

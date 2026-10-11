@@ -134,6 +134,7 @@ workflow's output — editing release.yml's `sed`/`printf` will not fail any tes
 | Descriptor | Model IDs | Class | Notes |
 |---|---|---|---|
 | `DM32UV_DESCRIPTOR` | `DM-32UV`, `DP570UV` | Digital (DMR) | 4000 ch, zones, contacts, scan lists, bulk block read |
+| `DM36_DESCRIPTOR` | `DM-36` | Digital (DMR) | **ALPHA, not yet run on a radio.** The DM-32UV's driver (`radios/dm3x/`) under its own model ID; the vendor CPS is the same program. PSEARCH names `DM36`/`DM-36` are a guess. Serial only until its Bluetooth link is known. |
 | `UV5RMINI_DESCRIPTOR` | `UV5R-Mini` | Analog | 999 ch, no zones/contacts, **BLE + serial** |
 | `FT65_DESCRIPTOR` | `FT-65` | Analog | Yaesu SCU-35 clone protocol, 200 ch |
 | `FT4_DESCRIPTOR` | `FT-4` | Analog | same family |
