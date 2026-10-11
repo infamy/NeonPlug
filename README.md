@@ -107,6 +107,12 @@ Radio donations are welcome — having the radio on hand is what gets support fo
 
 ---
 
+## 🌏 Related projects
+
+- **[NeonPlugJA](https://github.com/ja2izu/NeonPlugJA)** — a Japanese fork by JA2IZU (日本語版). It adds Japanese channel names for the DM-32UV (radios with a modified font) and for the UV-K1 running the community "25Ja" firmware, and a Japanese UI. Based on NeonPlug, MIT License.
+
+---
+
 ## 📜 License
 
 MIT License - feel free to use this project for your own radio programming needs!
