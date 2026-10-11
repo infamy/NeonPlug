@@ -173,6 +173,30 @@ export class DM32Connection {
     return data;
   }
 
+  /**
+   * The radio's 256-byte factory info page, as the vendor CPS (1.45 and 1.60)
+   * reads it between the V-frames and PROGRAM, on reads and writes alike:
+   * send 47 00 00 00 00 01, get 0x53 + 5 header bytes + 256 bytes.
+   * Byte 0x80 holds the hardware feature bits (see parseHardwareFeatures).
+   */
+  async readFactoryInfo(): Promise<Uint8Array> {
+    await this.write(new Uint8Array([0x47, 0x00, 0x00, 0x00, 0x00, 0x01]));
+    await this.delay(50);
+    try {
+      const response = await this.readBytes(262, undefined, 'factory info');
+      if (response[0] !== 0x53) {
+        throw new Error(`Factory info: expected 0x53, got 0x${response[0].toString(16).padStart(2, '0')}`);
+      }
+      await this.delay(10);
+      return response.slice(6);
+    } catch (error) {
+      // Leave nothing half-read for the PROGRAM step that follows.
+      await this.delay(100);
+      await this.clearBuffer();
+      throw error;
+    }
+  }
+
   async enterProgrammingMode(): Promise<void> {
     // Step 6a: PROGRAM command
     const programCmd = new Uint8Array([

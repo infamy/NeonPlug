@@ -28,6 +28,7 @@ import { getContactCapacityWithFallback } from '../../utils/firmware';
 import { withTimeout } from './connection';
 import { assertBlockWritable, type WriteGuardContext } from './writeGuard';
 import { log } from '../../utils/protocolLogger';
+import { parseHardwareFeatures, FACTORY_INFO_FEATURE_OFFSET } from './factoryInfo';
 
 /**
  * DM-32UV Protocol Implementation
@@ -427,6 +428,20 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       },
       vframes, // Store all raw V-frame data (internal use only)
     };
+
+    // The vendor CPS reads the factory info page here, between the V-frames and
+    // PROGRAM. NeonPlug read and wrote without it for a long time, so a radio
+    // that does not answer still connects: its hardware is just left unknown.
+    try {
+      const factoryInfo = await this.connection.readFactoryInfo();
+      this.radioInfo.hardwareFeatures = parseHardwareFeatures(factoryInfo);
+      log.info(
+        `Factory info feature byte: 0x${factoryInfo[FACTORY_INFO_FEATURE_OFFSET]?.toString(16).padStart(2, '0')}`,
+        'Protocol'
+      );
+    } catch (error) {
+      log.warn('Factory info not read; optional hardware left unknown', 'Protocol', error);
+    }
 
     // Enter programming mode
     // Each request/response in enterProgrammingMode() has its own 2s timeout

@@ -128,7 +128,23 @@ export interface RadioInfo {
   };
   /** Optional raw V-frame data; DM-32 only. Other radios omit. */
   vframes?: Map<number, Uint8Array>;
+  /**
+   * Optional hardware the radio itself reports having (DM-32: the factory info
+   * page). Absent means not asked or not answered, which is not the same as
+   * false: only an explicit false may hide anything. See radioLacks().
+   */
+  hardwareFeatures?: Partial<Record<RadioHardwareFeature, boolean>>;
 }
+
+/** Optional hardware a radio can report, in the vendor CPS's "Function Item" terms. */
+export type RadioHardwareFeature =
+  | 'vibrate'
+  | 'manDown'
+  | 'gps'
+  | 'bluetooth'
+  | 'sdCard'
+  | 'roaming'
+  | 'recording';
 
 /**
  * Protocol boundary: all methods take or return only standard codeplug types
