@@ -3,7 +3,7 @@
  * Main protocol interface implementation using Web Serial API
  */
 
-import { DM32Connection } from './connection';
+import { DM3xConnection } from './connection';
 import {
   discoverMemoryBlocks,
   readChannelCount,
@@ -18,7 +18,7 @@ import {
 } from './memory';
 import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, encodeEncryptionKey, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContactsBlocks, encodeQuickAccessList, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
 import { formatPlural } from '../../utils/formatPlural';
-import type { RadioInfo, DM32Protocol } from '../../types/radio';
+import type { RadioInfo, DM3xProtocol } from '../../types/radio';
 import { BaseDigitalProtocol } from '../shared/BaseProtocols';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact, EncryptionKey } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
@@ -38,15 +38,15 @@ import { parseHardwareFeatures, FACTORY_INFO_FEATURE_OFFSET } from './factoryInf
  * 
  * @example
  * ```typescript
- * const protocol = new DM32UVProtocol();
+ * const protocol = new DM3xRadio();
  * protocol.onProgress = (progress, message) => console.log(`${progress}%: ${message}`);
  * await protocol.connect();
  * const channels = await protocol.readChannels();
  * await protocol.disconnect();
  * ```
  */
-export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol {
-  private connection: DM32Connection | null = null;
+export class DM3xRadio extends BaseDigitalProtocol implements DM3xProtocol {
+  private connection: DM3xConnection | null = null;
   private port: WebSerialPort | null = null;
   private radioInfo: RadioInfo | null = null;
   public rawChannelData: Map<number, { data: Uint8Array; blockAddr: number; offset: number }> = new Map();
@@ -381,9 +381,9 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
   }
 
   private async connectWithPort(port: WebSerialPort): Promise<void> {
-    // Note: DM32Connection.connect() handles the post-open INIT_DELAY internally
+    // Note: DM3xConnection.connect() handles the post-open INIT_DELAY internally
     this.port = port;
-    this.connection = new DM32Connection();
+    this.connection = new DM3xConnection();
     // Every write this connection sends is checked against the memory layout and
     // block map as they stand at that moment: see writeGuard.ts.
     this.connection.setWriteGuard(() => this.writeGuardContext());

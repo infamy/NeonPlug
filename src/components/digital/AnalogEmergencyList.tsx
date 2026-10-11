@@ -6,7 +6,7 @@ import { Card } from '../ui/Card';
 import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
-import { LIMITS } from '../../radios/dm32uv/constants';
+import { LIMITS } from '../../radios/dm3x/constants';
 import { BUTTON, FIELD } from '../ui/controlStyles';
 
 const ALARM_TYPES = ['None', 'Only Whistle', 'Normal', 'Secret', 'Secret With Voice'];

@@ -3,11 +3,11 @@ import {
   parseQuickContacts,
   encodeQuickContactsBlocks,
   encodeQuickAccessList,
-} from '../../src/radios/dm32uv/structures';
-import { DM32Connection } from '../../src/radios/dm32uv/connection';
-import { DM32UVProtocol } from '../../src/radios/dm32uv/protocol';
-import { LIMITS, OFFSET, VFRAME } from '../../src/radios/dm32uv/constants';
-import type { MemoryBlock } from '../../src/radios/dm32uv/memory';
+} from '../../src/radios/dm3x/structures';
+import { DM3xConnection } from '../../src/radios/dm3x/connection';
+import { DM3xRadio } from '../../src/radios/dm3x/protocol';
+import { LIMITS, OFFSET, VFRAME } from '../../src/radios/dm3x/constants';
+import type { MemoryBlock } from '../../src/radios/dm3x/memory';
 import type { QuickContact } from '../../src/models';
 
 /**
@@ -201,24 +201,24 @@ const RADIO: MemoryBlock[] = [
 ];
 
 /**
- * A DM32UVProtocol connected through its real connectWithPort, so the write
+ * A DM3xRadio connected through its real connectWithPort, so the write
  * guard is installed by production code. Only the serial I/O is faked: metadata
  * reads answer from `radio`, and writes are recorded and acknowledged.
  */
 async function connectedRadio(radio: MemoryBlock[]) {
   const sent: Sent = [];
-  vi.spyOn(DM32Connection.prototype, 'connect').mockResolvedValue(undefined);
-  vi.spyOn(DM32Connection.prototype, 'queryVFrames').mockResolvedValue(
+  vi.spyOn(DM3xConnection.prototype, 'connect').mockResolvedValue(undefined);
+  vi.spyOn(DM3xConnection.prototype, 'queryVFrames').mockResolvedValue(
     new Map([[VFRAME.MEMORY_LAYOUT, range(CONFIG_START, CONFIG_END)]])
   );
-  vi.spyOn(DM32Connection.prototype, 'enterProgrammingMode').mockResolvedValue(undefined);
-  vi.spyOn(DM32Connection.prototype, 'readMemory').mockImplementation(async (address: number, length: number) => {
+  vi.spyOn(DM3xConnection.prototype, 'enterProgrammingMode').mockResolvedValue(undefined);
+  vi.spyOn(DM3xConnection.prototype, 'readMemory').mockImplementation(async (address: number, length: number) => {
     const block = radio.find((b) => b.address === Math.floor(address / 0x1000) * 0x1000);
     return new Uint8Array(length).fill(block ? block.metadata : 0xff);
   });
-  recordWrites(DM32Connection.prototype, sent);
+  recordWrites(DM3xConnection.prototype, sent);
 
-  const protocol = new DM32UVProtocol();
+  const protocol = new DM3xRadio();
   await (protocol as unknown as { connectWithPort(port: unknown): Promise<void> }).connectWithPort({});
   return { protocol, sent };
 }

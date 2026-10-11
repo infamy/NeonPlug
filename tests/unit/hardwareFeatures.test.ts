@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseHardwareFeatures, FACTORY_INFO_FEATURE_OFFSET } from '../../src/radios/dm32uv/factoryInfo';
+import { parseHardwareFeatures, FACTORY_INFO_FEATURE_OFFSET } from '../../src/radios/dm3x/factoryInfo';
 import { radioLacks, settingsFeatureUnfitted, describeHardwareFeatures } from '../../src/utils/hardwareFeatures';
 import type { RadioInfo } from '../../src/types/radio';
 

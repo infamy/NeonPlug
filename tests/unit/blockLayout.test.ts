@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolveFieldAt, describeField } from '../../src/utils/blockLayout';
-import { DM32_BLOCK_LAYOUTS } from '../../src/radios/dm32uv/blockLayouts';
+import { DM3X_BLOCK_LAYOUTS } from '../../src/radios/dm3x/blockLayouts';
 import type { BlockLayoutSpec } from '../../src/types/radioCapabilities';
 
 describe('resolveFieldAt', () => {
@@ -37,7 +37,7 @@ describe('resolveFieldAt', () => {
 
 describe('DM-32 block layouts', () => {
   it('radio settings layout resolves known offsets', () => {
-    const settings = DM32_BLOCK_LAYOUTS[0x04];
+    const settings = DM3X_BLOCK_LAYOUTS[0x04];
     expect(resolveFieldAt(settings, 0x30)?.spec.name).toBe('Backlight Brightness');
     expect(resolveFieldAt(settings, 0x08)?.spec.name).toBe('Power On Display Line 1');
     expect(resolveFieldAt(settings, 0x123)).toMatchObject({ index: 1 }); // Analog Call 2 — Call ID
@@ -45,7 +45,7 @@ describe('DM-32 block layouts', () => {
   });
 
   it('TX contact layout maps offsets to channel occurrences and decodes records', () => {
-    const tx = DM32_BLOCK_LAYOUTS[0x42];
+    const tx = DM3X_BLOCK_LAYOUTS[0x42];
     const at1024 = resolveFieldAt(tx, 1023 * 2); // channel 1024 record start
     expect(at1024).toMatchObject({ index: 1023, start: 2046 });
 
@@ -59,7 +59,7 @@ describe('DM-32 block layouts', () => {
   });
 
   it('radio settings layout decodes labels from the DM-32 display options', () => {
-    const settings = DM32_BLOCK_LAYOUTS[0x04];
+    const settings = DM3X_BLOCK_LAYOUTS[0x04];
     const block = new Uint8Array(0x1000);
     block[0x00] = 1; // Custom Message
     block[0x34] = 0xf6; // high nibble noise + color 6 (Cyan)
@@ -77,7 +77,7 @@ describe('DM-32 block layouts', () => {
   });
 
   it('VFO layout decodes ASCII names', () => {
-    const vfo = DM32_BLOCK_LAYOUTS[0x41];
+    const vfo = DM3X_BLOCK_LAYOUTS[0x41];
     const resolved = resolveFieldAt(vfo, 0x0fa0); // interior of VFO A name
     expect(resolved?.spec.name).toContain('VFO A');
 

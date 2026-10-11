@@ -2,7 +2,7 @@
  * DM-32UV / DP570UV radio descriptor. Registered in radios/index.ts.
  */
 import type { RadioDescriptor } from '../types';
-import { DM32UVProtocol } from './protocol';
+import { DM3xRadio } from './protocol';
 import { DM32UV_CAPABILITIES } from './capabilities';
 import { DM32UV_SETTINGS_PROFILE } from './settingsProfile';
 
@@ -14,7 +14,7 @@ export const DM32UV_DESCRIPTOR: RadioDescriptor = {
   icon: '📻',
   group: 'Baofeng',
   supportsBle: false,
-  protocolFactory: () => new DM32UVProtocol(),
+  protocolFactory: () => new DM3xRadio(),
   capabilities: DM32UV_CAPABILITIES,
   settingsProfile: DM32UV_SETTINGS_PROFILE,
 };

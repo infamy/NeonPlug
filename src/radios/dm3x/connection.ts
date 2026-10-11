@@ -37,7 +37,7 @@ export function getErrorMessage(error: unknown, defaultMessage: string = 'Unknow
   return defaultMessage;
 }
 
-export class DM32Connection {
+export class DM3xConnection {
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private port: WebSerialPort | null = null;
@@ -50,7 +50,7 @@ export class DM32Connection {
    */
   private writeGuard: (() => WriteGuardContext | null) | null = null;
 
-  /** Install the check every write goes through. DM32UVProtocol does this for each connection it makes. */
+  /** Install the check every write goes through. DM3xRadio does this for each connection it makes. */
   setWriteGuard(provider: () => WriteGuardContext | null): void {
     this.writeGuard = provider;
   }

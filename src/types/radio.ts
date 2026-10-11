@@ -52,10 +52,10 @@ export interface DigitalRadioProtocol extends AnalogRadioProtocol {
  * Full public API of the DM-32UV protocol, including DM32-specific operations
  * not present in the base digital radio interface.
  *
- * DM32UVProtocol implements this. A future DM32-compatible radio should also
+ * DM3xRadio implements this. A future DM32-compatible radio should also
  * implement this if it shares the same on-air structures.
  */
-export interface DM32Protocol extends DigitalRadioProtocol {
+export interface DM3xProtocol extends DigitalRadioProtocol {
   // Bulk memory read (DM-32 reads all 4 KB blocks up front)
   bulkReadRequiredBlocks(): Promise<void>;
 

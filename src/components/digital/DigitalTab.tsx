@@ -17,7 +17,7 @@ import { SectionTitle } from '../ui/SectionTitle';
 import { EmptyState } from '../ui/EmptyState';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import type { EncryptionKey } from '../../models/EncryptionKey';
-import { LIMITS } from '../../radios/dm32uv/constants';
+import { LIMITS } from '../../radios/dm3x/constants';
 import { lowestFreeSlot } from '../../utils/lowestFreeSlot';
 import {
   ENCRYPTION_TYPES,

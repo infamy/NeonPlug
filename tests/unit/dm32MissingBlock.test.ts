@@ -4,12 +4,12 @@
  * was parsed 4 KB early — zones from one block showing up as another's.
  */
 import { describe, it, expect } from 'vitest';
-import { DM32UVProtocol } from '../../src/radios/dm32uv/protocol';
-import { METADATA, BLOCK_SIZE } from '../../src/radios/dm32uv/constants';
+import { DM3xRadio } from '../../src/radios/dm3x/protocol';
+import { METADATA, BLOCK_SIZE } from '../../src/radios/dm3x/constants';
 
 /** Two zone blocks in the scan; `present` says which of them were read. */
-function protocolWithZoneBlocks(present: number[]): DM32UVProtocol {
-  const proto = new DM32UVProtocol();
+function protocolWithZoneBlocks(present: number[]): DM3xRadio {
+  const proto = new DM3xRadio();
   (proto as unknown as { radioInfo: unknown }).radioInfo = { model: 'DM-32UV' };
   const data = new Map<number, Uint8Array>();
   const meta = new Map<number, { metadata: number; type: string }>();

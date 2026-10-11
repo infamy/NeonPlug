@@ -2,7 +2,7 @@
 
 Each radio folder implements the `RadioProtocol` interface by reading its own memory layout and producing the same **standard codeplug format** (Channel, Zone, Contact, RadioSettings, etc.).
 
-- **DM-32** (`dm32uv/`): Uses V-frames and block discovery; all decode/encode and raw layout details stay in this folder.
+- **DM-32** (`dm3x/`): Uses V-frames and block discovery; all decode/encode and raw layout details stay in this folder.
 - **Other radios**: Can use a linear address map or any other layout; they decode to the same standard types so the rest of the app stays radio-agnostic.
 
 Raw layout (V-frames, blocks, linear addresses) and decoding are implementation details of each radio. The app only ever sees the standard types.
@@ -22,7 +22,7 @@ The central [index.ts](index.ts) imports all descriptors and builds the protocol
 ## Adding a new radio
 
 1. **Protocol**: Create a new folder under `radios/` and implement the `RadioProtocol` interface (see [types/radio.ts](../types/radio.ts)). Produce the standard codeplug types; raw layout stays inside the radio folder.
-2. **Capabilities**: In the same folder, add a capabilities object (see [dm32uv/capabilities.ts](dm32uv/capabilities.ts) or [uv5rmini/capabilities.ts](uv5rmini/capabilities.ts)). Set at least `maxChannels`, `supportsZones`, `supportsScanLists`, `analogOnly`; add `supportsBle`, `preferredTransport`, `supportsBulkRead`, `maxZones`, `maxScanLists` as needed.
+2. **Capabilities**: In the same folder, add a capabilities object (see [dm3x/capabilities.ts](dm3x/capabilities.ts) or [uv5rmini/capabilities.ts](uv5rmini/capabilities.ts)). Set at least `maxChannels`, `supportsZones`, `supportsScanLists`, `analogOnly`; add `supportsBle`, `preferredTransport`, `supportsBulkRead`, `maxZones`, `maxScanLists` as needed.
 3. **Descriptor**: In the same folder, add a descriptor file (e.g. `descriptor.ts`) that exports a `RadioDescriptor`: modelIds, label, icon, supportsBle, protocolFactory, capabilities, and optionally settingsProfile (or `null` if no settings UI).
 4. **Register**: In [radios/index.ts](index.ts), import the descriptor and add it to the `RADIO_DESCRIPTORS` array.
 

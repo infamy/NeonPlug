@@ -6,9 +6,9 @@ import {
   encodeCTCSSDCS,
   parseZones,
   encodeZone,
-} from '../../src/radios/dm32uv/structures';
+} from '../../src/radios/dm3x/structures';
 import { DCS_CODES } from '../../src/utils/ctcssConstants';
-import { LIMITS, BLOCK_SIZE, OFFSET } from '../../src/radios/dm32uv/constants';
+import { LIMITS, BLOCK_SIZE, OFFSET } from '../../src/radios/dm3x/constants';
 import type { Zone } from '../../src/models';
 
 // Builds a concatenated multi-block zone buffer the way protocol.ts's

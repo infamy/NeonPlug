@@ -143,7 +143,7 @@ const TX_CONTACT_HIGH_LAYOUT: BlockLayoutSpec = {
   ],
 };
 
-export const DM32_BLOCK_LAYOUTS: Record<number, BlockLayoutSpec> = {
+export const DM3X_BLOCK_LAYOUTS: Record<number, BlockLayoutSpec> = {
   0x04: RADIO_SETTINGS_LAYOUT,
   0x41: VFO_LAYOUT,
   0x42: TX_CONTACT_LOW_LAYOUT,
