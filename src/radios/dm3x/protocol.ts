@@ -454,8 +454,14 @@ export class DM3xRadio extends BaseDigitalProtocol implements DM3xProtocol {
     try {
       const factoryInfo = await this.connection.readFactoryInfo();
       this.radioInfo.hardwareFeatures = parseHardwareFeatures(factoryInfo);
+      const programmed = factoryInfo.filter((b) => b !== 0xff).length;
       log.info(
-        `Factory info feature byte: 0x${factoryInfo[FACTORY_INFO_FEATURE_OFFSET]?.toString(16).padStart(2, '0')}`,
+        `Factory info feature byte: 0x${factoryInfo[FACTORY_INFO_FEATURE_OFFSET]?.toString(16).padStart(2, '0')}` +
+          ` (${programmed} of ${factoryInfo.length} bytes programmed)`,
+        'Protocol'
+      );
+      log.debug(
+        `Factory info page: ${Array.from(factoryInfo, (b) => b.toString(16).padStart(2, '0')).join(' ')}`,
         'Protocol'
       );
     } catch (error) {

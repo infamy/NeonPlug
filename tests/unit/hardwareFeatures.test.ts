@@ -23,6 +23,10 @@ describe('DM-32 factory info feature bits', () => {
     });
   });
 
+  it('reads 0xFF as a page nobody programmed, not every feature', () => {
+    expect(parseHardwareFeatures(page(0xff))).toBeUndefined();
+  });
+
   it('reports nothing from a short page', () => {
     expect(parseHardwareFeatures(new Uint8Array(0x80))).toBeUndefined();
   });
