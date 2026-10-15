@@ -26,3 +26,22 @@ describe('DM-36', () => {
     expect(getCapabilitiesForModel('DM-32UV').expectedFirmware).toBe('DM32.01.L01.048');
   });
 });
+
+describe('telling a DM-36 from a DM-32', () => {
+  it('cannot use PSEARCH: both accept the DP570UV answer', async () => {
+    const { DM32_VARIANT, DM36_VARIANT } = await import('../../src/radios/dm3x/protocol');
+    expect(DM32_VARIANT.psearchNames.some((n) => 'DP570UV'.includes(n))).toBe(true);
+    expect(DM36_VARIANT.psearchNames.some((n) => 'DP570UV'.includes(n))).toBe(true);
+  });
+
+  it('goes by the firmware string, so each entry refuses the other radio', async () => {
+    const { DM32_VARIANT, DM36_VARIANT } = await import('../../src/radios/dm3x/protocol');
+    // Firmware strings read from real radios.
+    for (const fw of ['DM32.01.L01.048', 'DM32.NRF.01.049', 'DM32.01.01.046']) {
+      expect(DM32_VARIANT.ownsFirmware(fw)).toBe(true);
+      expect(DM36_VARIANT.ownsFirmware(fw)).toBe(false);
+    }
+    expect(DM36_VARIANT.ownsFirmware('DM36.NRFB.01.020')).toBe(true);
+    expect(DM32_VARIANT.ownsFirmware('DM36.NRFB.01.020')).toBe(false);
+  });
+});

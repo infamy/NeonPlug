@@ -4,7 +4,7 @@
  */
 import type { RadioDescriptor } from '../types';
 import type { RadioCapabilities } from '../../types/radioCapabilities';
-import { DM3xRadio, type DM3xVariant } from './protocol';
+import { DM3xRadio, DM36_VARIANT } from './protocol';
 import { DM32UV_CAPABILITIES } from './capabilities';
 import { DM32UV_SETTINGS_PROFILE } from './settingsProfile';
 
@@ -21,15 +21,13 @@ export const DM32UV_DESCRIPTOR: RadioDescriptor = {
   settingsProfile: DM32UV_SETTINGS_PROFILE,
 };
 
-export const DM36_MODEL_ID = 'DM-36';
-
 /**
- * The DM-36 runs the DM-32UV's vendor CPS, which reads and writes it with the
- * same commands and memory layout (CPS 1.60, which is also the DM-1801 Pro's).
- * Not yet run on a radio: the PSEARCH names are a guess the first read settles,
- * since a refusal prints what the radio answered.
+ * The DM-36 runs the DM-32UV's vendor CPS (1.60, which is also the DM-1801
+ * Pro's), and the DM-32 driver reads it as is: channels and zones checked
+ * against the radio 2026-10-14. It answers PSEARCH as a DP570UV; its firmware
+ * string is what marks it (see DM3xVariant).
  */
-const DM36_VARIANT: DM3xVariant = { model: DM36_MODEL_ID, psearchNames: ['DM36', 'DM-36'] };
+export const DM36_MODEL_ID = DM36_VARIANT.model;
 
 /**
  * The DM-32UV's, without its firmware opinions: those name DM-32 builds, and a
@@ -47,8 +45,9 @@ export const DM36_DESCRIPTOR: RadioDescriptor = {
   label: 'DM-36',
   icon: '📻',
   group: 'Baofeng',
-  // It has Bluetooth, but the link's services are not known until a radio is
-  // here to look at. Serial only until then.
+  // It has Bluetooth, but the link's services are not known yet. Serial only
+  // until then; its Bluetooth settings (0x04 block, 0x600-0x602) are not shown
+  // either, and a settings write puts them back as read.
   supportsBle: false,
   status: 'alpha',
   protocolFactory: () => new DM3xRadio(DM36_VARIANT),

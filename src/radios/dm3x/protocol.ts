@@ -47,18 +47,40 @@ import { parseHardwareFeatures, FACTORY_INFO_FEATURE_OFFSET } from './factoryInf
  */
 /**
  * Which DM-3x radio a DM3xRadio talks to. The radios share one protocol and
- * memory layout; what differs is the name the radio answers PSEARCH with and
- * the model ID its capabilities are registered under.
+ * memory layout; what differs is the model ID its capabilities are registered
+ * under, and how to recognise it.
+ *
+ * PSEARCH cannot tell them apart: a DM-36 answers "DP570UV" exactly as a DM-32
+ * does (hardware, 2026-10-14). The firmware string in V-frame 0x01 can:
+ * "DM36.NRFB.01.020" against "DM32.01.L01.048" and the like.
  */
 export interface DM3xVariant {
   /** Model ID reported in RadioInfo, which picks the capabilities. */
   model: string;
+  /** Label used when refusing a radio, e.g. "DM-36". */
+  label: string;
   /** Substrings of the PSEARCH reply this variant accepts. */
   psearchNames: readonly string[];
+  /** Whether a firmware string (V-frame 0x01) belongs to this variant. */
+  ownsFirmware: (firmware: string) => boolean;
 }
 
+const isDm36Firmware = (firmware: string) => firmware.startsWith('DM36.');
+
 /** The DM-32UV, also sold as the DP570UV. Its model ID predates the picker. */
-export const DM32_VARIANT: DM3xVariant = { model: 'DP570UV', psearchNames: ['DP570', 'DM32', 'DM-32'] };
+export const DM32_VARIANT: DM3xVariant = {
+  model: 'DP570UV',
+  label: 'DM-32UV',
+  psearchNames: ['DP570', 'DM32', 'DM-32'],
+  ownsFirmware: (firmware) => !isDm36Firmware(firmware),
+};
+
+export const DM36_VARIANT: DM3xVariant = {
+  model: 'DM-36',
+  label: 'DM-36',
+  psearchNames: ['DP570', 'DM36', 'DM-36'],
+  ownsFirmware: isDm36Firmware,
+};
 
 export class DM3xRadio extends BaseDigitalProtocol implements DM3xProtocol {
   constructor(private readonly variant: DM3xVariant = DM32_VARIANT) {
@@ -415,6 +437,14 @@ export class DM3xRadio extends BaseDigitalProtocol implements DM3xProtocol {
 
     // Parse V-frame data
     const firmware = this.parseVFrameString(vframes, VFRAME.FIRMWARE, 'Unknown');
+    // Before anything else is read or written: a DM-36 and a DM-32 answer
+    // PSEARCH alike, and each must be read and written as itself.
+    if (!this.variant.ownsFirmware(firmware)) {
+      throw new Error(
+        `This radio's firmware is ${firmware}, which is not a ${this.variant.label}. ` +
+          `Pick the radio that matches it and read again.`
+      );
+    }
     const buildDate = this.parseVFrameString(vframes, VFRAME.BUILD_DATE, '');
     const dspVersion = this.parseVFrameString(vframes, VFRAME.DSP_VERSION, '');
     const radioVersion = this.parseVFrameString(vframes, VFRAME.RADIO_VERSION, '');
