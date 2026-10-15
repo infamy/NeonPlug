@@ -3,7 +3,7 @@
  * Main protocol interface implementation using Web Serial API
  */
 
-import { DM3xConnection } from './connection';
+import { DM3xConnection, WrongRadioError } from './connection';
 import {
   discoverMemoryBlocks,
   readChannelCount,
@@ -200,6 +200,8 @@ export class DM3xRadio extends BaseDigitalProtocol implements DM3xProtocol {
         } catch (closeError) {
           log.warn('Error closing failed port', 'Protocol', closeError);
         }
+        // The right port, the wrong radio: the port advice below would mislead.
+        if (connectError instanceof WrongRadioError) throw connectError;
         const msg = connectError instanceof Error ? connectError.message : String(connectError);
         throw new Error(
           `Connection failed: ${msg} Please click the Read/Write button again and select the correct serial port when prompted.`
@@ -440,9 +442,9 @@ export class DM3xRadio extends BaseDigitalProtocol implements DM3xProtocol {
     // Before anything else is read or written: a DM-36 and a DM-32 answer
     // PSEARCH alike, and each must be read and written as itself.
     if (!this.variant.ownsFirmware(firmware)) {
-      throw new Error(
+      throw new WrongRadioError(
         `This radio's firmware is ${firmware}, which is not a ${this.variant.label}. ` +
-          `Pick the radio that matches it and read again.`
+          `Pick the radio that matches it and try again.`
       );
     }
     const buildDate = this.parseVFrameString(vframes, VFRAME.BUILD_DATE, '');

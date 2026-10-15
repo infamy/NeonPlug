@@ -37,6 +37,18 @@ export function getErrorMessage(error: unknown, defaultMessage: string = 'Unknow
   return defaultMessage;
 }
 
+/**
+ * The port and the link are fine; the radio on them is not the one picked.
+ * Retrying or choosing another port will not help, so callers pass the message
+ * through as it is.
+ */
+export class WrongRadioError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WrongRadioError';
+  }
+}
+
 export class DM3xConnection {
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
@@ -107,9 +119,9 @@ export class DM3xConnection {
     // Stricter than the vendor CPS, which only checks the 0x06: this is what
     // stops one DM-3x model's codeplug going to another.
     if (!psearchNames.some((name) => modelString.includes(name))) {
-      throw new Error(
-        `Unsupported radio model: "${modelString}". Expected a name containing ${psearchNames.join(', ')}. ` +
-          `Response: ${psearchHex}`
+      throw new WrongRadioError(
+        `This radio calls itself "${modelString}", not a name containing ${psearchNames.join(', ')}. ` +
+          `Pick the radio that matches it and try again. (PSEARCH reply: ${psearchHex})`
       );
     }
 
