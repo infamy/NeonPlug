@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import type { RadioProtocol } from '../types/radio';
 import { createDefaultProtocol, createProtocolForModel } from '../radios';
 import { D890UVProtocol } from '../radios/d890uv/protocol';
-import { DM32UVProtocol } from '../radios/dm32uv/protocol';
+import { DM3xRadio } from '../radios/dm3x/protocol';
 import { BaseDigitalProtocol } from '../radios/shared/BaseProtocols';
 import type { OptionalDigitalReads } from '../radios/optionalReads';
 import { CODEPLUG_READS } from '../radios/codeplugReads';
@@ -269,8 +269,8 @@ export function useRadioConnection() {
         );
       }
 
-      // Narrow to DM32UVProtocol once; all DM32-specific calls go through this variable.
-      const dm32 = proto instanceof DM32UVProtocol ? proto : null;
+      // Narrow to DM3xRadio once; all DM32-specific calls go through this variable.
+      const dm32 = proto instanceof DM3xRadio ? proto : null;
       // Any DMR radio, DM-32 included. `readRXGroups` and `readQuickContacts`
       // are optional on the base, so they are called defensively below.
       const digital = proto instanceof BaseDigitalProtocol
@@ -758,7 +758,7 @@ export function useRadioConnection() {
         : await protocol.readContacts();
       setContacts(contacts);
       
-      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+      const dm32 = protocol instanceof DM3xRadio ? protocol : null;
       if (dm32?.rawContactBlockData) {
         setRawContactBlockData(dm32.rawContactBlockData, dm32.rawContactBlockAddress);
       }
@@ -916,7 +916,7 @@ export function useRadioConnection() {
         setConnected(true);
       }
       report(10, 'Reading boot image from radio...');
-      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+      const dm32 = protocol instanceof DM3xRadio ? protocol : null;
       if (!dm32) throw new Error('Boot image is only supported on DM-32UV');
       const raw = await dm32.readBootImage();
       setBootImageRaw(raw);
@@ -964,7 +964,7 @@ export function useRadioConnection() {
         setConnected(true);
       }
       report(10, 'Writing boot image to radio...');
-      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+      const dm32 = protocol instanceof DM3xRadio ? protocol : null;
       if (!dm32) throw new Error('Boot image is only supported on DM-32UV');
       await dm32.writeBootImage(data);
       setBootImageRaw(data);
@@ -1206,7 +1206,7 @@ export function useRadioConnection() {
 
       // Use protocol for connected radio (write path)
       protocol = createProtocolForModel(radioInfo?.model ?? '') ?? createDefaultProtocol();
-      const dm32 = protocol instanceof DM32UVProtocol ? protocol : null;
+      const dm32 = protocol instanceof DM3xRadio ? protocol : null;
 
       // Restore cache from store if available (DM-32 bulk read path)
       if (dm32) {

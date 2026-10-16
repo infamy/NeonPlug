@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { assertBlockWritable, type WriteGuardContext } from '../../src/radios/dm32uv/writeGuard';
-import { DM32Connection } from '../../src/radios/dm32uv/connection';
-import { DM32UVProtocol } from '../../src/radios/dm32uv/protocol';
-import { VFRAME } from '../../src/radios/dm32uv/constants';
-import type { MemoryBlock } from '../../src/radios/dm32uv/memory';
+import { assertBlockWritable, type WriteGuardContext } from '../../src/radios/dm3x/writeGuard';
+import { DM3xConnection } from '../../src/radios/dm3x/connection';
+import { DM3xRadio } from '../../src/radios/dm3x/protocol';
+import { VFRAME } from '../../src/radios/dm3x/constants';
+import type { MemoryBlock } from '../../src/radios/dm3x/memory';
 import { BOOT_IMAGE } from '../../src/utils/bootImage';
 import type { Contact, ScanList } from '../../src/models';
 
@@ -125,11 +125,11 @@ function recordWrites(target: object, sent: Sent) {
   vi.spyOn(serial, 'readBytes').mockResolvedValue(new Uint8Array([0x06]));
 }
 
-describe('DM32Connection checks before sending a byte', () => {
+describe('DM3xConnection checks before sending a byte', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('writes nothing with no guard installed', async () => {
-    const connection = new DM32Connection();
+    const connection = new DM3xConnection();
     const sent: Sent = [];
     recordWrites(connection, sent);
     await expect(connection.writeMemory(0x004000, blockData(0x11), 0x11)).rejects.toThrow(/memory layout is unknown/);
@@ -140,7 +140,7 @@ describe('DM32Connection checks before sending a byte', () => {
   });
 
   it('refuses the calibration block through both write methods', async () => {
-    const connection = new DM32Connection();
+    const connection = new DM3xConnection();
     const sent: Sent = [];
     recordWrites(connection, sent);
     connection.setWriteGuard(() => context());
@@ -150,7 +150,7 @@ describe('DM32Connection checks before sending a byte', () => {
   });
 
   it('sends a block the guard allows', async () => {
-    const connection = new DM32Connection();
+    const connection = new DM3xConnection();
     const sent: Sent = [];
     recordWrites(connection, sent);
     connection.setWriteGuard(() => context());
@@ -169,23 +169,23 @@ function range(start: number, end: number): Uint8Array {
 }
 
 /**
- * A DM32UVProtocol connected through its real connectWithPort, so the guard is
+ * A DM3xRadio connected through its real connectWithPort, so the guard is
  * installed by production code. Only the serial I/O is faked: metadata reads
  * answer from `radio`, and writes are recorded and acknowledged.
  */
 async function connectedRadio(radio: MemoryBlock[], vframes: Array<[number, Uint8Array]> = []) {
   const sent: Sent = [];
   const frames = new Map<number, Uint8Array>([[VFRAME.MEMORY_LAYOUT, range(CONFIG_START, CONFIG_END)], ...vframes]);
-  vi.spyOn(DM32Connection.prototype, 'connect').mockResolvedValue(undefined);
-  vi.spyOn(DM32Connection.prototype, 'queryVFrames').mockResolvedValue(frames);
-  vi.spyOn(DM32Connection.prototype, 'enterProgrammingMode').mockResolvedValue(undefined);
-  vi.spyOn(DM32Connection.prototype, 'readMemory').mockImplementation(async (address: number, length: number) => {
+  vi.spyOn(DM3xConnection.prototype, 'connect').mockResolvedValue(undefined);
+  vi.spyOn(DM3xConnection.prototype, 'queryVFrames').mockResolvedValue(frames);
+  vi.spyOn(DM3xConnection.prototype, 'enterProgrammingMode').mockResolvedValue(undefined);
+  vi.spyOn(DM3xConnection.prototype, 'readMemory').mockImplementation(async (address: number, length: number) => {
     const block = radio.find((b) => b.address === Math.floor(address / 0x1000) * 0x1000);
     return new Uint8Array(length).fill(block ? block.metadata : 0xff);
   });
-  recordWrites(DM32Connection.prototype, sent);
+  recordWrites(DM3xConnection.prototype, sent);
 
-  const protocol = new DM32UVProtocol();
+  const protocol = new DM3xRadio();
   await (protocol as unknown as { connectWithPort(port: unknown): Promise<void> }).connectWithPort({});
   return { protocol, sent };
 }

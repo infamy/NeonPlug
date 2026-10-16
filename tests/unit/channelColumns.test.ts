@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DM32UV_CAPABILITIES } from '../../src/radios/dm32uv/capabilities';
+import { DM32UV_CAPABILITIES } from '../../src/radios/dm3x/capabilities';
 import { D890UV_CAPABILITIES } from '../../src/radios/d890uv/capabilities';
 import { RADIO_DESCRIPTORS } from '../../src/radios';
 import {
@@ -153,6 +153,8 @@ describe('channel column gating', () => {
     // rather than a screen of features it may not have.
     for (const d of RADIO_DESCRIPTORS) {
       if (d.capabilities === DM32UV_CAPABILITIES || d.capabilities === D890UV_CAPABILITIES) continue;
+      // The DM-36 shares the DM-32UV's channel record, so its columns too.
+      if (d.capabilities.channelColumns === DM32UV_CAPABILITIES.channelColumns) continue;
       expect(d.capabilities.channelColumns ?? []).toEqual([]);
     }
   });
@@ -183,7 +185,7 @@ describe('Digital Emergency Systems is capability-gated', () => {
     // 0x3482e00 / 0x3483000, with no metadata block 0x10 at all. The DM-32's
     // section would render an editor over data that does not exist on it.
     const { D890UV_CAPABILITIES } = await import('../../src/radios/d890uv/capabilities');
-    const { DM32UV_CAPABILITIES } = await import('../../src/radios/dm32uv/capabilities');
+    const { DM32UV_CAPABILITIES } = await import('../../src/radios/dm3x/capabilities');
     expect(D890UV_CAPABILITIES.supportsDigitalEmergency).toBe(false);
     expect(DM32UV_CAPABILITIES.supportsDigitalEmergency).toBe(true);
   });

@@ -134,6 +134,7 @@ workflow's output — editing release.yml's `sed`/`printf` will not fail any tes
 | Descriptor | Model IDs | Class | Notes |
 |---|---|---|---|
 | `DM32UV_DESCRIPTOR` | `DM-32UV`, `DP570UV` | Digital (DMR) | 4000 ch, zones, contacts, scan lists, bulk block read |
+| `DM36_DESCRIPTOR` | `DM-36` | Digital (DMR) | **ALPHA — reads (2026-10-14), write not yet run.** The DM-32UV's driver (`radios/dm3x/`) under its own model ID; the vendor CPS is the same program. Answers PSEARCH as `DP570UV` like a DM-32, so the two are told apart by firmware (`DM36.` prefix, V-frame 0x01) and each picker entry refuses the other. Its factory feature byte is real (no GPS, Bluetooth); the DM-32's is 0xFF. Serial only; Bluetooth settings (0x04 block 0x600–0x602) not shown. |
 | `UV5RMINI_DESCRIPTOR` | `UV5R-Mini` | Analog | 999 ch, no zones/contacts, **BLE + serial** |
 | `FT65_DESCRIPTOR` | `FT-65` | Analog | Yaesu SCU-35 clone protocol, 200 ch |
 | `FT4_DESCRIPTOR` | `FT-4` | Analog | same family |
@@ -191,13 +192,13 @@ src/
       BaseProtocols.ts     # BaseAnalogProtocol / BaseDigitalProtocol
       BaseSerialConnection.ts
       serialPort.ts
-    dm32uv/                # protocol.ts (~3.8k), structures.ts (~3.8k), memory.ts,
+    dm3x/                # protocol.ts (~3.8k), structures.ts (~3.8k), memory.ts,
                            #   connection.ts, constants.ts, capabilities.ts,
                            #   descriptor.ts, settingsProfile.ts, types.ts
     uv5rmini/              # + bleConnection.ts, serialConnection.ts, channelFormat.ts
     ft65/                  # + settingsFormat.ts (shared by FT-65/FT-4/FT-25R)
   types/
-    radio.ts               # AnalogRadioProtocol ⊂ DigitalRadioProtocol ⊂ DM32Protocol
+    radio.ts               # AnalogRadioProtocol ⊂ DigitalRadioProtocol ⊂ DM3xProtocol
     radioCapabilities.ts   # RadioCapabilities — the feature-flag contract
     settingsProfile.ts     # Declarative Settings-tab schema
   hooks/
@@ -226,9 +227,9 @@ If you find yourself adding a `switch (model)` anywhere, the answer is a descrip
 
 ### Protocol hierarchy
 
-`AnalogRadioProtocol` (channels + settings) ⊂ `DigitalRadioProtocol` (+ zones, contacts, scan lists, DMR IDs) ⊂ `DM32Protocol` (+ bulk read, boot image, RX groups, quick messages, calibration, encryption, emergencies, raw diagnostic maps).
+`AnalogRadioProtocol` (channels + settings) ⊂ `DigitalRadioProtocol` (+ zones, contacts, scan lists, DMR IDs) ⊂ `DM3xProtocol` (+ bulk read, boot image, RX groups, quick messages, calibration, encryption, emergencies, raw diagnostic maps).
 
-Extend `BaseAnalogProtocol` or `BaseDigitalProtocol` from `radios/shared/BaseProtocols.ts` — they supply no-op stubs so you don't write 11 empty methods. `useRadioConnection` gates DMR reads with `instanceof BaseDigitalProtocol` and DM-32 specifics with `instanceof DM32UVProtocol`, **not** with casts. There are only ~12 `as any` casts left in `src/` — don't add more.
+Extend `BaseAnalogProtocol` or `BaseDigitalProtocol` from `radios/shared/BaseProtocols.ts` — they supply no-op stubs so you don't write 11 empty methods. `useRadioConnection` gates DMR reads with `instanceof BaseDigitalProtocol` and DM-32 specifics with `instanceof DM3xRadio`, **not** with casts. There are only ~12 `as any` casts left in `src/` — don't add more.
 
 ### Write-path invariants (these were real, shipped bugs — don't regress them)
 
@@ -265,7 +266,7 @@ Import sources (`components/import/sources/*.tsx`) all render `<SelectAllButtons
 - `rxGroupListId` is masked to 6 bits on parse but not clamped on encode — silent truncation risk.
 - DCS encoding uses BCD digit nibbles with 0x80 (normal) / 0xC0 (inverted) bases, per `DM32-Protocol-Spec/06-ENCODING.md`. Decode and encode were *both* wrong and mutually consistent for D0xx codes for a long time, which is why round-trip tests didn't catch it. Now covered over all 104 codes × both polarities — **if you touch the codec, keep those tests green.**
 - `concatenateCachedBlocks` silently shifts data if a block is missing from cache (open TODO).
-- **The calibration block (metadata 0x02) is never written.** `dm32uv/writeGuard.ts` checks every write in the connection's only two write methods, `writeMemory` and `writeMemoryBlock`, before a byte is sent. It refuses a write that overlaps a scanned calibration block, lands in the config memory without a block scan or at an address the scan did not report, or would tag a block 0x02; with no memory layout known, nothing is written. The codeplug, contact, talk group and boot-image writes also check all their blocks first, so a refusal never leaves a partial write. Never add a write path around those two methods.
+- **The calibration block (metadata 0x02) is never written.** `dm3x/writeGuard.ts` checks every write in the connection's only two write methods, `writeMemory` and `writeMemoryBlock`, before a byte is sent. It refuses a write that overlaps a scanned calibration block, lands in the config memory without a block scan or at an address the scan did not report, or would tag a block 0x02; with no memory layout known, nothing is written. The codeplug, contact, talk group and boot-image writes also check all their blocks first, so a refusal never leaves a partial write. Never add a write path around those two methods.
 - **Talk groups span blocks 0x44–0x48**: each starts with a 1-byte header (skipped whatever it holds), then 170 slots of 24 bytes, 800 in all. Channels (0x42/0x43) and the Quick Access Contact List (0x0B) reference talk groups by **slot**, numbered on from block to block, so `readQuickContacts` refuses rather than return a list with a block missing, and a write fills exactly the blocks the radio already has; `assertTalkGroupWriteFits` refuses a list that needs more before the channel write starts. A 0x0B reference packs a 12-bit slot under the call type nibble, and the name table sorts in byte order, as the vendor CPS does. **`0x06[0x1FF]` is not the talk group count** (`TODO-DM32-SPEC-AUDIT.md` item 17); the talk group write leaves block 0x06 alone. The layout comes from Will-83's hardware captures in PR #168.
 - **Scan lists (fixed + hardware-verified 2026-08-07 via live CPS↔NeonPlug round-trips):**
   channel byte 0x19 stores the scan list ref in **bits 5-0** (1-indexed, 0=None) — the spec's
@@ -285,7 +286,7 @@ Import sources (`components/import/sources/*.tsx`) all render `<SelectAllButtons
 
 Statement coverage is low (~20%) *by construction* — the two 3.8k-line DM-32 files are barely covered. The layer that is tested (validators, CSV, importers, store logic) sits at 75–100%. Don't chase the global number.
 
-**Next milestone — Layer 2:** dump raw binary blocks from a connected radio via the Diagnostics tab → commit as fixtures under `tests/fixtures/dm32uv/` → snapshot-test the parsers. This is the prerequisite safety net before any `protocol.ts` / `structures.ts` refactor. **Don't refactor those two files before the fixtures exist.**
+**Next milestone — Layer 2:** dump raw binary blocks from a connected radio via the Diagnostics tab → commit as fixtures under `tests/fixtures/dm3x/` → snapshot-test the parsers. This is the prerequisite safety net before any `protocol.ts` / `structures.ts` refactor. **Don't refactor those two files before the fixtures exist.**
 
 ## Not implemented / known stubs
 
@@ -297,7 +298,7 @@ Statement coverage is low (~20%) *by construction* — the two 3.8k-line DM-32 f
 
 ## Known rough edges
 
-- The two largest files by far are `radios/dm32uv/protocol.ts` (3,853) and `radios/dm32uv/structures.ts`
+- The two largest files by far are `radios/dm3x/protocol.ts` (3,853) and `radios/dm3x/structures.ts`
   (3,805) — barely covered by tests, and the reason the Layer-2 fixtures above must land before any
   refactor. `DiagnosticsTab.tsx` is **400 lines** and no longer a rough edge (it was ~3.8k; the split
   landed 2026-08-02 — this bullet claimed the old number until 2026-08-06).

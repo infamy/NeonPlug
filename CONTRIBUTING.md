@@ -113,7 +113,7 @@ src/
 ├── radios/          # Radio protocol layer (multi-radio support)
 │   ├── index.ts           # Protocol factory, model IDs
 │   ├── capabilities.ts    # Capabilities registry
-│   ├── dm32uv/            # DM-32UV / DP570UV implementation
+│   ├── dm3x/            # DM-32UV / DP570UV implementation
 │   │   ├── protocol.ts, structures.ts, memory.ts, connection.ts
 │   │   ├── capabilities.ts, settingsProfile.ts, types.ts
 │   │   └── ...
@@ -152,7 +152,7 @@ NeonPlug uses **Zustand** for state management. Each major feature has its own s
 
 ### Protocol Layer
 
-The radio protocol layer lives under `src/radios/`. The DM-32UV (aka DP570UV) implementation is in `src/radios/dm32uv/`:
+The radio protocol layer lives under `src/radios/`. The DM-32UV (aka DP570UV) implementation is in `src/radios/dm3x/`:
 
 - **protocol.ts** - Main protocol interface (read/write operations)
 - **structures.ts** - Data structure definitions and encoding

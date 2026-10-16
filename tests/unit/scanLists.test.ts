@@ -4,7 +4,7 @@ import {
   encodeScanList,
   parseChannel,
   encodeChannel,
-} from '../../src/radios/dm32uv/structures';
+} from '../../src/radios/dm3x/structures';
 import type { ScanList } from '../../src/models';
 
 // ---------------------------------------------------------------------------

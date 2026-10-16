@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { BaseAnalogProtocol } from '../../src/radios/shared/BaseProtocols';
 import { D890UVProtocol } from '../../src/radios/d890uv/protocol';
-import { DM32UVProtocol } from '../../src/radios/dm32uv/protocol';
+import { DM3xRadio } from '../../src/radios/dm3x/protocol';
 import { UV5RMiniProtocol } from '../../src/radios/uv5rmini/protocol';
 import { FT65Protocol } from '../../src/radios/ft65/protocol';
 import type { RadioSettings } from '../../src/models/RadioSettings';
@@ -68,7 +68,7 @@ describe('settings writes cannot silently succeed', () => {
   it('every radio either implements the write or declares it unsupported', () => {
     const protocols = [
       new D890UVProtocol(),
-      new DM32UVProtocol(),
+      new DM3xRadio(),
       new UV5RMiniProtocol(),
       new FT65Protocol(),
     ];

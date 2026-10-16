@@ -20,7 +20,7 @@ export function classifyRadioError(message: string, name?: string): RadioErrorKi
   if (/cancel|no port selected/.test(m) || (name === 'NotFoundError' && m.trim() === '')) return 'cancelled';
   if (m.includes('nothing was loaded')) return 'readIncomplete';
   if (/in use|already open|busy|locked streams|failed to open serial port/.test(m)) return 'portBusy';
-  if (/refus|nothing was written|read the radio first|cannot write|no (channels|zones) to write|too many channels|would exceed/.test(m)) {
+  if (/refus|nothing was written|read the radio first|pick the radio that matches|cannot write|no (channels|zones) to write|too many channels|would exceed/.test(m)) {
     return 'refused';
   }
   if (/timeout|timed out|no reply|not found: expected|handshake failed|failed: expected|did not acknowledge|closed unexpectedly|ended unexpectedly/.test(m)) {

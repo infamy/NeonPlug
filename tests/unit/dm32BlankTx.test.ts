@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { encodeChannel, parseChannel } from '../../src/radios/dm32uv/structures';
+import { encodeChannel, parseChannel } from '../../src/radios/dm3x/structures';
 import { createDefaultChannel } from '../../src/utils/channelHelpers';
 import { NO_TX_FREQUENCY, hasBlankTx } from '../../src/services/validation/frequencyValidator';
 
