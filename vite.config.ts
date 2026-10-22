@@ -78,8 +78,8 @@ export default defineConfig(({ mode }) => {
               // and simplifies the build output
               return 'vendor';
             }
-            // Combine dm32uv protocol and structures into one chunk to avoid circular dependency
-            if (id.includes('radios/dm32uv/protocol') || id.includes('radios/dm32uv/structures')) {
+            // Combine dm3x protocol and structures into one chunk to avoid circular dependency
+            if (id.includes('radios/dm3x/protocol') || id.includes('radios/dm3x/structures')) {
               return 'radios';
             }
             // Return undefined to let Vite handle other chunks automatically

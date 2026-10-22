@@ -33,6 +33,7 @@ import { PageHeader } from '../ui/PageHeader';
 import { resolveContactCapacity } from '../../utils/contactCapacity';
 import { BUTTON, FIELD } from '../ui/controlStyles';
 import { firmwareWarning } from '../../utils/firmware';
+import { describeHardwareFeatures, settingsFeatureUnfitted } from '../../utils/hardwareFeatures';
 
 export const SettingsTab: React.FC = () => {
   const { radioInfo, bootImageRaw } = useRadioStore();
@@ -306,6 +307,9 @@ export const SettingsTab: React.FC = () => {
   // Putting GPS & APRS here also lands the DA-7X2's own APRS section
   // beside it, so both radios' APRS is one chip on one page rather
   // than two different places to look.
+  // A profile area is shown unless the radio reported it lacks the hardware.
+  const hasFeature = (feature: SettingsFeature) =>
+    !!settingsProfile?.features?.includes(feature) && !settingsFeatureUnfitted(feature, radioInfo);
   const featureTabs = ([
     { id: 'feature-bootImage', title: 'Boot Image', feature: 'bootImage' },
     { id: 'feature-oneKeyOperation', title: 'One Key Operation', feature: 'oneKeyOperation' },
@@ -326,7 +330,8 @@ export const SettingsTab: React.FC = () => {
     { id: 'feature-smsStore', title: 'SMS Store', feature: 'smsStore' },
     { id: 'feature-dtmf', title: 'DTMF', feature: 'dtmf' },
   ] satisfies { id: string; title: string; feature: SettingsFeature }[]).filter((t) =>
-    settingsProfile?.features?.includes(t.feature) &&
+    !!settingsProfile &&
+    hasFeature(t.feature) &&
     // A section that owns an area renders it itself; listing it here too would
     // draw it twice and give it a second, competing anchor.
     !settingsProfile.sections.some((sec) => sec.area === t.feature)
@@ -440,6 +445,12 @@ export const SettingsTab: React.FC = () => {
                 <span className="text-cool-gray text-sm block mb-1">Codeplug Version</span>
                 <div className="text-white font-mono text-sm">{deviceValue(radioInfo.codeplugVersion)}</div>
               </div>
+              {describeHardwareFeatures(radioInfo) && (
+                <div>
+                  <span className="text-cool-gray text-sm block mb-1">Optional Hardware</span>
+                  <div className="text-white font-mono text-sm">{describeHardwareFeatures(radioInfo)}</div>
+                </div>
+              )}
             </div>
           </Card>
 
@@ -1063,7 +1074,7 @@ export const SettingsTab: React.FC = () => {
           )}
 
           {/* GPS & APRS Settings */}
-          {radioSettings && settingsProfile?.features?.includes('gpsAprs') && (
+          {radioSettings && hasFeature('gpsAprs') && (
             <Card id="settings-section-feature-gpsAprs" className="mt-6">
               <SectionTitle underline>GPS & APRS</SectionTitle>
 

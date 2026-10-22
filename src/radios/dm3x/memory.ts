@@ -3,7 +3,7 @@
  * Handles metadata discovery, block reading, and shared helpers for protocol.
  */
 
-import { DM32Connection } from './connection';
+import { DM3xConnection } from './connection';
 import { BLOCK_SIZE, CONNECTION, METADATA } from './constants';
 import { log } from '../../utils/protocolLogger';
 
@@ -24,7 +24,7 @@ export function isTalkGroupBlock(block: { metadata: number }): boolean {
  * We read 1 byte at offset 0xFFF for each of the 200 blocks.
  */
 export async function discoverMemoryBlocks(
-  connection: DM32Connection,
+  connection: DM3xConnection,
   startAddr: number,
   endAddr: number,
   onProgress?: (current: number, total: number) => void
@@ -119,7 +119,7 @@ export async function discoverMemoryBlocks(
  * Read channel count from first channel block
  */
 export async function readChannelCount(
-  connection: DM32Connection,
+  connection: DM3xConnection,
   firstChannelBlockAddr: number
 ): Promise<number> {
   // Channel count is in first 2 bytes of first channel block (little-endian)
@@ -132,7 +132,7 @@ export async function readChannelCount(
  * Read all channel blocks
  */
 export async function readChannelBlocks(
-  connection: DM32Connection,
+  connection: DM3xConnection,
   channelBlocks: MemoryBlock[],
   onProgress?: (progress: number, message: string) => void
 ): Promise<Map<number, Uint8Array>> {
@@ -160,7 +160,7 @@ export async function readChannelBlocks(
  * @throws {Error} If not connected
  */
 export function requireConnection(
-  connection: DM32Connection | null,
+  connection: DM3xConnection | null,
   radioInfo: unknown
 ): void {
   if (!connection || !radioInfo) {
@@ -208,7 +208,7 @@ export function checkEmptyBlocks(
  * Read and concatenate multiple memory blocks.
  */
 export async function readAndConcatenateBlocks(
-  connection: DM32Connection,
+  connection: DM3xConnection,
   blocks: MemoryBlock[],
   onProgress?: (progress: number, message: string) => void,
   onBlockRead?: (block: MemoryBlock, blockData: Uint8Array) => void

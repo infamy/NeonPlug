@@ -37,7 +37,19 @@ export function getErrorMessage(error: unknown, defaultMessage: string = 'Unknow
   return defaultMessage;
 }
 
-export class DM32Connection {
+/**
+ * The port and the link are fine; the radio on them is not the one picked.
+ * Retrying or choosing another port will not help, so callers pass the message
+ * through as it is.
+ */
+export class WrongRadioError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WrongRadioError';
+  }
+}
+
+export class DM3xConnection {
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private port: WebSerialPort | null = null;
@@ -50,12 +62,12 @@ export class DM32Connection {
    */
   private writeGuard: (() => WriteGuardContext | null) | null = null;
 
-  /** Install the check every write goes through. DM32UVProtocol does this for each connection it makes. */
+  /** Install the check every write goes through. DM3xRadio does this for each connection it makes. */
   setWriteGuard(provider: () => WriteGuardContext | null): void {
     this.writeGuard = provider;
   }
 
-  async connect(port: WebSerialPort): Promise<void> {
+  async connect(port: WebSerialPort, psearchNames: readonly string[] = ['DP570', 'DM32', 'DM-32']): Promise<void> {
     // Clear any leftover state from previous connections
     this.readBuffer = new Uint8Array(0);
     this.isReading = false;
@@ -104,8 +116,13 @@ export class DM32Connection {
     }
 
     const modelString = new TextDecoder('ascii', { fatal: false }).decode(psearchResponse.slice(1)).replace(/\0/g, '').trim();
-    if (!modelString.includes('DP570') && !modelString.includes('DM32') && !modelString.includes('DM-32')) {
-      throw new Error(`Unsupported radio model: "${modelString}". Expected DP570UV or DM-32UV. Response: ${psearchHex}`);
+    // Stricter than the vendor CPS, which only checks the 0x06: this is what
+    // stops one DM-3x model's codeplug going to another.
+    if (!psearchNames.some((name) => modelString.includes(name))) {
+      throw new WrongRadioError(
+        `This radio calls itself "${modelString}", not a name containing ${psearchNames.join(', ')}. ` +
+          `Pick the radio that matches it and try again. (PSEARCH reply: ${psearchHex})`
+      );
     }
 
     await this.delay(50);
@@ -171,6 +188,30 @@ export class DM32Connection {
     const data = await this.readBytes(length);
     await this.delay(50);
     return data;
+  }
+
+  /**
+   * The radio's 256-byte factory info page, as the vendor CPS (1.45 and 1.60)
+   * reads it between the V-frames and PROGRAM, on reads and writes alike:
+   * send 47 00 00 00 00 01, get 0x53 + 5 header bytes + 256 bytes.
+   * Byte 0x80 holds the hardware feature bits (see parseHardwareFeatures).
+   */
+  async readFactoryInfo(): Promise<Uint8Array> {
+    await this.write(new Uint8Array([0x47, 0x00, 0x00, 0x00, 0x00, 0x01]));
+    await this.delay(50);
+    try {
+      const response = await this.readBytes(262, undefined, 'factory info');
+      if (response[0] !== 0x53) {
+        throw new Error(`Factory info: expected 0x53, got 0x${response[0].toString(16).padStart(2, '0')}`);
+      }
+      await this.delay(10);
+      return response.slice(6);
+    } catch (error) {
+      // Leave nothing half-read for the PROGRAM step that follows.
+      await this.delay(100);
+      await this.clearBuffer();
+      throw error;
+    }
   }
 
   async enterProgrammingMode(): Promise<void> {

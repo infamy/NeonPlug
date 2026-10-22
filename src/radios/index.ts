@@ -4,7 +4,7 @@
  */
 import type { RadioProtocol } from '../types/radio';
 import type { RadioDescriptor } from './types';
-import { DM32UV_DESCRIPTOR } from './dm32uv/descriptor';
+import { DM32UV_DESCRIPTOR, DM36_DESCRIPTOR } from './dm3x/descriptor';
 import { UV5RMINI_DESCRIPTOR } from './uv5rmini/descriptor';
 import { FT65_DESCRIPTOR, FT4_DESCRIPTOR, FT4VR_DESCRIPTOR, FT25R_DESCRIPTOR } from './ft65/descriptor';
 import { D890UV_DESCRIPTOR, D890UV_ANYTONE_DESCRIPTOR } from './d890uv/descriptor';
@@ -15,6 +15,8 @@ export type ProtocolFactory = () => RadioProtocol;
 /** All registered radios. Add new radios here. */
 export const RADIO_DESCRIPTORS: readonly RadioDescriptor[] = [
   DM32UV_DESCRIPTOR,
+  // ALPHA, not yet run on a radio. The DM-32UV's driver under its own name.
+  DM36_DESCRIPTOR,
   UV5RMINI_DESCRIPTOR,
   FT65_DESCRIPTOR,
   FT4_DESCRIPTOR,

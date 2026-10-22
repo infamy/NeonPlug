@@ -22,6 +22,9 @@ describe('classifyRadioError', () => {
     ['Could not read Zones, so nothing was loaded. Read the radio again.', undefined, 'readIncomplete'],
     // Refused before anything was sent
     ['This radio cannot write settings yet, so nothing was written.', undefined, 'refused'],
+    // The right port with the wrong radio on it: no cable checklist.
+    ["This radio's firmware is DM36.NRFB.01.020, which is not a DM-32UV. Pick the radio that matches it and try again.", undefined, 'refused'],
+    ['This radio calls itself "DP570UV", not a name containing DM36. Pick the radio that matches it and try again. (PSEARCH reply: 06 44 50 35 37 30 55 56)', undefined, 'refused'],
     ['Read the radio first. Writing needs the memory image from a read to preserve radio settings.', undefined, 'refused'],
     ["Refusing to write 0x1000: it would overwrite the radio's calibration data at 0x2000, which NeonPlug never writes.", undefined, 'refused'],
     ['Something nobody planned for', undefined, 'unknown'],

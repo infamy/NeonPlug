@@ -3,7 +3,7 @@
  * Main protocol interface implementation using Web Serial API
  */
 
-import { DM32Connection } from './connection';
+import { DM3xConnection, WrongRadioError } from './connection';
 import {
   discoverMemoryBlocks,
   readChannelCount,
@@ -18,7 +18,7 @@ import {
 } from './memory';
 import { parseChannel, parseZones, parseScanLists, parseContactEntry, encodeChannel, encodeZone, encodeScanList, encodeContactEntry, parseRadioSettings, encodeRadioSettings, encodeDigitalEmergencies, encodeAnalogEmergencies, encodeEncryptionKey, parseQuickMessages, parseDMRRadioIDs, encodeDMRRadioID, parseCalibration, parseRXGroups, parseQuickContacts, encodeQuickContactsBlocks, encodeQuickAccessList, encodeQuickMessages, parseTxContactForChannel, encodeTxContactForChannel, encodeRXGroups } from './structures';
 import { formatPlural } from '../../utils/formatPlural';
-import type { RadioInfo, DM32Protocol } from '../../types/radio';
+import type { RadioInfo, DM3xProtocol } from '../../types/radio';
 import { BaseDigitalProtocol } from '../shared/BaseProtocols';
 import type { Channel, Zone, Contact, RadioSettings, ScanList, DigitalEmergency, DigitalEmergencyConfig, AnalogEmergency, QuickTextMessage, DMRRadioID, Calibration, RXGroup, QuickContact, EncryptionKey } from '../../models';
 import type { WebSerialPort, ProtocolDebugData } from './types';
@@ -28,6 +28,7 @@ import { getContactCapacityWithFallback } from '../../utils/firmware';
 import { withTimeout } from './connection';
 import { assertBlockWritable, type WriteGuardContext } from './writeGuard';
 import { log } from '../../utils/protocolLogger';
+import { parseHardwareFeatures, FACTORY_INFO_FEATURE_OFFSET } from './factoryInfo';
 
 /**
  * DM-32UV Protocol Implementation
@@ -37,15 +38,56 @@ import { log } from '../../utils/protocolLogger';
  * 
  * @example
  * ```typescript
- * const protocol = new DM32UVProtocol();
+ * const protocol = new DM3xRadio();
  * protocol.onProgress = (progress, message) => console.log(`${progress}%: ${message}`);
  * await protocol.connect();
  * const channels = await protocol.readChannels();
  * await protocol.disconnect();
  * ```
  */
-export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol {
-  private connection: DM32Connection | null = null;
+/**
+ * Which DM-3x radio a DM3xRadio talks to. The radios share one protocol and
+ * memory layout; what differs is the model ID its capabilities are registered
+ * under, and how to recognise it.
+ *
+ * PSEARCH cannot tell them apart: a DM-36 answers "DP570UV" exactly as a DM-32
+ * does (hardware, 2026-10-14). The firmware string in V-frame 0x01 can:
+ * "DM36.NRFB.01.020" against "DM32.01.L01.048" and the like.
+ */
+export interface DM3xVariant {
+  /** Model ID reported in RadioInfo, which picks the capabilities. */
+  model: string;
+  /** Label used when refusing a radio, e.g. "DM-36". */
+  label: string;
+  /** Substrings of the PSEARCH reply this variant accepts. */
+  psearchNames: readonly string[];
+  /** Whether a firmware string (V-frame 0x01) belongs to this variant. */
+  ownsFirmware: (firmware: string) => boolean;
+}
+
+const isDm36Firmware = (firmware: string) => firmware.startsWith('DM36.');
+
+/** The DM-32UV, also sold as the DP570UV. Its model ID predates the picker. */
+export const DM32_VARIANT: DM3xVariant = {
+  model: 'DP570UV',
+  label: 'DM-32UV',
+  psearchNames: ['DP570', 'DM32', 'DM-32'],
+  ownsFirmware: (firmware) => !isDm36Firmware(firmware),
+};
+
+export const DM36_VARIANT: DM3xVariant = {
+  model: 'DM-36',
+  label: 'DM-36',
+  psearchNames: ['DP570', 'DM36', 'DM-36'],
+  ownsFirmware: isDm36Firmware,
+};
+
+export class DM3xRadio extends BaseDigitalProtocol implements DM3xProtocol {
+  constructor(private readonly variant: DM3xVariant = DM32_VARIANT) {
+    super();
+  }
+
+  private connection: DM3xConnection | null = null;
   private port: WebSerialPort | null = null;
   private radioInfo: RadioInfo | null = null;
   public rawChannelData: Map<number, { data: Uint8Array; blockAddr: number; offset: number }> = new Map();
@@ -158,6 +200,8 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
         } catch (closeError) {
           log.warn('Error closing failed port', 'Protocol', closeError);
         }
+        // The right port, the wrong radio: the port advice below would mislead.
+        if (connectError instanceof WrongRadioError) throw connectError;
         const msg = connectError instanceof Error ? connectError.message : String(connectError);
         throw new Error(
           `Connection failed: ${msg} Please click the Read/Write button again and select the correct serial port when prompted.`
@@ -380,14 +424,14 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
   }
 
   private async connectWithPort(port: WebSerialPort): Promise<void> {
-    // Note: DM32Connection.connect() handles the post-open INIT_DELAY internally
+    // Note: DM3xConnection.connect() handles the post-open INIT_DELAY internally
     this.port = port;
-    this.connection = new DM32Connection();
+    this.connection = new DM3xConnection();
     // Every write this connection sends is checked against the memory layout and
     // block map as they stand at that moment: see writeGuard.ts.
     this.connection.setWriteGuard(() => this.writeGuardContext());
     // Each request/response in connect() has its own 2s timeout (per-request basis)
-    await this.connection.connect(port);
+    await this.connection.connect(port, this.variant.psearchNames);
 
     // Query V-frames to get radio info
     // Each V-frame query has its own 2s timeout (per-request basis)
@@ -395,6 +439,14 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
 
     // Parse V-frame data
     const firmware = this.parseVFrameString(vframes, VFRAME.FIRMWARE, 'Unknown');
+    // Before anything else is read or written: a DM-36 and a DM-32 answer
+    // PSEARCH alike, and each must be read and written as itself.
+    if (!this.variant.ownsFirmware(firmware)) {
+      throw new WrongRadioError(
+        `This radio's firmware is ${firmware}, which is not a ${this.variant.label}. ` +
+          `Pick the radio that matches it and try again.`
+      );
+    }
     const buildDate = this.parseVFrameString(vframes, VFRAME.BUILD_DATE, '');
     const dspVersion = this.parseVFrameString(vframes, VFRAME.DSP_VERSION, '');
     const radioVersion = this.parseVFrameString(vframes, VFRAME.RADIO_VERSION, '');
@@ -414,7 +466,7 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
     // const contactsRange = vframes.get(0x0F);
 
     this.radioInfo = {
-      model: 'DP570UV',
+      model: this.variant.model,
       firmware,
       buildDate,
       dspVersion,
@@ -427,6 +479,26 @@ export class DM32UVProtocol extends BaseDigitalProtocol implements DM32Protocol 
       },
       vframes, // Store all raw V-frame data (internal use only)
     };
+
+    // The vendor CPS reads the factory info page here, between the V-frames and
+    // PROGRAM. NeonPlug read and wrote without it for a long time, so a radio
+    // that does not answer still connects: its hardware is just left unknown.
+    try {
+      const factoryInfo = await this.connection.readFactoryInfo();
+      this.radioInfo.hardwareFeatures = parseHardwareFeatures(factoryInfo);
+      const programmed = factoryInfo.filter((b) => b !== 0xff).length;
+      log.info(
+        `Factory info feature byte: 0x${factoryInfo[FACTORY_INFO_FEATURE_OFFSET]?.toString(16).padStart(2, '0')}` +
+          ` (${programmed} of ${factoryInfo.length} bytes programmed)`,
+        'Protocol'
+      );
+      log.debug(
+        `Factory info page: ${Array.from(factoryInfo, (b) => b.toString(16).padStart(2, '0')).join(' ')}`,
+        'Protocol'
+      );
+    } catch (error) {
+      log.warn('Factory info not read; optional hardware left unknown', 'Protocol', error);
+    }
 
     // Enter programming mode
     // Each request/response in enterProgrammingMode() has its own 2s timeout
