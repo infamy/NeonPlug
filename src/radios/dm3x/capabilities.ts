@@ -30,6 +30,8 @@ export const DM32UV_CAPABILITIES: RadioCapabilities = {
     },
   },
   bandLimits: DEFAULT_BAND_LIMITS,
+  // Its settings write sends the 0x04 block held from the read, edits laid over it.
+  writesSettingsOnEveryWrite: true,
   blankTxAnyBand: true,
   supportsOutOfBandFrequencies: true,
   isFirmware049OrNewer,

@@ -45,6 +45,8 @@ const UV5RMINI_MEMORY_REGIONS: MemoryRegionSpec[] = [
 export const UV5RMINI_CAPABILITIES: RadioCapabilities = {
   memoryRegions: UV5RMINI_MEMORY_REGIONS,
   bandLimits: DEFAULT_BAND_LIMITS,
+  // Its settings write lays every mapped field over the radio's own block.
+  writesSettingsOnEveryWrite: true,
   writeValidations: {
     channelsMustBeInZones: false,
   },

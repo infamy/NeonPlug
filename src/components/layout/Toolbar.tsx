@@ -389,7 +389,11 @@ export const Toolbar: React.FC = () => {
       droppedChannels: writable.droppedChannels.map(({ number, name }) => ({ number, name })),
       droppedZones: writable.droppedZones,
       droppedScanLists: writable.droppedScanLists,
-      settings: settingsChanges,
+      settings: {
+        ...settingsChanges,
+        // Sent on every write, edited or not (settingsWritePlan.ts).
+        everyWrite: !!settingsState.settings && !!caps?.writesSettingsOnEveryWrite,
+      },
     };
     setWriteConfirm({ preview, integrity, warnings, summary });
     setWriteWarningOpen(true);

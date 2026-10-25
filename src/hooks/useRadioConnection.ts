@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { shouldWriteSettings } from '../utils/settingsWritePlan';
 import type { RadioProtocol } from '../types/radio';
 import { createDefaultProtocol, createProtocolForModel } from '../radios';
 import { D890UVProtocol } from '../radios/d890uv/protocol';
@@ -1270,14 +1271,23 @@ export function useRadioConnection() {
       const radioSettingsStore = useRadioSettingsStore.getState();
       const radioSettings = radioSettingsStore.settings;
       const changedFields = radioSettingsStore.getChangedFields();
-      const hasSettingsToWrite = radioSettings != null && changedFields.length > 0;
+      // Every write on a radio that sends its settings each time, as the vendor
+      // CPS does; otherwise only when one was edited. See settingsWritePlan.ts.
+      const hasSettingsToWrite =
+        radioSettings != null &&
+        shouldWriteSettings(
+          true,
+          changedFields.length,
+          getCapabilitiesForModel(connectedRadioInfo.model ?? effectiveModel ?? '')?.writesSettingsOnEveryWrite,
+          protocol.bufferedSettingsWrite
+        );
 
       // Refuse BEFORE the channel write, not after it. Protocols that cannot
       // write settings used to inherit a no-op base, so this ran to completion
       // and then called clearChanges() — the edits vanished and the UI reported
       // success. Failing here leaves the pending changes intact, so nothing is
       // lost and the user can decide what to do with them.
-      if (hasSettingsToWrite && protocol.settingsWriteUnsupported) {
+      if (changedFields.length > 0 && protocol.settingsWriteUnsupported) {
         throw new Error(
           `This radio cannot write settings yet, so nothing was written. Revert the ` +
           `${formatPlural(changedFields.length, 'changed setting')} ` +
@@ -1385,7 +1395,7 @@ export function useRadioConnection() {
       // (DM-32, UV5R-Mini); buffered-settings protocols were handled with the
       // channel write above.
       if (hasSettingsToWrite && !protocol.bufferedSettingsWrite) {
-        onProgress?.(95, `Writing ${changedFields.length} changed setting(s) to radio...`, steps[4]);
+        onProgress?.(95, 'Writing settings to radio...', steps[4]);
         await protocol.writeRadioSettings(radioSettings, { changedFields });
         // Clear changes after successful write
         radioSettingsStore.clearChanges();
@@ -1419,7 +1429,7 @@ export function useRadioConnection() {
         summaryQuickMessages?.length ? `${summaryQuickMessages.length} quick message(s)` : null,
         summaryRxGroupsStore.groups?.length && summaryRxGroupsStore.groupsLoaded ? `${summaryRxGroupsStore.groups.length} RX group(s)` : null,
         summaryEncryptionKeysStore.keys?.length && summaryEncryptionKeysStore.keysLoaded ? `${summaryEncryptionKeysStore.keys.length} encryption key(s)` : null,
-        hasSettingsToWrite ? `${changedFields.length} setting(s)` : null,
+        hasSettingsToWrite ? (changedFields.length > 0 ? `settings (${changedFields.length} changed)` : 'settings') : null,
       ].filter(Boolean).join(', ');
       
       // Add warning if channels were filtered

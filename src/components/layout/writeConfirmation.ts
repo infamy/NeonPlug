@@ -36,8 +36,12 @@ export interface WriteSummaryInput {
   droppedChannels: readonly { number: number; name: string }[];
   droppedZones: readonly string[];
   droppedScanLists: readonly string[];
-  /** The settings the write sends (settings/settingsFields.ts); `all` for an imported codeplug. */
-  settings?: { labels: readonly string[]; all: boolean };
+  /**
+   * The settings the write sends (settings/settingsFields.ts); `all` for an
+   * imported codeplug; `everyWrite` when the radio is sent its settings on every
+   * write, edited or not (utils/settingsWritePlan.ts).
+   */
+  settings?: { labels: readonly string[]; all: boolean; everyWrite?: boolean };
 }
 
 /** A list shown up to a limit, with a count of what did not fit. */
@@ -146,11 +150,12 @@ function buildSettingsLine(summary: WriteSummaryInput | undefined): string | nul
   if (!settings) return null;
   if (settings.all) return 'Writes every setting in the imported codeplug.';
   const n = settings.labels.length;
-  if (n === 0) return null;
+  if (n === 0) return settings.everyWrite ? 'Writes the settings as loaded, none changed.' : null;
   const limit = WRITE_CONFIRM_LIMITS.settings;
   const shown = settings.labels.slice(0, limit).join(', ');
   const more = n > limit ? `, and ${n - limit} more` : '';
-  return `Changes ${n} ${formatPlural(n, 'setting')}: ${shown}${more}.`;
+  const changes = `${n} ${formatPlural(n, 'setting')}: ${shown}${more}`;
+  return settings.everyWrite ? `Writes the settings, changing ${changes}.` : `Changes ${changes}.`;
 }
 
 function buildLeftOut(summary: WriteSummaryInput | undefined): WriteConfirmation['leftOut'] {

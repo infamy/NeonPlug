@@ -173,6 +173,14 @@ export interface RadioCapabilities {
   /** Band limits for frequency validation (e.g. VHF 87-174, UHF 400-470 MHz). */
   bandLimits?: RadioBandLimits;
   /**
+   * Every write sends the codeplug's settings, changed or not, as the vendor CPS
+   * does. Without it a codeplug read from one radio and written unchanged to
+   * another left the second radio's settings as they were (#206). Only for
+   * radios whose settings write is direct and puts back what it does not map;
+   * see utils/settingsWritePlan.ts.
+   */
+  writesSettingsOnEveryWrite?: boolean;
+  /**
    * The radio holds a blank TX frequency on a channel in any band, Forbid TX or
    * not, the way its vendor CPS writes one (the DM-32: 0xFF). NeonPlug keeps that
    * TX as NO_TX_FREQUENCY. Without this, only an 87–136 MHz channel with Forbid
