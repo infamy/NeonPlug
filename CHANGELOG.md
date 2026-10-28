@@ -19,6 +19,10 @@ version says how old a build is, not how big its changes are. Whether a saved
 
 ## [Unreleased]
 
+- New radio: the Baofeng DM-36, on the DM-32's driver — channels, zones, contacts and settings. Alpha.
+- UV5R-Mini, DM-32 and DM-36: every write now sends the settings, so a codeplug read from one radio and written to another carries its settings over (#206).
+- Picking the wrong radio now says so, instead of showing a cable checklist.
+
 ## [2026.10.0] — 2026-10-10
 
 - New radio: the Radtel RT-950 Pro, over its USB cable or Bluetooth — channels and settings. Alpha.
