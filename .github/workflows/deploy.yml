@@ -68,6 +68,9 @@ jobs:
           dest="$1"
           mkdir -p "$dest"
           for f in rptrs.json tafl_min.json airports_min.json radioid-users.csv; do
+            # A branch that no longer has a dataset (one moved off the site) must
+            # not stop the deploy of every other preview and of the site itself.
+            [ -f "src/data/$f" ] || { echo "::notice::$f not in this checkout, skipped"; continue; }
             cp "src/data/$f" "$dest/$f"
           done
           EOF
