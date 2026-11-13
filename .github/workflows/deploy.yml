@@ -67,7 +67,7 @@ jobs:
           set -euo pipefail
           dest="$1"
           mkdir -p "$dest"
-          for f in rptrs.json tafl_min.json airports_min.json radioid-users.csv; do
+          for f in rptrs.json radioid-users.csv; do
             cp "src/data/$f" "$dest/$f"
           done
           EOF
@@ -137,6 +137,13 @@ jobs:
         run: |
           /tmp/copy-data.sh dist_root
           /tmp/copy-data.sh dist_dev
+          # Licensed sites and airports now come from data.ferritefw.dev. Builds up
+          # to 2026.10.1, including every offline copy of one, still fetch these
+          # two from https://neonplug.app/, so the root keeps serving them, frozen
+          # at that release. Only the root: /dev/ and the previews don't need them.
+          for f in tafl_min.json airports_min.json; do
+            git show "v2026.10.1:src/data/$f" > "dist_root/$f"
+          done
 
       - name: List open PRs and build previews
         env:
