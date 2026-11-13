@@ -11,6 +11,8 @@ import { formatPlural } from '../../utils/formatPlural';
 import { ChirpSource } from './sources/ChirpSource';
 import { AirportSource } from './sources/AirportSource';
 import { TaflSource } from './sources/TaflSource';
+import { AmateurRepeaterSource } from './sources/AmateurRepeaterSource';
+import { findNearbyAmateurRepeaters, type AmateurRepeater } from '../../services/amateurRepeaterChannels';
 import { RptrsSource } from './sources/RptrsSource';
 import { MmdvmSource } from './sources/MmdvmSource';
 import { FixedChannelsSource } from './sources/FixedChannelsSource';
@@ -34,6 +36,7 @@ export const SmartImportTab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchAirports, setSearchAirports] = useState(true);
   const [searchTafl, setSearchTafl] = useState(true);
+  const [searchAmateurRepeaters, setSearchAmateurRepeaters] = useState(true);
   const [searchDmrRepeaters, setSearchDmrRepeaters] = useState(true);
   const [isSearchingAll, setIsSearchingAll] = useState(false);
 
@@ -49,6 +52,9 @@ export const SmartImportTab: React.FC = () => {
   const [taflLoadProgress, setTaflLoadProgress] = useState<{ percent: number; loaded: number; total: number } | null>(null);
   const [isSearchingTafl, setIsSearchingTafl] = useState(false);
 
+  // Amateur (analog FM) repeater search results
+  const [amateurRepeaters, setAmateurRepeaters] = useState<AmateurRepeater[]>([]);
+
   // Rptrs search results
   const [rptrs, setRptrs] = useState<(RptrData & { distance?: number })[]>([]);
   const [rptrsLoadProgress, setRptrsLoadProgress] = useState<{ percent: number; loaded: number; total: number } | null>(null);
@@ -62,15 +68,16 @@ export const SmartImportTab: React.FC = () => {
     setError(msg || null);
   };
 
+  // Whether any search type is ticked; the button and the handler both ask.
+  const hasSearchType =
+    searchAirports || searchTafl || searchAmateurRepeaters || (supportsDigital && searchDmrRepeaters);
+
   // Unified search handler that searches all selected types
   const handleSearchAll = async () => {
-    const hasSearchType = supportsDigital
-      ? (searchAirports || searchTafl || searchDmrRepeaters)
-      : (searchAirports || searchTafl);
     if (!hasSearchType) {
       setError(supportsDigital
-        ? 'Please select at least one search type (Airports, Licensed sites, or DMR Repeaters)'
-        : 'Please select at least one search type (Airports or Licensed sites)');
+        ? 'Please select at least one search type (Airports, Licensed sites, Amateur repeaters, or DMR Repeaters)'
+        : 'Please select at least one search type (Airports, Licensed sites, or Amateur repeaters)');
       return;
     }
 
@@ -90,6 +97,9 @@ export const SmartImportTab: React.FC = () => {
     }
     if (searchDmrRepeaters) {
       setRptrs([]);
+    }
+    if (searchAmateurRepeaters) {
+      setAmateurRepeaters([]);
     }
 
     try {
@@ -129,6 +139,16 @@ export const SmartImportTab: React.FC = () => {
             setTaflEntries(nearbyTafl);
             setIsSearchingTafl(false);
             return ['licensed sites', nearbyTafl.length];
+          })()
+        );
+      }
+
+      if (searchAmateurRepeaters) {
+        searchPromises.push(
+          (async (): Promise<[string, number]> => {
+            const nearby = await findNearbyAmateurRepeaters(lat, lon, radius);
+            setAmateurRepeaters(nearby);
+            return ['amateur repeaters', nearby.length];
           })()
         );
       }
@@ -192,8 +212,8 @@ export const SmartImportTab: React.FC = () => {
         <SectionTitle as="h3" size="lg" className="mb-4">Location-Based Search</SectionTitle>
         <p className="text-sm text-cool-gray mb-4">
           {supportsDigital
-            ? 'Search for nearby airports, licensed sites and DMR repeaters based on your location'
-            : 'Search for nearby airports and licensed sites based on your location'}
+            ? 'Search for nearby airports, licensed sites, amateur repeaters and DMR repeaters based on your location'
+            : 'Search for nearby airports, licensed sites and amateur repeaters based on your location'}
         </p>
 
         <div className="mb-4">
@@ -329,6 +349,15 @@ export const SmartImportTab: React.FC = () => {
               />
               <span className="text-cool-gray">Licensed sites (Canada TAFL, US FCC)</span>
             </label>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={searchAmateurRepeaters}
+                onChange={(e) => setSearchAmateurRepeaters(e.target.checked)}
+                className="mr-2"
+              />
+              <span className="text-cool-gray">Amateur repeaters (analog FM, HearHam)</span>
+            </label>
             {supportsDigital && (
             <label className="flex items-center">
               <input
@@ -345,7 +374,7 @@ export const SmartImportTab: React.FC = () => {
 
         <Button
           onClick={handleSearchAll}
-          disabled={isSearchingAll || (supportsDigital ? (!searchAirports && !searchTafl && !searchDmrRepeaters) : (!searchAirports && !searchTafl))}
+          disabled={isSearchingAll || !hasSearchType}
           className="w-full"
         >
           {isSearchingAll
@@ -424,6 +453,13 @@ export const SmartImportTab: React.FC = () => {
         entries={taflEntries}
         isSearching={isSearchingTafl}
         loadProgress={taflLoadProgress}
+        onError={handleSetError}
+        onGenerationResult={setGenerationResult}
+      />
+
+      {/* Amateur repeaters (analog FM, any radio) */}
+      <AmateurRepeaterSource
+        repeaters={amateurRepeaters}
         onError={handleSetError}
         onGenerationResult={setGenerationResult}
       />
