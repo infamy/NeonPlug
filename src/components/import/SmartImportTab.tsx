@@ -69,8 +69,8 @@ export const SmartImportTab: React.FC = () => {
       : (searchAirports || searchTafl);
     if (!hasSearchType) {
       setError(supportsDigital
-        ? 'Please select at least one search type (Airports, TAFL, or DMR Repeaters)'
-        : 'Please select at least one search type (Airports or TAFL)');
+        ? 'Please select at least one search type (Airports, Licensed sites, or DMR Repeaters)'
+        : 'Please select at least one search type (Airports or Licensed sites)');
       return;
     }
 
@@ -128,7 +128,7 @@ export const SmartImportTab: React.FC = () => {
             );
             setTaflEntries(nearbyTafl);
             setIsSearchingTafl(false);
-            return ['TAFL entries', nearbyTafl.length];
+            return ['licensed sites', nearbyTafl.length];
           })()
         );
       }
@@ -192,8 +192,8 @@ export const SmartImportTab: React.FC = () => {
         <SectionTitle as="h3" size="lg" className="mb-4">Location-Based Search</SectionTitle>
         <p className="text-sm text-cool-gray mb-4">
           {supportsDigital
-            ? 'Search for nearby airports, TAFL entries, and DMR repeaters based on your location'
-            : 'Search for nearby airports and TAFL entries based on your location'}
+            ? 'Search for nearby airports, licensed sites and DMR repeaters based on your location'
+            : 'Search for nearby airports and licensed sites based on your location'}
         </p>
 
         <div className="mb-4">
@@ -327,7 +327,7 @@ export const SmartImportTab: React.FC = () => {
                 onChange={(e) => setSearchTafl(e.target.checked)}
                 className="mr-2"
               />
-              <span className="text-cool-gray">TAFL (Transport Canada)</span>
+              <span className="text-cool-gray">Licensed sites (Canada TAFL, US FCC)</span>
             </label>
             {supportsDigital && (
             <label className="flex items-center">
@@ -368,7 +368,7 @@ export const SmartImportTab: React.FC = () => {
             {isSearchingTafl && taflLoadProgress && (
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-sm text-cool-gray">Loading TAFL data...</span>
+                  <span className="text-sm text-cool-gray">Loading licensed sites...</span>
                   <span className="text-sm text-cool-gray">{taflLoadProgress.percent.toFixed(1)}%</span>
                 </div>
                 <div className="w-full bg-black rounded-full h-2 border border-neon-cyan">
