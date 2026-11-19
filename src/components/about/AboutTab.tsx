@@ -314,45 +314,35 @@ export const AboutTab: React.FC = () => {
               </div>
 
               <div>
-                <SectionTitle as="h4" size="sm" className="mb-1">TAFL Database</SectionTitle>
+                <SectionTitle as="h4" size="sm" className="mb-1">Ferrite data</SectionTitle>
                 <p className="text-sm mb-2">
-                  Canadian radio frequency license data from the Technical Acceptance and Frequency List (TAFL), 
-                  maintained by Innovation, Science and Economic Development Canada (ISED).
+                  The Channel Wizard's airports, licensed sites and amateur repeaters come from Ferrite's channel data,
+                  rebuilt daily from each source's own public download.
+                </p>
+                <ul className="text-sm mb-2 list-disc list-inside space-y-1">
+                  <li>
+                    Contains information licensed under the Open Government Licence – Canada. Source: Innovation, Science
+                    and Economic Development Canada, Spectrum Management System authorization data extract.
+                  </li>
+                  <li>
+                    Source: US Federal Communications Commission, Universal Licensing System public access data (land
+                    mobile). Not endorsed by the FCC.
+                  </li>
+                  <li>Airport data from OurAirports (ourairports.com), public domain.</li>
+                  <li>Repeater data from HearHam.com (user-contributed).</li>
+                </ul>
+                <p className="text-sm mb-2">
+                  Not an official product of ISED, the FCC, OurAirports or HearHam. For finding frequencies, not
+                  runways: never use it for navigation.
                 </p>
                 <a
-                  href="https://ised-isde.canada.ca/site/spectrum-management-telecommunications/en"
+                  href="https://data.ferritefw.dev"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="link-accent text-sm"
                 >
-                  ISED Spectrum Management
+                  https://data.ferritefw.dev
                 </a>
-              </div>
-
-              <div>
-                <SectionTitle as="h4" size="sm" className="mb-1">Airport Frequency Data</SectionTitle>
-                <p className="text-sm mb-2">
-                  Airport communication frequencies and location data from open aviation databases, 
-                  including ICAO-compliant frequency information.
-                </p>
-                <div className="space-y-1">
-                  <a
-                    href="https://frequency.icao.int"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="link-accent block text-sm"
-                  >
-                    ICAO Frequency Finder
-                  </a>
-                  <a
-                    href="https://airportmap.de/data"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="link-accent block text-sm"
-                  >
-                    Airportmap Open Databases
-                  </a>
-                </div>
               </div>
             </div>
 

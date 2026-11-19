@@ -76,7 +76,7 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
 
   const handleAddTaflChannels = async () => {
     if (selectedTaflEntries.size === 0) {
-      onError('Please select at least one TAFL entry');
+      onError('Please select at least one licensed site');
       return;
     }
 
@@ -90,7 +90,7 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
         .filter(Boolean);
 
       if (selectedTaflList.length === 0) {
-        throw new Error('No TAFL entries selected');
+        throw new Error('No licensed sites selected');
       }
 
       const nextChannelNumber = getNextChannelNumber(channels);
@@ -105,7 +105,7 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
       );
 
       if (result.channels.length === 0) {
-        onError('No channels to add from selected TAFL entries');
+        onError('No channels to add from the selected sites');
         return;
       }
 
@@ -125,7 +125,7 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
       // Clear selection
       setSelectedTaflEntries(new Set());
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Failed to add TAFL channels');
+      onError(err instanceof Error ? err.message : 'Failed to add channels');
     } finally {
       setIsAddingTafl(false);
     }
@@ -135,7 +135,7 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
 
   return (
     <Card padding="tight" className="mb-4">
-      <SectionTitle as="h3" size="lg" className="mb-4">TAFL Entries</SectionTitle>
+      <SectionTitle as="h3" size="lg" className="mb-4">Licensed Sites</SectionTitle>
 
       <div className="mb-4">
         <label className="block text-sm text-cool-gray mb-2">Filter by Name/Code</label>
@@ -150,7 +150,7 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
         <>
           <div className="flex justify-between items-center mb-4">
             <SectionTitle as="h4" size="md">
-              {filteredTaflEntries.length} of {taflEntries.length} TAFL Entr{filteredTaflEntries.length !== 1 ? 'ies' : 'y'}
+              {filteredTaflEntries.length} of {taflEntries.length} {formatPlural(taflEntries.length, 'site')}
               {taflSearchFilter.trim() && ` (filtered)`}
             </SectionTitle>
             <SelectAllButtons onSelectAll={handleSelectAllFilteredTafl} onDeselectAll={handleDeselectAllTafl} selectAllLabel="Select All Filtered" />
@@ -295,7 +295,11 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
                                     <span className="font-semibold text-cool-gray">Frequency:</span>
                                     <div className="ml-2 text-xs">
                                       <span className="font-semibold text-neon-cyan">
-                                        {(entry.f / 1000.0).toFixed(3)} MHz
+                                        {(entry.f / 1000.0).toFixed(4)} MHz
+                                      </span>
+                                      <span className="text-cool-gray">
+                                        {' · '}{entry.src === 'fcc' ? 'US' : 'Canada'}
+                                        {entry.bw ? ` · ${entry.bw}` : ''}
                                       </span>
                                     </div>
                                   </div>
@@ -320,8 +324,8 @@ export const TaflSource: React.FC<TaflSourceProps> = ({
               className="w-full"
             >
               {isAddingTafl
-                ? 'Adding TAFL Channels...'
-                : `Add ${selectedTaflEntries.size} ${formatPlural(selectedTaflEntries.size, 'TAFL Channel')}`}
+                ? 'Adding Channels...'
+                : `Add ${selectedTaflEntries.size} ${formatPlural(selectedTaflEntries.size, 'Channel')}`}
             </Button>
           )}
         </>

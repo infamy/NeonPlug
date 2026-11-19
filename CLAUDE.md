@@ -61,7 +61,8 @@ the site wholesale):
 | `/` | the **latest release asset**, downloaded not rebuilt — falls back to `main` until the first tag |
 | `/dev/` | latest `main` |
 | `/test/<branch>/` | every open PR |
-| `/rptrs.json`, `/tafl_min.json`, `/airports_min.json`, `/radioid-users.csv` | always from `main` |
+| `/rptrs.json`, `/radioid-users.csv` | always from `main` |
+| `/tafl_min.json`, `/airports_min.json` | root only, frozen at `v2026.10.1`, for builds up to that release |
 
 Two deliberate decisions there. **The root is the published artifact, not a rebuild of the tag** — for
 software that writes to radios, the file users download offline and the file the site serves must be
@@ -69,14 +70,19 @@ byte-identical. **Datasets are not pinned to a release** — every loader tries
 `https://neonplug.app/<file>` *first*, so this data is already "latest from main" by design; pinning
 would freeze repeater/DMR-user data at tag time and add ~31 MB to every release.
 
-**The dataset fallback chains are not symmetric** — `jsonLoader.ts` (`rptrs.json`, `tafl_min.json`,
-`airports_min.json`) falls back through relative paths to `raw.githubusercontent.com` on `main`.
+**Airports, licensed sites (TAFL + FCC) and amateur repeaters come from
+[data.ferritefw.dev](https://data.ferritefw.dev)** (`services/ferrite/`), fetched tile by tile around
+the search, straight from the browser (it sends `Access-Control-Allow-Origin: *`). Not in the repo,
+not deployed, and like the datasets below they need the internet.
+
+**The dataset fallback chains are not symmetric** — `jsonLoader.ts` (`rptrs.json`)
+falls back through relative paths to `raw.githubusercontent.com` on `main`.
 `ContactsTab.tsx` is the *only* loader for `radioid-users.csv` (16 MB, the largest) and has **no
 GitHub fallback at all** — `neonplug.app` plus four relative paths, then it throws. Don't assume the
 GitHub safety net covers contacts.
 
 Because the absolute `neonplug.app` URL always wins, the per-PR and `/dev/` dataset copies are
-**unreadable dead weight** (~31 MB each, against Pages' 1 GB site limit) — see `TODO-RELEASE.md` D4.
+**unreadable dead weight** (~19 MB each, against Pages' 1 GB site limit) — see `TODO-RELEASE.md` D4.
 
 **Two independent version numbers — don't conflate them:**
 
