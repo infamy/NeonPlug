@@ -97,34 +97,35 @@ describe('getAvailableFixedChannelSets', () => {
 });
 
 describe('Marine (Australia)', () => {
-  // From ACMA's "VHF maritime mobile band – Channel allocations" (read
-  // 2026-10-29), which the issue's CHIRP file (#209) was checked against.
+  // The voice-only CHIRP list from Australian testers (#209, 2026-11-25), which
+  // the preset matches channel for channel.
   const au = () => getChannelsForSet('Marine AU');
-  const byName = (prefix: string) => au().find((c) => c.name === prefix || c.name.startsWith(`${prefix} `));
+  const ch = (n: string) => au().find((c) => c.name === `MVHF ${n}`);
 
-  it('has the 47 voice channels of the ACMA plan', () => {
-    expect(au()).toHaveLength(47);
+  it('has the 46 channels of the list', () => {
+    expect(au()).toHaveLength(46);
   });
 
   it('puts the repeaters on the ship side: listen on the coast frequency, transmit 4.6 MHz below', () => {
-    for (const [ch, ship, coast] of [
-      ['M80', 157.025, 161.625],
-      ['M21', 157.05, 161.65],
-      ['M81', 157.075, 161.675],
-      ['M22', 157.1, 161.7],
-      ['M82', 157.125, 161.725],
+    for (const [n, ship, coast] of [
+      ['80', 157.025, 161.625],
+      ['21', 157.05, 161.65],
+      ['81', 157.075, 161.675],
+      ['22', 157.1, 161.7],
+      ['82', 157.125, 161.725],
+      ['19', 156.95, 161.55],
     ] as const) {
-      const c = byName(ch);
-      expect(c, ch).toBeDefined();
+      const c = ch(n);
+      expect(c, n).toBeDefined();
       expect(c!.rxFrequency).toBeCloseTo(coast, 4);
       expect(c!.txFrequency).toBeCloseTo(ship, 4);
     }
   });
 
-  it('keeps 16 and the simplex split channels simplex', () => {
-    for (const [ch, f] of [['M16', 156.8], ['M1019', 156.95], ['M1027', 157.35], ['M1028', 157.4], ['M87', 157.375], ['M88', 157.425]] as const) {
-      const c = byName(ch);
-      expect(c, ch).toBeDefined();
+  it('keeps 16, 69, 87 and 88 simplex', () => {
+    for (const [n, f] of [['16', 156.8], ['69', 156.475], ['87', 157.375], ['88', 157.425]] as const) {
+      const c = ch(n);
+      expect(c, n).toBeDefined();
       expect(c!.rxFrequency).toBeCloseTo(f, 4);
       expect(c!.txFrequency).toBeCloseTo(f, 4);
     }
