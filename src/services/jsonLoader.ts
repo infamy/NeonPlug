@@ -112,7 +112,7 @@ function getGitHubRepoUrl(): string | null {
  * 3. Root directory (/filename.json)
  * 4. Raw GitHub file URL (from src/data/)
  * 
- * @param filename - Name of the JSON file (e.g., 'tafl_min.json')
+ * @param filename - Name of the JSON file (e.g., 'rptrs.json')
  * @param onProgress - Optional callback for progress updates
  * @returns Promise resolving to the parsed JSON data
  */

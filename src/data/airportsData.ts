@@ -1,12 +1,11 @@
 /**
- * Airport Data Service
- * Loads and processes airport data from airports_min.json
- * Airports are location-based, so we filter by proximity to user location
- * Data is loaded dynamically with fallback paths for different deployment scenarios
+ * Airport frequencies near a place, from data.ferritefw.dev (OurAirports,
+ * rebuilt daily). Only the map tiles around the search are downloaded
+ * (services/ferrite).
  */
 
-import { calculateDistance } from '../services/repeaterFinder';
-import { loadJsonFileCached, type ProgressCallback } from '../services/jsonLoader';
+import { findFerriteRowsNear } from '../services/ferrite/client';
+import type { ProgressCallback } from '../services/jsonLoader';
 
 // Frequency format: [frequency_khz, type_code] or just frequency_khz (legacy)
 type AirportFrequency = number | [number, string];
@@ -17,50 +16,9 @@ export interface AirportData {
   f: AirportFrequency | AirportFrequency[]; // frequencies: single [freq, type] or array of [freq, type] or legacy number
 }
 
-// Cache for loaded airport data
-let airportsCache: AirportData[] | null = null;
-let airportsLoadPromise: Promise<AirportData[]> | null = null;
-
 /**
- * Load all airports from JSON (dynamically with fallback paths)
- * This is a large dataset, so we'll filter by location when needed
- * @param onProgress - Optional progress callback
- * @returns Promise resolving to array of airports
- */
-export async function loadAirportsData(onProgress?: ProgressCallback): Promise<AirportData[]> {
-  if (airportsCache) {
-    // Already loaded, report 100% if callback provided
-    if (onProgress) {
-      onProgress({ loaded: 1, total: 1, percent: 100 });
-    }
-    return airportsCache;
-  }
-  
-  // If already loading, return the existing promise
-  if (airportsLoadPromise) {
-    return airportsLoadPromise;
-  }
-  
-  // Start loading with fallback paths
-  airportsLoadPromise = loadJsonFileCached<AirportData[]>('airports_min.json', onProgress);
-  airportsCache = await airportsLoadPromise;
-  
-  return airportsCache;
-}
-
-/**
- * Get all airports (synchronous, requires data to be loaded first)
- * @throws Error if data hasn't been loaded yet
- */
-export function getAllAirports(): AirportData[] {
-  if (!airportsCache) {
-    throw new Error('Airport data not loaded. Call loadAirportsData() first.');
-  }
-  return airportsCache;
-}
-
-/**
- * Find airports near a location (async, loads data if needed)
+ * Airports within `radius` miles of a point, nearest first, each with its
+ * frequencies and what each is for (TWR, GND, ATIS, CTAF, ...).
  */
 export async function findNearbyAirports(
   latitude: number,
@@ -68,32 +26,19 @@ export async function findNearbyAirports(
   radius: number = 50, // miles
   onProgress?: ProgressCallback
 ): Promise<(AirportData & { distance: number })[]> {
-  // Ensure data is loaded
-  await loadAirportsData(onProgress);
-  const allAirports = getAllAirports();
-  const airportsWithDistance: (AirportData & { distance: number })[] = [];
-  
-  for (const airport of allAirports) {
-    const [lat, lon] = airport.l;
-    const distance = calculateDistance(
-      latitude,
-      longitude,
-      lat,
-      lon
-    );
-    
-    if (distance <= radius) {
-      airportsWithDistance.push({
-        ...airport,
-        distance,
-      });
+  const rows = await findFerriteRowsNear('airports', latitude, longitude, radius, onProgress);
+  // One row per frequency; an airport is its name at its position.
+  const airports = new Map<string, AirportData & { distance: number; f: [number, string][] }>();
+  for (const row of rows) {
+    const key = `${row.name}|${row.lat}|${row.lon}`;
+    let airport = airports.get(key);
+    if (!airport) {
+      airport = { c: row.name, l: [row.lat, row.lon], f: [], distance: row.distance };
+      airports.set(key, airport);
     }
+    airport.f.push([Math.round(row.mhz * 2000) / 2, row.use ?? '']);
   }
-  
-  // Sort by distance
-  airportsWithDistance.sort((a, b) => a.distance - b.distance);
-  
-  return airportsWithDistance;
+  return [...airports.values()].sort((a, b) => a.distance - b.distance);
 }
 
 /**
@@ -244,6 +189,16 @@ export function getFrequencyTypeDescription(type: string): string {
     'TRAFFIC': 'Traffic frequency',
     'TMA': 'Terminal Control Area',
     'Aviation': 'Aviation frequency',
+    // OurAirports' own names, which data.ferritefw.dev passes on.
+    'TWR': 'Tower control - runway operations',
+    'GND': 'Ground control - aircraft movement on ground',
+    'UNIC': 'Universal Communications - advisory services',
+    'ARR': 'Arrival control',
+    'CLD': 'Clearance delivery',
+    'DEL': 'Clearance delivery',
+    'AWOS': 'Automated weather observing system',
+    'RDO': 'Radio frequency',
+    'A/G': 'Air to ground',
   };
   
   return descriptions[fullType] || fullType;

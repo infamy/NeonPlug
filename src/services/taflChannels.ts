@@ -109,7 +109,8 @@ export function generateTaflChannels(
         rxFrequency: freqMhz,
         txFrequency: freqMhz,
         mode: 'Analog',
-        bandwidth: '25kHz', // Default bandwidth
+        // The licence's own width when it gives one; wide otherwise.
+        bandwidth: entries.find((e) => e.bw)?.bw ?? '25kHz',
         power: 'High',
         scanAdd: true,
       });

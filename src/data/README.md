@@ -73,27 +73,12 @@ Users can also load repeater databases from JSON files using the `loadRepeaterDa
 
 The database is designed to support API integration. See `DEFAULT_REPEATER_CONFIG` for configuration options.
 
-## Airport Data (`airports_min.json`)
+## Airports, licensed sites and amateur repeaters
 
-**Readonly** - This file contains airport data with frequencies. It's automatically loaded from `src/data/airports_min.json`.
-
-### Data Structure
-
-Each airport entry contains:
-- `airport_name`: Airport name (max 16 characters)
-- `latitude`: Airport latitude
-- `longitude`: Airport longitude  
-- `frequencies`: Array of frequencies in kHz (e.g., 122900 = 122.900 MHz)
-
-### Usage
-
-Airports are location-based and require a location to be set. The Channel Wizard tab will:
-1. Filter airports by proximity to your location (configurable radius)
-2. Combine airports using the same frequency into single channels
-3. Generate channels with appropriate names (airport name or combined names)
-4. Create a "Local Airports" zone automatically
-
-**Note:** This is a large dataset (~98k airports). The system filters by location for performance, so only nearby airports are processed.
+Not stored here. They come from [data.ferritefw.dev](https://data.ferritefw.dev), rebuilt daily,
+split into map tiles so a search downloads only the tiles around it: see `src/services/ferrite/`.
+Airports are OurAirports, licensed sites are Canada's TAFL and the US FCC's ULS, and amateur
+repeaters are HearHam. Their credits are on the About tab.
 
 ## DMR Repeater Data (`rptrs.json`)
 
