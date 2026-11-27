@@ -119,9 +119,9 @@ function buildSnapshotLabel(options: SaveSnapshotOptions): string {
   }
 }
 
-/** Save a codeplug snapshot. Skips empty codeplugs (0 channels, 0 zones). */
+/** Automatic backups can also contain only contacts or other unsaved tables. */
 export async function saveSnapshot(data: CodeplugData, options: SaveSnapshotOptions): Promise<void> {
-  if (data.channels.length === 0 && data.zones.length === 0) return;
+  if (options.eventType !== 'backup' && data.channels.length === 0 && data.zones.length === 0) return;
 
   const radioModel = options.radioModel ?? data.radioInfo?.model;
   const label = buildSnapshotLabel({ ...options, radioModel });
