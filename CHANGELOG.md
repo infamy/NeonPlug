@@ -19,6 +19,10 @@ version says how old a build is, not how big its changes are. Whether a saved
 
 ## [Unreleased]
 
+- Channel wizard: new Marine (Australia) preset, the Australian VHF marine voice channels (#209).
+- Channel wizard: nearby amateur FM repeaters from HearHam, with offsets and tones, on every radio.
+- Channel wizard: licensed sites now cover the US (FCC) as well as Canada (TAFL), and airports and sites come fresh from data.ferritefw.dev instead of files we never updated.
+
 ## [2026.10.1] — 2026-10-28
 
 - New radio: the Baofeng DM-36, on the DM-32's driver — channels, zones, contacts and settings. Alpha.
