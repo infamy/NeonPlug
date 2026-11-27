@@ -19,9 +19,20 @@ version says how old a build is, not how big its changes are. Whether a saved
 
 ## [Unreleased]
 
+## [2026.11.0] — 2026-11-27
+
 - Channel wizard: new Marine (Australia) preset, the Australian VHF marine voice channels (#209).
 - Channel wizard: nearby amateur FM repeaters from HearHam, with offsets and tones, on every radio.
 - Channel wizard: licensed sites now cover the US (FCC) as well as Canada (TAFL), and airports and sites come fresh from data.ferritefw.dev instead of files we never updated.
+
+### What's Changed
+* Let the deploy skip a dataset a branch doesn't have by @infamy in https://github.com/infamy/NeonPlug/pull/211
+* Add Australian VHF marine channels to the channel wizard by @infamy in https://github.com/infamy/NeonPlug/pull/210
+* Use data.ferritefw.dev for airports, licensed sites and amateur repeaters by @infamy in https://github.com/infamy/NeonPlug/pull/212
+* Release notes for 2026.11.0 by @infamy in https://github.com/infamy/NeonPlug/pull/214
+
+
+**Full Changelog**: https://github.com/infamy/NeonPlug/compare/v2026.10.1...v2026.11.0
 
 ## [2026.10.1] — 2026-10-28
 
